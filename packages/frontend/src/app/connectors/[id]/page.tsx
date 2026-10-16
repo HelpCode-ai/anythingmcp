@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, tools, type ToolTestResult, type CatalogDiff } from '@/lib/api';
+import { connectors, tools, withSecretsNotice, isMachineGrant, type ToolTestResult, type CatalogDiff, type OAuthGrant } from '@/lib/api';
 import { findDemoByTool } from '@/lib/demo-connectors';
 import { ToolEditor } from '@/components/tool-editor';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -24,6 +24,7 @@ const IMPORT_SOURCES = [
   { id: 'openapi', label: 'OpenAPI / Swagger', placeholder: 'Paste OpenAPI JSON/YAML or enter URL...' },
   { id: 'postman', label: 'Postman Collection', placeholder: 'Paste Postman Collection JSON or enter URL...' },
   { id: 'curl', label: 'cURL Command', placeholder: 'curl -X GET https://api.example.com/users -H "Authorization: Bearer {{token}}"' },
+  { id: 'har', label: 'HAR file (browser capture)', placeholder: '' },
   { id: 'graphql', label: 'GraphQL Introspection', placeholder: 'Enter GraphQL endpoint URL...' },
   { id: 'wsdl', label: 'WSDL', placeholder: 'Enter WSDL URL...' },
   { id: 'json', label: 'JSON Definition', placeholder: '[\n  {\n    "name": "get_users",\n    "description": "Fetch users",\n    "parameters": { "type": "object", "properties": { "limit": { "type": "number" } } },\n    "endpointMapping": { "method": "GET", "path": "/users", "queryParams": { "limit": "$limit" } }\n  }\n]' },
@@ -42,6 +43,115 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Field names a HAR entry carries that hold a credential by themselves. */
+const HAR_CREDENTIAL_HEADER_RE = /(token|secret|password|passwd|api[-_]?key|session|csrf|xsrf|auth|signature|sig)/i;
+const HAR_EXPLICIT_CREDENTIAL_HEADERS = new Set(['cookie', 'set-cookie', 'authorization', 'proxy-authorization']);
+const HAR_MAX_UPLOAD_BYTES = 7 * 1024 * 1024;
+
+function isHarCredentialHeader(name: string): boolean {
+  const n = name.toLowerCase();
+  return HAR_EXPLICIT_CREDENTIAL_HEADERS.has(n) || n.startsWith(':') || HAR_CREDENTIAL_HEADER_RE.test(n);
+}
+
+function slimHarHeaders(headers: unknown): any[] {
+  if (!Array.isArray(headers)) return [];
+  return headers.filter((h: any) => h && typeof h.name === 'string' && !isHarCredentialHeader(h.name));
+}
+
+function slimHarQueryString(qs: unknown): any[] {
+  if (!Array.isArray(qs)) return [];
+  return qs.filter((q: any) => q && typeof q.name === 'string' && !HAR_CREDENTIAL_HEADER_RE.test(q.name));
+}
+
+/** `{"user":{"password":"…"}}` → the same shape with every credential-named key's value removed, at any depth. */
+function scrubJsonCredentials(value: any, depth = 0): any {
+  if (depth > 10 || value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((v) => scrubJsonCredentials(v, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value)) {
+    out[key] = HAR_CREDENTIAL_HEADER_RE.test(key) ? '[removed before upload]' : scrubJsonCredentials(v, depth + 1);
+  }
+  return out;
+}
+
+function slimHarPostData(postData: unknown): any {
+  if (!postData || typeof postData !== 'object') return postData;
+  const pd = postData as any;
+  if (Array.isArray(pd.params)) {
+    return { ...pd, params: pd.params.filter((p: any) => !(p && typeof p.name === 'string' && HAR_CREDENTIAL_HEADER_RE.test(p.name))) };
+  }
+  if (typeof pd.text === 'string' && typeof pd.mimeType === 'string' && pd.mimeType.includes('application/json')) {
+    try {
+      const parsed = JSON.parse(pd.text);
+      if (parsed && typeof parsed === 'object') {
+        return { ...pd, text: JSON.stringify(scrubJsonCredentials(parsed)) };
+      }
+    } catch {
+      // Not parseable JSON — leave it for the backend, which drops anything it can't scrub.
+    }
+  }
+  return pd;
+}
+
+/** Same origin as the connector's base URL, treating `wss:`/`ws:` as `https:`/`http:` like the backend parser does. */
+function matchesHarOrigin(urlStr: string, base: URL | null): boolean {
+  if (!base) return true;
+  try {
+    const u = new URL(urlStr);
+    const scheme = (p: string) => (p === 'wss:' ? 'https:' : p === 'ws:' ? 'http:' : p);
+    return scheme(u.protocol) === scheme(base.protocol) && u.host === base.host;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Strips response data, cookies and credential headers/query/body fields
+ * from a HAR before it ever leaves the browser, and drops entries outside
+ * the connector's own origin — a raw capture carries full response bodies,
+ * session cookies and requests to other sites that must never be uploaded at
+ * all, on top of the credential fields the backend parser also scrubs.
+ */
+function slimHarForUpload(rawText: string, baseUrl?: string): { json: string; byteLength: number; droppedOtherOrigin: number } {
+  const har = JSON.parse(rawText);
+  const entries = har?.log?.entries;
+  if (!Array.isArray(entries)) {
+    throw new Error('Not a valid HAR file (expected a log.entries array)');
+  }
+  let base: URL | null = null;
+  try {
+    base = baseUrl ? new URL(baseUrl) : null;
+  } catch {
+    base = null;
+  }
+  const inScope = entries.filter((entry: any) => matchesHarOrigin(entry?.request?.url ?? '', base));
+  const slimmed = {
+    log: {
+      version: har.log.version,
+      entries: inScope.map((entry: any) => ({
+        _resourceType: entry?._resourceType,
+        request: entry?.request
+          ? {
+              method: entry.request.method,
+              url: entry.request.url,
+              httpVersion: entry.request.httpVersion,
+              headers: slimHarHeaders(entry.request.headers),
+              queryString: slimHarQueryString(entry.request.queryString),
+              postData: slimHarPostData(entry.request.postData),
+            }
+          : undefined,
+        // The backend never reads response data — dropped entirely, not just its body.
+      })),
+    },
+  };
+  const json = JSON.stringify(slimmed);
+  return {
+    json,
+    byteLength: new TextEncoder().encode(json).length,
+    droppedOtherOrigin: entries.length - inScope.length,
+  };
 }
 
 export default function ConnectorDetailPage() {
@@ -80,12 +190,27 @@ export default function ConnectorDetailPage() {
   const [editWsPasswordType, setEditWsPasswordType] = useState('PasswordText');
   // OAuth2 only: how client credentials reach the token endpoint.
   const [editTokenAuthMethod, setEditTokenAuthMethod] = useState('client_secret_post');
+  // OAuth2 only: PKCE on "Authorize with Provider". `loadedPkce` is what the
+  // server reported, so saving sends the switch only when the user changed it
+  // (an untouched form must not pin a catalog adapter's setting on the row).
+  const [editPkce, setEditPkce] = useState(true);
+  const [loadedPkce, setLoadedPkce] = useState(true);
   // OAuth2 endpoints. Editable because a connector switched to OAUTH2 after
   // creation has none, and could otherwise never be authorized
   // ("No authorization URL configured for this connector").
   const [editOauthAuthUrl, setEditOauthAuthUrl] = useState('');
   const [editOauthTokenUrl, setEditOauthTokenUrl] = useState('');
   const [editOauthScopes, setEditOauthScopes] = useState('');
+  // OAuth2 grant. `loadedOauthGrant` is what is stored: it decides whether the
+  // connector shows "Authorize with Provider" (a machine grant needs no
+  // sign-in), and saving sends the grant only when the user changed it.
+  const [editOauthGrant, setEditOauthGrant] = useState<OAuthGrant>('authorization_code');
+  const [loadedOauthGrant, setLoadedOauthGrant] = useState<OAuthGrant>('authorization_code');
+  // Password grant credentials (Datto RMM: API key and API secret). Never
+  // pre-filled; an empty field keeps the stored value.
+  const [editOauthUsername, setEditOauthUsername] = useState('');
+  const [editOauthPassword, setEditOauthPassword] = useState('');
+  const [oauthHasPasswordCreds, setOauthHasPasswordCreds] = useState(false);
   // OAuth 1.0a credentials. Never pre-filled (the server does not send them
   // back); an empty field keeps the stored value.
   const [editOauth1Key, setEditOauth1Key] = useState('');
@@ -147,6 +272,11 @@ export default function ConnectorDetailPage() {
   const [importUrl, setImportUrl] = useState('');
   const [importing, setImporting] = useState(false);
 
+  // HAR import: the file is slimmed (response bodies, cookies, credential
+  // headers stripped) in the browser before its JSON lands in importContent.
+  const [harFileName, setHarFileName] = useState('');
+  const [harError, setHarError] = useState('');
+
   // MCP assign modal — shown when tools are added and connector is not yet assigned
   const [showMcpAssign, setShowMcpAssign] = useState(false);
 
@@ -186,6 +316,8 @@ export default function ConnectorDetailPage() {
       setEditAuthValue('');
       setEditWsPasswordType('PasswordText');
       resetOauth1Fields();
+      setEditOauthUsername('');
+      setEditOauthPassword('');
       // The auth method is not secret, so it can be shown. Without this the
       // select would always read "body" and saving any other field would
       // silently reset a connector configured for HTTP Basic.
@@ -194,9 +326,14 @@ export default function ConnectorDetailPage() {
           .getOAuthConfig(id, token)
           .then((r) => {
             setEditTokenAuthMethod(normalizeTokenAuthMethod(r.tokenAuthMethod));
+            setEditPkce(r.pkce !== false);
+            setLoadedPkce(r.pkce !== false);
             setEditOauthAuthUrl(r.authorizationUrl || '');
             setEditOauthTokenUrl(r.tokenUrl || '');
             setEditOauthScopes(r.scopes || '');
+            setEditOauthGrant(r.grant || 'authorization_code');
+            setLoadedOauthGrant(r.grant || 'authorization_code');
+            setOauthHasPasswordCreds(r.hasUsername && r.hasPassword);
           })
           .catch(() => setEditTokenAuthMethod('client_secret_post'));
       }
@@ -233,6 +370,17 @@ export default function ConnectorDetailPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // The new-connector form moved a secret typed into the URL or a header
+    // into a variable; say so the first time the connector is opened.
+    const noticeKey = `amcp:secretsNotice:${id}`;
+    const notice = typeof window !== 'undefined' ? window.sessionStorage.getItem(noticeKey) : null;
+    if (notice) {
+      window.sessionStorage.removeItem(noticeKey);
+      setMsg(notice);
+    }
+  }, [id]);
 
   useEffect(() => {
     // Handle OAuth callback query params
@@ -338,6 +486,14 @@ export default function ConnectorDetailPage() {
   const handleSave = async () => {
     if (!token) return;
     try {
+      if (
+        editAuthType === 'OAUTH2' &&
+        editOauthGrant === 'password' &&
+        !oauthHasPasswordCreds &&
+        (!editOauthUsername.trim() || !editOauthPassword)
+      ) {
+        throw new Error('Enter the username and password the password grant sends to the token URL.');
+      }
       const data: Record<string, unknown> = {
         name: editName,
         baseUrl: editBaseUrl,
@@ -394,13 +550,13 @@ export default function ConnectorDetailPage() {
           deniedTables: deniedTables.length > 0 ? deniedTables : null,
         };
       }
-      await connectors.update(id, data, token);
+      const saved = await connectors.update(id, data, token);
 
       // OAuth2 credentials live in authConfig alongside the issued tokens, so
       // they are patched separately (a full write would discard the tokens and
       // the endpoints captured during authorization).
       if (editAuthType === 'OAUTH2' && connector.type !== 'MCP') {
-        const oauthPatch: Record<string, string> = {
+        const oauthPatch: Record<string, string | boolean> = {
           // The default (body) is stored as ''. Anything else is sent as
           // chosen: a catalog adapter may use a method this form cannot set
           // up by itself (Revolut's private_key_jwt), and saving an unrelated
@@ -410,15 +566,21 @@ export default function ConnectorDetailPage() {
         };
         if (editAuthKey) oauthPatch.clientId = editAuthKey;
         if (editAuthValue) oauthPatch.clientSecret = editAuthValue;
+        if (editOauthGrant !== loadedOauthGrant) oauthPatch.grant = editOauthGrant;
+        if (editOauthGrant === 'password') {
+          if (editOauthUsername.trim()) oauthPatch.username = editOauthUsername.trim();
+          if (editOauthPassword) oauthPatch.password = editOauthPassword;
+        }
         // Endpoints are not secret, so the form always holds their current
         // value and can round-trip them.
         oauthPatch.authorizationUrl = editOauthAuthUrl.trim();
         oauthPatch.tokenUrl = editOauthTokenUrl.trim();
         oauthPatch.scopes = editOauthScopes.trim();
+        if (editPkce !== loadedPkce) oauthPatch.pkce = editPkce;
         await connectors.updateOAuthConfig(id, oauthPatch, token);
       }
 
-      setMsg('Connector updated');
+      setMsg(withSecretsNotice('Connector updated.', saved));
       setEditing(false);
       fetchConnector();
     } catch (err: any) {
@@ -455,11 +617,38 @@ export default function ConnectorDetailPage() {
     setMsg('Importing specification...');
     try {
       const result = await connectors.importSpec(id, token);
-      setMsg(result.message);
+      setMsg(withSecretsNotice(result.message, result));
       fetchConnector();
       promptMcpAssignIfNeeded();
     } catch (err: any) {
       setMsg(`Import failed: ${err.message}`);
+    }
+  };
+
+  const handleHarFileChange = async (file: File | null) => {
+    setHarError('');
+    setImportContent('');
+    setHarFileName('');
+    if (!file) return;
+    setHarFileName(file.name);
+    try {
+      const text = await file.text();
+      const { json, byteLength, droppedOtherOrigin } = slimHarForUpload(text, connector?.baseUrl);
+      if (byteLength > HAR_MAX_UPLOAD_BYTES) {
+        setHarError(
+          `This capture is still ${formatBytes(byteLength)} after removing response bodies and cookies, which is over what the server accepts. Re-capture a smaller session (fewer requests) and try again.`,
+        );
+        return;
+      }
+      if (droppedOtherOrigin > 0 && JSON.parse(json).log.entries.length === 0) {
+        setHarError(
+          `None of the ${droppedOtherOrigin} request(s) in this capture were made to ${connector?.baseUrl ?? 'the connector\'s base URL'}. Capture a session against that host and try again.`,
+        );
+        return;
+      }
+      setImportContent(json);
+    } catch (err: any) {
+      setHarError(`Could not read this file: ${err.message}`);
     }
   };
 
@@ -475,7 +664,7 @@ export default function ConnectorDetailPage() {
         if (importContent.trim()) data.content = importContent;
         const sets = importEntitySets.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
         if (sets.length) data.entitySets = sets;
-      } else if (importSource === 'curl' || importSource === 'json') {
+      } else if (importSource === 'curl' || importSource === 'json' || importSource === 'har') {
         data.content = importContent;
       } else if (importUrl) {
         data.url = importUrl;
@@ -486,10 +675,12 @@ export default function ConnectorDetailPage() {
       if (result.error) {
         setMsg(result.error);
       } else {
-        setMsg(result.message);
+        setMsg(withSecretsNotice(result.message, result));
         setShowImport(false);
         setImportContent('');
         setImportUrl('');
+        setHarFileName('');
+        setHarError('');
         fetchConnector();
         promptMcpAssignIfNeeded();
       }
@@ -622,9 +813,9 @@ export default function ConnectorDetailPage() {
     if (!token) return;
     setSavingTool(true);
     try {
-      await tools.create(id, data, token);
+      const created = await tools.create(id, data, token);
       setShowNewTool(false);
-      setMsg('Tool created successfully');
+      setMsg(withSecretsNotice('Tool created successfully.', created));
       fetchConnector();
       promptMcpAssignIfNeeded();
     } catch (err: any) {
@@ -647,9 +838,9 @@ export default function ConnectorDetailPage() {
     if (!token) return;
     setSavingTool(true);
     try {
-      await tools.update(id, toolId, data, token);
+      const updated = await tools.update(id, toolId, data, token);
       setEditingToolId(null);
-      setMsg('Tool updated successfully');
+      setMsg(withSecretsNotice('Tool updated successfully.', updated));
       fetchConnector();
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
@@ -710,7 +901,7 @@ export default function ConnectorDetailPage() {
       if (result.error) {
         setMsg(result.error);
       } else {
-        setMsg(result.message);
+        setMsg(withSecretsNotice(result.message, result));
         fetchConnector();
       }
     } catch (err: any) {
@@ -1233,6 +1424,38 @@ export default function ConnectorDetailPage() {
               )}
               {editAuthType === 'OAUTH2' && connector.type !== 'MCP' && (
                 <div className="space-y-3">
+                  <div>
+                    <label htmlFor="edit-oauth-grant" className="block text-sm font-medium mb-1">Grant type</label>
+                    <select
+                      id="edit-oauth-grant"
+                      value={editOauthGrant}
+                      onChange={(e) => setEditOauthGrant(e.target.value as OAuthGrant)}
+                      className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                    >
+                      <option value="authorization_code">Authorization code (sign in at the provider)</option>
+                      <option value="client_credentials">Client credentials</option>
+                      <option value="password">Password (username and password)</option>
+                    </select>
+                    <p className="mt-1 text-xs text-[var(--text-3)]">
+                      {editOauthGrant === 'authorization_code'
+                        ? 'Authorize with Provider once; the refresh token renews the access token.'
+                        : editOauthGrant === 'password'
+                          ? 'For APIs that issue tokens with no refresh token: a new one is requested with the username and password whenever it expires. Datto RMM: username = API key, password = API secret, client public-client / public with HTTP Basic.'
+                          : 'The client ID and secret alone get the token, and a new one whenever it expires. No sign-in at the provider.'}
+                    </p>
+                  </div>
+                  {editOauthGrant === 'password' && (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label htmlFor="edit-oauth-username" className="block text-sm font-medium mb-1">Username</label>
+                        <input id="edit-oauth-username" type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editOauthUsername} onChange={(e) => setEditOauthUsername(e.target.value)} placeholder={oauthHasPasswordCreds ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      </div>
+                      <div>
+                        <label htmlFor="edit-oauth-password" className="block text-sm font-medium mb-1">Password</label>
+                        <input id="edit-oauth-password" type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editOauthPassword} onChange={(e) => setEditOauthPassword(e.target.value)} placeholder={oauthHasPasswordCreds ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">Client ID</label>
@@ -1243,10 +1466,12 @@ export default function ConnectorDetailPage() {
                       <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
+                  {!isMachineGrant(editOauthGrant) && (
                   <div>
                     <label className="block text-sm font-medium mb-1">Authorization URL</label>
                     <input type="text" value={editOauthAuthUrl} onChange={(e) => setEditOauthAuthUrl(e.target.value)} placeholder="https://provider.com/oauth/authorize" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)] font-mono text-[13px]" />
                   </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium mb-1">Token URL</label>
                     <input type="text" value={editOauthTokenUrl} onChange={(e) => setEditOauthTokenUrl(e.target.value)} placeholder="https://provider.com/oauth/token" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)] font-mono text-[13px]" />
@@ -1271,9 +1496,22 @@ export default function ConnectorDetailPage() {
                     <p className="mt-1 text-xs text-[var(--text-3)]">
                       {editTokenAuthMethod === 'private_key_jwt'
                         ? 'Set by the connector: a short-lived JWT signed with the private key from the environment variables replaces the client secret.'
-                        : 'Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM and DATEV require it. Applies to refreshes too. Re-authorize after changing it.'}
+                        : isMachineGrant(editOauthGrant)
+                          ? 'How the client ID and secret reach the token URL. HTTP Basic is the default for this grant.'
+                          : 'Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM and DATEV require it. Applies to refreshes too. Re-authorize after changing it.'}
                     </p>
                   </div>
+                  {!isMachineGrant(editOauthGrant) && (
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input type="checkbox" checked={editPkce} onChange={(e) => setEditPkce(e.target.checked)} />
+                      Use PKCE when authorizing
+                    </label>
+                    <p className="mt-1 text-xs text-[var(--text-3)]">
+                      On by default. Turn it off only if the provider refuses PKCE: LinkedIn&apos;s standard web flow answers 401 invalid_client to it. Re-authorize after changing it.
+                    </p>
+                  </div>
+                  )}
                   <p className="text-xs text-[var(--text-3)]">
                     Leave Client ID / Client Secret empty to keep the stored values. Endpoints
                     are shown as configured and can be corrected here — useful when a connector
@@ -1443,7 +1681,7 @@ export default function ConnectorDetailPage() {
         </Card>
 
         {/* OAuth2 Authorization */}
-        {connector.authType === 'OAUTH2' && (
+        {connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant)) && (
           <Card className="p-[22px]">
             <h3 className="text-sm font-semibold mb-2">OAuth2 Authorization</h3>
             <p className="text-sm text-[var(--text-3)] mb-4">
@@ -1578,7 +1816,7 @@ export default function ConnectorDetailPage() {
                 {IMPORT_SOURCES.filter((src) => src.id !== 'odata' || hasOData(connector)).map((src) => (
                   <button
                     key={src.id}
-                    onClick={() => { setImportSource(src.id); setImportContent(''); setImportUrl(''); }}
+                    onClick={() => { setImportSource(src.id); setImportContent(''); setImportUrl(''); setHarFileName(''); setHarError(''); }}
                     className={`px-3 py-1.5 rounded-[8px] text-xs border transition-colors ${
                       importSource === src.id
                         ? 'border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)] font-semibold'
@@ -1622,7 +1860,7 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
 
-              {importSource !== 'curl' && importSource !== 'json' && importSource !== 'odata' && (
+              {importSource !== 'curl' && importSource !== 'json' && importSource !== 'odata' && importSource !== 'har' && (
                 <div>
                   <label className="block text-xs font-medium mb-1">URL (fetch spec from URL)</label>
                   <input
@@ -1635,18 +1873,41 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-medium mb-1">
-                  {importSource === 'curl' ? 'cURL Command(s)' : importSource === 'json' ? 'JSON Tool Definitions' : 'Or paste content directly'}
-                </label>
-                <textarea
-                  value={importContent}
-                  onChange={(e) => setImportContent(e.target.value)}
-                  rows={6}
-                  placeholder={IMPORT_SOURCES.find((s) => s.id === importSource)?.placeholder}
-                  className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
-                />
-              </div>
+              {importSource === 'har' ? (
+                <div>
+                  <label className="block text-xs font-medium mb-1">HAR file</label>
+                  <input
+                    type="file"
+                    accept=".har,application/json"
+                    onChange={(e) => handleHarFileChange(e.target.files?.[0] ?? null)}
+                    className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                  />
+                  <p className="text-[11.5px] text-[var(--text-3)] mt-1">
+                    From your browser&apos;s DevTools: Network tab → right-click → &quot;Save all as HAR&quot;. HAR files contain
+                    session cookies and tokens — response bodies, cookies and credential headers are removed in your
+                    browser before anything is uploaded.
+                  </p>
+                  {harFileName && !harError && (
+                    <p className="text-[11.5px] text-[var(--text-3)] mt-1">
+                      {importContent ? `${harFileName} — ready to import.` : `Reading ${harFileName}...`}
+                    </p>
+                  )}
+                  {harError && <p className="text-[11.5px] text-[var(--danger)] mt-1">{harError}</p>}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium mb-1">
+                    {importSource === 'curl' ? 'cURL Command(s)' : importSource === 'json' ? 'JSON Tool Definitions' : 'Or paste content directly'}
+                  </label>
+                  <textarea
+                    value={importContent}
+                    onChange={(e) => setImportContent(e.target.value)}
+                    rows={6}
+                    placeholder={IMPORT_SOURCES.find((s) => s.id === importSource)?.placeholder}
+                    className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
+                  />
+                </div>
+              )}
 
               <Button
                 variant="primary"

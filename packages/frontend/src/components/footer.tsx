@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/theme-context';
-import { siteSettings } from '@/lib/api';
+import { siteSettings, FOOTER_LINKS_CHANGED } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 
 function SunIcon({ size = 16 }: { size?: number }) {
   return (
@@ -37,13 +38,35 @@ interface FooterLink {
   url: string;
 }
 
+/** Links saved before the server checked the scheme: only web and mail links render. */
+function isSafeLink(url: unknown): boolean {
+  return typeof url === 'string' && /^(https?:\/\/|mailto:)/i.test(url.trim());
+}
+
 export function Footer() {
   const { theme, setTheme } = useTheme();
+  const { token } = useAuth();
   const [links, setLinks] = useState<FooterLink[]>([]);
 
+  // Signed in: the workspace's own links (what its admin saved). Signed out,
+  // or if that call fails: the instance-wide links.
   useEffect(() => {
-    siteSettings.footerLinks().then(setLinks).catch(() => {});
-  }, []);
+    let live = true;
+    const load = () => {
+      const req = token
+        ? siteSettings.workspaceFooterLinks(token).catch(() => siteSettings.footerLinks())
+        : siteSettings.footerLinks();
+      req
+        .then((l) => live && setLinks(Array.isArray(l) ? l.filter((x) => isSafeLink(x?.url)) : []))
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener(FOOTER_LINKS_CHANGED, load);
+    return () => {
+      live = false;
+      window.removeEventListener(FOOTER_LINKS_CHANGED, load);
+    };
+  }, [token]);
 
   const themeOptions = [
     { value: 'light' as const, label: 'Light', icon: SunIcon },

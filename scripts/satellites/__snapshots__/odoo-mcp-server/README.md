@@ -7,7 +7,7 @@ Odoo MCP Server gives Claude, ChatGPT, Copilot and Cursor 11 tools for Odoo: par
 **Last verified:** 2026-09-26 against a production Odoo 19 Online database (read tools called through AnythingMCP: partners, sales orders, invoices, search_count, fields_get).  
 **Adapter synced:** <!-- synced -->2026-09-26
 
-Maintained by [@keysersoft](https://github.com/keysersoft), an AnythingMCP maintainer. Built on [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp) by helpcode.ai.
+Maintained by [@helpcodeai](https://github.com/helpcodeai), an AnythingMCP maintainer. Built on [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp) by helpcode.ai.
 
 ## Quick start (AnythingMCP Cloud)
 
@@ -22,7 +22,7 @@ AnythingMCP Cloud is the same open-source code, operated by helpcode.ai in Frank
 Needs Docker 24+, openssl and Node 18+.
 
 ```bash
-git clone https://github.com/keysersoft/odoo-mcp-server.git
+git clone https://github.com/helpcodeai/odoo-mcp-server.git
 cd odoo-mcp-server
 ./scripts/install.sh
 ```
@@ -142,8 +142,8 @@ The API key inherits its owner's access rights and record rules. A restricted us
 ## Related
 
 - [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server): ERP MCP server: connect 17 ERPs (SAP, Odoo, JTL-Wawi, Xentral, weclapp, ERPNext…) to Claude & ChatGPT. Self-hosted or cloud.
-- [erpnext-mcp-server](https://github.com/keysersoft/erpnext-mcp-server): ERPNext MCP server: connect ERPNext/Frappe to Claude & ChatGPT. Read and write any DocType: customers, orders, invoices, stock.
-- [dolibarr-mcp-server](https://github.com/keysersoft/dolibarr-mcp-server): Dolibarr MCP server: connect Dolibarr ERP & CRM to Claude & ChatGPT. Third parties, invoices, orders, proposals and stock.
+- [erpnext-mcp-server](https://github.com/helpcodeai/erpnext-mcp-server): ERPNext MCP server: connect ERPNext/Frappe to Claude & ChatGPT. Read and write any DocType: customers, orders, invoices, stock.
+- [dolibarr-mcp-server](https://github.com/helpcodeai/dolibarr-mcp-server): Dolibarr MCP server: connect Dolibarr ERP & CRM to Claude & ChatGPT. Third parties, invoices, orders, proposals and stock.
 - [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server): SAP Business One MCP server: Claude & ChatGPT read partners, items, orders, invoices, payments and journal entries, and create sales orders.
 - [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp): the open-source MCP server and gateway this repository is built on.
 

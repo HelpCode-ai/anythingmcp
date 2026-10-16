@@ -1,0 +1,910 @@
+{
+  "slug": "grafana",
+  "name": "Grafana",
+  "description": "Let your AI read your Grafana: search dashboards and see their panels and queries, query Prometheus, Loki and SQL data sources, see which alerts are firing and how the rules are defined, read and add annotations, and list contact points, users and teams. Works with Grafana Cloud and self-hosted Grafana.",
+  "instructions": "## Grafana\nThis connector works with one Grafana organization, on **Grafana Cloud** or a **self-hosted** Grafana, through the Grafana HTTP API with a service account token: dashboards and folders, data sources and queries against them (Prometheus, Loki, SQL...), alert rules and the alerts firing now, annotations, contact points, and the organization's users and teams. The only change it can make is adding an annotation.\n\n**Setup (about 3 minutes)**\n1. Set `GRAFANA_URL` to the address you open Grafana at, without a trailing slash: `https://<your-stack>.grafana.net` on Grafana Cloud, or for example `https://grafana.example.com` (or `https://example.com/grafana` when it runs under a path) when self-hosted. On AnythingMCP Cloud the instance must be reachable from the internet.\n2. In Grafana open **Administration, Users and access, Service accounts**, click **Add service account**, give it a name (for example AnythingMCP) and the role **Viewer**. Viewer is enough for every read here except users and teams, which need **Admin**. Adding annotations needs **Editor**.\n3. Open the service account, click **Add service account token**, pick an expiry and copy the token (it starts with `glsa_` and is shown once). Paste it into `GRAFANA_SERVICE_ACCOUNT_TOKEN`. It is sent as `Authorization: Bearer <token>` and only reaches the organization the service account belongs to.\n4. Check the setup with `grafana_get_current_org`.\n\n**How to work**\n1. Find dashboards with `grafana_search` (or browse `grafana_list_folders`), then `grafana_get_dashboard` for its panels and their queries.\n2. Data: `grafana_list_datasources` for the uid and type (`grafana_get_datasource` for one data source's settings), then `grafana_query_datasource`. Prometheus: `expr` = `sum by (job) (rate(http_requests_total[5m]))`, `from` = `now-1h`, `instant` = true for the current value only. Loki: `expr` = `{app=\"api\"} |= \"error\"` with `max_lines`, or a metric query such as `sum(count_over_time({app=\"api\"} |= \"error\" [5m]))`. SQL data sources: `raw_sql` instead of expr. A panel's own query from `grafana_get_dashboard` can be run the same way; replace dashboard variables such as `$job` or `$__rate_interval` with real values first.\n3. Alerting: `grafana_list_firing_alerts` for what fires now, `grafana_list_alert_rules` and `grafana_get_alert_rule` for the rule definitions, `grafana_list_contact_points` for where notifications go.\n4. Annotations: `grafana_list_annotations` for deployments and incidents marked on graphs; `grafana_create_annotation` to add one.\n5. People: `grafana_list_org_users` and `grafana_search_teams` (Admin role).\n6. `grafana_get_health` shows the version (no token needed).\n\n**Adding an annotation is visible to everyone: confirm first.** Before `grafana_create_annotation`, show the user the text, time and tags and wait for their yes. Nothing here changes dashboards, data sources or alert rules, or deletes anything.\n\n**Times**: annotations take and return epoch milliseconds; queries take relative times such as `now-6h` or epoch milliseconds. Query results give times as epoch milliseconds.\n\n**Limits**: query answers are cut at about 60 KB; aggregate in the query (sum, topk, rate) and keep ranges short. Dashboards saved in the newer v2 schema (Grafana 12 dashboards with tabs or auto grid layouts) may not be readable through this API; Grafana then answers with an error naming the new API.\n\n**Common errors**\n- 401 `Invalid API key`: the token is wrong, expired or deleted, or `GRAFANA_URL` points at another stack.\n- 403 `You'll need additional permissions`: the service account's role is too low (Admin for users and teams, Editor for annotations), or on Grafana Cloud and Enterprise it lacks query permission on that data source.\n- 404: no dashboard, data source or rule with that uid in this organization, or a wrong `GRAFANA_URL` path.\n- 400 on a query: the expression is not valid for that data source; the message says why.\n\n**Out of scope here**: creating or changing dashboards, data sources, alert rules, contact points, silences and users; Grafana OnCall and Incident; the Grafana Cloud stack API; all deletes.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "grafana",
+  "docsUrl": "https://grafana.com/docs/grafana/latest/developers/http_api/",
+  "prerequisites": "A Grafana Cloud stack or a self-hosted Grafana reachable over HTTPS, and a service account with the Viewer role (Admin to list users and teams, Editor to add annotations) and a token for it. About 3 minutes.",
+  "requiredEnvVars": [
+    "GRAFANA_URL",
+    "GRAFANA_SERVICE_ACCOUNT_TOKEN"
+  ],
+  "envVarMeta": {
+    "GRAFANA_URL": {
+      "label": "Grafana URL",
+      "kind": "address",
+      "help": "The address you open Grafana at, without a trailing slash: https://your-stack.grafana.net on Grafana Cloud, or your own Grafana's address.",
+      "example": "https://your-stack.grafana.net",
+      "pattern": "^https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Enter the full address starting with https://, without a trailing slash, e.g. https://your-stack.grafana.net."
+    },
+    "GRAFANA_SERVICE_ACCOUNT_TOKEN": {
+      "label": "Service account token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Administration, Users and access, Service accounts, Add service account (role Viewer), then Add service account token. The token starts with glsa_ and is shown once.",
+      "link": "https://grafana.com/docs/grafana/latest/administration/service-accounts/",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token (it starts with glsa_), without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Grafana refused the token: it is wrong, expired or deleted, or GRAFANA_URL points at another Grafana. Create a new token under Administration, Users and access, Service accounts.",
+    "403": "Grafana accepted the token but its role is too low for this request. Viewer covers the reads; users and teams need Admin, annotations need Editor.",
+    "404": "Nothing answered at this address. Check GRAFANA_URL: the address you open Grafana at, without /api and without a trailing slash.",
+    "429": "Grafana is rate limiting this token. Wait a moment and verify again."
+  },
+  "probe": {
+    "tool": "grafana_get_current_org"
+  },
+  "connector": {
+    "name": "Grafana HTTP API",
+    "type": "REST",
+    "baseUrl": "{{GRAFANA_URL}}/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{GRAFANA_SERVICE_ACCOUNT_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/org"
+  },
+  "tools": [
+    {
+      "name": "grafana_get_health",
+      "description": "Check that the Grafana instance is up: database state, Grafana version and commit. Grafana answers this without a token, so it does not prove the token works; grafana_get_current_org does. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/health"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "database": "$.database",
+            "version": "$.version",
+            "commit": "$.commit"
+          }
+        }
+      }
+    },
+    {
+      "name": "grafana_get_current_org",
+      "description": "Read the Grafana organization the service account token belongs to: id and name. A quick check that the instance URL and token work. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/org"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name"
+          }
+        }
+      }
+    },
+    {
+      "name": "grafana_search",
+      "description": "Search dashboards and folders by title, tag or folder: uid, title, type (dash-db for dashboards, dash-folder for folders), tags, folder and URL path. The uid is what grafana_get_dashboard takes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text the title should contain. Omit to list everything."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "dash-db",
+              "dash-folder"
+            ],
+            "description": "dash-db for dashboards only, dash-folder for folders only."
+          },
+          "tag": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only dashboards with all of these tags."
+          },
+          "folder_uids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only dashboards in these folders (uids from grafana_list_folders)."
+          },
+          "starred": {
+            "type": "boolean",
+            "description": "Only dashboards the service account starred."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Results per page (default 50)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1, with limit as the page size."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "query": "$query",
+          "type": "$type",
+          "tag": "$tag",
+          "folderUIDs": "$folder_uids",
+          "starred": "$starred",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "results": {
+              "$from": "$[*]",
+              "$select": {
+                "uid": "uid",
+                "title": "title",
+                "type": "type",
+                "tags": "tags",
+                "folderUid": "folderUid",
+                "folderTitle": "folderTitle",
+                "url": "url"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "grafana_list_folders",
+      "description": "List folders: uid and title, top level by default or the subfolders of a parent. Folder uids narrow grafana_search. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_uid": {
+            "type": "string",
+            "description": "List the subfolders of this folder uid (nested folders)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 100,
+            "description": "Folders per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folders",
+        "queryParams": {
+          "parentUid": "$parent_uid",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "folders": {
+              "$from": "$[*]",
+              "$select": {
+                "uid": "uid",
+                "title": "title",
+                "parentUid": "parentUid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "grafana_get_dashboard",
+      "description": "Read a dashboard by uid in a compact form: title, tags, folder, time range, variables (name, type, current value) and panels with id, title, type, data source and their queries (PromQL, LogQL, SQL), including the panels inside collapsed rows. Layout and styling are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uid": {
+            "type": "string",
+            "description": "Dashboard uid from grafana_search (the part after /d/ in a dashboard URL)."
+          }
+        },
+        "required": [
+          "uid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dashboards/uid/{uid}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "uid": "$.dashboard.uid",
+            "title": "$.dashboard.title",
+            "description": "$.dashboard.description",
+            "tags": "$.dashboard.tags",
+            "folderUid": "$.meta.folderUid",
+            "folderTitle": "$.meta.folderTitle",
+            "url": "$.meta.url",
+            "updated": "$.meta.updated",
+            "updatedBy": "$.meta.updatedBy",
+            "version": "$.dashboard.version",
+            "time": "$.dashboard.time",
+            "refresh": "$.dashboard.refresh",
+            "variables": {
+              "$from": "$.dashboard.templating.list[*]",
+              "$select": {
+                "name": "name",
+                "type": "type",
+                "label": "label",
+                "query": "query",
+                "current": "current.text",
+                "datasource": "datasource.uid"
+              }
+            },
+            "panels": {
+              "$from": "$.dashboard.panels[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "type": "type",
+                "datasource": "datasource.uid",
+                "description": "description",
+                "queries": {
+                  "$from": "targets[*]",
+                  "$select": {
+                    "refId": "refId",
+                    "expr": "expr",
+                    "query": "query",
+                    "rawSql": "rawSql",
+                    "datasource": "datasource.uid",
+                    "hide": "hide"
+                  }
+                },
+                "rowPanels": {
+                  "$from": "panels[*]",
+                  "$select": {
+                    "id": "id",
+                    "title": "title",
+                    "type": "type",
+                    "datasource": "datasource.uid",
+                    "queries": {
+                      "$from": "targets[*]",
+                      "$select": {
+                        "refId": "refId",
+                        "expr": "expr",
+                        "query": "query",
+                        "rawSql": "rawSql",
+                        "datasource": "datasource.uid",
+                        "hide": "hide"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "grafana_list_datasources",
+      "description": "List the data sources: uid, name, type (prometheus, loki, postgres...), URL, access mode and which one is the default. The uid is what grafana_query_datasource takes. No credentials are returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasources"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "datasources": {
+              "$from": "$[*]",
+              "$select": {
+                "uid": "uid",
+                "name": "name",
+                "type": "type",
+                "typeName": "typeName",
+                "url": "url",
+                "access": "access",
+                "database": "database",
+                "isDefault": "isDefault",
+                "readOnly": "readOnly"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "grafana_get_datasource",
+      "description": "Read one data source by uid: name, type, URL, access mode, default flag and its non-secret settings (jsonData). Passwords and keys are stored encrypted by Grafana and never returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uid": {
+            "type": "string",
+            "description": "Data source uid from grafana_list_datasources."
+          }
+        },
+        "required": [
+          "uid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasources/uid/{uid}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "uid": "$.uid",
+            "name": "$.name",
+            "type": "$.type",
+            "typeName": "$.typeName",
+            "url": "$.url",
+            "access": "$.access",
+            "database": "$.database",
+            "isDefault": "$.isDefault",
+            "readOnly": "$.readOnly",
+            "jsonData": "$.jsonData",
+            "version": "$.version"
+          },
+          "exclude": [
+            "secureJsonData",
+            "password",
+            "basicAuthPassword"
+          ],
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "grafana_query_datasource",
+      "description": "Run a query against a data source through Grafana and return the result frames: a PromQL query for Prometheus or Mimir, a LogQL query for Loki, or SQL for a SQL data source. Each frame has the field names and labels (schema.fields) and the values column by column (data.values); times are epoch milliseconds. Large answers are cut at about 60 KB, so use short ranges, aggregations and max_lines. Read-only (the API takes the query in a POST body).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "datasource_uid": {
+            "type": "string",
+            "description": "Data source uid from grafana_list_datasources."
+          },
+          "expr": {
+            "type": "string",
+            "description": "PromQL (Prometheus, Mimir) or LogQL (Loki) expression, e.g. sum by (job) (rate(http_requests_total[5m])) or {app=\"api\"} |= \"error\"."
+          },
+          "raw_sql": {
+            "type": "string",
+            "description": "SQL for a SQL data source (PostgreSQL, MySQL, Microsoft SQL Server) instead of expr."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "table",
+              "time_series"
+            ],
+            "description": "SQL result format (default table)."
+          },
+          "from": {
+            "type": "string",
+            "default": "now-1h",
+            "description": "Start of the range: relative such as now-1h or now-7d, or epoch milliseconds as a string. Default now-1h."
+          },
+          "to": {
+            "type": "string",
+            "default": "now",
+            "description": "End of the range, e.g. now (default) or epoch milliseconds."
+          },
+          "instant": {
+            "type": "boolean",
+            "description": "Prometheus: true for one value per series at the end of the range instead of a series over time."
+          },
+          "query_type": {
+            "type": "string",
+            "enum": [
+              "range",
+              "instant"
+            ],
+            "description": "Loki: range (default, log lines or values over time) or instant (one value per series)."
+          },
+          "max_lines": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 100,
+            "description": "Loki log queries: most log lines to return (default 100)."
+          },
+          "max_data_points": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 11000,
+            "default": 200,
+            "description": "Most points per series (default 200); fewer points mean a coarser step."
+          },
+          "interval_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Step between points in milliseconds, e.g. 60000 for one minute."
+          }
+        },
+        "required": [
+          "datasource_uid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ds/query",
+        "bodyMapping": {
+          "from": "$from",
+          "to": "$to",
+          "queries": [
+            {
+              "refId": "A",
+              "datasource": {
+                "uid": "$datasource_uid"
+              },
+              "expr": "$expr",
+              "rawSql": "$raw_sql",
+              "format": "$format",
+              "instant": "$instant",
+              "queryType": "$query_type",
+              "maxLines": "$max_lines",
+              "maxDataPoints": "$max_data_points",
+              "intervalMs": "$interval_ms"
+            }
+          ]
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "results[*].frames[*].schema.meta.stats",
+            "results[*].frames[*].schema.fields[*].typeInfo",
+            "results[*].frames[*].schema.fields[*].config"
+          ],
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "grafana_list_alert_rules",
+      "description": "List the Grafana-managed alert rules: uid, title, folder, rule group, paused or not, pending period (for), labels, summary, what happens on no data or errors, and last update. Rule definitions only; which alerts fire right now is grafana_list_firing_alerts. Answers over about 60 KB keep the first rules and say how many were left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/provisioning/alert-rules"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[*].{uid: uid, title: title, folderUID: folderUID, ruleGroup: ruleGroup, isPaused: isPaused, \"for\": \"for\", labels: labels, summary: annotations.summary, noDataState: noDataState, execErrState: execErrState, updated: updated}",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "grafana_get_alert_rule",
+      "description": "Read one alert rule by uid: title, folder, group, condition, the queries and expressions it evaluates (data source uid, expression, time range), pending period, labels, annotations and notification settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uid": {
+            "type": "string",
+            "description": "Alert rule uid from grafana_list_alert_rules (labels.__alert_rule_uid__ on a firing alert)."
+          }
+        },
+        "required": [
+          "uid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/provisioning/alert-rules/{uid}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "uid": "$.uid",
+            "title": "$.title",
+            "folderUID": "$.folderUID",
+            "ruleGroup": "$.ruleGroup",
+            "isPaused": "$.isPaused",
+            "for": "$.for",
+            "labels": "$.labels",
+            "noDataState": "$.noDataState",
+            "execErrState": "$.execErrState",
+            "updated": "$.updated",
+            "condition": "$.condition",
+            "annotations": "$.annotations",
+            "keep_firing_for": "$.keep_firing_for",
+            "notification_settings": "$.notification_settings",
+            "queries": {
+              "$from": "$.data[*]",
+              "$select": {
+                "refId": "refId",
+                "datasourceUid": "datasourceUid",
+                "relativeTimeRange": "relativeTimeRange",
+                "expr": "model.expr",
+                "type": "model.type",
+                "expression": "model.expression",
+                "reducer": "model.reducer",
+                "conditions": "model.conditions"
+              }
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "grafana_list_firing_alerts",
+      "description": "List the alert instances in Grafana's Alertmanager, by default the active ones (firing): alert name and labels, summary and description, state (active, suppressed, unprocessed), who silenced or inhibited it, when it started, contact points and a link to the rule. Answers over about 60 KB keep the first alerts and say how many were left out; narrow them with filter. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include active alerts (default true)."
+          },
+          "silenced": {
+            "type": "boolean",
+            "description": "Include silenced alerts (Grafana default true)."
+          },
+          "inhibited": {
+            "type": "boolean",
+            "description": "Include inhibited alerts (Grafana default true)."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label matchers that must all match, e.g. [\"severity=critical\", \"team=~payments.*\"]."
+          },
+          "receiver": {
+            "type": "string",
+            "description": "Regular expression the contact point name must match."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/alertmanager/grafana/api/v2/alerts",
+        "queryParams": {
+          "active": "$active",
+          "silenced": "$silenced",
+          "inhibited": "$inhibited",
+          "filter": "$filter",
+          "receiver": "$receiver"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[*].{alertname: labels.alertname, labels: labels, summary: annotations.summary, description: annotations.description, runbook_url: annotations.runbook_url, state: status.state, silencedBy: status.silencedBy, inhibitedBy: status.inhibitedBy, startsAt: startsAt, updatedAt: updatedAt, receivers: receivers[].name, generatorURL: generatorURL, fingerprint: fingerprint}",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "grafana_list_annotations",
+      "description": "List annotations (event markers on graphs such as deployments or incidents, and alert state changes): id, time and end time (epoch milliseconds), text, tags, dashboard and panel, and for alert annotations the old and new state. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "Only annotations after this time, epoch milliseconds."
+          },
+          "to": {
+            "type": "integer",
+            "description": "Only annotations before this time, epoch milliseconds."
+          },
+          "dashboard_uid": {
+            "type": "string",
+            "description": "Only annotations of this dashboard."
+          },
+          "panel_id": {
+            "type": "integer",
+            "description": "Only annotations of this panel (with dashboard_uid)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only organization annotations with these tags."
+          },
+          "match_any": {
+            "type": "boolean",
+            "description": "true: any of the tags is enough; default: all tags must match."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "annotation",
+              "alert"
+            ],
+            "description": "annotation for user-created ones, alert for alert state changes."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 100,
+            "description": "Most annotations to return (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/annotations",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "dashboardUID": "$dashboard_uid",
+          "panelId": "$panel_id",
+          "tags": "$tags",
+          "matchAny": "$match_any",
+          "type": "$type",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "annotations": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "time": "time",
+                "timeEnd": "timeEnd",
+                "text": "text",
+                "tags": "tags",
+                "dashboardUID": "dashboardUID",
+                "panelId": "panelId",
+                "alertName": "alertName",
+                "newState": "newState",
+                "prevState": "prevState",
+                "login": "login"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "grafana_create_annotation",
+      "description": "Add an annotation (an event marker such as a deployment, incident or maintenance window) that shows on graphs for everyone who opens the dashboard. Without dashboard_uid it is an organization annotation, shown on dashboards that query annotations by tag. Needs the Editor role. Before calling, show the user the text, time and tags and wait for their yes. Returns the new annotation id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text of the annotation."
+          },
+          "time": {
+            "type": "integer",
+            "description": "When it happened, epoch milliseconds. Default: now."
+          },
+          "time_end": {
+            "type": "integer",
+            "description": "End time in epoch milliseconds, for a region instead of a point."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags such as [\"deploy\", \"api\"]."
+          },
+          "dashboard_uid": {
+            "type": "string",
+            "description": "Dashboard to attach it to (optional)."
+          },
+          "panel_id": {
+            "type": "integer",
+            "description": "Panel of that dashboard to attach it to (optional)."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/annotations",
+        "bodyMapping": {
+          "text": "$text",
+          "time": "$time",
+          "timeEnd": "$time_end",
+          "tags": "$tags",
+          "dashboardUID": "$dashboard_uid",
+          "panelId": "$panel_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "message": "$.message"
+          }
+        }
+      }
+    },
+    {
+      "name": "grafana_list_org_users",
+      "description": "List the users of the organization: user id, login, email, name, role (Viewer, Editor, Admin), last seen and disabled flag. Needs the Admin role (org.users:read); a Viewer token gets 403. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Only users whose login, email or name contains this text."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 100,
+            "description": "Most users to return (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/org/users",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "users": {
+              "$from": "$[*]",
+              "$select": {
+                "userId": "userId",
+                "login": "login",
+                "email": "email",
+                "name": "name",
+                "role": "role",
+                "lastSeenAt": "lastSeenAt",
+                "lastSeenAtAge": "lastSeenAtAge",
+                "isDisabled": "isDisabled"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "grafana_search_teams",
+      "description": "Search the teams of the organization: id, uid, name, email and member count. Needs the Admin role or the teams:read permission; a Viewer token gets 403. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Only teams whose name contains this text."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 100,
+            "description": "Teams per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1; totalCount says how many teams there are."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/search",
+        "queryParams": {
+          "query": "$query",
+          "perpage": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "totalCount": "$.totalCount",
+            "page": "$.page",
+            "perPage": "$.perPage",
+            "teams": {
+              "$from": "$.teams[*]",
+              "$select": {
+                "id": "id",
+                "uid": "uid",
+                "name": "name",
+                "email": "email",
+                "memberCount": "memberCount"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "grafana_list_contact_points",
+      "description": "List the alerting contact points (where notifications go): uid, name, integration type (email, slack, pagerduty, webhook...) and whether resolve messages are off. Their settings are left out because they hold webhook URLs, keys and passwords. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only the contact point with exactly this name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/provisioning/contact-points",
+        "queryParams": {
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "contact_points": {
+              "$from": "$[*]",
+              "$select": {
+                "uid": "uid",
+                "name": "name",
+                "type": "type",
+                "disableResolveMessage": "disableResolveMessage"
+              }
+            }
+          },
+          "fallbackToRaw": false
+        }
+      }
+    }
+  ]
+}

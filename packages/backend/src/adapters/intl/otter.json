@@ -1,0 +1,391 @@
+{
+  "slug": "otter",
+  "name": "Otter.ai",
+  "aliases": [
+    "Otter AI",
+    "OtterPilot"
+  ],
+  "description": "Let your AI read your Otter.ai meeting notes: list recorded conversations, read Otter's summaries, action items, insights and transcripts, browse channels, and with your confirmation import a recording from a link. Needs an Otter Enterprise workspace.",
+  "instructions": "## Otter.ai\nThis connector reads **Otter.ai** meeting notes through Otter's Public API (`https://api.otter.ai/v1`) with the API key of an Otter user: conversations (recorded meetings) with Otter's summary, action items, insights and outline, the full transcripts, channels and the workspace. It can also import a recording from a link.\n\n**Who can use it**: Otter's Public API is available to **Enterprise workspaces** only. On other plans the Developer tab is missing; if an Enterprise workspace does not show it, the Otter account manager can turn it on.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://otter.ai, click **Integrations** in the left navigation and open the **Developer** tab.\n2. Click **Create key** and copy the key at once: Otter shows it only once. Each user can have two keys.\n3. Paste it into `OTTER_API_KEY`. It is sent as `Authorization: Bearer <key>` and only to Otter.\n4. Check the setup with `otter_list_conversations`.\n\nThe key acts as its user: the connector sees the conversations that user owns, and with `include_shared` or a channel those shared with them.\n\n**Recordings and transcripts are personal data.** They hold what colleagues, customers and other participants said, with their names and email addresses. Only fetch what the user's question needs, prefer the summary and action items over the full transcript, and do not copy transcripts or audio links to other systems unless the user asks for it.\n\n**How to work**\n1. Find conversations: `otter_list_conversations`, newest first, optionally with `include_shared` or a `channel_id` from `otter_list_channels`. While `hasMore` is true, call again with `cursor` = `nextCursor`. There is no search or date filter in the API: page until you reach the dates you need.\n2. `otter_get_conversation` for Otter's summary, action items, insights and outline.\n3. `otter_get_transcript` for what was said, 300 speaker blocks at a time; when `totalBlocks` is above 300, `otter_get_transcript_more` gives blocks 301 to 600. Otter has no further paging.\n4. `otter_get_audio_link` for a download link of the MP3; `otter_list_channel_members` and `otter_get_workspace` for people and the workspace.\n5. `otter_import_recording` creates a conversation from a public file link: confirm the link and name with the user first.\n\n**Limits**: 10 requests a second; more answer 429.\n\n**Errors**\n- 401 `unauthorized`: the key is wrong or deleted, or the workspace has no Public API. Create a new key under Integrations, Developer.\n- 404: wrong conversation or channel id, or the user cannot see it. On `otter_get_workspace` it means the user is not in a workspace.\n- 400: a parameter is invalid (limit 1 to 100, a cursor from another list).\n- 429: too many requests; wait a moment.\n\n**Out of scope here**: searching by keyword or date (the API has none), sharing and editing conversations, and webhooks (set up in Otter's workspace settings, not through this API).",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "otter",
+  "docsUrl": "https://help.otter.ai/hc/en-us/articles/36130822688279-Otter-ai-Public-API",
+  "prerequisites": "An Otter.ai Enterprise workspace and an API key from Integrations, Developer, Create key. About 2 minutes.",
+  "requiredEnvVars": [
+    "OTTER_API_KEY"
+  ],
+  "envVarMeta": {
+    "OTTER_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Otter, Integrations, Developer tab, Create key. Shown only once; Enterprise workspaces only.",
+      "link": "https://otter.ai/",
+      "pattern": "^(?!Bearer\\s)\\S{16,}$",
+      "patternMessage": "Paste only the API key Otter shows, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Otter refused the API key: it is wrong or deleted, or the workspace has no Public API (Enterprise only). Create a new key under Integrations, Developer.",
+    "403": "Otter accepted the key but refused the request. Check that the workspace has the Public API enabled.",
+    "429": "Otter allows 10 requests a second. Wait a moment and verify again."
+  },
+  "probe": {
+    "tool": "otter_list_conversations",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Otter.ai Public API",
+    "type": "REST",
+    "baseUrl": "https://api.otter.ai/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{OTTER_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/conversations?limit=1"
+  },
+  "tools": [
+    {
+      "name": "otter_get_workspace",
+      "description": "Read the Otter workspace of the API key's user: id, name, owner, number of members, handle and type. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspace"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "workspace": {
+              "id": "$.data.id",
+              "name": "$.data.name",
+              "owner": "$.data.owner.name",
+              "ownerEmail": "$.data.owner.email",
+              "memberCount": "$.data.member_count",
+              "handle": "$.data.handle",
+              "type": "$.data.type"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "otter_list_channels",
+      "description": "List the Otter channels of the user, alphabetically: id, name, number of members, owner and visibility (private or workspace). A channel id filters otter_list_conversations. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "channels": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "memberCount": "member_count",
+                "owner": "owner.name",
+                "visibility": "discoverability"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "otter_list_channel_members",
+      "description": "List the members of one Otter channel, alphabetically: user id, name and email. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel id from otter_list_channels."
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/{channel_id}/members"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "members": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "email": "email"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "otter_list_conversations",
+      "description": "List Otter conversations (recorded meetings), newest first: id, title, date, link, owner, calendar guests, join link and Otter's summary. Optionally include conversations shared with the user, or only one channel. Pages with cursor: while hasMore is true, call again with cursor = nextCursor. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_shared": {
+            "type": "boolean",
+            "description": "true: also conversations other people shared with the user. Default false; always on with channel_id."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Only conversations in this channel (id from otter_list_channels)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Conversations per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations",
+        "queryParams": {
+          "include_shared": "$include_shared",
+          "channel_id": "$channel_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "conversations": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "createdAt": "created_at",
+                "url": "url",
+                "owner": "owner.name",
+                "ownerEmail": "owner.email",
+                "summary": "abstract_summary",
+                "guests": "calendar_guests",
+                "joinUrl": "conf_join_url"
+              }
+            },
+            "hasMore": "$.meta.has_more",
+            "nextCursor": "$.meta.next_cursor"
+          }
+        }
+      }
+    },
+    {
+      "name": "otter_get_conversation",
+      "description": "Read one Otter conversation without its full text: title, date, owner, guests, who it is shared with, Otter's summary, the action items with assignee and status, the insights by topic and the outline by section. Use otter_get_transcript for what was said. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from otter_list_conversations."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}",
+        "queryParams": {
+          "include": [
+            "action_items",
+            "insights",
+            "outline"
+          ]
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "conversation": {
+              "id": "$.data.id",
+              "title": "$.data.title",
+              "createdAt": "$.data.created_at",
+              "url": "$.data.url",
+              "owner": "$.data.owner.name",
+              "ownerEmail": "$.data.owner.email",
+              "guests": "$.data.calendar_guests",
+              "sharedWith": "$.data.shared_emails[*].email",
+              "processStatus": "$.data.process_status",
+              "summary": "$.data.abstract_summary"
+            },
+            "actionItems": {
+              "$from": "$.data.relationships.action_items[*]",
+              "$select": {
+                "text": "text",
+                "assignee": "assignee.name",
+                "assigneeEmail": "assignee.email",
+                "completed": "status.completed"
+              }
+            },
+            "insights": "$.data.relationships.insights",
+            "outline": "$.data.relationships.outline"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "otter_get_transcript",
+      "description": "Read what was said in an Otter conversation, speaker blocks 1 to 300: each block is the speaker name, the time into the recording and what they said. totalBlocks tells how long it is; when it is over 300, read the rest with otter_get_transcript_more. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from otter_list_conversations."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}",
+        "queryParams": {
+          "include": "transcript"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: data.id, title: data.title, totalBlocks: length(split(data.relationships.transcript.content || '', '\n\n')[?@ != '']), firstBlock: `1`, blocks: (split(data.relationships.transcript.content || '', '\n\n')[?@ != ''])[0:300]}",
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "otter_get_transcript_more",
+      "description": "Read speaker blocks 301 to 600 of a long Otter conversation, after otter_get_transcript showed totalBlocks over 300. Otter sends the text in one piece and there are no further pages: for longer meetings use the summary, action items and outline of otter_get_conversation. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from otter_list_conversations."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}",
+        "queryParams": {
+          "include": "transcript"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: data.id, title: data.title, totalBlocks: length(split(data.relationships.transcript.content || '', '\n\n')[?@ != '']), firstBlock: `301`, blocks: (split(data.relationships.transcript.content || '', '\n\n')[?@ != ''])[300:600]}",
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "otter_get_audio_link",
+      "description": "Get a download link for the MP3 recording of an Otter conversation. The link gives access to the recording itself: only share it with the user who asked. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from otter_list_conversations."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}/audio"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "audioUrl": "$.data.url"
+          }
+        }
+      }
+    },
+    {
+      "name": "otter_import_recording",
+      "description": "Create a new Otter conversation from a recording at a public link (for example a call from a dialer), so Otter transcribes and summarises it. Adds a conversation to the user's account: confirm the link and the name with the user before calling it and wait for their yes. Returns the status of the import.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_url": {
+            "type": "string",
+            "description": "Public link that downloads the audio or video file.",
+            "format": "uri"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the new conversation."
+          }
+        },
+        "required": [
+          "file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations",
+        "bodyMapping": {
+          "file": "$file_url",
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "status": "$.status",
+            "completedAt": "$.completed_at",
+            "file": "$.file"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    }
+  ]
+}

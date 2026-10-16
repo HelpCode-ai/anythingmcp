@@ -1,0 +1,970 @@
+{
+  "slug": "pinecone",
+  "name": "Pinecone",
+  "description": "Let your AI search your Pinecone vector database: list indexes, run semantic and keyword search, query and fetch records, check namespaces and stats, embed and rerank with Pinecone Inference, chat with your Pinecone Assistants and, with your confirmation, add records.",
+  "instructions": "## Pinecone\nThis connector calls the **Pinecone API** (version 2026-07) with the user's API key: indexes and their statistics, semantic and keyword search, vector queries, fetching and listing records, namespaces, Pinecone Inference (embedding and reranking) and Pinecone Assistant chat. With the user's confirmation it can add text records and change metadata.\n\n**Setup (about 2 minutes)**\n1. Open the Pinecone console (https://app.pinecone.io), pick the project, open **API keys** and click **+ API key**.\n2. Choose the permissions. For read-only use pick **ProjectViewer** (or ControlPlaneViewer plus DataPlaneViewer); search, embedding, reranking and assistant chat all work with it. Add write access (ProjectEditor or DataPlaneEditor) only if the AI may write records. Starter and Builder plans only offer **All**.\n3. Copy the key (Pinecone shows it once, it usually starts with `pcsk_`) into `PINECONE_API_KEY`. It is sent as the `Api-Key` header with `X-Pinecone-Api-Version: 2026-07`. One key covers one project.\n\n**Index hosts**: every index has its own data host, e.g. `my-index-abc1234.svc.aped-4627-b74a.pinecone.io`. Call `pinecone_list_indexes` or `pinecone_describe_index` first and pass their `index_host` value (the host without `.pinecone.io`) to every data tool. The connector only ever sends the key to `*.pinecone.io`.\n\n**Which tool**\n- `pinecone_list_indexes`, `pinecone_describe_index`: names, `index_host`, schema (dimension, metric, embedding model) and status. `pinecone_describe_index_stats` and `pinecone_list_namespaces` give record counts.\n- Text search depends on the index type, which the schema shows:\n  - integrated index (a `semantic_text` field, created with a hosted model): `pinecone_search_records` with plain text;\n  - document index (typed `string` fields): `pinecone_search_documents` with `text` (keyword) or `embed` (semantic) clauses;\n  - index of the user's own vectors (`_values` field): `pinecone_query_vectors` by record `id`, or with a vector from `pinecone_embed` using the same model as the index.\n- `pinecone_fetch_vectors` and `pinecone_list_vector_ids` read records by id; vector values are never passed on.\n- `pinecone_list_models`, `pinecone_embed`, `pinecone_rerank`: Pinecone Inference.\n- `pinecone_list_assistants`, `pinecone_chat_assistant`: questions to a Pinecone Assistant over its uploaded files, with citations.\n\n**Writes**: `pinecone_upsert_records` (text records into an integrated index, as newline-delimited JSON) and `pinecone_update_metadata` change data; always confirm with the user first. `pinecone_delete_vectors` is installed switched off. Writes are visible to searches after a few seconds.\n\n**Costs**: searches, queries and fetches use read units, writes use write units, embedding, reranking and assistant chat are billed per token or request on the user's Pinecone plan. Keep `top_k` small.\n\n**Errors**: 401 \"Invalid API key\" or \"Wrong API key\" means the key is wrong, deleted or from another project. 403 means the key's role does not allow this (e.g. a viewer key writing). 404 is an unknown index, namespace or assistant; a DNS or connection error on a data tool usually means `index_host` was passed with `.pinecone.io` or `https://`. 400 on `pinecone_search_records` with text means the index is not an integrated index. 429 is a rate or plan limit.\n\n**Out of scope here**: creating, configuring or deleting indexes, collections and backups, bulk imports, uploading or deleting assistant files, and project or key administration.",
+  "region": "intl",
+  "category": "database",
+  "icon": "pinecone",
+  "docsUrl": "https://docs.pinecone.io/reference/api/introduction",
+  "prerequisites": "A Pinecone account with a project and an API key from the Pinecone console (ProjectViewer for read-only use). About 2 minutes.",
+  "requiredEnvVars": [
+    "PINECONE_API_KEY"
+  ],
+  "envVarMeta": {
+    "PINECONE_API_KEY": {
+      "label": "Pinecone API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Pinecone console > your project > API keys > + API key. Choose ProjectViewer for read-only access, or an editor role if the AI may write records. The key works for one project.",
+      "link": "https://app.pinecone.io/organizations/-/projects/-/keys",
+      "example": "pcsk_xxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "pattern": "^(?!Bearer\\s)[A-Za-z0-9_-]{30,}$",
+      "patternMessage": "Paste only the key as Pinecone shows it (usually starting with pcsk_), without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Pinecone refused the API key: it is wrong, deleted or belongs to another project. Create a new key in the Pinecone console under API keys.",
+    "403": "The API key's role does not allow this request, e.g. a viewer key used for a write. Create a key with the needed role.",
+    "404": "Pinecone does not know this index, namespace or assistant. Check the name with pinecone_list_indexes or pinecone_list_assistants.",
+    "rate_limited": "Pinecone is rate limiting this project or the plan's limit is reached. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "pinecone_list_indexes"
+  },
+  "connector": {
+    "name": "Pinecone",
+    "type": "REST",
+    "baseUrl": "https://api.pinecone.io",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Api-Key",
+      "apiKey": "{{PINECONE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "X-Pinecone-Api-Version": "2026-07",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/indexes"
+  },
+  "tools": [
+    {
+      "name": "pinecone_list_indexes",
+      "description": "List the indexes of the Pinecone project: name, index_host (pass it to every data tool), readiness, deployment (serverless cloud and region, pod or BYOC), schema (vector dimension and metric, the embedding model of integrated indexes, text and metadata fields), deletion protection and tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/indexes"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "exclude": [
+            "indexes[*].private_host"
+          ],
+          "expression": "{indexes: indexes[:200].{name: name, index_host: replace(replace(host, 'https://', ''), '.pinecone.io', ''), host: host, ready: status.ready, state: status.state, deployment: deployment, schema: schema, deletion_protection: deletion_protection, tags: tags}}",
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "pinecone_describe_index",
+      "description": "Describe one index: index_host (pass it to the data tools), readiness, deployment, schema (dimension, metric, embedding model and field map of integrated indexes, text and metadata fields), read capacity, deletion protection and tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "The index name, from pinecone_list_indexes."
+          }
+        },
+        "required": [
+          "index_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/indexes/{index_name}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "exclude": [
+            "private_host"
+          ],
+          "expression": "{name: name, index_host: replace(replace(host, 'https://', ''), '.pinecone.io', ''), host: host, ready: status.ready, state: status.state, deployment: deployment, read_capacity: read_capacity, schema: schema, deletion_protection: deletion_protection, tags: tags, source_collection: source_collection, source_backup_id: source_backup_id}",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "pinecone_describe_index_stats",
+      "description": "Get statistics of an index: total record count, record count per namespace, dimension, metric, vector type and fullness (pod indexes). Optionally count only records matching a metadata filter (pod indexes). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_host": {
+            "type": "string",
+            "description": "The index_host value returned by pinecone_list_indexes or pinecone_describe_index: the index host without https:// and without the trailing .pinecone.io, e.g. my-index-abc1234.svc.aped-4627-b74a."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Metadata filter, e.g. {\"genre\": {\"$eq\": \"drama\"}, \"year\": {\"$gte\": 2020}}. Operators: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $and, $or."
+          }
+        },
+        "required": [
+          "index_host"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://{index_host}.pinecone.io/describe_index_stats",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "filter": "$filter"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "usage"
+          ],
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pinecone_list_namespaces",
+      "description": "List the namespaces of an index with their record counts, 100 per page; call again with pagination_token = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_host": {
+            "type": "string",
+            "description": "The index_host value returned by pinecone_list_indexes or pinecone_describe_index: the index host without https:// and without the trailing .pinecone.io, e.g. my-index-abc1234.svc.aped-4627-b74a."
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Only namespaces whose name starts with this."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Namespaces per page, 1 to 100 (default 100)."
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "pagination.next from the previous page."
+          }
+        },
+        "required": [
+          "index_host"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://{index_host}.pinecone.io/namespaces",
+        "encodePathParams": true,
+        "queryParams": {
+          "prefix": "$prefix",
+          "limit": "$limit",
+          "paginationToken": "$pagination_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "namespaces": {
+              "$from": "$.namespaces[*]",
+              "$select": {
+                "name": "name",
+                "record_count": "record_count"
+              }
+            },
+            "total_count": "$.total_count",
+            "pagination": "$.pagination"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "pinecone_search_records",
+      "description": "Semantic search with plain text on an integrated index (one created with a hosted embedding model; its schema shows a semantic_text field): Pinecone embeds the text and returns the most similar records with _id, _score and their fields, optionally reranked. At most 100 hits are passed on. For indexes that store your own vectors use pinecone_query_vectors; for document indexes use pinecone_search_documents. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_host": {
+            "type": "string",
+            "description": "The index_host value returned by pinecone_list_indexes or pinecone_describe_index: the index host without https:// and without the trailing .pinecone.io, e.g. my-index-abc1234.svc.aped-4627-b74a."
+          },
+          "namespace": {
+            "type": "string",
+            "default": "__default__",
+            "description": "Namespace to use (default __default__, the default namespace). See pinecone_list_namespaces."
+          },
+          "text": {
+            "type": "string",
+            "description": "The search text, e.g. a question in natural language."
+          },
+          "top_k": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Number of records to return, 1 to 100 (default 10)."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Metadata filter, e.g. {\"genre\": {\"$eq\": \"drama\"}, \"year\": {\"$gte\": 2020}}. Operators: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $and, $or."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only return these record fields, e.g. [\"chunk_text\", \"title\"]. Default: all stored fields."
+          },
+          "rerank": {
+            "type": "object",
+            "description": "Rerank the hits, e.g. {\"model\": \"bge-reranker-v2-m3\", \"rank_fields\": [\"chunk_text\"], \"top_n\": 5}. Uses Pinecone Inference and costs extra."
+          }
+        },
+        "required": [
+          "index_host",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://{index_host}.pinecone.io/records/namespaces/{namespace}/search",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": {
+            "inputs": {
+              "text": "$text"
+            },
+            "top_k": "$top_k",
+            "filter": "$filter"
+          },
+          "fields": "$fields",
+          "rerank": "$rerank"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{hits: result.hits[:100], namespace: namespace, usage: usage}",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pinecone_search_documents",
+      "description": "Search a document index (the newer index type with a typed schema) with one or more scoring methods: full-text (type text or query_string) on string fields, text embedded by a field's own model (embed, sparse_embed), or a vector you pass. Returns the matching documents with _id, _score and the fields asked for, at most 100. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_host": {
+            "type": "string",
+            "description": "The index_host value returned by pinecone_list_indexes or pinecone_describe_index: the index host without https:// and without the trailing .pinecone.io, e.g. my-index-abc1234.svc.aped-4627-b74a."
+          },
+          "namespace": {
+            "type": "string",
+            "default": "__default__",
+            "description": "Namespace to use (default __default__, the default namespace). See pinecone_list_namespaces."
+          },
+          "score_by": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Scoring clauses, e.g. [{\"type\": \"text\", \"fields\": [\"content\"], \"query\": \"refund policy\"}] for keyword search or [{\"type\": \"embed\", \"fields\": [\"body\"], \"query\": \"how do refunds work\"}] for semantic search. Several clauses only when all are text or query_string."
+          },
+          "top_k": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Number of documents to return, 1 to 100 (default 10)."
+          },
+          "include_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return per match, e.g. [\"title\", \"content\"]. Without it only _id and _score come back. Avoid [\"*\"] on indexes with vector fields."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Metadata filter, e.g. {\"genre\": {\"$eq\": \"drama\"}, \"year\": {\"$gte\": 2020}}. Operators: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $and, $or."
+          }
+        },
+        "required": [
+          "index_host",
+          "score_by"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://{index_host}.pinecone.io/namespaces/{namespace}/documents/search",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "score_by": "$score_by",
+          "top_k": "$top_k",
+          "include_fields": "$include_fields",
+          "filter": "$filter"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{matches: matches[:100], namespace: namespace, usage: usage}",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pinecone_query_vectors",
+      "description": "Find the records most similar to a stored record (by id) or to a query vector you pass, optionally with a metadata filter. Returns ids, scores and metadata; vector values are never returned. At most 100 matches. For text queries on integrated indexes pinecone_search_records is simpler. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_host": {
+            "type": "string",
+            "description": "The index_host value returned by pinecone_list_indexes or pinecone_describe_index: the index host without https:// and without the trailing .pinecone.io, e.g. my-index-abc1234.svc.aped-4627-b74a."
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Namespace to use. Leave out for the default namespace (named __default__ in listings)."
+          },
+          "id": {
+            "type": "string",
+            "description": "Use the vector of this stored record as the query (give either id or vector)."
+          },
+          "vector": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "description": "A query vector with exactly the index's dimension, e.g. from pinecone_embed."
+          },
+          "sparse_vector": {
+            "type": "object",
+            "description": "Optional sparse query vector for hybrid or sparse indexes: {\"indices\": [10, 45], \"values\": [0.5, 0.3]}."
+          },
+          "top_k": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Number of matches, 1 to 100 (default 10)."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Metadata filter, e.g. {\"genre\": {\"$eq\": \"drama\"}, \"year\": {\"$gte\": 2020}}. Operators: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $and, $or."
+          },
+          "include_metadata": {
+            "type": "boolean",
+            "default": true,
+            "description": "Return each match's metadata (default true)."
+          }
+        },
+        "required": [
+          "index_host"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://{index_host}.pinecone.io/query",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "namespace": "$namespace",
+          "id": "$id",
+          "vector": "$vector",
+          "sparseVector": "$sparse_vector",
+          "topK": "$top_k",
+          "filter": "$filter",
+          "includeMetadata": "$include_metadata",
+          "includeValues": false
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "exclude": [
+            "matches[*].values",
+            "matches[*].sparseValues",
+            "results"
+          ],
+          "expression": "{matches: matches[:100], namespace: namespace, usage: usage}",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pinecone_fetch_vectors",
+      "description": "Fetch stored records by id: id and metadata of each. Vector values are left out. Up to 100 ids per call. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_host": {
+            "type": "string",
+            "description": "The index_host value returned by pinecone_list_indexes or pinecone_describe_index: the index host without https:// and without the trailing .pinecone.io, e.g. my-index-abc1234.svc.aped-4627-b74a."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Record ids to fetch, e.g. [\"doc1#chunk1\", \"doc1#chunk2\"], at most 100."
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Namespace to use. Leave out for the default namespace (named __default__ in listings)."
+          }
+        },
+        "required": [
+          "index_host",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://{index_host}.pinecone.io/vectors/fetch",
+        "encodePathParams": true,
+        "queryParams": {
+          "ids": "$ids",
+          "namespace": "$namespace"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "vectors[*].values",
+            "vectors[*].sparseValues"
+          ],
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "pinecone_list_vector_ids",
+      "description": "List the record ids in a namespace (serverless indexes), optionally only those starting with a prefix such as doc1#; up to 100 per page, call again with pagination_token = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_host": {
+            "type": "string",
+            "description": "The index_host value returned by pinecone_list_indexes or pinecone_describe_index: the index host without https:// and without the trailing .pinecone.io, e.g. my-index-abc1234.svc.aped-4627-b74a."
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Namespace to use. Leave out for the default namespace (named __default__ in listings)."
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Only ids starting with this, e.g. doc1#."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Ids per page, 1 to 100 (default 100)."
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "pagination.next from the previous page."
+          }
+        },
+        "required": [
+          "index_host"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://{index_host}.pinecone.io/vectors/list",
+        "encodePathParams": true,
+        "queryParams": {
+          "namespace": "$namespace",
+          "prefix": "$prefix",
+          "limit": "$limit",
+          "paginationToken": "$pagination_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "ids": "$.vectors[*].id",
+            "pagination": "$.pagination",
+            "namespace": "$.namespace"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "pinecone_upsert_records",
+      "description": "Add or replace text records in an integrated index; Pinecone embeds the text with the index's model. A record with an existing _id is replaced. Before calling, show the user the index, namespace and records and ask them to confirm; never call it without that confirmation. Records are searchable a few seconds later. At most 96 records per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_host": {
+            "type": "string",
+            "description": "The index_host value returned by pinecone_list_indexes or pinecone_describe_index: the index host without https:// and without the trailing .pinecone.io, e.g. my-index-abc1234.svc.aped-4627-b74a."
+          },
+          "namespace": {
+            "type": "string",
+            "default": "__default__",
+            "description": "Namespace to use (default __default__, the default namespace). See pinecone_list_namespaces."
+          },
+          "records_ndjson": {
+            "type": "string",
+            "description": "The records as newline-delimited JSON, one object per line, each with _id, the text field named in the index's field map (e.g. chunk_text) and optional metadata fields, e.g. {\"_id\": \"faq-1\", \"chunk_text\": \"Refunds take 5 days.\", \"category\": \"billing\"} then a newline and the next record."
+          }
+        },
+        "required": [
+          "index_host",
+          "records_ndjson"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://{index_host}.pinecone.io/records/namespaces/{namespace}/upsert",
+        "encodePathParams": true,
+        "headers": {
+          "Content-Type": "application/x-ndjson"
+        },
+        "bodyMapping": {
+          "__raw": "$records_ndjson"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "pinecone_update_metadata",
+      "description": "Set metadata fields on one stored record; fields not named stay as they are and the vector is unchanged. Before calling, show the user the record id and the fields that will change and ask them to confirm; never call it without that confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_host": {
+            "type": "string",
+            "description": "The index_host value returned by pinecone_list_indexes or pinecone_describe_index: the index host without https:// and without the trailing .pinecone.io, e.g. my-index-abc1234.svc.aped-4627-b74a."
+          },
+          "id": {
+            "type": "string",
+            "description": "The record id."
+          },
+          "set_metadata": {
+            "type": "object",
+            "description": "Metadata fields to set, e.g. {\"status\": \"archived\", \"year\": 2024}."
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Namespace to use. Leave out for the default namespace (named __default__ in listings)."
+          }
+        },
+        "required": [
+          "index_host",
+          "id",
+          "set_metadata"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://{index_host}.pinecone.io/vectors/update",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "id": "$id",
+          "setMetadata": "$set_metadata",
+          "namespace": "$namespace"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "pinecone_delete_vectors",
+      "description": "Delete stored records by id. It cannot be undone. Installed switched off; an admin turns it on deliberately. Before calling, show the user the index, namespace and ids and ask them to confirm; never call it without that confirmation.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_host": {
+            "type": "string",
+            "description": "The index_host value returned by pinecone_list_indexes or pinecone_describe_index: the index host without https:// and without the trailing .pinecone.io, e.g. my-index-abc1234.svc.aped-4627-b74a."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Record ids to delete, at most 1000."
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Namespace to use. Leave out for the default namespace (named __default__ in listings)."
+          }
+        },
+        "required": [
+          "index_host",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://{index_host}.pinecone.io/vectors/delete",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "ids": "$ids",
+          "namespace": "$namespace"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "pinecone_list_models",
+      "description": "List the embedding and reranking models Pinecone hosts, with type, vector type, dimensions, maximum input and batch size and supported parameters. Use the model names with pinecone_embed and pinecone_rerank. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "embed",
+              "rerank"
+            ],
+            "description": "Only embedding or only reranking models."
+          },
+          "vector_type": {
+            "type": "string",
+            "enum": [
+              "dense",
+              "sparse"
+            ],
+            "description": "Only models producing this vector type."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/models",
+        "queryParams": {
+          "type": "$type",
+          "vector_type": "$vector_type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "models": {
+              "$from": "$.models[*]",
+              "$select": {
+                "model": "model",
+                "type": "type",
+                "vector_type": "vector_type",
+                "short_description": "short_description",
+                "provider_name": "provider_name",
+                "default_dimension": "default_dimension",
+                "supported_dimensions": "supported_dimensions",
+                "supported_metrics": "supported_metrics",
+                "max_sequence_length": "max_sequence_length",
+                "max_batch_size": "max_batch_size",
+                "supported_parameters": "supported_parameters"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "pinecone_embed",
+      "description": "Turn texts into vectors with a Pinecone-hosted embedding model, e.g. to query an index that stores your own vectors with pinecone_query_vectors. Returns one vector per input, which is long: embed only what you need (at most 10 inputs here). Billed to the Pinecone account per token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "default": "llama-text-embed-v2",
+            "description": "Embedding model, the same one the index was built with, e.g. llama-text-embed-v2, multilingual-e5-large, pinecone-sparse-english-v0 (see pinecone_list_models)."
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Texts as objects, e.g. [{\"text\": \"How do refunds work?\"}]."
+          },
+          "input_type": {
+            "type": "string",
+            "enum": [
+              "query",
+              "passage"
+            ],
+            "default": "query",
+            "description": "query for search queries (default), passage for documents to store."
+          },
+          "truncate": {
+            "type": "string",
+            "enum": [
+              "END",
+              "NONE"
+            ],
+            "description": "END cuts inputs that are too long (default for most models); NONE returns an error instead."
+          },
+          "dimension": {
+            "type": "integer",
+            "description": "Output dimension for models that support several, e.g. 1024, 768, 512 or 384 for llama-text-embed-v2."
+          }
+        },
+        "required": [
+          "inputs"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/embed",
+        "bodyMapping": {
+          "model": "$model",
+          "inputs": "$inputs",
+          "parameters": {
+            "input_type": "$input_type",
+            "truncate": "$truncate",
+            "dimension": "$dimension"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{model: model, vector_type: vector_type, data: data[:10], usage: usage}",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pinecone_rerank",
+      "description": "Reorder documents by relevance to a query with a Pinecone-hosted reranking model: returns each document's index in the input list and a relevance score, best first, optionally with the document. Useful after a search or for any list of passages. Billed to the Pinecone account per request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "default": "bge-reranker-v2-m3",
+            "description": "Reranking model, e.g. bge-reranker-v2-m3, cohere-rerank-3.5, pinecone-rerank-v0 (see pinecone_list_models)."
+          },
+          "query": {
+            "type": "string",
+            "description": "The question or search text."
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Documents to rank, e.g. [{\"id\": \"a\", \"text\": \"...\"}, {\"id\": \"b\", \"text\": \"...\"}]. By default the text field is ranked."
+          },
+          "top_n": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return only the best n documents. Default: all."
+          },
+          "rank_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields of the documents to rank on, e.g. [\"chunk_text\"]; default [\"text\"]. Most models accept one field."
+          },
+          "return_documents": {
+            "type": "boolean",
+            "default": false,
+            "description": "Also return each document in the answer (default false, the index is enough)."
+          },
+          "truncate": {
+            "type": "string",
+            "enum": [
+              "END",
+              "NONE"
+            ],
+            "description": "END cuts query and document pairs that are too long; NONE returns an error instead."
+          }
+        },
+        "required": [
+          "query",
+          "documents"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rerank",
+        "bodyMapping": {
+          "model": "$model",
+          "query": "$query",
+          "documents": "$documents",
+          "top_n": "$top_n",
+          "rank_fields": "$rank_fields",
+          "return_documents": "$return_documents",
+          "parameters": {
+            "truncate": "$truncate"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "model": "$.model",
+            "data": "$.data",
+            "usage": "$.usage"
+          },
+          "maxBytes": 120000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pinecone_list_assistants",
+      "description": "List the Pinecone Assistants of the project: name, status, instructions, metadata, host and region, and when they were created. Use the name with pinecone_chat_assistant. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assistant/assistants"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "assistants": "$.assistants",
+            "pagination": "$.pagination"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "pinecone_chat_assistant",
+      "description": "Ask a Pinecone Assistant a question: it answers from the files uploaded to it and returns the answer with citations (file name and pages). Pass earlier turns in messages for a follow-up. Answers can take 10 to 30 seconds; very long ones may time out. Billed to the Pinecone account per token. Read-only: it changes no files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assistant_name": {
+            "type": "string",
+            "description": "The assistant's name, from pinecone_list_assistants."
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The conversation, oldest first, e.g. [{\"role\": \"user\", \"content\": \"What is our refund policy?\"}]. Roles are user and assistant."
+          },
+          "assistant_host": {
+            "type": "string",
+            "enum": [
+              "prod-1-data.ke.pinecone.io",
+              "prod-eu-data.ke.pinecone.io"
+            ],
+            "default": "prod-1-data.ke.pinecone.io",
+            "description": "Where the assistant runs: prod-1-data.ke.pinecone.io for the US region (default) or prod-eu-data.ke.pinecone.io for the EU region, as shown in the assistant's host."
+          },
+          "model": {
+            "type": "string",
+            "description": "The language model that writes the answer, e.g. gpt-4o (default), gpt-4.1, claude-sonnet-4-5."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Metadata filter, e.g. {\"genre\": {\"$eq\": \"drama\"}, \"year\": {\"$gte\": 2020}}. Operators: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $and, $or."
+          },
+          "include_highlights": {
+            "type": "boolean",
+            "description": "Add the supporting passages to each citation."
+          }
+        },
+        "required": [
+          "assistant_name",
+          "messages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://{assistant_host}/assistant/chat/{assistant_name}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "messages": "$messages",
+          "stream": false,
+          "model": "$model",
+          "filter": "$filter",
+          "include_highlights": "$include_highlights"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "answer": "$.message.content",
+            "finish_reason": "$.finish_reason",
+            "model": "$.model",
+            "citations": {
+              "$from": "$.citations[*]",
+              "$select": {
+                "position": "position",
+                "references": {
+                  "$from": "references[*]",
+                  "$select": {
+                    "file": "file.name",
+                    "file_id": "file.id",
+                    "pages": "pages",
+                    "highlight": "highlight.content"
+                  }
+                }
+              }
+            },
+            "usage": "$.usage"
+          },
+          "maxBytes": 120000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

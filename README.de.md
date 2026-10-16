@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 332 Connectors, 17 davon ohne API-Schlüssel." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 475 Connectors, 20 davon ohne API-Schlüssel." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: selbst gehostetes MCP-Gateway</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP ist ein quelloffenes, selbst gehostetes MCP-Gateway, das jedes REST-/OpenAPI-, SOAP-, GraphQL-, OData- oder SQL-System in MCP-Tools für Claude, ChatGPT und Copilot verwandelt, ohne dass du einen MCP-Server programmierst.</strong><br/>
-  Es bringt 332 fertige Adapter mit, darunter SAP, Etsy, weclapp und Amazon Seller; 17 davon kommen ohne API-Schlüssel aus.
+  Es bringt 475 fertige Adapter mit, darunter SAP, Etsy, weclapp und Amazon Seller; 20 davon kommen ohne API-Schlüssel aus.
 </p>
 
 <p align="center">
@@ -111,7 +111,7 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 ## Connector-Katalog
 
-332 Adapter mit über 2.400 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
+475 Adapter mit über 2.400 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
 
 | Kategorie | Beispiele |
 |---|---|
@@ -154,7 +154,7 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 † Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Mandanten getestet. Wenn du eines dieser Systeme einsetzt, freuen wir uns sehr über einen Erfahrungsbericht oder einen Fix.
 
-**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
+**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 </details>
 
@@ -182,7 +182,7 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 † Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Verkäuferkonto getestet.
 
-**Repositories:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server) · [woocommerce-mcp-server](https://github.com/keysersoft/woocommerce-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
+**Repositories:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
 
 </details>
 
@@ -224,7 +224,7 @@ Alles läuft auf deiner Infrastruktur, du entscheidest also, was sie verlässt. 
 Derselbe MCP-Server funktioniert in jedem Client, der MCP spricht; du baust einen Connector also nur einmal:
 
 - **Claude.** Trag die Server-URL als **benutzerdefinierten Connector** unter *Customize → Connectors* ein; danach funktioniert er in Claude.ai, Claude Desktop und Claude Code. OAuth 2.0 wird direkt unterstützt. Mit AnythingMCP Cloud geht es auch mit einem Klick über das [Claude-Verzeichnis](https://claude.ai/directory/anythingmcp). [Claude einrichten](docs/integrations/claude.md)
-- **ChatGPT.** Apps in ChatGPT basieren auf MCP. Füge den Server in den Einstellungen von ChatGPT hinzu oder nutze ihn als Tool-Schicht einer Apps-SDK-App. [ChatGPT einrichten](docs/integrations/chatgpt.md)
+- **ChatGPT.** Apps in ChatGPT basieren auf MCP. Füge den Server in ChatGPT unter *Plugins* hinzu (*+ → Add custom MCP server*) oder nutze ihn als Tool-Schicht einer Apps-SDK-App. [ChatGPT einrichten](docs/integrations/chatgpt.md)
 - **Meta Muse.** Öffne in Muse *Settings → Connectors → Add custom connector*, füge die Server-URL ein und melde dich bei AnythingMCP an. [Muse einrichten](docs/integrations/muse.md)
 - **Copilot, Gemini, Cursor** und andere MCP-Clients: [Anleitungen zur Client-Einrichtung](docs/guides.md).
 
@@ -288,27 +288,8 @@ Installiere den [E-Commerce-Adapter](#e-commerce--marketplace-connectors) für d
 
 ## Mitwirken
 
-Lies vor einem PR die [Contributing-Anleitung](.github/CONTRIBUTING.md). Der einfachste nützliche Beitrag ist ein Adapter: eine JSON-Datei, und es gibt ein [Walkthrough-Issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) dazu.
+Lies vor einem PR die [Contributing-Anleitung](.github/CONTRIBUTING.md). Der einfachste nützliche Beitrag ist ein Adapter: eine JSON-Datei, und es gibt ein [Walkthrough-Issue](https://github.com/HelpCode-ai/anythingmcp/issues/982) dazu.
 
 ## License
 
 **Open Source** unter der [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Kommerzielle Nutzung im eigenen Unternehmen ist erlaubt und war es schon immer; die Copyleft-Pflicht beginnt erst, wenn du AnythingMCP veränderst und die veränderte Version anderen über ein Netzwerk anbietest. Code für Cloud-Betreiber unter `ee/` ist gesondert lizenziert und für den Selbstbetrieb nicht nötig; siehe [Lizenz-FAQ](docs/license-faq.md).
-
----
-
-<p align="center">
-  <strong>⭐ Wenn dir das eine Woche MCP-Server-Programmierung erspart hat, gib einen Stern.</strong><br/>
-  <em>Über Sterne findet die nächste Person das Projekt, und an ihnen entscheiden wir, welchen Adapter wir als Nächstes bauen.</em>
-</p>
-
-<p align="center">
-  <a href="https://star-history.com/#HelpCode-ai/anythingmcp&Date">
-    <img src="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date" alt="Star history" width="70%">
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/HelpCode-ai/anythingmcp/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=HelpCode-ai/anythingmcp" alt="Contributors">
-  </a>
-</p>

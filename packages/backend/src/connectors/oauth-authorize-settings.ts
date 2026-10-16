@@ -38,6 +38,11 @@ export interface RestAuthorizeSettings {
   /** private_key_jwt only: how to sign the client assertion (resolved). */
   clientAssertion?: ClientAssertionSettings;
   /**
+   * Whether the flow uses PKCE (RFC 7636). True unless `pkce: false` is set,
+   * see resolvePkce.
+   */
+  pkce: boolean;
+  /**
    * Settings taken from the catalog because the row lacked them, to be
    * written to the row's authConfig once the authorization succeeds, so the
    * OAuth settings form shows what was used and a later re-authorization
@@ -58,10 +63,45 @@ const ADOPTABLE = [
 const str = (v: unknown): string | undefined =>
   typeof v === 'string' && v.trim() !== '' ? v : undefined;
 
+/** `pkce` as stored: a boolean, or its string form; anything else is unset. */
+function pkceFlag(v: unknown): boolean | undefined {
+  if (v === true || v === 'true') return true;
+  if (v === false || v === 'false') return false;
+  return undefined;
+}
+
+/**
+ * Whether the authorization-code flow sends PKCE (`code_challenge` on
+ * authorize, `code_verifier` on the code exchange).
+ *
+ * On by default: Etsy and X require it, and most other providers ignore
+ * it. `authConfig.pkce: false` turns it off for providers that refuse it:
+ * LinkedIn's standard web flow answers 401 invalid_client to a token request
+ * that carries a code_verifier (LinkedIn reserves PKCE for its native-app
+ * flow).
+ *
+ * The row's own value wins. A row without one takes the catalog adapter's,
+ * because authConfig is copied once at install and neither the catalog
+ * re-sync nor export/import carries it: a connector installed before its
+ * adapter set `pkce: false` would otherwise keep failing.
+ */
+export function resolvePkce(
+  storedAuthConfig: Record<string, unknown> | null | undefined,
+  catalogAuthConfig?: Record<string, unknown> | null,
+): boolean {
+  return (
+    pkceFlag(storedAuthConfig?.pkce) ??
+    pkceFlag(catalogAuthConfig?.pkce) ??
+    true
+  );
+}
+
 export function resolveRestAuthorizeSettings(
   storedAuthConfig: Record<string, unknown>,
   envVars: Record<string, string> | null | undefined,
   catalogAuthConfig?: Record<string, unknown> | null,
+  /** The adapter's `previousOAuthScopes`: scope sets it asked for before. */
+  previousScopes?: readonly string[],
 ): RestAuthorizeSettings {
   const cfg = interpolateDeep(storedAuthConfig, envVars ?? {});
 
@@ -84,6 +124,21 @@ export function resolveRestAuthorizeSettings(
     }
   }
 
+  // 3. Scopes the catalog added later. A catalog connector keeps the scopes it
+  //    was installed with, and the re-sync never touches authConfig, so when
+  //    an adapter gains write tools (Etsy's listings_w, Oct 2026) the
+  //    connector's token can never be granted them: re-authorizing asks for
+  //    the old list again. An adapter that widens its scopes lists the sets it
+  //    used to ask for (`previousOAuthScopes`); a row holding exactly one of
+  //    them was never narrowed by hand, so it asks for the current set. Any
+  //    other row, a hand-picked subset included, is left as it is.
+  const widened = widenedScopes(
+    str(cfg.scopes),
+    catalogAuthConfig ? str(catalogAuthConfig.scopes) : undefined,
+    previousScopes,
+  );
+  if (widened && !adopted.scopes) adopted.scopes = widened;
+
   const merged = { ...cfg, ...adopted };
   const clientId = str(merged.clientId) ?? '';
   const clientSecret = str(merged.clientSecret);
@@ -105,6 +160,7 @@ export function resolveRestAuthorizeSettings(
     scope: str(merged.scopes),
     tokenAuthMethod,
     clientAssertion,
+    pkce: resolvePkce(cfg, catalogAuthConfig),
     adopted,
     missingVars: findUnresolvedPlaceholders(
       clientAssertion
@@ -112,4 +168,20 @@ export function resolveRestAuthorizeSettings(
         : [clientId, clientSecret ?? ''],
     ),
   };
+}
+
+/**
+ * The catalog's current scopes when the row holds exactly one of the sets the
+ * adapter used to ask for (order and separators aside), otherwise undefined.
+ */
+function widenedScopes(
+  row: string | undefined,
+  catalog: string | undefined,
+  previous: readonly string[] | undefined,
+): string | undefined {
+  if (!row || !catalog || !previous?.length) return undefined;
+  if (findUnresolvedPlaceholders(catalog).length > 0) return undefined;
+  const key = (v: string) => v.split(/[\s,]+/).filter(Boolean).sort().join(' ');
+  if (key(row) === key(catalog)) return undefined;
+  return previous.some((p) => key(p) === key(row)) ? catalog : undefined;
 }

@@ -1,0 +1,439 @@
+{
+  "slug": "rocketreach",
+  "name": "RocketReach",
+  "aliases": [
+    "Rocket Reach"
+  ],
+  "description": "Give your AI RocketReach B2B data: search people and companies by name, title, employer, location, industry and size, check your credits, and look up emails, phone numbers and company profiles only for the records you choose.",
+  "instructions": "## RocketReach\nThis connector calls the **RocketReach API v2** (`https://api.rocketreach.co/api/v2`) with the user's own API key: account and credits, people and company search, person lookup with its status check, and company lookup.\n\n**Personal data: B2B use only.** Person lookups return real people's work and personal email addresses and phone numbers. Use them only for a legitimate business purpose the user can justify (for example B2B sales or recruiting under legitimate interest), in line with the GDPR, CAN-SPAM and similar laws, and with RocketReach's terms. Keep only what is needed, prefer professional emails for business outreach, and never pull contact data in bulk or build a mass mailing list. Do not look up private individuals.\n\n**Credits: search first, look up only what the user picked.**\n- Free: `rocketreach_get_account`, `rocketreach_search_people`, `rocketreach_search_companies` (searches return no contact data and spend no lookup credits; they count against the search rate limits), and `rocketreach_check_lookup_status`.\n- Costs credits: `rocketreach_lookup_person` spends a lookup credit and a person export credit when contact data is found (premium when an A or A- email or a valid phone is found, standard for an email only); no data found, no charge; looking up the same person again later is free while the plan is active. `rocketreach_lookup_company` spends a company export credit. Both add the record to the account's My Contacts or My Companies list.\nBefore a lookup, show the user who you will look up and that it costs credits, and wait for their yes. `rocketreach_get_account` shows what is left (`credit_usage`).\n\n**Setup (about 2 minutes)**\n1. Sign in at https://rocketreach.co with an account that has API access (an API plan, or a plan with API calls).\n2. Open **Account Settings, API** (https://rocketreach.co/account?section=nav_gen_api) and choose **Generate New API Key** (or copy the existing one).\n3. Paste it into `ROCKETREACH_API_KEY`. It is sent as the `Api-Key` header and only to api.rocketreach.co.\n\n**Workflow**\n1. `rocketreach_search_people` or `rocketreach_search_companies` with a `query` of facets. Results carry the RocketReach `id` and a `teaser` (email domains and masked phones) that hints whether a lookup will find something.\n2. After the user confirms, `rocketreach_lookup_person` with the `id` (or a LinkedIn URL, an email, or name plus current employer). A lookup often returns `status` progress or searching first: wait a few seconds and call `rocketreach_check_lookup_status` with the id (free) until `status` is complete or failed. Do not poll faster than every 3 seconds.\n3. `rocketreach_lookup_company` for a full company profile by domain, id, name, ticker or LinkedIn URL.\n\n**Searching**: facets take lists of strings, e.g. `{\"current_title\": [\"CFO\"], \"geo\": [\"Germany\"], \"company_size\": [\"201-500\"]}`. Wrap a value in double quotes inside the string for an exact match: `[\"\\\"IBM\\\"\"]` matches IBM but not IBM UK. Exclude with `exclude_<facet>`, e.g. `exclude_current_employer`. Pages hold up to 100 records and a query reaches at most 10,000; `pagination.next` is the `start` of the next people page, `pagination.nextPage` the `start` of the next company page.\n\n**Rate limits**: 10 requests a second across the API, plus per-minute, hourly, daily and monthly caps for search and lookup by plan (`rate_limits` in `rocketreach_get_account`). A 429 carries `Retry-After` in seconds; wait that long.\n\n**Common errors** (`detail` in the body)\n- 401 `authentication_failed`: the API key is wrong or missing.\n- 403: the key lacks permission for this call, the lookup credits are used up (\"insufficient credits\"), the plan has no company lookups, or the status check asked for a profile that is not in your contacts.\n- 400: a parameter or facet is invalid.\n- 404: no such profile or company.\n- 429: rate limit; wait for `Retry-After`.\n\n**Accounts on Universal Credits**: RocketReach is moving some customers to Universal Credits, which use separate `/universal/...` endpoints and price searches per page. This connector uses the standard endpoints; if calls fail on a Universal Credits account, ask RocketReach (api@rocketreach.co) which endpoints the account can use.\n\n**Out of scope here**: bulk lookup (results arrive only through a webhook), person and company lookup in one call, email verification, Universal Credits endpoints, webhooks and API key rotation.",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "rocketreach",
+  "docsUrl": "https://docs.rocketreach.co/reference/rocketreach-api",
+  "prerequisites": "A RocketReach account with API access and an API key from Account Settings, API (Generate New API Key). About 2 minutes. Searches are free; person and company lookups spend credits.",
+  "requiredEnvVars": [
+    "ROCKETREACH_API_KEY"
+  ],
+  "envVarMeta": {
+    "ROCKETREACH_API_KEY": {
+      "label": "RocketReach API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "rocketreach.co, Account Settings, API: My API Key (Generate New API Key). Lookups spend this account's credits.",
+      "link": "https://rocketreach.co/account?section=nav_gen_api",
+      "pattern": "^[A-Za-z0-9]{20,64}$",
+      "patternMessage": "Paste the key as the account page shows it, letters and digits only, without Api-Key or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "RocketReach refused the API key: it is wrong or was replaced. Copy it again from https://rocketreach.co/account?section=nav_gen_api.",
+    "403": "RocketReach accepted the key but refused this call: the account has no API access or no credits for it. Check the plan under Account Settings, API.",
+    "429": "RocketReach is rate limiting this key. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "rocketreach_get_account",
+    "params": {}
+  },
+  "connector": {
+    "name": "RocketReach",
+    "type": "REST",
+    "baseUrl": "https://api.rocketreach.co/api/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Api-Key",
+      "apiKey": "{{ROCKETREACH_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/account/"
+  },
+  "tools": [
+    {
+      "name": "rocketreach_get_account",
+      "description": "Show the RocketReach account the key belongs to: name, email, state, the credits per type (credit_usage: allocated, used, remaining for standard_lookup, premium_lookup, phone_lookup, person_enrich, person_export, company_export, email_verification; inf means not tracked) and the rate limits with what remains. Use it before lookups to check the credits left. Free: uses no credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "first_name": "$.first_name",
+            "last_name": "$.last_name",
+            "email": "$.email",
+            "state": "$.state",
+            "plan": "$.plan",
+            "credit_usage": "$.credit_usage",
+            "rate_limits": "$.rate_limits"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "rocketreach_search_people",
+      "description": "Search RocketReach's 700M professional profiles by facets and get a page of matches: RocketReach id, name, current title and employer, employer domain, location, LinkedIn URL and a teaser (domains of known emails, masked phones) showing whether a lookup is likely to find contact data. Returns no emails or phone numbers. Facets take lists of strings, e.g. {\"current_title\": [\"head of purchasing\"], \"current_employer\": [\"Bosch\"], \"geo\": [\"Germany\"]}. Common facets: name, current_title, current_employer, company_website_url, company_industry, company_size (e.g. 51-200), company_revenue, geo, management_levels, department, skills, keyword, contact_method (work email, mobile, direct dial). Quote a value for an exact match; exclude with exclude_<facet>. Free: no lookup credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "description": "Facets, each a list of strings, e.g. {\"current_title\": [\"CTO\"], \"company_website_url\": [\"example.com\"]}. Prefix a facet with exclude_ to leave matches out."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Index of the first result, from 1. Use pagination.next of the previous page."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Profiles per page, 1 to 100 (default 10)."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "popularity",
+              "score"
+            ],
+            "description": "Sort order: relevance (default), popularity (like the web app) or score."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/person/search",
+        "bodyMapping": {
+          "query": "$query",
+          "start": "$start",
+          "page_size": "$page_size",
+          "order_by": "$order_by"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "pagination": "$.pagination",
+            "profiles": {
+              "$from": "$.profiles[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "current_title": "current_title",
+                "current_employer": "current_employer",
+                "current_employer_domain": "current_employer_domain",
+                "current_employer_id": "current_employer_id",
+                "location": "location",
+                "linkedin_url": "linkedin_url",
+                "professional_email_domains": "teaser.professional_emails",
+                "personal_email_domains": "teaser.personal_emails",
+                "phones": "teaser.phones",
+                "suppressed": "suppressed"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "rocketreach_lookup_person",
+      "description": "Look up one person's contact data in RocketReach: work and personal emails with grade (A best) and SMTP check, phone numbers with type and grade, current title and employer and the employer's office phone. Identify the person with id (best, from rocketreach_search_people), linkedin_url, email, or name plus current_employer. COSTS CREDITS: a lookup credit and a person export credit when contact data is found (premium when an A or A- email or a valid phone is found); nothing when no data is found; a repeat lookup of the same person is free. Adds the person to the account's My Contacts. Before calling, tell the user who you will look up and that it costs credits, and wait for their yes. If status is not complete, wait a few seconds and call rocketreach_check_lookup_status. Returns personal data: use it only for a legitimate B2B purpose, under GDPR and CAN-SPAM.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "RocketReach profile id from a search."
+          },
+          "linkedin_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL, e.g. https://www.linkedin.com/in/username."
+          },
+          "email": {
+            "type": "string",
+            "description": "A known email address of the person."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name, together with current_employer."
+          },
+          "current_employer": {
+            "type": "string",
+            "description": "Current employer, together with name."
+          },
+          "title": {
+            "type": "string",
+            "description": "Job title, to tell apart people with the same name at one employer."
+          },
+          "lookup_type": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "premium",
+              "phone",
+              "enrich"
+            ],
+            "description": "Force a credit type: standard (email only), premium (email and phone), phone, or enrich (profile only, no contact data). Omit to use the account's settings."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/person/lookup",
+        "queryParams": {
+          "id": "$id",
+          "linkedin_url": "$linkedin_url",
+          "email": "$email",
+          "name": "$name",
+          "current_employer": "$current_employer",
+          "title": "$title",
+          "lookup_type": "$lookup_type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "name": "$.name",
+            "current_title": "$.current_title",
+            "current_employer": "$.current_employer",
+            "current_employer_domain": "$.current_employer_domain",
+            "location": "$.location",
+            "linkedin_url": "$.linkedin_url",
+            "recommended_email": "$.recommended_email",
+            "recommended_professional_email": "$.recommended_professional_email",
+            "emails": {
+              "$from": "$.emails[*]",
+              "$select": {
+                "email": "email",
+                "type": "type",
+                "grade": "grade",
+                "smtp_valid": "smtp_valid"
+              }
+            },
+            "phones": {
+              "$from": "$.phones[*]",
+              "$select": {
+                "number": "number",
+                "type": "type",
+                "grade": "grade",
+                "recommended": "recommended"
+              }
+            },
+            "current_employer_phone": "$.current_employer_phone.number"
+          },
+          "maxBytes": 20000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "rocketreach_check_lookup_status",
+      "description": "Check person lookups that are still running and get their contact data once done: status complete (emails and phones included), failed (no contact data found), or progress, searching or waiting (try again in a few seconds; at most every 3 seconds). Pass the ids of profiles you already looked up with rocketreach_lookup_person; an id that is not in your contacts answers 403. Free: uses no credits. Read-only. Returns personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "integer"
+            },
+            "description": "RocketReach profile ids of earlier lookups."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/person/checkStatus",
+        "queryParams": {
+          "ids": "$ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "lookups": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "name": "name",
+                "current_title": "current_title",
+                "current_employer": "current_employer",
+                "linkedin_url": "linkedin_url",
+                "recommended_email": "recommended_email",
+                "recommended_professional_email": "recommended_professional_email",
+                "emails": {
+                  "$from": "emails[*]",
+                  "$select": {
+                    "email": "email",
+                    "type": "type",
+                    "grade": "grade",
+                    "smtp_valid": "smtp_valid"
+                  }
+                },
+                "phones": {
+                  "$from": "phones[*]",
+                  "$select": {
+                    "number": "number",
+                    "type": "type",
+                    "grade": "grade",
+                    "recommended": "recommended"
+                  }
+                }
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "rocketreach_search_companies",
+      "description": "Search RocketReach's companies by facets and get a page of matches: RocketReach company id, name, email domain, ticker, industry, city, region and country. Facets take lists of strings, e.g. {\"industry\": [\"Machinery\"], \"geo\": [\"Germany\"], \"employees\": [\"51-200\"]}. Common facets: name, domain, website_url, industry, industry_keywords, employees, revenue, geo, location, techstack, naics_code, sic_code, publicly_traded, keyword. Use the id or the domain with rocketreach_lookup_company, or as company_id in rocketreach_search_people. Free: no lookup credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "description": "Facets, each a list of strings, e.g. {\"name\": [\"Siemens\"]} or {\"techstack\": [\"SAP\"], \"geo\": [\"Austria\"]}."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Index of the first result, from 1. Use pagination.nextPage of the previous answer."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Companies per page, 1 to 100 (default 10)."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "popularity",
+              "score"
+            ],
+            "description": "Sort order: relevance (default), popularity or score."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/searchCompany",
+        "bodyMapping": {
+          "query": "$query",
+          "start": "$start",
+          "page_size": "$page_size",
+          "order_by": "$order_by"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "pagination": "$.pagination",
+            "companies": "$.companies"
+          },
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "rocketreach_lookup_company",
+      "description": "Get the full RocketReach profile of one company: domain, website, ticker, founding year, address, phone, employee count, revenue, industry and keywords, SIC and NAICS codes, technologies, competitors, headcount by department, growth and social links. Identify it by domain (best), id, name, ticker or linkedin_url. COSTS CREDITS: a company export credit (company lookups are not part of every plan); adds the company to My Companies. Tell the user it costs a credit and wait for their yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Company domain, e.g. example.com (preferred)."
+          },
+          "id": {
+            "type": "integer",
+            "description": "RocketReach company id from a search."
+          },
+          "name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "ticker": {
+            "type": "string",
+            "description": "Stock ticker."
+          },
+          "linkedin_url": {
+            "type": "string",
+            "description": "Company LinkedIn URL."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/lookup/",
+        "queryParams": {
+          "domain": "$domain",
+          "id": "$id",
+          "name": "$name",
+          "ticker": "$ticker",
+          "linkedin_url": "$linkedin_url"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "company_growth"
+          ],
+          "maxBytes": 30000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

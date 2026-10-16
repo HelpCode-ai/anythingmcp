@@ -21,6 +21,7 @@ import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import {
   CALLER_CONTEXT_PREFIX,
   buildCallerContextVars,
+  usesCallerContext,
 } from '../common/caller-context.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
 import {
@@ -37,7 +38,19 @@ import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { connectorErrorWhen } from '../connectors/error-when.util';
+
+/**
+ * The content of a tool result: one text item, then the images taken out of
+ * the response by `responseMapping.images` (none for every other tool). The
+ * text comes first so whatever reads `content[0].text` keeps working.
+ */
+export type ToolResultContent = [
+  { type: 'text'; text: string },
+  ...{ type: 'image'; data: string; mimeType: string }[],
+];
 import { ResponseBodyError } from '../connectors/engines/response-error.util';
+import { isMaskedEnvVar, secretContext } from '../connectors/connector-secrets.util';
+import { redactSecretsDeep } from '../common/secret-literals.util';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -158,6 +171,27 @@ export class DynamicMcpTools {
     }
   }
 
+  /**
+   * Values of the connector's secret variables (by name, by the slot the
+   * adapter uses them in, or by their shape), as `connector-secrets.util`
+   * decides which ones the dashboard withholds. Short values are skipped:
+   * replacing a 3-character string everywhere in a response would mangle it.
+   */
+  private connectorSecretValues(tool: RegisteredTool): string[] {
+    const envVars = tool.connectorConfig?.envVars;
+    if (!envVars || typeof envVars !== 'object') return [];
+    const ctx = secretContext({
+      config: tool.connectorConfig.config,
+      headers: tool.connectorConfig.headers,
+    });
+    return Object.entries(envVars)
+      .filter(
+        ([name, value]) =>
+          typeof value === 'string' && value.length >= 8 && isMaskedEnvVar(name, value, ctx),
+      )
+      .map(([, value]) => value as string);
+  }
+
   private async getProxyLimit(organizationId: string): Promise<number> {
     const org = await this.prisma.organization.findUnique({
       where: { id: organizationId },
@@ -189,7 +223,7 @@ export class DynamicMcpTools {
       intent?: string;
     },
   ): Promise<{
-    content: { type: 'text'; text: string }[];
+    content: ToolResultContent;
     isError?: boolean;
     /**
      * The result as an object, before it was serialized into `content[0].text`.
@@ -289,6 +323,10 @@ export class DynamicMcpTools {
 
     const startTime = Date.now();
     let usedProxy = false;
+    // The connector's credentials, as filled into the URL, headers and auth.
+    // An error message or an echoing API can quote them back (a URL with the
+    // bot token in its path); they never reach the client or the log.
+    const secretValues = this.connectorSecretValues(tool);
 
     try {
       const envVars = tool.connectorConfig.envVars || {};
@@ -340,6 +378,17 @@ export class DynamicMcpTools {
         authConfig,
         headers: interpolatedConfig.headers,
         specUrl: (tool.connectorConfig as any).specUrl,
+        // The engines key the OAuth2 token cache, the refresh lock and the
+        // saving of a renewed token on the connector id. Without it every
+        // call parsed a fresh authConfig, so nothing was cached, a renewed
+        // token was never saved, and the next renewal sent the refresh token
+        // the provider had already rotated: Cloudinary (5-minute tokens)
+        // answered invalid_grant a few minutes after each authorization.
+        // Credentials that depend on the caller ({{amcp.*}}) differ per call,
+        // so they stay unkeyed.
+        connectorId: usesCallerContext(tool.connectorConfig.authConfig)
+          ? undefined
+          : tool.connectorId,
         errorWhen: connectorErrorWhen(tool.connectorConfig.config),
         ...(proxyUrl ? { proxyUrl } : {}),
       };
@@ -413,7 +462,18 @@ export class DynamicMcpTools {
       } finally {
         processGauges.dec('toolCallsInFlight');
       }
-      const { body: result, meta } = engineOut;
+      const { body: upstreamResult, meta } = engineOut;
+      // An API that echoes the request (a URL with the bot token in it) must
+      // not hand the connector's own credentials to the client, the cache or
+      // the log. Only those values are replaced, and the response is copied
+      // only when it mentions one. An all-digit value (a PIN, a numeric key)
+      // is left alone here: it would also match inside the response's own
+      // ids and amounts and corrupt them. Errors still redact it.
+      const result = redactSecretsDeep(
+        upstreamResult,
+        secretValues.filter((value) => !/^\d+$/.test(value)),
+        { patterns: false },
+      );
 
       const durationMs = Date.now() - startTime;
 
@@ -464,11 +524,11 @@ export class DynamicMcpTools {
         meta,
         tool.endpointMapping?.queryParams,
       );
-      this.logToolCall(tool, context, durationMs, 'SUCCESS', rendered.content?.[0]?.text);
+      this.logToolCall(tool, context, durationMs, 'SUCCESS', textOf(rendered.content));
       return rendered;
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
-      const errorDetail = this.extractErrorDetail(error);
+      const errorDetail = redactSecretsDeep(this.extractErrorDetail(error), secretValues);
       this.logToolCall(
         tool,
         context,
@@ -551,7 +611,7 @@ export class DynamicMcpTools {
     meta?: ResponseMeta,
     queryParams?: Record<string, unknown>,
   ): {
-    content: { type: 'text'; text: string }[];
+    content: ToolResultContent;
     isError?: boolean;
     structured?: unknown;
   } {
@@ -589,8 +649,17 @@ export class DynamicMcpTools {
       resultText += `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`;
     }
 
+    // `responseMapping.images`: the pictures follow the text, which keeps a
+    // placeholder for each. Text stays first, so whatever reads content[0]
+    // (the call log, older clients) still finds the JSON there.
+    const images = (outcome.images ?? []).map((img) => ({
+      type: 'image' as const,
+      data: img.data,
+      mimeType: img.mimeType,
+    }));
+
     return {
-      content: [{ type: 'text' as const, text: resultText }],
+      content: [{ type: 'text' as const, text: resultText }, ...images],
       structured: value,
     };
   }
@@ -812,4 +881,9 @@ export class DynamicMcpTools {
         throw new Error(`Unsupported connector type: ${connectorType}`);
     }
   }
+}
+
+/** The text of a tool result, which is always its first item. */
+function textOf(content: ToolResultContent | undefined): string | undefined {
+  return content?.[0]?.text;
 }

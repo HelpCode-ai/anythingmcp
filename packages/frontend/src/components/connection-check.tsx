@@ -33,9 +33,23 @@ type State =
  * in Claude or ChatGPT worked. While no request has arrived this polls the
  * server's activity and turns green the moment the first one lands.
  */
-export function ConnectionCheck({ serverId, token }: { serverId: string; token: string }) {
+export function ConnectionCheck({
+  serverId,
+  token,
+  onFirstCall,
+}: {
+  serverId: string;
+  token: string;
+  /** Called once when the first request arrives while the page is open. */
+  onFirstCall?: () => void;
+}) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const sawWaiting = useRef(false);
+  // Latest callback without restarting the poll when the parent re-renders.
+  const onFirstCallRef = useRef(onFirstCall);
+  useEffect(() => {
+    onFirstCallRef.current = onFirstCall;
+  }, [onFirstCall]);
 
   useEffect(() => {
     let live = true;
@@ -56,6 +70,7 @@ export function ConnectionCheck({ serverId, token }: { serverId: string; token: 
           if (sawWaiting.current) {
             setState({ kind: 'arrived', at: activity.lastCallAt });
             productEvents.track('first_call_seen', token, { serverId });
+            onFirstCallRef.current?.();
           } else {
             setState({ kind: 'active', at: activity.lastCallAt, calls: activity.calls30d });
           }

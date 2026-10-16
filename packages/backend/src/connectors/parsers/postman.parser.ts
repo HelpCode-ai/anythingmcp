@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { ParsedTool } from './openapi.parser';
+import { pathForToolName } from './tool-name.util';
+import { findSecretInQueryParam } from '../../common/secret-literals.util';
 import { inferJsonSchema } from '../output-schema.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
 
@@ -15,6 +17,48 @@ import { outboundAxiosOptions } from '../../common/outbound-http';
  *   - Query params, headers, body (raw JSON, form-data, urlencoded)
  *   - Pre-request scripts are noted in descriptions
  */
+
+/**
+ * A body field name from the collection that is safe to use as a key of the
+ * tool's parameters and body mapping: a collection is untrusted input, and
+ * `__proto__` / `constructor` / `prototype` as a key would write to the
+ * object's prototype instead of adding a field.
+ */
+function isSafeFieldName(key: unknown): key is string {
+  return (
+    typeof key === 'string' &&
+    key !== '' &&
+    key !== '__proto__' &&
+    key !== 'constructor' &&
+    key !== 'prototype'
+  );
+}
+
+/** One form field of a request body, as it becomes a tool parameter. */
+interface FormField {
+  key: string;
+  schema: Record<string, unknown>;
+  mapping: unknown;
+  required: boolean;
+}
+
+/**
+ * Add form fields (names already checked with isSafeFieldName) to the tool's
+ * parameters and body mapping. False when there were none.
+ */
+function addFormFields(
+  fields: FormField[],
+  properties: Record<string, any>,
+  required: string[],
+  bodyMapping: Record<string, unknown>,
+): boolean {
+  if (fields.length === 0) return false;
+  Object.assign(properties, Object.fromEntries(fields.map((f) => [f.key, f.schema])));
+  Object.assign(bodyMapping, Object.fromEntries(fields.map((f) => [f.key, f.mapping])));
+  for (const f of fields) if (f.required) required.push(f.key);
+  return true;
+}
+
 @Injectable()
 export class PostmanParser {
   private readonly logger = new Logger(PostmanParser.name);
@@ -170,7 +214,7 @@ export class PostmanParser {
     const properties: Record<string, any> = {};
     const required: string[] = [];
     const queryParams: Record<string, string> = {};
-    const bodyMapping: Record<string, string> = {};
+    const bodyMapping: Record<string, unknown> = {};
     const headerMapping: Record<string, string> = {};
 
     // Path parameters (from {{param}} in URL path)
@@ -198,6 +242,13 @@ export class PostmanParser {
       for (const q of url.query) {
         if (q.disabled) continue;
         const paramName = q.key;
+        // A key written into the request (`?api_key=abc123`) is not something
+        // the AI client should be asked for: keep it as a fixed value, which
+        // the import then moves into an encrypted variable.
+        if (typeof q.value === 'string' && findSecretInQueryParam(paramName, q.value).length > 0) {
+          queryParams[paramName] = q.value;
+          continue;
+        }
         properties[paramName] = {
           type: 'string',
           description: q.description || `Query parameter: ${paramName}`,
@@ -211,8 +262,9 @@ export class PostmanParser {
     }
 
     // Request body
+    let bodyEncoding: string | undefined;
     if (request.body) {
-      this.parseBody(request.body, properties, required, bodyMapping);
+      bodyEncoding = this.parseBody(request.body, properties, required, bodyMapping);
     }
 
     // Headers (non-standard ones become parameters)
@@ -254,6 +306,7 @@ export class PostmanParser {
     };
     if (Object.keys(queryParams).length > 0) endpointMapping.queryParams = queryParams;
     if (Object.keys(bodyMapping).length > 0) endpointMapping.bodyMapping = bodyMapping;
+    if (bodyEncoding) endpointMapping.bodyEncoding = bodyEncoding;
     if (Object.keys(headerMapping).length > 0) endpointMapping.headers = headerMapping as Record<string, string>;
 
     const tool: ParsedTool = { name, description, parameters, endpointMapping };
@@ -293,16 +346,33 @@ export class PostmanParser {
     if (!url) return null;
 
     if (typeof url === 'string') {
-      try {
-        const parsed = new URL(url.replace(/\{\{[^{}]+\}\}/g, 'placeholder'));
-        return {
-          raw: url,
-          path: url.replace(/^https?:\/\/[^/]+/, ''),
-          query: [],
-        };
-      } catch {
-        return { raw: url, path: url, query: [] };
-      }
+      // A string URL starts with the host, written out or as a collection
+      // variable ("{{url}}DesktopModules/.../GetCustBalance?_accountNum=0001").
+      // Both go: the connector's base URL supplies the host. The query string
+      // becomes query parameters, as in the URL-object form. Before this, the
+      // variable and the query stayed in the path, so a Monet collection
+      // imported on 11 Oct 2026 produced 42 tools that all answered 404.
+      const rest = url
+        .trim()
+        .replace(/^https?:\/\/[^/?#]+/i, '')
+        .replace(/^\{\{[^{}]+\}\}/, '');
+      const at = rest.indexOf('?');
+      const pathPart = at === -1 ? rest : rest.slice(0, at);
+      const queryPart = at === -1 ? '' : rest.slice(at + 1);
+      const query = queryPart
+        .split('&')
+        .filter(Boolean)
+        .map((pair) => {
+          const eq = pair.indexOf('=');
+          const key = eq === -1 ? pair : pair.slice(0, eq);
+          const value = eq === -1 ? '' : pair.slice(eq + 1);
+          return { key: safeDecode(key), value: safeDecode(value) };
+        });
+      return {
+        raw: url,
+        path: pathPart.startsWith('/') ? pathPart : `/${pathPart}`,
+        query,
+      };
     }
 
     // Postman URL object
@@ -320,8 +390,8 @@ export class PostmanParser {
     body: any,
     properties: Record<string, any>,
     required: string[],
-    bodyMapping: Record<string, string>,
-  ): void {
+    bodyMapping: Record<string, unknown>,
+  ): string | undefined {
     switch (body.mode) {
       case 'raw': {
         if (body.raw) {
@@ -339,6 +409,7 @@ export class PostmanParser {
             }
 
             for (const [key, value] of Object.entries(parsed)) {
+              if (!isSafeFieldName(key)) continue;
               const strVal = String(value);
               if (strVal.startsWith('__var_') && strVal.endsWith('__')) {
                 const varName = strVal.replace(/^__var_|__$/g, '');
@@ -359,30 +430,47 @@ export class PostmanParser {
         }
         break;
       }
+      // Content-Type is not one of the headers a tool replays, so the engine
+      // has to be told how to send form fields; without it they went out as
+      // JSON (the HAR importer had the same bug).
       case 'urlencoded': {
+        const fields: FormField[] = [];
         for (const field of body.urlencoded || []) {
-          if (field.disabled) continue;
-          properties[field.key] = {
-            type: 'string',
-            description: field.description || `Form field: ${field.key}`,
-          };
-          bodyMapping[field.key] = `$${field.key}`;
-          if (field.value?.includes('{{')) required.push(field.key);
+          if (field.disabled || !isSafeFieldName(field.key)) continue;
+          fields.push({
+            key: field.key,
+            schema: { type: 'string', description: field.description || `Form field: ${field.key}` },
+            mapping: `$${field.key}`,
+            required: Boolean(field.value?.includes('{{')),
+          });
         }
-        break;
+        return addFormFields(fields, properties, required, bodyMapping) ? 'form-urlencoded' : undefined;
       }
       case 'formdata': {
+        // multipart/form-data. A file part cannot come from the model as text:
+        // the engine downloads it from the URL the caller passes (the
+        // `__file` marker, as Etsy's image upload uses).
+        const fields: FormField[] = [];
         for (const field of body.formdata || []) {
-          if (field.disabled) continue;
-          properties[field.key] = {
-            type: field.type === 'file' ? 'string' : 'string',
-            description: field.description || `Form field: ${field.key}`,
-          };
-          bodyMapping[field.key] = `$${field.key}`;
+          if (field.disabled || !isSafeFieldName(field.key)) continue;
+          const file = field.type === 'file';
+          fields.push({
+            key: field.key,
+            schema: {
+              type: 'string',
+              description: file
+                ? (field.description ? `${field.description}. ` : '') +
+                  `Public https URL of the file to send as "${field.key}". AnythingMCP downloads it and uploads it as the file part.`
+                : field.description || `Form field: ${field.key}`,
+            },
+            mapping: file ? { __file: `$${field.key}` } : `$${field.key}`,
+            required: !file && Boolean(field.value?.includes('{{')),
+          });
         }
-        break;
+        return addFormFields(fields, properties, required, bodyMapping) ? 'form-data' : undefined;
       }
     }
+    return undefined;
   }
 
   private generateToolName(
@@ -411,7 +499,7 @@ export class PostmanParser {
     }
 
     // Fallback: method + path
-    const cleanPath = path
+    const cleanPath = pathForToolName(path)
       .replace(/\{[^{}]+\}/g, '')
       .replace(/[^a-zA-Z0-9]/g, '_')
       .replace(/_+/g, '_')
@@ -436,5 +524,13 @@ export class PostmanParser {
     if (Array.isArray(value)) return 'array';
     if (typeof value === 'object' && value !== null) return 'object';
     return 'string';
+  }
+}
+
+function safeDecode(text: string): string {
+  try {
+    return decodeURIComponent(text.replace(/\+/g, ' '));
+  } catch {
+    return text;
   }
 }

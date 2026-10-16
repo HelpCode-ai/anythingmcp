@@ -1,0 +1,2005 @@
+{
+  "slug": "ramp",
+  "name": "Ramp",
+  "description": "Let your AI read your Ramp account: cards, funds and spend limits, transactions, reimbursements, bills, vendors, receipts, statements, GL accounts and users. Read-only OAuth scopes; it cannot send or approve payments. Card lock and memo actions are optional and off by default.",
+  "instructions": "## Ramp\nThis connector reads one Ramp business through the official **Ramp Developer API** (`https://api.ramp.com/developer/v1`): business and balance, users, departments, locations, entities, physical and virtual cards, funds (spend limits) and spend programs, transactions, reimbursements, bills, vendors, receipts, general ledger accounts and statements. Three admin actions are included and installed switched off: lock a card, unlock a card and set a transaction memo.\n\n**It cannot send money, by design.** There is no tool for bill payments, reimbursement payouts, transfers, card issuing or limit changes, not even a switched-off one. It cannot approve anything either.\n\n**Setup (about 10 minutes, Ramp admin or business owner)**\n1. Sign in to https://app.ramp.com and open **Company**, then **Developer**. Click **Create New App**, name it (for example AnythingMCP) and accept the terms.\n2. Under **Grant types**, add **Client Credentials**.\n3. Under **Scopes**, click **Configure allowed scopes** and allow exactly these read-only scopes: `business:read`, `users:read`, `departments:read`, `locations:read`, `entities:read`, `cards:read`, `funds:read`, `spend_programs:read`, `transactions:read`, `reimbursements:read`, `bills:read`, `vendors:read`, `receipts:read`, `accounting:read`, `statements:read`. The connector asks for all of them when it gets a token, so every one must be allowed, or Ramp refuses the token with invalid_scope.\n4. Copy the **Client ID** into `RAMP_CLIENT_ID` and the **Client Secret** into `RAMP_CLIENT_SECRET`, then install. AnythingMCP gets an access token (valid 10 days) with HTTP Basic auth and renews it by itself.\n5. Run `ramp_get_business` to check.\n\n**Read-only by default.** With these scopes the token cannot change anything in Ramp. To use the switched-off actions, also allow `cards:write` (for `ramp_lock_card` and `ramp_unlock_card`) or `memos:write` (for `ramp_update_transaction_memo`) in the Ramp app, add the same scope to the scope list in the connector's OAuth settings, and switch the tool on. Ramp's `cards:write` scope also lets software issue cards; this connector has no such tool. Never allow `bills:write`, `reimbursements:write`, `cards:read_vault` or `limits:write` for this app.\n\n**Financial data is sensitive.** Balances, transactions, bills, reimbursements, cards and employees are confidential company data. Share this MCP server only with people allowed to see them, read only what the user asks for and do not copy it elsewhere. Card numbers and CVCs are never returned (the vault endpoints are not used), and bank account details of entities and vendors are left out.\n\n**Writes: confirm first.** Before `ramp_lock_card`, `ramp_unlock_card` or `ramp_update_transaction_memo`, show the user what will change and wait for a clear yes.\n\n**How to work**\n1. Company: `ramp_get_business`, `ramp_get_business_balance`, `ramp_list_entities`, `ramp_list_departments`, `ramp_list_locations`.\n2. People: `ramp_list_users`, `ramp_get_user`.\n3. Cards and limits: `ramp_list_physical_cards`, `ramp_get_physical_card`, `ramp_list_virtual_cards`, `ramp_get_virtual_card`, `ramp_list_funds`, `ramp_get_fund`, `ramp_list_spend_programs`, `ramp_get_spend_program`; actions `ramp_lock_card`, `ramp_unlock_card`.\n4. Spend: `ramp_list_transactions` (requires_memo=true finds transactions missing a memo), `ramp_get_transaction`, `ramp_update_transaction_memo`, `ramp_list_receipts`, `ramp_get_receipt`.\n5. Reimbursements and bills: `ramp_list_reimbursements`, `ramp_get_reimbursement`, `ramp_list_bills`, `ramp_get_bill`, `ramp_list_vendors`, `ramp_get_vendor`.\n6. Accounting and statements: `ramp_list_gl_accounts`, `ramp_list_statements`, `ramp_get_statement`.\n\n**Amounts**: transaction `amount` is a plain number in dollars (90.0). Objects such as `{\"amount\": 9000, \"currency_code\": \"USD\"}` are in the smallest unit (cents): divide by 100.\n\n**Paging**: lists answer with `data` and `next_page`, a URL. Pass the value of its `start` parameter as `start` to get the next page; `next_page` is null on the last page. `page_size` is 2 to 100 (default 20).\n\n**Rate limit**: 200 requests per 10 seconds per IP address; a 429 means wait a few seconds.\n\n**Sandbox**: Ramp's sandbox is at `https://demo-api.ramp.com`. With a sandbox app, change the connector's base URL to `https://demo-api.ramp.com/developer/v1` and its token URL to `https://demo-api.ramp.com/developer/v1/token`. Production and sandbox credentials are separate.\n\n**Common errors**\n- Could not obtain an access token: the client ID or secret is wrong, Client Credentials is not enabled, or a requested scope is not allowed in the app (invalid_scope).\n- 403: the token lacks the scope of that tool.\n- 404 with DEVELOPER_7002 \"Access token ... not found\": Ramp does not know the token (revoked, or a sandbox token on production). Ramp answers 404 here instead of 401. Check the base URL and create a new client secret if needed.\n- Other 404: the id does not exist.\n\n**Out of scope**: paying bills or reimbursements, transfers, issuing or terminating cards, changing funds and limits, approvals, uploading receipts, users, vendors and accounting setup.",
+  "region": "intl",
+  "category": "banking",
+  "icon": "ramp",
+  "docsUrl": "https://docs.ramp.com/developer-api/v1",
+  "prerequisites": "A Ramp account where you are an admin or business owner, to create a Developer API app with the Client Credentials grant and read-only scopes under Company, Developer. About 10 minutes.",
+  "appRegistrationUrl": "https://app.ramp.com",
+  "requiredEnvVars": [
+    "RAMP_CLIENT_ID",
+    "RAMP_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "RAMP_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Ramp, Company, Developer, your app: Client ID. The app needs the Client Credentials grant and the read-only scopes listed in the setup steps.",
+      "link": "https://app.ramp.com",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the client ID without spaces."
+    },
+    "RAMP_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same app page: Client Secret. Production and sandbox apps have different secrets.",
+      "link": "https://app.ramp.com",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Ramp did not issue a token: check the client ID and secret, that the app has the Client Credentials grant, and that every scope in the setup steps is allowed in the app (otherwise Ramp answers invalid_scope).",
+    "403": "The token works but lacks the scope for this call (business:read for the install check). Allow it in the Ramp app.",
+    "404": "Ramp answers 404 (DEVELOPER_7002) when it does not know the access token, for example a sandbox app used against production. Otherwise the id does not exist.",
+    "429": "Ramp is rate limiting (200 requests per 10 seconds). Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "ramp_get_business"
+  },
+  "connector": {
+    "name": "Ramp Developer API",
+    "type": "REST",
+    "baseUrl": "https://api.ramp.com/developer/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{RAMP_CLIENT_ID}}",
+      "clientSecret": "{{RAMP_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.ramp.com/developer/v1/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "business:read users:read departments:read locations:read entities:read cards:read funds:read spend_programs:read transactions:read reimbursements:read bills:read vendors:read receipts:read accounting:read statements:read"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/business"
+  },
+  "tools": [
+    {
+      "name": "ramp_get_business",
+      "description": "Read the Ramp business: id, legal name, name on cards, active flag, billing address, website and whether reimbursements are on. Cheap; use it first to check the connection. Needs business:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/business"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "business_name_legal": "$.business_name_legal",
+            "business_name_on_card": "$.business_name_on_card",
+            "active": "$.active",
+            "created_time": "$.created_time",
+            "billing_address": "$.billing_address",
+            "website": "$.website",
+            "is_reimbursements_enabled": "$.is_reimbursements_enabled",
+            "limit_locked": "$.limit_locked"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_get_business_balance",
+      "description": "Read the Ramp business balance: card limit, available card limit, card balance including pending, statement balance and the previous and next billing date. Plain numbers are in dollars; the *_amount objects are in cents. Needs business:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/business/balance"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "card_limit": "$.card_limit",
+            "available_card_limit": "$.available_card_limit",
+            "card_balance_including_pending": "$.card_balance_including_pending",
+            "balance_including_pending": "$.balance_including_pending",
+            "statement_balance": "$.statement_balance",
+            "global_limit": "$.global_limit",
+            "next_billing_date": "$.next_billing_date",
+            "prev_billing_date": "$.prev_billing_date",
+            "card_limit_amount": "$.card_limit_amount",
+            "available_card_limit_amount": "$.available_card_limit_amount",
+            "statement_balance_amount": "$.statement_balance_amount"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_users",
+      "description": "List Ramp users with id, name, email, role, status, department, location, manager and entity. Filter by email, role, status, department, location or entity. Suspended users are left out unless you ask for them. Personal data: show only what the user asked for. Paged. Needs users:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Exact email address."
+          },
+          "role": {
+            "type": "string",
+            "description": "Only users with this role.",
+            "enum": [
+              "AUDITOR",
+              "BUSINESS_ADMIN",
+              "BUSINESS_BOOKKEEPER",
+              "BUSINESS_OWNER",
+              "BUSINESS_USER",
+              "GUEST_USER",
+              "IT_ADMIN"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Only users with this status.",
+            "enum": [
+              "USER_ACTIVE",
+              "USER_DRAFT",
+              "USER_INACTIVE",
+              "USER_SUSPENDED"
+            ]
+          },
+          "department_id": {
+            "type": "string",
+            "description": "Only users in this department (id from ramp_list_departments)."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Only users at this location (id from ramp_list_locations)."
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Only users of this business entity (id from ramp_list_entities)."
+          },
+          "employee_id": {
+            "type": "string",
+            "description": "Only the user with this employee id."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "email": "$email",
+          "role": "$role",
+          "status": "$status",
+          "department_id": "$department_id",
+          "location_id": "$location_id",
+          "entity_id": "$entity_id",
+          "employee_id": "$employee_id",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "first_name": "first_name",
+                "last_name": "last_name",
+                "email": "email",
+                "role": "role",
+                "status": "status",
+                "department_id": "department_id",
+                "location_id": "location_id",
+                "manager_id": "manager_id",
+                "is_manager": "is_manager",
+                "entity_id": "entity_id",
+                "employee_id": "employee_id"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "ramp_get_user",
+      "description": "Read one Ramp user by id: name, email, role, status, department, location, manager and entity. Needs users:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id from ramp_list_users or a card holder."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "first_name": "first_name",
+            "last_name": "last_name",
+            "email": "email",
+            "role": "role",
+            "status": "status",
+            "department_id": "department_id",
+            "location_id": "location_id",
+            "manager_id": "manager_id",
+            "is_manager": "is_manager",
+            "entity_id": "entity_id",
+            "employee_id": "employee_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_departments",
+      "description": "List the departments in Ramp (id and name). Paged. Needs departments:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments",
+        "queryParams": {
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_locations",
+      "description": "List the locations in Ramp (id, name and business entity). Filter by entity. Paged. Needs locations:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "Only locations of this business entity."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations",
+        "queryParams": {
+          "entity_id": "$entity_id",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "entity_id": "entity_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_entities",
+      "description": "List the business entities (subsidiaries) in Ramp with id, name, currency, whether it is the primary entity, its locations and the connected ERP subsidiary. Bank account details are removed on purpose. Paged. Needs entities:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_name": {
+            "type": "string",
+            "description": "Only entities with this name."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Only entities in this currency, e.g. USD."
+          },
+          "hide_inactive": {
+            "type": "boolean",
+            "description": "Leave out inactive entities."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entities",
+        "queryParams": {
+          "entity_name": "$entity_name",
+          "currency": "$currency",
+          "hide_inactive": "$hide_inactive",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].accounts",
+            "data[*].payment_accounts"
+          ],
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "entity_name": "entity_name",
+                "currency": "currency",
+                "is_primary": "is_primary",
+                "location_ids": "location_ids",
+                "connected_subsidiary": "connected_subsidiary.name"
+              }
+            }
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "ramp_list_physical_cards",
+      "description": "List Ramp physical cards with id, display name, card holder, last four digits, state, whether it is suspended (locked), fund and shipping status. Never returns the card number or CVC. By default only activated cards; filter by user or display name. Paged. Needs cards:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Only cards of this user."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Only cards with this display name."
+          },
+          "include_activated_only": {
+            "type": "boolean",
+            "description": "Only activated cards (Ramp default true)."
+          },
+          "include_terminated_only": {
+            "type": "boolean",
+            "description": "Only terminated cards (Ramp default false)."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cards/physical",
+        "queryParams": {
+          "user_id": "$user_id",
+          "display_name": "$display_name",
+          "include_activated_only": "$include_activated_only",
+          "include_terminated_only": "$include_terminated_only",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "display_name": "display_name",
+                "cardholder_id": "cardholder_id",
+                "cardholder_name": "cardholder_name",
+                "last_four": "last_four",
+                "state": "state",
+                "is_suspended": "is_suspended",
+                "is_physical": "is_physical",
+                "fund_id": "fund_id",
+                "fulfillment_status": "fulfillment.fulfillment_status",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "ramp_get_physical_card",
+      "description": "Read one Ramp physical card by id: display name, card holder, last four digits, state, suspended flag, fund and shipping status. Never returns the card number, CVC or shipping address. Needs cards:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "description": "Card id from ramp_list_physical_cards or a transaction."
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cards/physical/{card_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "display_name": "display_name",
+            "cardholder_id": "cardholder_id",
+            "cardholder_name": "cardholder_name",
+            "last_four": "last_four",
+            "state": "state",
+            "is_suspended": "is_suspended",
+            "is_physical": "is_physical",
+            "fund_id": "fund_id",
+            "fulfillment_status": "fulfillment.fulfillment_status",
+            "created_at": "created_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_virtual_cards",
+      "description": "List Ramp virtual cards with id, owner user id, fund id and whether the card is suspended. Never returns card numbers. Filter by user or entity; terminated cards are left out unless is_terminated is true. Paged. Needs cards:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Only cards of this user."
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Only cards of this business entity."
+          },
+          "is_terminated": {
+            "type": "boolean",
+            "description": "Only terminated cards (Ramp default false)."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cards/virtual",
+        "queryParams": {
+          "user_id": "$user_id",
+          "entity_id": "$entity_id",
+          "is_terminated": "$is_terminated",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "user_id": "user_id",
+                "fund_id": "fund_id",
+                "is_card_suspended": "is_card_suspended",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_get_virtual_card",
+      "description": "Read one Ramp virtual card by id: owner user id, fund id and suspended flag. Needs cards:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "description": "Virtual card id from ramp_list_virtual_cards."
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cards/virtual/{card_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "user_id": "user_id",
+            "fund_id": "fund_id",
+            "is_card_suspended": "is_card_suspended",
+            "created_at": "created_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_funds",
+      "description": "List Ramp funds (spend limits) with name, state, balance (cleared, pending, total), spending restrictions (limit, interval, allowed and blocked categories, per-transaction limit), spend program, members and cards. CurrencyAmount objects {amount, currency_code} are in the smallest unit (cents for USD). Filter by user, card, spend program, entity or creation date. Paged. Needs funds:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Only funds owned by this user."
+          },
+          "card_id": {
+            "type": "string",
+            "description": "Only funds linked to this card."
+          },
+          "spend_program_id": {
+            "type": "string",
+            "description": "Only funds of this spend program."
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Only funds of this business entity."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Only funds with this display name."
+          },
+          "is_terminated": {
+            "type": "boolean",
+            "description": "Only terminated funds."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only funds created after this date-time (ISO 8601, e.g. 2026-01-15T00:00:00Z)."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only funds created before this date-time (ISO 8601)."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funds",
+        "queryParams": {
+          "user_id": "$user_id",
+          "card_id": "$card_id",
+          "spend_program_id": "$spend_program_id",
+          "entity_id": "$entity_id",
+          "display_name": "$display_name",
+          "is_terminated": "$is_terminated",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "display_name": "display_name",
+                "state": "state",
+                "balance": "balance",
+                "spending_restrictions": "spending_restrictions",
+                "permitted_spend_types": "permitted_spend_types",
+                "spend_program_id": "spend_program_id",
+                "entity_id": "entity_id",
+                "is_shareable": "is_shareable",
+                "suspension": "suspension",
+                "member_user_ids": "members[*].user_id",
+                "cards": {
+                  "$from": "cards[*]",
+                  "$select": {
+                    "card_id": "card_id",
+                    "display_name": "display_name",
+                    "last_four": "last_four",
+                    "user_id": "user_id"
+                  }
+                },
+                "created_at": "created_at"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ramp_get_fund",
+      "description": "Read one Ramp fund (spend limit) by id: balance, spending restrictions, spend program, members and cards. CurrencyAmount objects {amount, currency_code} are in the smallest unit (cents for USD). Needs funds:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fund_id": {
+            "type": "string",
+            "description": "Fund id from ramp_list_funds, a card or a transaction's limit_id."
+          }
+        },
+        "required": [
+          "fund_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funds/{fund_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "display_name": "display_name",
+            "state": "state",
+            "balance": "balance",
+            "spending_restrictions": "spending_restrictions",
+            "permitted_spend_types": "permitted_spend_types",
+            "spend_program_id": "spend_program_id",
+            "entity_id": "entity_id",
+            "is_shareable": "is_shareable",
+            "suspension": "suspension",
+            "member_user_ids": "members[*].user_id",
+            "cards": {
+              "$from": "cards[*]",
+              "$select": {
+                "card_id": "card_id",
+                "display_name": "display_name",
+                "last_four": "last_four",
+                "user_id": "user_id"
+              }
+            },
+            "created_at": "created_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_spend_programs",
+      "description": "List Ramp spend programs (templates for funds, such as a travel or education stipend) with name, description, permitted spend types and restrictions. Paged. Needs spend_programs:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spend-programs",
+        "queryParams": {
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "display_name": "display_name",
+                "description": "description",
+                "is_shareable": "is_shareable",
+                "permitted_spend_types": "permitted_spend_types",
+                "restrictions": "restrictions"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_get_spend_program",
+      "description": "Read one Ramp spend program by id: name, description, permitted spend types and restrictions. Needs spend_programs:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spend_program_id": {
+            "type": "string",
+            "description": "Spend program id from ramp_list_spend_programs."
+          }
+        },
+        "required": [
+          "spend_program_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spend-programs/{spend_program_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "display_name": "display_name",
+            "description": "description",
+            "is_shareable": "is_shareable",
+            "permitted_spend_types": "permitted_spend_types",
+            "restrictions": "restrictions"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_transactions",
+      "description": "List Ramp card transactions with amount (in dollars), currency, state, time, merchant, category, memo, card, card holder, fund, receipts, statement and accounting sync status. Declined transactions are left out unless state is DECLINED or ALL. Filter by date, user, card, department, location, merchant, fund, spend program, entity, amount, approval or sync status, or requires_memo to find transactions missing a memo. Sort with one order_by flag. Paged. Financial data: share only what the user asked for. Needs transactions:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "Only transactions after this date-time (ISO 8601), compared with user_transaction_time."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Only transactions before this date-time (ISO 8601)."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Only transactions of this user."
+          },
+          "card_id": {
+            "type": "string",
+            "description": "Only transactions of this physical card."
+          },
+          "department_id": {
+            "type": "string",
+            "description": "Only this department."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Only this location."
+          },
+          "merchant_id": {
+            "type": "string",
+            "description": "Only this merchant."
+          },
+          "limit_id": {
+            "type": "string",
+            "description": "Only this fund (limit)."
+          },
+          "spend_program_id": {
+            "type": "string",
+            "description": "Only this spend program."
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Only this business entity."
+          },
+          "statement_id": {
+            "type": "string",
+            "description": "Only transactions on this statement."
+          },
+          "trip_id": {
+            "type": "string",
+            "description": "Only this trip."
+          },
+          "state": {
+            "type": "string",
+            "description": "Transaction state. ALL includes declined transactions.",
+            "enum": [
+              "ALL",
+              "CLEARED",
+              "COMPLETION",
+              "DECLINED",
+              "ERROR",
+              "PENDING",
+              "PENDING_INITIATION"
+            ]
+          },
+          "approval_status": {
+            "type": "string",
+            "description": "Only this approval status.",
+            "enum": [
+              "AWAITING_EMPLOYEE",
+              "AWAITING_EMPLOYEE_CHANGES_REQUESTED",
+              "AWAITING_EMPLOYEE_MISSING_ITEMS",
+              "AWAITING_EMPLOYEE_REPAYMENT_FAILED",
+              "AWAITING_EMPLOYEE_REPAYMENT_REQUESTED",
+              "AWAITING_REVIEWER",
+              "FULLY_APPROVED"
+            ]
+          },
+          "sync_status": {
+            "type": "string",
+            "description": "Only this accounting sync status.",
+            "enum": [
+              "NOT_SYNC_READY",
+              "SYNCED",
+              "SYNC_READY"
+            ]
+          },
+          "requires_memo": {
+            "type": "boolean",
+            "description": "true: only transactions that need a memo and have none."
+          },
+          "min_amount": {
+            "type": "number",
+            "description": "Only transactions above this amount, in US dollars."
+          },
+          "max_amount": {
+            "type": "number",
+            "description": "Only transactions below this amount, in US dollars."
+          },
+          "order_by_date_desc": {
+            "type": "boolean",
+            "description": "Newest first."
+          },
+          "order_by_date_asc": {
+            "type": "boolean",
+            "description": "Oldest first."
+          },
+          "order_by_amount_desc": {
+            "type": "boolean",
+            "description": "Largest first."
+          },
+          "order_by_amount_asc": {
+            "type": "boolean",
+            "description": "Smallest first."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "user_id": "$user_id",
+          "card_id": "$card_id",
+          "department_id": "$department_id",
+          "location_id": "$location_id",
+          "merchant_id": "$merchant_id",
+          "limit_id": "$limit_id",
+          "spend_program_id": "$spend_program_id",
+          "entity_id": "$entity_id",
+          "statement_id": "$statement_id",
+          "trip_id": "$trip_id",
+          "state": "$state",
+          "approval_status": "$approval_status",
+          "sync_status": "$sync_status",
+          "requires_memo": "$requires_memo",
+          "min_amount": "$min_amount",
+          "max_amount": "$max_amount",
+          "order_by_date_desc": "$order_by_date_desc",
+          "order_by_date_asc": "$order_by_date_asc",
+          "order_by_amount_desc": "$order_by_amount_desc",
+          "order_by_amount_asc": "$order_by_amount_asc",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "amount": "amount",
+                "currency_code": "currency_code",
+                "state": "state",
+                "user_transaction_time": "user_transaction_time",
+                "settlement_date": "settlement_date",
+                "merchant_name": "merchant_name",
+                "merchant_id": "merchant_id",
+                "merchant_descriptor": "merchant_descriptor",
+                "sk_category_name": "sk_category_name",
+                "memo": "memo",
+                "card_id": "card_id",
+                "card_holder": {
+                  "user_id": "card_holder.user_id",
+                  "first_name": "card_holder.first_name",
+                  "last_name": "card_holder.last_name",
+                  "department_name": "card_holder.department_name",
+                  "location_name": "card_holder.location_name"
+                },
+                "limit_id": "limit_id",
+                "spend_program_id": "spend_program_id",
+                "entity_id": "entity_id",
+                "receipts": "receipts",
+                "statement_id": "statement_id",
+                "trip_name": "trip_name",
+                "sync_status": "sync_status"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "ramp_get_transaction",
+      "description": "Read one Ramp transaction by id with amounts (original and merchant currency), merchant and location, category, memo, card holder, receipts, line items, accounting codes, policy violations, attendees, disputes and decline details. Needs transactions:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction id from ramp_list_transactions."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{transaction_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "amount": "amount",
+            "currency_code": "currency_code",
+            "state": "state",
+            "user_transaction_time": "user_transaction_time",
+            "settlement_date": "settlement_date",
+            "merchant_name": "merchant_name",
+            "merchant_id": "merchant_id",
+            "merchant_descriptor": "merchant_descriptor",
+            "sk_category_name": "sk_category_name",
+            "memo": "memo",
+            "card_id": "card_id",
+            "card_holder": {
+              "user_id": "card_holder.user_id",
+              "first_name": "card_holder.first_name",
+              "last_name": "card_holder.last_name",
+              "department_name": "card_holder.department_name",
+              "location_name": "card_holder.location_name"
+            },
+            "limit_id": "limit_id",
+            "spend_program_id": "spend_program_id",
+            "entity_id": "entity_id",
+            "receipts": "receipts",
+            "statement_id": "statement_id",
+            "trip_name": "trip_name",
+            "sync_status": "sync_status",
+            "original_transaction_amount": "original_transaction_amount",
+            "merchant_amount": "merchant_amount",
+            "merchant_location": "merchant_location",
+            "merchant_category_code": "merchant_category_code",
+            "accounting_field_selections": "accounting_field_selections[*].display_name",
+            "line_items": "line_items",
+            "policy_violations": "policy_violations",
+            "attendees": "attendees",
+            "decline_details": "decline_details",
+            "disputes": "disputes",
+            "all_requirements_met_and_approved": "all_requirements_met_and_approved",
+            "accounting_date": "accounting_date",
+            "synced_at": "synced_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_reimbursements",
+      "description": "List Ramp reimbursements (out-of-pocket and mileage) with type, state, merchant, memo, amounts, transaction date, submission, approval and payment dates, employee, fund, trip and receipts. CurrencyAmount objects {amount, currency_code} are in the smallest unit (cents for USD). Filter by user, state, dates, entity, trip or sync status. Read only: this connector cannot pay a reimbursement. Paged. Needs reimbursements:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Only reimbursements of this user."
+          },
+          "state": {
+            "type": "string",
+            "description": "Only reimbursements in this state, e.g. PENDING, APPROVED, REIMBURSED, REJECTED."
+          },
+          "direction": {
+            "type": "string",
+            "description": "BUSINESS_TO_USER (default) or USER_TO_BUSINESS for repayments.",
+            "enum": [
+              "BUSINESS_TO_USER",
+              "USER_TO_BUSINESS"
+            ]
+          },
+          "from_transaction_date": {
+            "type": "string",
+            "description": "Only reimbursements whose expense date is after this date (ISO 8601)."
+          },
+          "to_transaction_date": {
+            "type": "string",
+            "description": "Only reimbursements whose expense date is before this date (ISO 8601)."
+          },
+          "from_submitted_at": {
+            "type": "string",
+            "description": "Only reimbursements submitted after this date-time (ISO 8601)."
+          },
+          "to_submitted_at": {
+            "type": "string",
+            "description": "Only reimbursements submitted before this date-time (ISO 8601)."
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Only this business entity."
+          },
+          "trip_id": {
+            "type": "string",
+            "description": "Only this trip."
+          },
+          "has_been_approved": {
+            "type": "boolean",
+            "description": "true: only approved; false: only not yet approved."
+          },
+          "sync_status": {
+            "type": "string",
+            "description": "Only this accounting sync status.",
+            "enum": [
+              "NOT_SYNC_READY",
+              "SYNCED",
+              "SYNC_READY"
+            ]
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reimbursements",
+        "queryParams": {
+          "user_id": "$user_id",
+          "state": "$state",
+          "direction": "$direction",
+          "from_transaction_date": "$from_transaction_date",
+          "to_transaction_date": "$to_transaction_date",
+          "from_submitted_at": "$from_submitted_at",
+          "to_submitted_at": "$to_submitted_at",
+          "entity_id": "$entity_id",
+          "trip_id": "$trip_id",
+          "has_been_approved": "$has_been_approved",
+          "sync_status": "$sync_status",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "state": "state",
+                "direction": "direction",
+                "merchant": "merchant",
+                "memo": "memo",
+                "payee_amount": "payee_amount",
+                "merchant_amount": "merchant_amount",
+                "transaction_date": "transaction_date",
+                "submitted_at": "submitted_at",
+                "approved_at": "approved_at",
+                "payment_processed_at": "payment_processed_at",
+                "user_id": "user_id",
+                "user_full_name": "user_full_name",
+                "fund_id": "fund_id",
+                "trip_id": "trip_id",
+                "receipts": "receipts",
+                "distance": "distance",
+                "start_location": "start_location",
+                "end_location": "end_location",
+                "sync_status": "sync_status",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ramp_get_reimbursement",
+      "description": "Read one Ramp reimbursement by id: type, state, merchant, memo, amounts, dates, employee, fund, trip and receipts. Needs reimbursements:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reimbursement_id": {
+            "type": "string",
+            "description": "Reimbursement id from ramp_list_reimbursements."
+          }
+        },
+        "required": [
+          "reimbursement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reimbursements/{reimbursement_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "type": "type",
+            "state": "state",
+            "direction": "direction",
+            "merchant": "merchant",
+            "memo": "memo",
+            "payee_amount": "payee_amount",
+            "merchant_amount": "merchant_amount",
+            "transaction_date": "transaction_date",
+            "submitted_at": "submitted_at",
+            "approved_at": "approved_at",
+            "payment_processed_at": "payment_processed_at",
+            "user_id": "user_id",
+            "user_full_name": "user_full_name",
+            "fund_id": "fund_id",
+            "trip_id": "trip_id",
+            "receipts": "receipts",
+            "distance": "distance",
+            "start_location": "start_location",
+            "end_location": "end_location",
+            "sync_status": "sync_status",
+            "created_at": "created_at",
+            "updated_at": "updated_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_bills",
+      "description": "List Ramp Bill Pay bills with invoice number, status and status summary, approval status, amount, vendor, owner, issue, due and paid dates, payment method and date and invoice links. CurrencyAmount objects {amount, currency_code} are in the smallest unit (cents for USD). Filter by vendor, status summaries, approval or payment status, dates, amount or entity. Read only: this connector cannot pay, approve or release a bill. Paged. Needs bills:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_id": {
+            "type": "string",
+            "description": "Only bills of this vendor (id from ramp_list_vendors)."
+          },
+          "status_summaries": {
+            "type": "string",
+            "description": "Comma-separated status summaries, e.g. APPROVAL_PENDING,PAYMENT_SCHEDULED. Values: APPROVAL_PENDING, APPROVAL_REJECTED, ARCHIVED, AWAITING_PAYMENT, AWAITING_RELEASE, BLOCKED, HELD_BY_PROVIDER, ON_HOLD, PAYMENT_COMPLETED, PAYMENT_DETAILS_MISSING, PAYMENT_ERROR, PAYMENT_NOT_INSTRUCTED, PAYMENT_PROCESSING, PAYMENT_READY, PAYMENT_SCHEDULED, PENDING_VENDOR_APPROVAL, WAITING_FOR_TRANSACTION_MATCH, WAITING_FOR_TRANSFER_MATCH, WAITING_FOR_VENDOR."
+          },
+          "approval_status": {
+            "type": "string",
+            "description": "Only this approval status.",
+            "enum": [
+              "APPROVED",
+              "INITIALIZED",
+              "PENDING",
+              "REJECTED",
+              "TERMINATED"
+            ]
+          },
+          "payment_status": {
+            "type": "string",
+            "description": "OPEN (not fully paid) or PAID.",
+            "enum": [
+              "OPEN",
+              "PAID"
+            ]
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Exact invoice number."
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Only this business entity."
+          },
+          "from_due_date": {
+            "type": "string",
+            "description": "Only bills due on or after this date (ISO 8601)."
+          },
+          "to_due_date": {
+            "type": "string",
+            "description": "Only bills due on or before this date (ISO 8601)."
+          },
+          "from_issued_date": {
+            "type": "string",
+            "description": "Only bills issued on or after this date (ISO 8601)."
+          },
+          "to_issued_date": {
+            "type": "string",
+            "description": "Only bills issued on or before this date (ISO 8601)."
+          },
+          "from_paid_at": {
+            "type": "string",
+            "description": "Only bills paid on or after this date (ISO 8601)."
+          },
+          "to_paid_at": {
+            "type": "string",
+            "description": "Only bills paid on or before this date (ISO 8601)."
+          },
+          "min_amount": {
+            "type": "number",
+            "description": "Only bills of at least this amount."
+          },
+          "max_amount": {
+            "type": "number",
+            "description": "Only bills of at most this amount."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bills",
+        "queryParams": {
+          "vendor_id": "$vendor_id",
+          "status_summaries": "$status_summaries",
+          "approval_status": "$approval_status",
+          "payment_status": "$payment_status",
+          "invoice_number": "$invoice_number",
+          "entity_id": "$entity_id",
+          "from_due_date": "$from_due_date",
+          "to_due_date": "$to_due_date",
+          "from_issued_date": "$from_issued_date",
+          "to_issued_date": "$to_issued_date",
+          "from_paid_at": "$from_paid_at",
+          "to_paid_at": "$to_paid_at",
+          "min_amount": "$min_amount",
+          "max_amount": "$max_amount",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "invoice_number": "invoice_number",
+                "status": "status",
+                "status_summary": "status_summary",
+                "approval_status": "approval_status",
+                "amount": "amount",
+                "memo": "memo",
+                "vendor_memo": "vendor_memo",
+                "vendor": {
+                  "name": "vendor.remote_name",
+                  "type": "vendor.type",
+                  "remote_id": "vendor.remote_id"
+                },
+                "bill_owner": "bill_owner",
+                "issued_at": "issued_at",
+                "due_at": "due_at",
+                "paid_at": "paid_at",
+                "payment_method": "payment.payment_method",
+                "payment_date": "payment.payment_date",
+                "entity_id": "entity_id",
+                "sync_status": "sync_status",
+                "invoice_urls": "invoice_urls",
+                "deep_link_url": "deep_link_url",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ramp_get_bill",
+      "description": "Read one Ramp bill by id: invoice number, statuses, amount, vendor, owner, dates, payment method, line items and invoice links. Needs bills:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bill_id": {
+            "type": "string",
+            "description": "Bill id from ramp_list_bills."
+          }
+        },
+        "required": [
+          "bill_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bills/{bill_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "invoice_number": "invoice_number",
+            "status": "status",
+            "status_summary": "status_summary",
+            "approval_status": "approval_status",
+            "amount": "amount",
+            "memo": "memo",
+            "vendor_memo": "vendor_memo",
+            "vendor": {
+              "name": "vendor.remote_name",
+              "type": "vendor.type",
+              "remote_id": "vendor.remote_id"
+            },
+            "bill_owner": "bill_owner",
+            "issued_at": "issued_at",
+            "due_at": "due_at",
+            "paid_at": "paid_at",
+            "payment_method": "payment.payment_method",
+            "payment_date": "payment.payment_date",
+            "entity_id": "entity_id",
+            "sync_status": "sync_status",
+            "invoice_urls": "invoice_urls",
+            "deep_link_url": "deep_link_url",
+            "created_at": "created_at",
+            "line_items": {
+              "$from": "line_items[*]",
+              "$select": {
+                "memo": "memo",
+                "amount": "amount"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_vendors",
+      "description": "List the vendors in Ramp with name, legal name, active flag, country, category, owner, ERP id, payment terms, default payment method and spend (year to date, last 30 and 365 days, all time). Bank details and tax ids are not returned. Filter by name, merchant, owner or dates. Paged. Needs vendors:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only vendors with this name."
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "true: only active vendors."
+          },
+          "merchant_id": {
+            "type": "string",
+            "description": "Only the vendor linked to this card merchant."
+          },
+          "vendor_owner_id": {
+            "type": "string",
+            "description": "Only vendors owned by this user."
+          },
+          "from_created_at": {
+            "type": "string",
+            "description": "Only vendors created after this date-time (ISO 8601)."
+          },
+          "from_updated_at": {
+            "type": "string",
+            "description": "Only vendors updated after this date-time (ISO 8601)."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendors",
+        "queryParams": {
+          "name": "$name",
+          "is_active": "$is_active",
+          "merchant_id": "$merchant_id",
+          "vendor_owner_id": "$vendor_owner_id",
+          "from_created_at": "$from_created_at",
+          "from_updated_at": "$from_updated_at",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "name_legal": "name_legal",
+                "is_active": "is_active",
+                "state": "state",
+                "country": "country",
+                "description": "description",
+                "sk_category_name": "sk_category_name",
+                "vendor_owner_id": "vendor_owner_id",
+                "accounting_vendor_remote_id": "accounting_vendor_remote_id",
+                "external_vendor_id": "external_vendor_id",
+                "net_payment_terms": "net_payment_terms",
+                "default_payment_method": "default_payment_method.policy.data.payment_method",
+                "total_spend_ytd": "total_spend_ytd",
+                "total_spend_last_30_days": "total_spend_last_30_days",
+                "total_spend_last_365_days": "total_spend_last_365_days",
+                "total_spend_all_time": "total_spend_all_time",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ramp_get_vendor",
+      "description": "Read one Ramp vendor by id: names, status, country, category, owner, ERP id, payment terms, default payment method and spend totals. Bank details and tax ids are not returned. Needs vendors:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_id": {
+            "type": "string",
+            "description": "Vendor id from ramp_list_vendors or a bill."
+          }
+        },
+        "required": [
+          "vendor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendors/{vendor_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "name": "name",
+            "name_legal": "name_legal",
+            "is_active": "is_active",
+            "state": "state",
+            "country": "country",
+            "description": "description",
+            "sk_category_name": "sk_category_name",
+            "vendor_owner_id": "vendor_owner_id",
+            "accounting_vendor_remote_id": "accounting_vendor_remote_id",
+            "external_vendor_id": "external_vendor_id",
+            "net_payment_terms": "net_payment_terms",
+            "default_payment_method": "default_payment_method.policy.data.payment_method",
+            "total_spend_ytd": "total_spend_ytd",
+            "total_spend_last_30_days": "total_spend_last_30_days",
+            "total_spend_last_365_days": "total_spend_last_365_days",
+            "total_spend_all_time": "total_spend_all_time",
+            "created_at": "created_at",
+            "updated_at": "updated_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_receipts",
+      "description": "List receipts uploaded to Ramp with the transaction or reimbursement they belong to, the user and a temporary download link. Filter by transaction, reimbursement or dates; include_ocr_data adds the amounts and line items Ramp read from the receipt. Paged. Needs receipts:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Only receipts of this transaction."
+          },
+          "reimbursement_id": {
+            "type": "string",
+            "description": "Only receipts of this reimbursement."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only receipts created after this date-time (ISO 8601)."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only receipts created before this date-time (ISO 8601)."
+          },
+          "include_ocr_data": {
+            "type": "boolean",
+            "description": "Also return the data Ramp extracted from the receipt."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/receipts",
+        "queryParams": {
+          "transaction_id": "$transaction_id",
+          "reimbursement_id": "$reimbursement_id",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "include_ocr_data": "$include_ocr_data",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "created_at": "created_at",
+                "transaction_id": "transaction_id",
+                "reimbursement_id": "reimbursement_id",
+                "user_id": "user_id",
+                "receipt_url": "receipt_url",
+                "ocr": "ocr"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ramp_get_receipt",
+      "description": "Read one Ramp receipt by id: transaction or reimbursement, user, creation date and a temporary download link. Needs receipts:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receipt_id": {
+            "type": "string",
+            "description": "Receipt id from ramp_list_receipts or a transaction."
+          },
+          "include_ocr_data": {
+            "type": "boolean",
+            "description": "Also return the data Ramp extracted from the receipt."
+          }
+        },
+        "required": [
+          "receipt_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/receipts/{receipt_id}",
+        "queryParams": {
+          "include_ocr_data": "$include_ocr_data"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "created_at": "created_at",
+            "transaction_id": "transaction_id",
+            "reimbursement_id": "reimbursement_id",
+            "user_id": "user_id",
+            "receipt_url": "receipt_url",
+            "ocr": "ocr"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_list_gl_accounts",
+      "description": "List the general ledger accounts synced from the accounting system into Ramp, with id, name, code, classification (for example EXPENSE), active flag and provider (for example QuickBooks). Filter by code or active flag. Paged. Needs accounting:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Only the account with this code."
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "true: only active accounts."
+          },
+          "remote_id": {
+            "type": "string",
+            "description": "Only the account with this id in the accounting system."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/accounts",
+        "queryParams": {
+          "code": "$code",
+          "is_active": "$is_active",
+          "remote_id": "$remote_id",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "ramp_id": "ramp_id",
+                "name": "name",
+                "code": "code",
+                "classification": "classification",
+                "is_active": "is_active",
+                "provider_name": "provider_name",
+                "category": "gl_account_category_info.name"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ramp_list_statements",
+      "description": "List Ramp card statements with period, opening and ending balance, charges, credits, payments and a temporary PDF link. CurrencyAmount objects {amount, currency_code} are in the smallest unit (cents for USD). Filter by end date. Paged. Needs statements:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "Only statements ending on or after this date (ISO 8601)."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Only statements ending on or before this date (ISO 8601)."
+          },
+          "start": {
+            "type": "string",
+            "description": "Cursor for the next page: the value of the start parameter inside page.next of the previous answer. Leave it out for the first page; page.next is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 2 to 100 (Ramp default 20).",
+            "minimum": 2,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/statements",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "start": "$start",
+          "page_size": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_page": "$.page.next",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "start_date": "start_date",
+                "end_date": "end_date",
+                "opening_balance": "opening_balance",
+                "ending_balance": "ending_balance",
+                "charges": "charges",
+                "credits": "credits",
+                "payments": "payments",
+                "balance_sections": "balance_sections",
+                "statement_url": "statement_url"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "ramp_get_statement",
+      "description": "Read one Ramp statement by id: period, balances, charges, credits, payments and a temporary PDF link. The list of statement lines is left out; use ramp_list_transactions with statement_id for them. Needs statements:read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statement_id": {
+            "type": "string",
+            "description": "Statement id from ramp_list_statements."
+          }
+        },
+        "required": [
+          "statement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/statements/{statement_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "start_date": "start_date",
+            "end_date": "end_date",
+            "opening_balance": "opening_balance",
+            "ending_balance": "ending_balance",
+            "charges": "charges",
+            "credits": "credits",
+            "payments": "payments",
+            "balance_sections": "balance_sections",
+            "statement_url": "statement_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "ramp_lock_card",
+      "description": "Suspend (lock) a Ramp card so it cannot be used, for example when it is lost. Reversible with ramp_unlock_card. Ramp documents this on physical card ids from ramp_list_physical_cards. Confirm the card (name and last four digits) with the user before calling. Installed switched off; needs the cards:write scope.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "description": "Card id from ramp_list_physical_cards."
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cards/physical/{card_id}/suspension"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "display_name": "$.display_name",
+            "last_four": "$.last_four",
+            "is_suspended": "$.is_suspended",
+            "state": "$.state"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ramp_unlock_card",
+      "description": "Lift the suspension of a Ramp card so it can be used again. Only when the user explicitly asks; confirm the card (name and last four digits) before calling. Installed switched off; needs the cards:write scope.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "description": "Card id from ramp_list_physical_cards."
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/cards/physical/{card_id}/suspension"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "display_name": "$.display_name",
+            "last_four": "$.last_four",
+            "is_suspended": "$.is_suspended",
+            "state": "$.state"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ramp_update_transaction_memo",
+      "description": "Set the memo of a Ramp transaction (at most 255 characters), for example the business purpose. Replaces the existing memo. Show the user the transaction and the new memo and confirm before calling. Installed switched off; needs the memos:write scope.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction id from ramp_list_transactions."
+          },
+          "memo": {
+            "type": "string",
+            "description": "The memo text, at most 255 characters.",
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "transaction_id",
+          "memo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/memos/{transaction_id}",
+        "bodyMapping": {
+          "memo": "$memo"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "memo": "$.memo"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

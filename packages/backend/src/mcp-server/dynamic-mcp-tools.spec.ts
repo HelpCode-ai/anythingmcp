@@ -559,3 +559,90 @@ describe('DynamicMcpTools — connector not authorized yet', () => {
     }
   });
 });
+
+describe('DynamicMcpTools: images in the response', () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]).toString('base64');
+  const GENERATED = { created: 1760000000, output_format: 'png', data: [{ b64_json: PNG }] };
+
+  it('returns the image as MCP image content after the text, which keeps a placeholder', async () => {
+    const { executor, audit } = build(makeTool({ images: { paths: ['data[*].b64_json'] } }), { engineResult: GENERATED });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBeUndefined();
+    expect(res.content).toHaveLength(2);
+    expect(res.content[0].type).toBe('text');
+    expect(res.content[0].text).not.toContain(PNG);
+    expect(JSON.parse(res.content[0].text).data[0].b64_json).toMatch(/^\[image 1: image\/png/);
+    expect(res.content[1]).toEqual({ type: 'image', data: PNG, mimeType: 'image/png' });
+    expect(JSON.stringify(res.structured)).not.toContain(PNG);
+    expect(audit.logInvocation).toHaveBeenCalledWith(expect.objectContaining({ status: 'SUCCESS' }));
+  });
+
+  it('adds no image content for tools without the option, even when the body holds base64', async () => {
+    const { executor } = build(makeTool(), { engineResult: GENERATED });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.content).toHaveLength(1);
+    expect(res.content[0].text).toBe(JSON.stringify(GENERATED, null, 2));
+  });
+});
+
+describe('DynamicMcpTools: the connector id reaches the engine', () => {
+  function bridgeTool(authConfig: Record<string, unknown>): RegisteredTool {
+    return {
+      id: 'tool-c',
+      connectorId: 'cmv-cloudinary',
+      organizationId: 'org-1',
+      name: 'cloudinary_list_images',
+      description: 'List images',
+      parameters: { type: 'object', properties: {} },
+      connectorType: 'MCP',
+      connectorConfig: {
+        baseUrl: 'https://asset-management.mcp.cloudinary.com/mcp',
+        authType: 'OAUTH2',
+        // The registry holds the decrypted authConfig as a JSON string.
+        authConfig: JSON.stringify(authConfig),
+      },
+      endpointMapping: { method: 'list-images', path: '/mcp' },
+    };
+  }
+
+  function run(tool: RegisteredTool) {
+    const mcpClientEngine = { execute: jest.fn().mockResolvedValue({ content: [] }) };
+    const executor = new DynamicMcpTools(
+      { getTool: () => tool, getToolForOrg: () => tool } as any,
+      { logInvocation: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: jest.fn().mockResolvedValue(null), set: jest.fn() } as any,
+      { checkLicenseActive: jest.fn().mockResolvedValue(undefined) } as any,
+      { isCloud: () => false } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      mcpClientEngine as any,
+      {} as any,
+      { scheduleObservationalIngest: jest.fn() } as any,
+    );
+    return { executor, mcpClientEngine };
+  }
+
+  // Without it the OAuth2 token service could neither cache a renewed token
+  // nor store the rotated refresh token, and the next renewal replayed the
+  // spent one (Cloudinary: invalid_grant minutes after each authorization).
+  it('passes the connector id, so OAuth2 renewals are cached, locked and stored', async () => {
+    const { executor, mcpClientEngine } = run(
+      bridgeTool({ tokenUrl: 'https://x/token', accessToken: 'at', refreshToken: 'rt' }),
+    );
+    await executor.executeTool('cloudinary_list_images', {});
+    expect(mcpClientEngine.execute.mock.calls[0][0]).toMatchObject({
+      connectorId: 'cmv-cloudinary',
+      authType: 'OAUTH2',
+    });
+  });
+
+  it('leaves credentials that depend on the caller ({{amcp.*}}) unkeyed', async () => {
+    const { executor, mcpClientEngine } = run(
+      bridgeTool({ tokenUrl: 'https://x/token', username: '{{amcp.user_email}}', password: 'p' }),
+    );
+    await executor.executeTool('cloudinary_list_images', {});
+    expect(mcpClientEngine.execute.mock.calls[0][0].connectorId).toBeUndefined();
+  });
+});

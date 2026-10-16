@@ -7,7 +7,7 @@ on:
     branches: [main]
   schedule:
     # Weekly Monday 06:00 UTC, in case dependencies introduce new advisories.
-    - cron: '0 6 * * 1'
+    - cron: "0 6 * * 1"
 
 jobs:
   analyze:

@@ -62,6 +62,29 @@ async function render(t: Tool): Promise<string> {
 }
 
 describe('tallyprime adapter: static spec conformance', () => {
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect((adapter as unknown as { unlisted?: boolean }).unlisted).toBeUndefined();
+  });
+
+  it('reports a response with the documented failure flag STATUS 0 as an error', async () => {
+    mockedAxios.mockResolvedValue({
+      data: '<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>0</STATUS></HEADER><BODY><DATA>Could not set SVCurrentCompany</DATA></BODY></ENVELOPE>',
+      headers: { 'content-type': 'text/xml; charset=utf-8' },
+    });
+    await expect(
+      new RestEngine({} as never, {} as never).execute(
+        {
+          baseUrl: 'http://192.168.1.20:9000',
+          authType: 'NONE',
+          headers: a.connector.headers,
+          errorWhen: (adapter as unknown as { connector: { config: { errorWhen: unknown } } }).connector.config.errorWhen,
+        },
+        tool('tallyprime_list_ledgers').endpointMapping,
+        { company: 'X' },
+      ),
+    ).rejects.toThrow(/Could not set SVCurrentCompany/);
+  });
+
   it('posts XML to the address of the TallyPrime server, without auth', () => {
     expect(a.connector.baseUrl).toBe('{{TALLY_URL}}');
     expect(a.connector.authType).toBe('NONE');

@@ -125,6 +125,31 @@ curl -X POST https://api.example.com/users \
 
 This generates a tool with `token`, `name`, and `email` as parameters.
 
+### From a HAR file
+
+When an API has no OpenAPI spec, no Postman collection and no docs — just a web app
+that calls it — capture the traffic instead: in your browser's DevTools, open the
+Network tab, use the app for the flow you want, then right-click → "Save all as
+HAR". Import that file from the connector's **Import Tools** panel (source "HAR
+file (browser capture)"); the UI only accepts a file here, not pasted text.
+
+Only requests to the connector's own base URL are kept; everything else (other
+origins, stylesheets, scripts, images, fonts, WebSocket upgrades) is skipped.
+Repeated requests to the same path with a different id (`/orders/123`,
+`/orders/456`) collapse into one tool with an `{id}` path parameter. Query
+parameters and JSON or form bodies become tool parameters.
+
+A HAR carries your browser's session: cookies, bearer tokens and API keys. None
+of that is ever uploaded. The browser strips response bodies, cookies and
+credential-looking headers before the file leaves it, and the backend parser
+drops `Cookie`, `Authorization` and any header, query parameter or body field
+named like a credential (`token`, `secret`, `password`, `api_key`, `session`,
+and similar) on top of that — the connector's own configured auth, not
+anything recorded in the capture, is what actually authenticates the tool's
+calls. A credential-named body field (e.g. a login form's `password`) still
+becomes a parameter, just with no captured default, since the call needs that
+value supplied at call time.
+
 ### Custom JSON Definition
 
 Define tools directly as JSON:
@@ -294,7 +319,7 @@ OAuth2 connectors use the **Authorization Code + PKCE** flow:
 #### Token endpoint authentication (`client_secret_basic`)
 
 By default the client credentials are sent **in the body** of the token request (`client_secret_post`).
-Some providers — **Datto RMM** and **DATEV** among them — only accept them as an **HTTP Basic header**
+Some providers — **DATEV** among them — only accept them as an **HTTP Basic header**
 (`Authorization: Basic base64(client_id:client_secret)`, RFC 6749 §2.3.1) and answer anything else with
 `401` at the code-exchange step.
 
@@ -316,16 +341,38 @@ Notes:
   only `hasClientSecret` / `hasAccessToken` / `hasRefreshToken` booleans.
 - After switching the method, re-run **Authorize with Provider** so a token is fetched the new way.
 
-Example — Datto RMM:
+#### Grants without a sign-in (`client_credentials`, `password`)
+
+Some APIs issue a token from stored credentials and expect the client to ask again when it expires,
+with no refresh token. Choose the grant under **Grant type** in the connector form, or set `grant`:
+
+- **Authorization code** (default): the flow above, renewed with the refresh token.
+- **Client credentials** (`client_credentials`): the client ID and secret alone get the token.
+- **Password** (`password`, RFC 6749 §4.3): the token request also carries a `username` and `password`.
+
+With the last two there is nothing to authorize: the connector requests a token on its first call, again
+shortly before the token expires, and again when the API answers `401`. The client is sent as an HTTP Basic
+header by default for these grants; pick **Client secret in body** if the provider wants it in the form.
+The username and password, like the client secret, are never returned by `GET .../oauth-config`, only
+`hasUsername` / `hasPassword`.
+
+```bash
+curl -s -X PATCH http://localhost:4000/api/connectors/$CONNECTOR_ID/oauth-config \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"grant": "password", "username": "<API key>", "password": "<API secret>"}'
+```
+
+Example — Datto RMM. Its tokens last 100 hours and come with no refresh token, so a connector set up with
+the authorization-code flow stops working after 100 hours. Use the password grant:
 
 | Field | Value |
 |---|---|
-| Authorization URL | `https://<zone>-api.centrastage.net/auth/oauth/authorize` |
-| Token URL | `https://<zone>-api.centrastage.net/auth/oauth/token` |
+| Grant type | **Password** |
+| Username / Password | the API key / API secret key of the technical user |
 | Client ID / Secret | `public-client` / `public` |
-| Token endpoint authentication | **HTTP Basic header** |
-
-The API key and secret key of the technical user are entered on the provider's own consent screen.
+| Token URL | `https://<zone>-api.centrastage.net/auth/oauth/token` |
+| Token endpoint authentication | **HTTP Basic header** (the default for this grant) |
 
 #### Signed client assertion (`private_key_jwt`)
 

@@ -9,10 +9,12 @@ import { TrustStatsService } from '../public-stats/trust-stats.service';
 import { EMPTY_TRUST_STATS, TrustStats, formatTrustStats } from '../public-stats/trust-stats.format';
 import type { EmailBrandContext } from './email-layout';
 import {
+  CardTrialOfferEmailInput,
   MarketingContext,
   RenderedEmail,
   WinbackOffer,
   activationReminderEmail,
+  cardTrialOfferEmail,
   existingAccountEmail,
   invitationEmail,
   licenseKeyEmail,
@@ -23,6 +25,7 @@ import {
   verificationEmail,
 } from './email-templates';
 import { buildUnsubscribeUrl, unsubscribeSecret } from './unsubscribe-token';
+import { createEmailLinkToken } from '../common/email-link-token';
 
 /** The longest an email waits for the trust numbers before going out without fresh ones. */
 const STATS_WAIT_MS = 3000;
@@ -36,6 +39,24 @@ const LICENSE_API_URL =
   process.env.NODE_ENV === 'production'
     ? 'https://anythingmcp.com'
     : process.env.LICENSE_API_URL?.replace(/\/+$/, '') || 'http://localhost:3100';
+
+/**
+ * The sender of the system SMTP. setup.sh and railway.json ask for the sender
+ * address (SMTP_FROM) and its display name (SMTP_FROM_NAME) separately, but
+ * only SMTP_FROM was ever read, so self-hosted mail went out under a bare
+ * address. A SMTP_FROM that already carries a name (`Name <a@b>`) wins.
+ */
+export function systemSmtpFrom(env: NodeJS.ProcessEnv): string {
+  const name = env.SMTP_FROM_NAME?.trim();
+  const address = env.SMTP_FROM?.trim() || env.SMTP_USER?.trim();
+  if (!address) return name || 'AnythingMCP';
+  if (env.SMTP_FROM?.trim() && address.includes('<')) return address;
+  const display = name || (env.SMTP_FROM?.trim() ? '' : 'AnythingMCP');
+  if (!display) return address;
+  // RFC 5322: a display name with specials must be quoted.
+  const quoted = /[",:;<>@()[\]\\.]/.test(display) ? `"${display.replace(/["\\]/g, '\\$&')}"` : display;
+  return `${quoted} <${address}>`;
+}
 
 @Injectable()
 export class EmailService {
@@ -172,9 +193,7 @@ export class EmailService {
       secure: process.env.SMTP_SECURE === 'true' || port === 465,
       user: process.env.SMTP_USER || '',
       pass: process.env.SMTP_PASS || '',
-      from:
-        process.env.SMTP_FROM ||
-        (process.env.SMTP_USER ? `AnythingMCP <${process.env.SMTP_USER}>` : 'AnythingMCP'),
+      from: systemSmtpFrom(process.env),
       replyTo: process.env.SMTP_REPLY_TO,
     });
   }
@@ -548,7 +567,14 @@ export class EmailService {
     }
 
     const email = trialLifecycleEmail(
-      { name, stage, recap, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl() },
+      {
+        name,
+        stage,
+        recap,
+        cloudUrl: this.cloudUrl(),
+        marketingUrl: this.marketingUrl(),
+        emailToken: createEmailLinkToken(to),
+      },
       await this.brand(),
     );
 
@@ -623,7 +649,7 @@ export class EmailService {
 
     const { ctx, headers } = await this.marketing(to);
     const email = trialWinbackEmail(
-      { name, offer, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl() },
+      { name, offer, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl(), emailToken: createEmailLinkToken(to) },
       ctx,
     );
 
@@ -637,6 +663,35 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logger.error(`Failed to send trial win-back email to ${to}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * The card-trial offer after a workspace's first successful tool call
+   * (Cloud, SMTP only; see card-trial-offer.service.ts). Marketing: the
+   * caller honours the opt-out, and the email carries the unsubscribe line.
+   */
+  async sendCardTrialOfferEmail(
+    to: string,
+    input: Omit<CardTrialOfferEmailInput, 'ctaUrl'> & { ctaPath: string },
+  ): Promise<boolean> {
+    const transport = await this.createTransporter();
+    if (!transport) {
+      this.logger.warn(`Skipping card-trial offer email to ${to}: no SMTP configured`);
+      return false;
+    }
+
+    const { ctaPath, ...rest } = input;
+    const { ctx, headers } = await this.marketing(to);
+    const email = cardTrialOfferEmail({ ...rest, ctaUrl: `${this.cloudUrl()}${ctaPath}` }, ctx);
+
+    try {
+      await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email, headers) });
+      this.logger.log(`Card-trial offer email sent to ${to}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send card-trial offer email to ${to}: ${err}`);
       return false;
     }
   }

@@ -2,12 +2,27 @@
   "slug": "plaid",
   "name": "Plaid",
   "description": "Read Plaid (bank-linking, transactions, balances, identity, liabilities, investments) from any AI agent. 10 tools, body-credential auth.",
-  "instructions": "This connector wraps the Plaid REST API (per-environment).\n\n**Setup**:\n1. Sign up at https://dashboard.plaid.com → **Team Settings → Keys**. Note your `client_id` and one of: `sandbox`, `development`, `production` secret.\n2. **Environment matters**: change baseUrl: `sandbox.plaid.com` (free, fake banks), `development.plaid.com` (real banks, 100 free items), `production.plaid.com` (paid). Defaults to sandbox.\n3. Set `PLAID_CLIENT_ID` and `PLAID_SECRET`.\n\n**Authentication**: every POST sends `client_id` + `secret` in the JSON body — NOT as headers. The adapter merges them automatically via envVars.\n\n**Link flow**: Plaid is server+client — to obtain an `access_token`, your frontend uses Plaid Link with a `link_token` you minted server-side. This adapter assumes you already have an `access_token` for an Item (one connected bank). For Link itself use `plaid_link_token_create`.\n\n**Identifiers**:\n- `link_token`: short-lived (~30 min), passed to Link.\n- `public_token`: returned by Link, exchanged once for an access_token.\n- `access_token`: long-lived, scoped to one Item (institution+user).\n- `item_id`: stable ID for an access_token's Item.\n\n**Rate limits**: vary by environment + product. Sandbox is loose; production limits depend on plan. 429 with `Retry-After`.\n\n**Out of scope here**: webhooks setup, Plaid Signal (risk scores), Income/Employment products' end-user flows, Transfer (ACH origination).",
+  "instructions": "This connector wraps the Plaid REST API.\n\n**Environments**: Plaid has two, each with its own secret and its own Items:\n- **Sandbox** (`https://sandbox.plaid.com`): test institutions and test data, free. This connector calls Sandbox by default.\n- **Production** (`https://production.plaid.com`): real banks. New teams (US and Canada, created since 15 April 2026) can use it for free on a **Trial plan**; older teams may still have **Limited Production**, which also runs on production.plaid.com with the Production secret, with capped free calls. Full Production access is requested in the Dashboard.\n\nThe former Development environment no longer exists: `development.plaid.com` does not answer and there is no Development secret any more.\n\n**Setup**:\n1. Sign up at https://dashboard.plaid.com and open **Developers → Keys** (https://dashboard.plaid.com/developers/keys). Copy your `client_id` and the secret of the environment you want.\n2. Set `PLAID_CLIENT_ID` and `PLAID_SECRET`.\n3. For real bank data, change the connector's base URL to `https://production.plaid.com` and use the Production secret. The secret must match the host: a Sandbox secret sent to Production (or the reverse) fails with `INVALID_API_KEYS`. Items and access tokens cannot be moved between environments, so link the bank again after switching.\n\n**Authentication**: every POST sends `client_id` and `secret` in the JSON body, NOT as headers. The adapter merges them automatically via envVars.\n\n**Link flow**: Plaid is server plus client. To obtain an `access_token`, your frontend uses Plaid Link with a `link_token` you minted server-side. This adapter assumes you already have an `access_token` for an Item (one connected bank). For Link itself use `plaid_link_token_create`.\n\n**Identifiers**:\n- `link_token`: short-lived (~30 min), passed to Link.\n- `public_token`: returned by Link, exchanged once for an access_token.\n- `access_token`: long-lived, scoped to one Item (institution+user).\n- `item_id`: stable ID for an access_token's Item.\n\n**Rate limits**: vary by environment + product. Sandbox is loose; production limits depend on plan. 429 with `Retry-After`.\n\n**Out of scope here**: webhooks setup, Plaid Signal (risk scores), Income/Employment products' end-user flows, Transfer (ACH origination).",
   "region": "intl",
   "category": "payments",
   "icon": "plaid",
   "docsUrl": "https://plaid.com/docs/api/",
   "requiredEnvVars": ["PLAID_CLIENT_ID", "PLAID_SECRET"],
+  "envVarMeta": {
+    "PLAID_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Plaid Dashboard: Developers > Keys. The same client_id serves Sandbox and Production.",
+      "link": "https://dashboard.plaid.com/developers/keys"
+    },
+    "PLAID_SECRET": {
+      "label": "Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Plaid Dashboard: Developers > Keys. Use the Sandbox secret with the default base URL (sandbox.plaid.com); for real bank data use the Production secret and set the base URL to https://production.plaid.com. Plaid has no Development environment any more.",
+      "link": "https://dashboard.plaid.com/developers/keys"
+    }
+  },
   "connector": {
     "name": "Plaid API",
     "type": "REST",

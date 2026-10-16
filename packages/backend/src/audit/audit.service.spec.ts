@@ -171,6 +171,73 @@ describe('AuditService', () => {
     });
   });
 
+  describe('connector-failure alerts', () => {
+    it('notifies on every failing call, even ones the repeat-dedup check collapses into an existing row', async () => {
+      const alerts = { recordFailure: jest.fn().mockResolvedValue(undefined) };
+      const svc = new AuditService(mockPrisma, undefined, alerts as any);
+      // Dedup only engages once create() returns a row id to count repeats
+      // against — same setup as the 'repeated failures' block above.
+      let n = 0;
+      mockPrisma.toolInvocation.create.mockImplementation(async () => ({ id: `row-${++n}` }));
+
+      const fail = () =>
+        svc.logInvocation({
+          toolId: 'tool-1',
+          connectorId: 'conn-1',
+          organizationId: 'org-1',
+          input: {},
+          status: 'ERROR',
+          error: '429 Too Many Requests',
+        });
+
+      await fail();
+      await fail();
+      await fail();
+      // Only one row was written (see 'repeated failures' above), but all
+      // three attempts are real failures and must all reach the alert hook.
+      expect(mockPrisma.toolInvocation.create).toHaveBeenCalledTimes(1);
+      expect(alerts.recordFailure).toHaveBeenCalledTimes(3);
+      expect(alerts.recordFailure).toHaveBeenCalledWith({
+        organizationId: 'org-1',
+        connectorId: 'conn-1',
+        toolId: 'tool-1',
+        error: '429 Too Many Requests',
+      });
+
+      await svc.onModuleDestroy();
+    });
+
+    it('does not notify on success, or when organizationId/connectorId is missing', async () => {
+      const alerts = { recordFailure: jest.fn().mockResolvedValue(undefined) };
+      const svc = new AuditService(mockPrisma, undefined, alerts as any);
+
+      await svc.logInvocation({ toolId: 't', organizationId: 'org-1', connectorId: 'conn-1', input: {}, status: 'SUCCESS' });
+      await svc.logInvocation({ toolId: 't', connectorId: 'conn-1', input: {}, status: 'ERROR', error: 'e' }); // no org
+      await svc.logInvocation({ toolId: 't', organizationId: 'org-1', input: {}, status: 'ERROR', error: 'e' }); // no connector
+
+      expect(alerts.recordFailure).not.toHaveBeenCalled();
+      await svc.onModuleDestroy();
+    });
+
+    it('never lets a failing alert dispatch affect logInvocation', async () => {
+      const alerts = { recordFailure: jest.fn().mockRejectedValue(new Error('webhook down')) };
+      const svc = new AuditService(mockPrisma, undefined, alerts as any);
+
+      await expect(
+        svc.logInvocation({
+          toolId: 't',
+          organizationId: 'org-1',
+          connectorId: 'conn-1',
+          input: {},
+          status: 'ERROR',
+          error: 'e',
+        }),
+      ).resolves.toBeUndefined();
+
+      await svc.onModuleDestroy();
+    });
+  });
+
   describe('payload budget', () => {
     it('keeps only a short excerpt once an organisation has logged its hourly budget', async () => {
       const big = { rows: 'x'.repeat(20_000) };

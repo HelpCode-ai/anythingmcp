@@ -1,0 +1,12 @@
+- Find the customer or supplier record for "Mario Rossi".
+- Which customer has partita IVA IT12345678901?
+- Which sales orders are still open, and for which customers?
+- Show the invoices we issued between 1 and 30 September 2026 with their totals.
+- Which customer invoices are overdue, and by how many days?
+- What did we deliver to Bianchi SpA this month?
+- List the articles matching "office chair" with their prices.
+- Which articles have not been sold in the last 90 days?
+- Compare this month's invoiced total with last month's.
+- Which suppliers did we buy the most from this year?
+- How many employees are in each department?
+- Summarise last month's documents by type: invoices, orders and delivery notes.

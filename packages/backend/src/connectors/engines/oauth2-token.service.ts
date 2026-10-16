@@ -13,6 +13,7 @@ import {
 } from './client-assertion.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
 import { connectorPageUrl } from '../../common/url.util';
+import { isMachineGrant } from '../oauth-grant.util';
 
 /** Refresh tokens that expire within this window (5 minutes). */
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -27,6 +28,47 @@ function refreshWindowMs(lifetimeMs: number | undefined): number {
   return lifetimeMs && lifetimeMs > 0
     ? Math.min(PROACTIVE_REFRESH_BUFFER_MS, lifetimeMs / 2)
     : PROACTIVE_REFRESH_BUFFER_MS;
+}
+
+/**
+ * The cross-process refresh lock (see withRefreshLock): how long to wait for
+ * a database connection to hold it, and how long the holding transaction may
+ * live (the token request alone may take 10 s).
+ */
+const REFRESH_LOCK_MAX_WAIT_MS = 3_000;
+const REFRESH_LOCK_TIMEOUT_MS = 30_000;
+const REFRESH_LOCK_NAMESPACE = 'amcp:oauth2-refresh:';
+
+/** What a renewal may do besides asking the token endpoint. */
+interface RenewOptions {
+  /**
+   * Take the token stored on the connector instead of spending the refresh
+   * token, when another process (the other half of a blue/green deploy) or a
+   * new authorization stored a usable one.
+   */
+  adoptStored?: boolean;
+  /**
+   * The API refused a token sent at this time: a stored token only counts
+   * when it was obtained afterwards, whatever its expiry says.
+   */
+  rejectedAt?: number;
+}
+
+/** The connector reads and writes a renewal makes: the client, or the lock's transaction. */
+type ConnectorDb = Pick<PrismaService, 'connector'>;
+
+/** A renewed token that still has to be stored. */
+interface Rotation {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  expiresIn?: number;
+}
+
+/** What a renewal under the lock obtained, and whether it was stored. */
+interface PendingRotation {
+  rotation?: Rotation;
+  saved?: boolean;
 }
 
 interface CachedToken {
@@ -93,8 +135,8 @@ export class OAuth2TokenService {
     }
 
     // 2. Determine if proactive refresh is possible and needed.
-    // client_credentials needs only tokenUrl + clientId/Secret; refresh_token
-    // also needs a stored refreshToken.
+    // client_credentials needs only tokenUrl + clientId/Secret; password needs
+    // tokenUrl + username/password; refresh_token needs a stored refreshToken.
     const hasRefreshCapability =
       grant === 'client_credentials'
         ? !!(
@@ -102,7 +144,9 @@ export class OAuth2TokenService {
             authConfig.clientId &&
             (authConfig.clientSecret || isPrivateKeyJwt(authConfig.tokenAuthMethod))
           )
-        : !!(authConfig.refreshToken && authConfig.tokenUrl);
+        : grant === 'password'
+          ? !!(authConfig.tokenUrl && authConfig.username && authConfig.password)
+          : !!(authConfig.refreshToken && authConfig.tokenUrl);
     const tokenNearExpiry = this.isTokenNearExpiry(authConfig, cacheKey);
 
     let refreshFailed = false;
@@ -125,13 +169,13 @@ export class OAuth2TokenService {
     }
 
     const stored = String(authConfig.accessToken || '');
-    // A client_credentials connector has no token but the one it fetches. When
-    // that fetch fails, sending `Authorization: Bearer ` anyway only trades the
-    // token endpoint's precise answer for the API's vaguest one: Reddit
-    // answers an empty bearer with its HTML "Blocked" page, and 52 calls
-    // failed that way with nobody able to tell a wrong client secret from a
-    // bot wall. Stop here and say what the token endpoint said.
-    if (grant === 'client_credentials' && !stored) {
+    // A client_credentials or password connector has no token but the one it
+    // fetches. When that fetch fails, sending `Authorization: Bearer ` anyway
+    // only trades the token endpoint's precise answer for the API's vaguest
+    // one: Reddit answers an empty bearer with its HTML "Blocked" page, and 52
+    // calls failed that way with nobody able to tell a wrong client secret
+    // from a bot wall. Stop here and say what the token endpoint said.
+    if (isMachineGrant(grant) && !stored) {
       const reason = cacheKey ? this.lastRefreshError.get(cacheKey) : undefined;
       let host = 'the token endpoint';
       try {
@@ -140,9 +184,12 @@ export class OAuth2TokenService {
         // keep the generic wording
       }
       const err = new Error(
-        `OAuth2 client_credentials: could not obtain an access token from ${host}` +
+        `OAuth2 ${grant}: could not obtain an access token from ${host}` +
           (reason ? ` (${reason})` : '') +
-          '. No request was sent to the API. Check the client ID and client secret.',
+          '. No request was sent to the API. ' +
+          (grant === 'password'
+            ? 'Check the username and password, and the client ID and client secret if the provider needs them.'
+            : 'Check the client ID and client secret.'),
       ) as Error & { status?: number };
       // Lets the install-form probe classify this as rejected credentials.
       err.status = 401;
@@ -154,7 +201,7 @@ export class OAuth2TokenService {
     // looking at the token's format when the refresh token itself had been
     // refused. Only reached when there is no token at all, so a connector that
     // has one (stored, or cached) behaves exactly as before.
-    if (grant !== 'client_credentials' && !stored) {
+    if (!isMachineGrant(grant) && !stored) {
       if (refreshFailed) {
         const reason = cacheKey ? this.lastRefreshError.get(cacheKey) : undefined;
         throw unauthorized(
@@ -180,10 +227,136 @@ export class OAuth2TokenService {
    * Refresh the OAuth2 access token using the refresh token.
    * On success: caches in-memory and persists to DB.
    * Returns the new access token, or null on failure.
+   *
+   * For a saved connector the whole renewal (read the stored refresh token,
+   * ask the token endpoint, store what it returned) runs under a database
+   * lock on the connector, so two processes never spend the same refresh
+   * token: a provider that rotates it (Cloudinary, JTL, Sage, DATEV) accepts
+   * the first and refuses the second with invalid_grant.
    */
   async refreshToken(
     authConfig: Record<string, unknown>,
     connectorId?: string,
+    options: RenewOptions = {},
+  ): Promise<string | null> {
+    if (!connectorId) return this.renew(authConfig, undefined, this.prisma, options);
+    return this.withRefreshLock(connectorId, (db, pending) =>
+      this.renew(authConfig, connectorId, db, options, pending),
+    );
+  }
+
+  /**
+   * Runs `fn` while holding a Postgres advisory lock on the connector, inside
+   * a transaction whose client `fn` uses for its reads and writes (one
+   * connection, so a full pool cannot deadlock against itself). The renewed
+   * token is written before the lock is released; should the transaction
+   * fail after the token endpoint answered, the token is written again
+   * outside it rather than lost.
+   *
+   * Without a way to take the lock (no interactive transactions, or no
+   * connection free within REFRESH_LOCK_MAX_WAIT_MS) the renewal runs
+   * unlocked, as it did before, guarded only by the in-process mutex.
+   */
+  private async withRefreshLock(
+    connectorId: string,
+    fn: (db: ConnectorDb, pending: PendingRotation) => Promise<string | null>,
+  ): Promise<string | null> {
+    const prisma = this.prisma as unknown as {
+      $transaction?: (
+        run: (tx: any) => Promise<void>,
+        opts: { maxWait: number; timeout: number },
+      ) => Promise<void>;
+    };
+    if (typeof prisma.$transaction !== 'function') {
+      return fn(this.prisma, {});
+    }
+
+    const pending: PendingRotation = {};
+    let started = false;
+    let outcome: { value: string | null } | undefined;
+    let failure: unknown;
+    try {
+      await prisma.$transaction(
+        async (tx) => {
+          started = true;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${REFRESH_LOCK_NAMESPACE + connectorId}))`;
+          outcome = { value: await fn(tx, pending) };
+        },
+        { maxWait: REFRESH_LOCK_MAX_WAIT_MS, timeout: REFRESH_LOCK_TIMEOUT_MS },
+      );
+    } catch (err: any) {
+      if (!started) {
+        this.logger.warn(
+          `OAuth2: no database connection for the refresh lock of connector ${connectorId} ` +
+            `(${err?.message ?? err}); refreshing without it`,
+        );
+        return fn(this.prisma, {});
+      }
+      failure = err;
+    }
+
+    // The token endpoint rotated the refresh token, but the write did not
+    // survive (it failed, which leaves Postgres to roll the transaction back
+    // on commit, or the transaction itself failed): store it again outside,
+    // or the connector is left holding a refresh token the provider revoked.
+    if (pending.rotation && (failure !== undefined || !pending.saved)) {
+      this.logger.warn(
+        `OAuth2: the renewed token of connector ${connectorId} was not stored under the refresh lock` +
+          (failure !== undefined ? ` (${(failure as Error)?.message ?? failure})` : '') +
+          '; storing it again',
+      );
+      const r = pending.rotation;
+      await this.persistRefreshedToken(this.prisma, connectorId, r.accessToken, r.refreshToken, r.expiresAt, r.expiresIn);
+      return r.accessToken;
+    }
+    if (outcome) return outcome.value;
+    throw failure;
+  }
+
+  /**
+   * The stored token, when it can be used instead of a renewal (see
+   * RenewOptions.adoptStored). Cached like a renewed one.
+   */
+  private adoptStoredToken(
+    stored: Record<string, unknown>,
+    connectorId: string,
+    options: RenewOptions,
+  ): string | null {
+    if (!options.adoptStored) return null;
+    const accessToken = typeof stored.accessToken === 'string' ? stored.accessToken : '';
+    const expiresAt = Number(stored.expiresAt);
+    if (!accessToken || !Number.isFinite(expiresAt) || expiresAt <= 0) return null;
+
+    const obtainedAt =
+      Date.parse(String(stored.lastRefreshedAt ?? stored.authorizedAt ?? '')) || 0;
+    const expiresIn = Number(stored.expiresIn);
+    const lifetimeMs =
+      expiresIn > 0 ? expiresIn * 1000 : obtainedAt ? Math.max(0, expiresAt - obtainedAt) : 0;
+    const now = Date.now();
+
+    const usable =
+      options.rejectedAt !== undefined
+        ? obtainedAt > options.rejectedAt && expiresAt > now
+        : expiresAt > now + refreshWindowMs(lifetimeMs || undefined);
+    if (!usable) return null;
+
+    this.tokenCache.set(connectorId, {
+      accessToken,
+      expiresAt,
+      lifetimeMs: lifetimeMs || expiresAt - now,
+      obtainedAt: obtainedAt || now,
+    });
+    this.lastRefreshError.delete(connectorId);
+    this.logger.debug(`OAuth2: using the token stored on connector ${connectorId} instead of renewing`);
+    return accessToken;
+  }
+
+  private async renew(
+    authConfig: Record<string, unknown>,
+    connectorId: string | undefined,
+    db: ConnectorDb,
+    options: RenewOptions,
+    pending: PendingRotation = {},
   ): Promise<string | null> {
     const cacheKey = keyFor(authConfig, connectorId);
     // Rolling refresh tokens (e.g. DATEV rotates the refresh token on every
@@ -195,8 +368,12 @@ export class OAuth2TokenService {
     // The connector's own headers, for the User-Agent the API calls carry.
     let connectorHeaders: unknown;
     if (connectorId) {
-      const fresh = await this.loadAuthConfigFromDb(connectorId);
-      if (fresh) authConfig = { ...authConfig, ...fresh.authConfig };
+      const fresh = await this.loadAuthConfigFromDb(connectorId, db);
+      if (fresh) {
+        const adopted = this.adoptStoredToken(fresh.authConfig, connectorId, options);
+        if (adopted) return adopted;
+        authConfig = { ...authConfig, ...fresh.authConfig };
+      }
       connectorHeaders = fresh?.headers;
     }
 
@@ -209,7 +386,12 @@ export class OAuth2TokenService {
     const clientSecret = authConfig.clientSecret
       ? String(authConfig.clientSecret)
       : undefined;
-    const scope = authConfig.scope ? String(authConfig.scope) : undefined;
+    // Adapters write `scope`; the connector form writes `scopes`.
+    const scope = authConfig.scope
+      ? String(authConfig.scope)
+      : authConfig.scopes
+        ? String(authConfig.scopes)
+        : undefined;
     // private_key_jwt: the client proves itself with a JWT signed by its own
     // key (RFC 7523), so there is no client secret to send or to require.
     const privateKeyJwt = isPrivateKeyJwt(authConfig.tokenAuthMethod);
@@ -231,6 +413,11 @@ export class OAuth2TokenService {
         );
         return null;
       }
+    } else if (grant === 'password') {
+      if (!authConfig.username || !authConfig.password) {
+        this.logger.warn('OAuth2 password: missing username/password');
+        return null;
+      }
     } else if (!refreshToken) {
       this.logger.warn('OAuth2 refresh: missing refreshToken');
       return null;
@@ -248,8 +435,15 @@ export class OAuth2TokenService {
       const userAgent = tokenEndpointUserAgent(authConfig, connectorHeaders);
       if (userAgent) headers['User-Agent'] = userAgent;
 
-      if (grant === 'client_credentials') {
-        body = { grant_type: 'client_credentials' };
+      if (isMachineGrant(grant)) {
+        body =
+          grant === 'password'
+            ? {
+                grant_type: 'password',
+                username: String(authConfig.username),
+                password: String(authConfig.password),
+              }
+            : { grant_type: 'client_credentials' };
         if (scope) body.scope = scope;
         if (privateKeyJwt) {
           Object.assign(
@@ -263,13 +457,18 @@ export class OAuth2TokenService {
           // client_secret_post — the other method RFC 6749 §2.3.1 allows,
           // and the only one some servers document: Amadeus's token
           // endpoint takes client_id/client_secret as form fields.
-          body.client_id = String(clientId);
-          body.client_secret = String(clientSecret);
-        } else {
+          if (clientId) body.client_id = String(clientId);
+          if (clientSecret) body.client_secret = String(clientSecret);
+        } else if (clientId && clientSecret) {
+          // Datto RMM's password grant takes its fixed client this way:
+          // Basic public-client:public.
           const basic = Buffer.from(`${clientId}:${clientSecret}`).toString(
             'base64',
           );
           headers.Authorization = `Basic ${basic}`;
+        } else if (clientId) {
+          // A public client on the password grant: identified, no secret.
+          body.client_id = String(clientId);
         }
       } else {
         body = {
@@ -338,15 +537,23 @@ export class OAuth2TokenService {
       });
 
       // Persist to DB if connectorId is available. For client_credentials
-      // there's no refresh_token to store — we just record the latest
-      // access_token + its expiry so a cold-start can reuse it briefly.
+      // and password there's no refresh_token to use — we just record the
+      // latest access_token + its expiry so a cold-start can reuse it.
       if (connectorId) {
-        await this.persistRefreshedToken(
+        const rotation: Rotation = {
+          accessToken: access_token,
+          refreshToken: newRefreshToken || refreshToken || '',
+          expiresAt: Date.now() + expiresInMs,
+          expiresIn: expires_in,
+        };
+        pending.rotation = rotation;
+        pending.saved = await this.persistRefreshedToken(
+          db,
           connectorId,
-          access_token,
-          newRefreshToken || refreshToken || '',
-          Date.now() + expiresInMs,
-          expires_in,
+          rotation.accessToken,
+          rotation.refreshToken,
+          rotation.expiresAt,
+          rotation.expiresIn,
         );
       }
 
@@ -382,7 +589,10 @@ export class OAuth2TokenService {
     if (cached && cached.obtainedAt >= sentAt && cached.expiresAt > Date.now()) {
       return cached.accessToken;
     }
-    return this.refreshTokenWithMutex(authConfig, connectorId);
+    return this.refreshTokenWithMutex(authConfig, connectorId, {
+      adoptStored: true,
+      rejectedAt: sentAt,
+    });
   }
 
   /**
@@ -399,9 +609,11 @@ export class OAuth2TokenService {
     if (!reason) return undefined;
     return unauthorized(
       `OAuth2: the API refused the access token (401) and it could not be renewed at ` +
-        `${hostOf(authConfig.tokenUrl)} (${reason}). If the refresh token was refused, ` +
-        'authorize the connector again (Authorize with Provider on its page in AnythingMCP) ' +
-        'or replace its refresh token.',
+        `${hostOf(authConfig.tokenUrl)} (${reason}). ` +
+        (isMachineGrant(authConfig.grant)
+          ? `Check the credentials the ${String(authConfig.grant)} grant sends to the token URL.`
+          : 'If the refresh token was refused, authorize the connector again ' +
+            '(Authorize with Provider on its page in AnythingMCP) or replace its refresh token.'),
     );
   }
 
@@ -416,11 +628,16 @@ export class OAuth2TokenService {
   }
 
   /**
-   * Wraps refreshToken with a per-key mutex to prevent concurrent refresh storms.
+   * Wraps refreshToken with a per-key mutex to prevent concurrent refresh
+   * storms: every caller in this process that needs a new token for the
+   * connector while one is being obtained waits for that one. Across
+   * processes, refreshToken's database lock does the same, and a renewal
+   * that waited there takes the token the other process stored.
    */
   private async refreshTokenWithMutex(
     authConfig: Record<string, unknown>,
     connectorId?: string,
+    options: RenewOptions = { adoptStored: true },
   ): Promise<string | null> {
     const cacheKey = keyFor(authConfig, connectorId);
 
@@ -430,7 +647,7 @@ export class OAuth2TokenService {
       return inFlight;
     }
 
-    const refreshPromise = this.refreshToken(authConfig, connectorId).finally(() => {
+    const refreshPromise = this.refreshToken(authConfig, connectorId, options).finally(() => {
       this.refreshInFlight.delete(cacheKey);
     });
 
@@ -469,19 +686,16 @@ export class OAuth2TokenService {
   }
 
   /**
-   * Update the connector's encrypted authConfig with the new access token
-   * so it survives server restarts.
-   */
-  /**
    * Reads and decrypts the connector's current authConfig straight from the DB.
    * Used to obtain the freshest (possibly-rotated) refresh token, bypassing the
    * stale in-memory registry snapshot. Returns null if unavailable.
    */
   private async loadAuthConfigFromDb(
     connectorId: string,
+    db: ConnectorDb = this.prisma,
   ): Promise<{ authConfig: Record<string, unknown>; headers: unknown } | null> {
     try {
-      const connector = await this.prisma.connector.findUnique({
+      const connector = await db.connector.findUnique({
         where: { id: connectorId },
         select: { authConfig: true, envVars: true, headers: true },
       });
@@ -509,20 +723,26 @@ export class OAuth2TokenService {
     }
   }
 
+  /**
+   * Store a renewed token on the connector. False when the write failed, so
+   * the caller can try again outside a transaction that may not commit.
+   */
   private async persistRefreshedToken(
+    db: ConnectorDb,
     connectorId: string,
     newAccessToken: string,
     newRefreshToken: string,
     expiresAt: number,
     expiresIn?: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
-      const connector = await this.prisma.connector.findUnique({
+      const connector = await db.connector.findUnique({
         where: { id: connectorId },
         select: { authConfig: true },
       });
 
-      if (!connector?.authConfig) return;
+      // Deleted meanwhile, or never had credentials: nothing to keep.
+      if (!connector?.authConfig) return true;
 
       const authConfig = JSON.parse(
         decrypt(connector.authConfig, this.encryptionKey),
@@ -533,7 +753,7 @@ export class OAuth2TokenService {
       if (typeof expiresIn === 'number' && expiresIn > 0) authConfig.expiresIn = expiresIn;
       authConfig.lastRefreshedAt = new Date().toISOString();
 
-      await this.prisma.connector.update({
+      await db.connector.update({
         where: { id: connectorId },
         data: {
           authConfig: encrypt(
@@ -546,10 +766,12 @@ export class OAuth2TokenService {
       this.logger.debug(
         `OAuth2: persisted refreshed token for connector ${connectorId}`,
       );
+      return true;
     } catch (err: any) {
       this.logger.warn(
-        `OAuth2: failed to persist refreshed token: ${err.message}`,
+        `OAuth2: failed to persist refreshed token for connector ${connectorId}: ${err.message}`,
       );
+      return false;
     }
   }
 }

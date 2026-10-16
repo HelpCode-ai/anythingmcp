@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors } from '@/lib/api';
+import { connectors, isMachineGrant, type OAuthGrant } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -76,6 +76,11 @@ export default function NewConnectorPage() {
   // How client credentials reach the token endpoint. Some providers (Datto RMM,
   // DATEV) reject body-supplied credentials and require an HTTP Basic header.
   const [oauthTokenAuthMethod, setOauthTokenAuthMethod] = useState('client_secret_post');
+  // How the connector gets its tokens: a sign-in at the provider, or a grant
+  // that asks the token URL by itself (Datto RMM: password grant).
+  const [oauthGrant, setOauthGrant] = useState<OAuthGrant>('authorization_code');
+  const [oauthUsername, setOauthUsername] = useState('');
+  const [oauthPassword, setOauthPassword] = useState('');
   // LOGIN_TOKEN (credentials → short-lived token, auto-refreshed) fields
   const [ltLoginUrl, setLtLoginUrl] = useState('');
   const [ltMethod, setLtMethod] = useState('POST');
@@ -131,6 +136,20 @@ export default function NewConnectorPage() {
       }
       case 'OAUTH2':
         if (selectedType !== 'MCP') {
+          if (isMachineGrant(oauthGrant)) {
+            return {
+              grant: oauthGrant,
+              clientId: oauthClientId || undefined,
+              clientSecret: oauthClientSecret || undefined,
+              ...(oauthGrant === 'password'
+                ? { username: oauthUsername, password: oauthPassword }
+                : {}),
+              tokenUrl: oauthTokenUrl,
+              scopes: oauthScopes || undefined,
+              // Basic is these grants' default, so "in body" is stored as such.
+              tokenAuthMethod: oauthTokenAuthMethod,
+            };
+          }
           return {
             clientId: oauthClientId,
             clientSecret: oauthClientSecret || undefined,
@@ -163,6 +182,15 @@ export default function NewConnectorPage() {
     e.preventDefault();
     if (!token || !selectedType) return;
     setError('');
+    if (
+      authType === 'OAUTH2' &&
+      selectedType !== 'MCP' &&
+      oauthGrant === 'password' &&
+      (!oauthUsername.trim() || !oauthPassword)
+    ) {
+      setError('Enter the username and password the password grant sends to the token URL.');
+      return;
+    }
     setLoading(true);
 
     try {
@@ -185,6 +213,10 @@ export default function NewConnectorPage() {
       }
 
       const created = await connectors.create(data, token);
+      // Shown on the connector's page: this form navigates away right after.
+      if (created.secretsNotice) {
+        window.sessionStorage.setItem(`amcp:secretsNotice:${created.id}`, created.secretsNotice);
+      }
 
       if (specUrl && (selectedType === 'REST' || selectedType === 'SOAP' || selectedType === 'GRAPHQL')) {
         try {
@@ -550,6 +582,43 @@ export default function NewConnectorPage() {
 
               {authType === 'OAUTH2' && selectedType !== 'MCP' && (
                 <div className="flex flex-col gap-3">
+                  <div>
+                    <label htmlFor="oauth-grant" className={labelClass}>Grant type</label>
+                    <select
+                      id="oauth-grant"
+                      value={oauthGrant}
+                      onChange={(e) => {
+                        const grant = e.target.value as OAuthGrant;
+                        setOauthGrant(grant);
+                        // Each grant's own default for how the client reaches the token URL.
+                        setOauthTokenAuthMethod(isMachineGrant(grant) ? 'client_secret_basic' : 'client_secret_post');
+                      }}
+                      className={inputClass}
+                    >
+                      <option value="authorization_code">Authorization code (sign in at the provider)</option>
+                      <option value="client_credentials">Client credentials</option>
+                      <option value="password">Password (username and password)</option>
+                    </select>
+                    {oauthGrant === 'password' && (
+                      <p className="mt-1 text-xs text-[var(--text-3)]">
+                        For APIs that issue tokens with no refresh token: a new one is requested with the
+                        username and password whenever it expires. Datto RMM: username = API key,
+                        password = API secret, client ID public-client, secret public, HTTP Basic.
+                      </p>
+                    )}
+                  </div>
+                  {oauthGrant === 'password' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="oauth-username" className={labelClass}>Username</label>
+                        <input id="oauth-username" type="text" autoComplete="off" value={oauthUsername} onChange={(e) => setOauthUsername(e.target.value)} className={cn(inputClass, 'font-mono text-[13px]')} />
+                      </div>
+                      <div>
+                        <label htmlFor="oauth-password" className={labelClass}>Password</label>
+                        <input id="oauth-password" type="password" autoComplete="new-password" value={oauthPassword} onChange={(e) => setOauthPassword(e.target.value)} className={cn(inputClass, 'font-mono text-[13px]')} />
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelClass}>Client ID</label>
@@ -560,10 +629,12 @@ export default function NewConnectorPage() {
                       <input type="password" value={oauthClientSecret} onChange={(e) => setOauthClientSecret(e.target.value)} placeholder="optional" className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
                   </div>
-                  <div>
-                    <label className={labelClass}>Authorization URL</label>
-                    <input type="text" value={oauthAuthUrl} onChange={(e) => setOauthAuthUrl(e.target.value)} placeholder="https://provider.com/oauth/authorize" className={cn(inputClass, 'font-mono text-[13px]')} />
-                  </div>
+                  {!isMachineGrant(oauthGrant) && (
+                    <div>
+                      <label className={labelClass}>Authorization URL</label>
+                      <input type="text" value={oauthAuthUrl} onChange={(e) => setOauthAuthUrl(e.target.value)} placeholder="https://provider.com/oauth/authorize" className={cn(inputClass, 'font-mono text-[13px]')} />
+                    </div>
+                  )}
                   <div>
                     <label className={labelClass}>Token URL</label>
                     <input type="text" value={oauthTokenUrl} onChange={(e) => setOauthTokenUrl(e.target.value)} placeholder="https://provider.com/oauth/token" className={cn(inputClass, 'font-mono text-[13px]')} />
@@ -579,20 +650,27 @@ export default function NewConnectorPage() {
                       onChange={(e) => setOauthTokenAuthMethod(e.target.value)}
                       className={inputClass}
                     >
-                      <option value="client_secret_post">Client secret in body (default)</option>
-                      <option value="client_secret_basic">HTTP Basic header (client_secret_basic)</option>
+                      <option value="client_secret_post">Client secret in body{isMachineGrant(oauthGrant) ? '' : ' (default)'}</option>
+                      <option value="client_secret_basic">HTTP Basic header (client_secret_basic){isMachineGrant(oauthGrant) ? ' (default)' : ''}</option>
                     </select>
                     <p className="mt-1 text-xs text-[var(--text-3)]">
-                      Switch to HTTP Basic if the provider returns 401 when exchanging the
-                      code — Datto RMM and DATEV both require it. Applies to token refreshes too.
+                      {isMachineGrant(oauthGrant)
+                        ? 'How the client ID and secret reach the token URL.'
+                        : 'Switch to HTTP Basic if the provider returns 401 when exchanging the code — DATEV requires it. Applies to token refreshes too.'}
                     </p>
                   </div>
+                  {isMachineGrant(oauthGrant) ? (
+                  <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-sm text-[var(--t-info-fg)]">
+                    <p>No sign-in needed: the connector requests its access token from the token URL, and a new one whenever it expires.</p>
+                  </div>
+                  ) : (
                   <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-sm text-[var(--t-info-fg)]">
                     <p>After creating the connector, you will be redirected to authorize via OAuth2. Tokens will be stored securely.</p>
                     <p className="mt-1.5 text-xs opacity-90">
                       Set the <strong>Redirect / Callback URI</strong> in your OAuth provider to: <code className="rounded bg-[var(--surface-2)] px-1 py-0.5 font-mono">{oauthRedirectUri ?? '…'}</code>
                     </p>
                   </div>
+                  )}
                 </div>
               )}
 

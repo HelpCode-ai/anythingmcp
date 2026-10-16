@@ -15,6 +15,9 @@ import {
 import { ReturnAssistant, isExcludedAdapterSlug } from '../mcp-server/shared-toolset';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { decrypt } from '../common/crypto/encryption.util';
+import { findSecretLiterals } from '../common/secret-literals.util';
+import { searchCatalog } from './catalog-search';
+import { CHAT_SETUP_SOURCE } from '../license/license-checkout';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
 const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
@@ -118,10 +121,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
   // ── Find ──────────────────────────────────────────────────────────────
 
   async find(ctx: SetupContext, args: { query?: string; limit?: number }): Promise<SetupCallResult> {
-    const words = String(args.query ?? '')
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 1);
+    const query = String(args.query ?? '');
     const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 10);
     const installed = new Set(
       (
@@ -134,41 +134,37 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         .filter((s): s is string => !!s),
     );
 
-    // Query words no connector mentions anywhere: the app that is missing.
-    const unmatched = new Set(words);
-    const scored = this.adapters
+    // The same search as the store and /welcome (catalog-search.ts), over the
+    // adapters this deployment offers: listAll() already leaves out unlisted
+    // ones and, on the cloud, self-host-only ones.
+    const offered = this.adapters
       .listAll()
       .filter((a) => !isExcludedAdapterSlug(a.slug))
-      .map((a) => {
-        const name = a.name.toLowerCase();
-        const text = `${a.slug} ${name} ${a.category} ${a.description}`.toLowerCase();
-        let score = 0;
-        for (const w of words) {
-          if (a.slug === w || name === w) score += 10;
-          else if (a.slug.startsWith(w) || name.split(/\s+/).some((n) => n.startsWith(w))) score += 5;
-          else if (text.includes(w)) score += 1;
-          if (text.includes(w)) unmatched.delete(w);
-        }
-        return { a, score: words.length ? score : (a.priority ?? 0) };
-      })
-      .filter((x) => !words.length || x.score > 0)
-      .sort((x, y) => y.score - x.score || (y.a.priority ?? 0) - (x.a.priority ?? 0))
-      .slice(0, limit);
+      .map((a) => ({ ...a, text: [a.description, a.category] }));
+    const search = searchCatalog(offered, query);
+    const scored = search.terms.length
+      ? search.hits.slice(0, limit).map((h) => ({ a: h.entry }))
+      : [...offered]
+          .sort((x, y) => (y.priority ?? 0) - (x.priority ?? 0))
+          .slice(0, limit)
+          .map((a) => ({ a }));
 
-    if (words.length) {
+    if (search.terms.length) {
       // `results` alone overstates coverage: "printify shop" returns every
       // connector whose description says "shop". `missing` keeps the words no
-      // connector mentions at all, here "printify".
+      // connector matches at all, here "printify"; `match` says whether the
+      // results matched the query as typed or only with a typo forgiven
+      // ('fuzzy') or some of its words left out ('partial').
       void this.productEvents.log({
         event: ProductEvents.CATALOG_SEARCH,
         userId: ctx.userId,
         organizationId: ctx.organizationId,
         metadata: {
-          query: String(args.query),
+          query,
           results: scored.length,
           via: 'mcp',
-          ...(unmatched.size ? { missing: [...unmatched].join(' ') } : {}),
-          ...(scored.length ? { adapterSlug: scored.map(({ a }) => a.slug).join(',') } : {}),
+          ...(search.missing.length ? { missing: search.missing.join(' ') } : {}),
+          ...(scored.length ? { match: search.match, adapterSlug: scored.map(({ a }) => a.slug).join(',') } : {}),
         },
       });
     }
@@ -241,6 +237,17 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         };
       }
       const text = value !== undefined && value !== null ? String(value).trim() : '';
+      // A shop URL with `?access_token=…`, a tenant field holding a key: the
+      // chat is the wrong place for it, whatever the setting is called.
+      if (text && findSecretLiterals(text).length > 0) {
+        return {
+          isError: true,
+          body: {
+            error: `'${d.label}' contains what looks like a password, API key or token. Secrets are never taken from the chat.`,
+            hint: 'Install without it, or with only the non-secret part (the address without the key). The user enters the secret on the page linked in the answer, where it is stored encrypted.',
+          },
+        };
+      }
       if (text && d.pattern && !matchesPattern(d.pattern, text)) {
         return {
           isError: true,
@@ -344,7 +351,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       whatTheUserCanDo: onTrial
         ? 'Add a card to continue the trial on the full plan (nothing is charged before the trial ends), or remove a connector.'
         : 'Choose a plan with more connectors, or remove a connector.',
-      upgradeUrl: `${ctx.dashboardBase}${onTrial ? '/start-trial' : '/settings/license'}`,
+      upgradeUrl: `${ctx.dashboardBase}${onTrial ? '/start-trial' : '/settings/license'}?source=${CHAT_SETUP_SOURCE}`,
     };
   }
 
@@ -411,7 +418,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         ended: true,
         endedAt: endsAt,
         ...(admin
-          ? { choosePlanUrl: `${ctx.dashboardBase}/settings/license`, afterTheTrial: 'The trial has ended. Choosing a plan turns the connectors back on.' }
+          ? { choosePlanUrl: `${ctx.dashboardBase}/settings/license?source=${CHAT_SETUP_SOURCE}`, afterTheTrial: 'The trial has ended. Choosing a plan turns the connectors back on.' }
           : { afterTheTrial: 'The trial has ended. A workspace administrator can choose a plan.' }),
       };
     }
@@ -423,13 +430,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       ? {
           daysLeft,
           endsAt,
-          choosePlanUrl: `${ctx.dashboardBase}/start-trial`,
+          choosePlanUrl: `${ctx.dashboardBase}/start-trial?source=${CHAT_SETUP_SOURCE}`,
           afterTheTrial: 'Adding a card keeps the workspace running when the trial ends. Nothing is charged before then.',
         }
       : {
           daysLeft,
           endsAt,
-          choosePlanUrl: `${ctx.dashboardBase}/settings/license`,
+          choosePlanUrl: `${ctx.dashboardBase}/settings/license?source=${CHAT_SETUP_SOURCE}`,
           afterTheTrial: 'Choosing a plan keeps the workspace running when the trial ends.',
         };
   }

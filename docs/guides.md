@@ -59,7 +59,7 @@ Run AnythingMCP (self-hosted or [Cloud](https://cloud.anythingmcp.com)), import 
 <details>
 <summary><strong>Can I build a ChatGPT app from my existing API?</strong></summary>
 
-Yes. As of December 2025, OpenAI calls these **apps in ChatGPT** (the term now covers both interactive apps and data connectors), and they're built on MCP via the Apps SDK. AnythingMCP generates the MCP backend from your existing API — add it as an app/connector in ChatGPT, or use it as the tool layer of an Apps SDK app. See [Turn your API into a ChatGPT app](../README.md#use-it-from-claude-chatgpt-copilot-and-gemini).
+Yes. As of December 2025, OpenAI calls these **apps in ChatGPT** (the term now covers both interactive apps and data connectors), and they're built on MCP via the Apps SDK. AnythingMCP generates the MCP backend from your existing API: add it in ChatGPT under Plugins (+, **Add custom MCP server**), or use it as the tool layer of an Apps SDK app. See [Turn your API into a ChatGPT app](../README.md#use-it-from-claude-chatgpt-copilot-and-gemini).
 </details>
 
 <details>

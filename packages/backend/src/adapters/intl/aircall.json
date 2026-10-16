@@ -1,0 +1,1835 @@
+{
+  "slug": "aircall",
+  "name": "Aircall",
+  "description": "Let your AI work with Aircall: look up calls, recordings and voicemails, read AI transcripts, summaries and sentiment, see who is available, add notes and tags to calls, manage shared contacts and start calls from an agent's Aircall Workspace.",
+  "instructions": "## Aircall\nThis connector works with one Aircall company through the **Aircall Public API** (`https://api.aircall.io/v1`, users on `/v2`), signed in with an API ID and API token (HTTP Basic auth). It reads users, teams, numbers, calls with their recordings, voicemails and AI insights, and contacts, and it can add notes and tags to calls, create and update contacts and start calls from an agent's Aircall Workspace.\n\n**Setup (about 3 minutes, Aircall admin needed)**\n1. Sign in to the Aircall Dashboard at https://dashboard.aircall.io as an admin.\n2. Open **Integrations & API**, then **API Keys**, and click **Generate an API key** (older dashboards: Company settings, API Keys), give it a name.\n3. Copy the **API ID** into `AIRCALL_API_ID` and the **API token** into `AIRCALL_API_TOKEN`. Aircall shows the token only once.\n4. Install and run `aircall_ping`, then `aircall_get_company`.\n\nThe key acts for the whole company: share this MCP server only with people allowed to see all calls and contacts.\n\n**Personal data.** Calls, phone numbers, contacts, recordings, voicemails, transcripts and AI summaries are personal data of callers and agents. Read only what the user asks for, do not copy recordings or transcripts elsewhere without a reason, and remember that recording and voicemail links are playable by anyone who has them (direct links for 1 hour, short links for 3 hours).\n\n**Writes: confirm first.** `aircall_comment_call`, `aircall_tag_call`, `aircall_archive_call`, `aircall_create_contact`, `aircall_update_contact`, `aircall_dial_number` change data agents see; show the user what will change and wait for a yes. `aircall_start_outbound_call` rings a real person right away and outbound minutes may cost money: confirm caller, number and line first. `aircall_delete_contact` is installed switched off.\n\n**How to work**\n1. People and lines: `aircall_list_users`, `aircall_get_user`, `aircall_list_user_numbers`, `aircall_get_user_availability`, `aircall_list_user_availabilities`, `aircall_list_teams`, `aircall_get_team`, `aircall_list_numbers`, `aircall_get_number`.\n2. Calls: `aircall_list_calls` for a time range, `aircall_search_calls` to filter by direction, user, phone number or tags, `aircall_get_call` for one call. Times are UNIX timestamps in seconds; pass order=desc for the newest first. Only the last six months are available and at most 10,000 calls per query, so narrow with from and to.\n3. AI insights for ended calls (Aircall AI add-on, AI Assist or AI Assist Pro): `aircall_get_call_transcription`, `aircall_get_call_summary`, `aircall_get_call_sentiments`, `aircall_get_call_topics`, `aircall_get_call_action_items`. Without the add-on they answer 403 or 404.\n4. Follow-up on a call: `aircall_comment_call` (at most five notes per call, they cannot be edited), `aircall_tag_call` with ids from `aircall_list_tags`, `aircall_archive_call`.\n5. Contacts (shared contacts only, not CRM-synced ones): `aircall_list_contacts`, `aircall_search_contacts`, `aircall_get_contact`, `aircall_create_contact`, `aircall_update_contact`.\n6. Calling: `aircall_start_outbound_call` places the call from the agent's desktop Workspace (the agent must be online and available); `aircall_dial_number` only fills in the dialer.\n7. Webhooks: `aircall_list_webhooks` (read-only, tokens removed).\n\n**Paging**: lists answer with `meta` (total, current_page, per_page, next_page_link). Pass page=2, 3, and so on until next_page_link is null. per_page is 1 to 50.\n\n**Rate limit**: Aircall allows 120 requests per minute for the whole company, shared by every integration using its keys. A 429 means wait until the minute is over; avoid paging through thousands of calls.\n\n**Common errors**\n- 403 Forbidden on every tool: the API ID or token is wrong or the key was deleted.\n- 404 on a call id: the call does not exist or is older than six months; on an AI endpoint: no transcript or insight for that call.\n- 405 on starting or dialing a call: the user is not available, is on a call or is not assigned to the number.\n- 400 on a note: the call already has five notes.\n\n**Out of scope here**: SMS and WhatsApp messages, transferring live calls, pausing or deleting recordings, outbound campaigns, managing users, teams, numbers, tags and webhooks.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "aircall",
+  "docsUrl": "https://developers.aircall.io/api-references/",
+  "requiredEnvVars": [
+    "AIRCALL_API_ID",
+    "AIRCALL_API_TOKEN"
+  ],
+  "appRegistrationUrl": "https://dashboard.aircall.io",
+  "envVarMeta": {
+    "AIRCALL_API_ID": {
+      "label": "API ID",
+      "kind": "credential",
+      "help": "Aircall Dashboard (admin), Integrations & API, API Keys, Generate an API key: the API ID.",
+      "link": "https://dashboard.aircall.io",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the API ID without spaces."
+    },
+    "AIRCALL_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API token shown once next to the API ID when the key was created. Aircall cannot show it again; create a new key if it is lost.",
+      "link": "https://dashboard.aircall.io",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the API token without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Aircall received no credentials. Check that AIRCALL_API_ID and AIRCALL_API_TOKEN are both set.",
+    "403": "Aircall refused the API ID and token: they are wrong, swapped or the key was deleted. Create a new key in the Aircall Dashboard under Integrations & API, API Keys.",
+    "404": "Aircall does not know this resource. The id may be wrong, or the call is older than six months.",
+    "429": "Aircall is rate limiting this company (120 requests per minute for all integrations together). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "aircall_ping"
+  },
+  "prerequisites": "An Aircall account where you are an admin, to create an API key (API ID and API token) in the Aircall Dashboard. Transcripts, summaries and other AI insights need the Aircall AI add-on. About 3 minutes.",
+  "connector": {
+    "name": "Aircall Public API",
+    "type": "REST",
+    "baseUrl": "https://api.aircall.io",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{AIRCALL_API_ID}}",
+      "password": "{{AIRCALL_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/ping"
+  },
+  "tools": [
+    {
+      "name": "aircall_ping",
+      "description": "Check that the Aircall API ID and token work. Answers {\"ping\": \"pong\"} when they do; a 403 means Aircall refused the key. Use it first when other tools fail.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/ping"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "ping": "$.ping"
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_get_company",
+      "description": "Read the Aircall company this key belongs to: its name, the number of users and the number of phone numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/company"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.company.name",
+            "users_count": "$.company.users_count",
+            "numbers_count": "$.company.numbers_count"
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_list_users",
+      "description": "List the users (agents and admins) of the Aircall company with id, name, email, extension, time zone, language and availability (available, custom by working hours, or unavailable). Paged: meta.next_page_link is null on the last page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Only items created at or after this time, as a UNIX timestamp in seconds (e.g. 1760486400)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only items created at or before this time, as a UNIX timestamp in seconds."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: asc (oldest first, the default) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "order": "$order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "users": {
+              "$from": "$.users[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "email": "email",
+                "available": "available",
+                "availability_status": "availability_status",
+                "substatus": "substatus",
+                "extension": "extension",
+                "time_zone": "time_zone",
+                "language": "language",
+                "wrap_up_time": "wrap_up_time",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_get_user",
+      "description": "Read one Aircall user by id or by email address: name, email, extension, time zone, language, wrap-up time and availability.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The user id (e.g. 456) or the user's email address (e.g. john.doe@example.com)."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users/{user_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "user": {
+              "id": "$.user.id",
+              "name": "$.user.name",
+              "email": "$.user.email",
+              "available": "$.user.available",
+              "availability_status": "$.user.availability_status",
+              "substatus": "$.user.substatus",
+              "extension": "$.user.extension",
+              "time_zone": "$.user.time_zone",
+              "language": "$.user.language",
+              "wrap_up_time": "$.user.wrap_up_time",
+              "created_at": "$.user.created_at"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_list_user_numbers",
+      "description": "List the Aircall phone numbers a user is assigned to, with id, name and digits. The number id is what aircall_start_outbound_call needs as number_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "The user id from aircall_list_users."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: asc (oldest first, the default) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users/{user_id}/numbers",
+        "queryParams": {
+          "order": "$order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "numbers": {
+              "$from": "$.numbers[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "digits": "digits",
+                "country": "country",
+                "time_zone": "time_zone",
+                "open": "open",
+                "availability_status": "availability_status",
+                "is_ivr": "is_ivr",
+                "live_recording_activated": "live_recording_activated",
+                "priority": "priority",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_get_user_availability",
+      "description": "Read the live availability of one user: available, offline, do_not_disturb, in_call or after_call_work (wrapping up the last call).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "The user id from aircall_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users/{user_id}/availability"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "availability": "$.availability"
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_list_user_availabilities",
+      "description": "List the live availability of every user at once (available, offline, do_not_disturb, in_call, after_call_work), as shown in the Activity Feed of the Aircall Dashboard.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Only items created at or after this time, as a UNIX timestamp in seconds (e.g. 1760486400)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only items created at or before this time, as a UNIX timestamp in seconds."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: asc (oldest first, the default) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users/availabilities",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "order": "$order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "users": {
+              "$from": "$.users[*]",
+              "$select": {
+                "id": "id",
+                "availability": "availability"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_list_teams",
+      "description": "List the teams of the Aircall company with their members (id, name, email, availability and default number). Inbound calls are routed to teams.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: asc (oldest first, the default) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams",
+        "queryParams": {
+          "order": "$order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "teams": {
+              "$from": "$.teams[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "created_at": "created_at",
+                "users": {
+                  "$from": "users[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "name",
+                    "email": "email",
+                    "availability_status": "availability_status",
+                    "default_number_id": "default_number_id"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_get_team",
+      "description": "Read one team by id with its name, creation date and the users in it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "The team id from aircall_list_teams."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams/{team_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "team": {
+              "id": "$.team.id",
+              "name": "$.team.name",
+              "created_at": "$.team.created_at",
+              "users": {
+                "$from": "$.team.users[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "name",
+                  "email": "email",
+                  "availability_status": "availability_status",
+                  "default_number_id": "default_number_id"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_list_numbers",
+      "description": "List the phone numbers (lines) of the Aircall company: id, name, digits, country, time zone, whether the line is open now, IVR and live recording settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Only items created at or after this time, as a UNIX timestamp in seconds (e.g. 1760486400)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only items created at or before this time, as a UNIX timestamp in seconds."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: asc (oldest first, the default) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/numbers",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "order": "$order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "numbers": {
+              "$from": "$.numbers[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "digits": "digits",
+                "country": "country",
+                "time_zone": "time_zone",
+                "open": "open",
+                "availability_status": "availability_status",
+                "is_ivr": "is_ivr",
+                "live_recording_activated": "live_recording_activated",
+                "priority": "priority",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_get_number",
+      "description": "Read one Aircall phone number by id: name, digits, country, time zone, opening state, IVR and live recording settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number_id": {
+            "type": "integer",
+            "description": "The number id from aircall_list_numbers."
+          }
+        },
+        "required": [
+          "number_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/numbers/{number_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "number": {
+              "id": "$.number.id",
+              "name": "$.number.name",
+              "digits": "$.number.digits",
+              "country": "$.number.country",
+              "time_zone": "$.number.time_zone",
+              "open": "$.number.open",
+              "availability_status": "$.number.availability_status",
+              "is_ivr": "$.number.is_ivr",
+              "live_recording_activated": "$.number.live_recording_activated",
+              "priority": "$.number.priority",
+              "created_at": "$.number.created_at"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_list_calls",
+      "description": "List the company's calls (oldest first unless order is desc; only the last six months, at most 10,000 per query) with direction, status, times, duration in seconds, the external number, user, line, tags, notes and recording or voicemail links (direct links work for 1 hour). Calls are personal data. To filter by direction, user, number or tag use aircall_search_calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Only items created at or after this time, as a UNIX timestamp in seconds (e.g. 1760486400)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only items created at or before this time, as a UNIX timestamp in seconds."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: asc (oldest first, the default) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "fetch_contact": {
+            "type": "boolean",
+            "description": "Add the contact linked to each call (first and last name, company). Off by default."
+          },
+          "fetch_short_urls": {
+            "type": "boolean",
+            "description": "Add recording_short_url and voicemail_short_url, links that work for 3 hours (the direct links work for 1 hour)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/calls",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "order": "$order",
+          "fetch_contact": "$fetch_contact",
+          "fetch_short_urls": "$fetch_short_urls",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "calls": {
+              "$from": "$.calls[*]",
+              "$select": {
+                "id": "id",
+                "direction": "direction",
+                "status": "status",
+                "missed_call_reason": "missed_call_reason",
+                "started_at": "started_at",
+                "answered_at": "answered_at",
+                "ended_at": "ended_at",
+                "duration": "duration",
+                "raw_digits": "raw_digits",
+                "archived": "archived",
+                "user": {
+                  "id": "user.id",
+                  "name": "user.name",
+                  "email": "user.email"
+                },
+                "assigned_to": "assigned_to.name",
+                "transferred_to": "transferred_to.name",
+                "number": {
+                  "id": "number.id",
+                  "name": "number.name",
+                  "digits": "number.digits"
+                },
+                "contact": {
+                  "id": "contact.id",
+                  "first_name": "contact.first_name",
+                  "last_name": "contact.last_name",
+                  "company_name": "contact.company_name"
+                },
+                "teams": {
+                  "$from": "teams[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "name"
+                  }
+                },
+                "tags": {
+                  "$from": "tags[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "name"
+                  }
+                },
+                "comments": {
+                  "$from": "comments[*]",
+                  "$select": {
+                    "id": "id",
+                    "content": "content",
+                    "posted_at": "posted_at",
+                    "posted_by": "posted_by.name"
+                  }
+                },
+                "recording": "recording",
+                "recording_short_url": "recording_short_url",
+                "voicemail": "voicemail",
+                "voicemail_short_url": "voicemail_short_url",
+                "asset": "asset"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "aircall_search_calls",
+      "description": "Search calls by direction, user, phone number, tags and time range (last six months only). Returns the same shortened call records as aircall_list_calls, including recording and voicemail links. Calls are personal data: only look up what the user needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Only items created at or after this time, as a UNIX timestamp in seconds (e.g. 1760486400)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only items created at or before this time, as a UNIX timestamp in seconds."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: asc (oldest first, the default) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "description": "Only inbound or only outbound calls.",
+            "enum": [
+              "inbound",
+              "outbound"
+            ]
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "Only calls made or received by this user (id from aircall_list_users)."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Only calls to or from this phone number, e.g. +14155550123."
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only calls that carry all of these tag ids (from aircall_list_tags)."
+          },
+          "fetch_contact": {
+            "type": "boolean",
+            "description": "Add the contact linked to each call (first and last name, company). Off by default."
+          },
+          "fetch_short_urls": {
+            "type": "boolean",
+            "description": "Add recording_short_url and voicemail_short_url, links that work for 3 hours (the direct links work for 1 hour)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/calls/search",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "order": "$order",
+          "direction": "$direction",
+          "user_id": "$user_id",
+          "phone_number": "$phone_number",
+          "tags[]": "$tag_ids",
+          "fetch_contact": "$fetch_contact",
+          "fetch_short_urls": "$fetch_short_urls",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "calls": {
+              "$from": "$.calls[*]",
+              "$select": {
+                "id": "id",
+                "direction": "direction",
+                "status": "status",
+                "missed_call_reason": "missed_call_reason",
+                "started_at": "started_at",
+                "answered_at": "answered_at",
+                "ended_at": "ended_at",
+                "duration": "duration",
+                "raw_digits": "raw_digits",
+                "archived": "archived",
+                "user": {
+                  "id": "user.id",
+                  "name": "user.name",
+                  "email": "user.email"
+                },
+                "assigned_to": "assigned_to.name",
+                "transferred_to": "transferred_to.name",
+                "number": {
+                  "id": "number.id",
+                  "name": "number.name",
+                  "digits": "number.digits"
+                },
+                "contact": {
+                  "id": "contact.id",
+                  "first_name": "contact.first_name",
+                  "last_name": "contact.last_name",
+                  "company_name": "contact.company_name"
+                },
+                "teams": {
+                  "$from": "teams[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "name"
+                  }
+                },
+                "tags": {
+                  "$from": "tags[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "name"
+                  }
+                },
+                "comments": {
+                  "$from": "comments[*]",
+                  "$select": {
+                    "id": "id",
+                    "content": "content",
+                    "posted_at": "posted_at",
+                    "posted_by": "posted_by.name"
+                  }
+                },
+                "recording": "recording",
+                "recording_short_url": "recording_short_url",
+                "voicemail": "voicemail",
+                "voicemail_short_url": "voicemail_short_url",
+                "asset": "asset"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "aircall_get_call",
+      "description": "Read one call by id: direction, status, missed_call_reason, start, answer and end times (UNIX seconds), duration, user, line, contact, teams, tags, notes, and the recording and voicemail links (direct links expire after 1 hour; request fetch_short_urls for 3-hour links). Recordings and voicemails are personal data: share links only with people allowed to hear them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "integer",
+            "description": "The call id, from aircall_list_calls or aircall_search_calls."
+          },
+          "fetch_contact": {
+            "type": "boolean",
+            "description": "Add the contact linked to each call (first and last name, company). Off by default."
+          },
+          "fetch_short_urls": {
+            "type": "boolean",
+            "description": "Add recording_short_url and voicemail_short_url, links that work for 3 hours (the direct links work for 1 hour)."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/calls/{call_id}",
+        "queryParams": {
+          "fetch_contact": "$fetch_contact",
+          "fetch_short_urls": "$fetch_short_urls"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call": {
+              "id": "$.call.id",
+              "direction": "$.call.direction",
+              "status": "$.call.status",
+              "missed_call_reason": "$.call.missed_call_reason",
+              "started_at": "$.call.started_at",
+              "answered_at": "$.call.answered_at",
+              "ended_at": "$.call.ended_at",
+              "duration": "$.call.duration",
+              "raw_digits": "$.call.raw_digits",
+              "archived": "$.call.archived",
+              "user": {
+                "id": "$.call.user.id",
+                "name": "$.call.user.name",
+                "email": "$.call.user.email"
+              },
+              "assigned_to": "$.call.assigned_to.name",
+              "transferred_to": "$.call.transferred_to.name",
+              "number": {
+                "id": "$.call.number.id",
+                "name": "$.call.number.name",
+                "digits": "$.call.number.digits"
+              },
+              "contact": {
+                "id": "$.call.contact.id",
+                "first_name": "$.call.contact.first_name",
+                "last_name": "$.call.contact.last_name",
+                "company_name": "$.call.contact.company_name"
+              },
+              "teams": {
+                "$from": "$.call.teams[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "name"
+                }
+              },
+              "tags": {
+                "$from": "$.call.tags[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "name"
+                }
+              },
+              "comments": {
+                "$from": "$.call.comments[*]",
+                "$select": {
+                  "id": "id",
+                  "content": "content",
+                  "posted_at": "posted_at",
+                  "posted_by": "posted_by.name"
+                }
+              },
+              "recording": "$.call.recording",
+              "recording_short_url": "$.call.recording_short_url",
+              "voicemail": "$.call.voicemail",
+              "voicemail_short_url": "$.call.voicemail_short_url",
+              "asset": "$.call.asset"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_get_call_transcription",
+      "description": "Read the transcript of an ended call: language and every utterance with start and end second, text, and whether an agent (internal, with user_id) or the caller (external, with phone_number) spoke. Needs the Aircall AI add-on (AI Assist or AI Assist Pro); 404 means no transcript exists. Transcripts are personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "integer",
+            "description": "The call id, from aircall_list_calls or aircall_search_calls."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/calls/{call_id}/transcription"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_id": "$.transcription.call_id",
+            "call_created_at": "$.transcription.call_created_at",
+            "language": "$.transcription.content.language",
+            "utterances": {
+              "$from": "$.transcription.content.utterances[*]",
+              "$select": {
+                "start_time": "start_time",
+                "end_time": "end_time",
+                "participant_type": "participant_type",
+                "user_id": "user_id",
+                "phone_number": "phone_number",
+                "text": "text"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "aircall_get_call_summary",
+      "description": "Read the AI summary of an ended call (a short text). Needs the Aircall AI add-on (AI Assist or AI Assist Pro). Summaries describe a conversation and are personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "integer",
+            "description": "The call id, from aircall_list_calls or aircall_search_calls."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/calls/{call_id}/summary"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_id": "$.summary.call_id",
+            "created_at": "$.summary.created_at",
+            "content": "$.summary.content"
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_get_call_sentiments",
+      "description": "Read the AI sentiment of each participant of an ended call (POSITIVE, NEUTRAL or NEGATIVE, by phone number and type). Needs the Aircall AI add-on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "integer",
+            "description": "The call id, from aircall_list_calls or aircall_search_calls."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/calls/{call_id}/sentiments"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_id": "$.sentiment.call_id",
+            "participants": {
+              "$from": "$.sentiment.participants[*]",
+              "$select": {
+                "phone_number": "phone_number",
+                "type": "type",
+                "value": "value"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_get_call_topics",
+      "description": "Read the key topics the AI found in an ended call, as a list of short words (e.g. payment, billing). Needs the Aircall AI add-on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "integer",
+            "description": "The call id, from aircall_list_calls or aircall_search_calls."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/calls/{call_id}/topics"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_id": "$.topic.call_id",
+            "created_at": "$.topic.created_at",
+            "topics": "$.topic.content"
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_get_call_action_items",
+      "description": "Read the action items of an ended call, written by the AI or by an agent (ai_generated tells which), each with its text and dates. Needs the Aircall AI add-on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "integer",
+            "description": "The call id, from aircall_list_calls or aircall_search_calls."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/calls/{call_id}/action_items"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_id": "$.call_id",
+            "action_items": {
+              "$from": "$.action_items[*]",
+              "$select": {
+                "id": "id",
+                "content": "content",
+                "ai_generated": "ai_generated",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_comment_call",
+      "description": "Add a note (comment) to a call. Notes cannot be edited or deleted afterwards and a call holds at most five (a sixth fails with 400), so show the user the exact text and call only after the user confirms. Notes posted through the API have no author. Emojis are removed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "integer",
+            "description": "The call id, from aircall_list_calls or aircall_search_calls."
+          },
+          "content": {
+            "type": "string",
+            "description": "The note text."
+          }
+        },
+        "required": [
+          "call_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/calls/{call_id}/comments",
+        "bodyMapping": {
+          "content": "$content"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "aircall_tag_call",
+      "description": "Add one or more existing tags to a call (tag ids from aircall_list_tags). Agents and reports see the tags, so confirm the call and the tags with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "integer",
+            "description": "The call id, from aircall_list_calls or aircall_search_calls."
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Tag ids to add, e.g. [545]."
+          }
+        },
+        "required": [
+          "call_id",
+          "tag_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/calls/{call_id}/tags",
+        "bodyMapping": {
+          "tags": "$tag_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "aircall_archive_call",
+      "description": "Mark a call as archived (archived: true). This only sets a flag on the call record: in Aircall Workspace it no longer changes what agents see. Confirm with the user before calling. Returns the updated call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "integer",
+            "description": "The call id, from aircall_list_calls or aircall_search_calls."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/calls/{call_id}/archive"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call": {
+              "id": "$.call.id",
+              "archived": "$.call.archived",
+              "status": "$.call.status",
+              "direction": "$.call.direction"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "aircall_list_contacts",
+      "description": "List the company's shared Aircall contacts with names, company, notes, phone numbers and email addresses. Contacts synced from CRM integrations are not included. Contacts are personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Only items created at or after this time, as a UNIX timestamp in seconds (e.g. 1760486400)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only items created at or before this time, as a UNIX timestamp in seconds."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: asc (oldest first, the default) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field: created_at (default) or updated_at.",
+            "enum": [
+              "created_at",
+              "updated_at"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "order": "$order",
+          "order_by": "$order_by",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "contacts": {
+              "$from": "$.contacts[*]",
+              "$select": {
+                "id": "id",
+                "first_name": "first_name",
+                "last_name": "last_name",
+                "company_name": "company_name",
+                "information": "information",
+                "is_shared": "is_shared",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "phone_numbers": {
+                  "$from": "phone_numbers[*]",
+                  "$select": {
+                    "id": "id",
+                    "label": "label",
+                    "value": "value"
+                  }
+                },
+                "emails": {
+                  "$from": "emails[*]",
+                  "$select": {
+                    "id": "id",
+                    "label": "label",
+                    "value": "value"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_search_contacts",
+      "description": "Find shared contacts by phone number or email address (exact match), e.g. to see who called. Returns the same contact records as aircall_list_contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number of the contact, e.g. +14155550123."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address of the contact."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only items created at or after this time, as a UNIX timestamp in seconds (e.g. 1760486400)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only items created at or before this time, as a UNIX timestamp in seconds."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: asc (oldest first, the default) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field: created_at (default) or updated_at.",
+            "enum": [
+              "created_at",
+              "updated_at"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts/search",
+        "queryParams": {
+          "phone_number": "$phone_number",
+          "email": "$email",
+          "from": "$from",
+          "to": "$to",
+          "order": "$order",
+          "order_by": "$order_by",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "contacts": {
+              "$from": "$.contacts[*]",
+              "$select": {
+                "id": "id",
+                "first_name": "first_name",
+                "last_name": "last_name",
+                "company_name": "company_name",
+                "information": "information",
+                "is_shared": "is_shared",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "phone_numbers": {
+                  "$from": "phone_numbers[*]",
+                  "$select": {
+                    "id": "id",
+                    "label": "label",
+                    "value": "value"
+                  }
+                },
+                "emails": {
+                  "$from": "emails[*]",
+                  "$select": {
+                    "id": "id",
+                    "label": "label",
+                    "value": "value"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_get_contact",
+      "description": "Read one shared contact by id with names, company, notes (information), phone numbers and email addresses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "The contact id from aircall_list_contacts or aircall_search_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts/{contact_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "contact": {
+              "id": "$.contact.id",
+              "first_name": "$.contact.first_name",
+              "last_name": "$.contact.last_name",
+              "company_name": "$.contact.company_name",
+              "information": "$.contact.information",
+              "is_shared": "$.contact.is_shared",
+              "created_at": "$.contact.created_at",
+              "updated_at": "$.contact.updated_at",
+              "phone_numbers": {
+                "$from": "$.contact.phone_numbers[*]",
+                "$select": {
+                  "id": "id",
+                  "label": "label",
+                  "value": "value"
+                }
+              },
+              "emails": {
+                "$from": "$.contact.emails[*]",
+                "$select": {
+                  "id": "id",
+                  "label": "label",
+                  "value": "value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_create_contact",
+      "description": "Create a contact shared with the whole company. At least one phone number is required. Sending the same data twice creates a duplicate, so search first with aircall_search_contacts, show the user the contact and create it only after the user confirms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_numbers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Phone numbers, each {\"label\": \"Work\", \"value\": \"+14155550123\"} (1 to 20)."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name (up to 255 characters)."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name (up to 255 characters)."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name (up to 255 characters)."
+          },
+          "information": {
+            "type": "string",
+            "description": "Free text about the contact, e.g. an id in another system."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Email addresses, each {\"label\": \"Work\", \"value\": \"name@example.com\"} (up to 20)."
+          }
+        },
+        "required": [
+          "phone_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/contacts",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "company_name": "$company_name",
+          "information": "$information",
+          "phone_numbers": "$phone_numbers",
+          "emails": "$emails"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "contact": {
+              "id": "$.contact.id",
+              "first_name": "$.contact.first_name",
+              "last_name": "$.contact.last_name",
+              "company_name": "$.contact.company_name",
+              "information": "$.contact.information",
+              "is_shared": "$.contact.is_shared",
+              "created_at": "$.contact.created_at",
+              "updated_at": "$.contact.updated_at",
+              "phone_numbers": {
+                "$from": "$.contact.phone_numbers[*]",
+                "$select": {
+                  "id": "id",
+                  "label": "label",
+                  "value": "value"
+                }
+              },
+              "emails": {
+                "$from": "$.contact.emails[*]",
+                "$select": {
+                  "id": "id",
+                  "label": "label",
+                  "value": "value"
+                }
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "aircall_update_contact",
+      "description": "Change the name, company or information of a shared contact; only the fields you pass change (phone numbers and emails are not changed by this tool). Show the user the changes and call only after the user confirms. Returns the updated contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "The contact id."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "New first name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "New last name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "New company name."
+          },
+          "information": {
+            "type": "string",
+            "description": "New free text about the contact."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/contacts/{contact_id}",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "company_name": "$company_name",
+          "information": "$information"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "contact": {
+              "id": "$.contact.id",
+              "first_name": "$.contact.first_name",
+              "last_name": "$.contact.last_name",
+              "company_name": "$.contact.company_name",
+              "information": "$.contact.information",
+              "is_shared": "$.contact.is_shared",
+              "created_at": "$.contact.created_at",
+              "updated_at": "$.contact.updated_at",
+              "phone_numbers": {
+                "$from": "$.contact.phone_numbers[*]",
+                "$select": {
+                  "id": "id",
+                  "label": "label",
+                  "value": "value"
+                }
+              },
+              "emails": {
+                "$from": "$.contact.emails[*]",
+                "$select": {
+                  "id": "id",
+                  "label": "label",
+                  "value": "value"
+                }
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "aircall_delete_contact",
+      "description": "Delete a shared contact for the whole company. This cannot be undone. Installed switched off; an administrator turns it on deliberately. Show the user the contact and call only after the user confirms.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "The contact id to delete."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/contacts/{contact_id}"
+      }
+    },
+    {
+      "name": "aircall_list_tags",
+      "description": "List the call tags of the company with id, name, color and description. Use the ids with aircall_tag_call and aircall_search_calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/tags",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "tags": {
+              "$from": "$.tags[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "color": "color",
+                "description": "description"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aircall_start_outbound_call",
+      "description": "Start a real phone call from a user's Aircall Workspace (desktop app) to a phone number, using one of the user's Aircall numbers. The phone rings at the other end at once and outbound minutes may cost money, so show the user who will call whom from which number and call only after the user confirms. The user must be online, available, not on a call and assigned to the number (405 otherwise). Answers 204 with no body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "The Aircall user who makes the call (id from aircall_list_users)."
+          },
+          "number_id": {
+            "type": "integer",
+            "description": "The Aircall number to call from (id from aircall_list_user_numbers)."
+          },
+          "to": {
+            "type": "string",
+            "description": "The number to call in E.164 format, e.g. +14155550123."
+          }
+        },
+        "required": [
+          "user_id",
+          "number_id",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/users/{user_id}/calls",
+        "bodyMapping": {
+          "number_id": "$number_id",
+          "to": "$to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "aircall_dial_number",
+      "description": "Put a phone number into a user's Aircall Workspace dialer (desktop app) without calling: the user then starts the call and picks the line. Confirm the user and the number first. The user must be available and not on a call (405 otherwise). Answers 204 with no body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "The Aircall user whose dialer gets the number."
+          },
+          "to": {
+            "type": "string",
+            "description": "The number to dial in E.164 format, e.g. +14155550123."
+          }
+        },
+        "required": [
+          "user_id",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/users/{user_id}/dial",
+        "bodyMapping": {
+          "to": "$to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "aircall_list_webhooks",
+      "description": "List the webhooks of the company: id, target URL, whether it is active and the events it receives. The signing token of each webhook is removed from the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: asc (oldest first, the default) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). Follow meta.next_page_link: it is null on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (default 20).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/webhooks",
+        "queryParams": {
+          "order": "$order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "webhooks[*].token"
+          ],
+          "select": {
+            "meta": "$.meta",
+            "webhooks": {
+              "$from": "$.webhooks[*]",
+              "$select": {
+                "webhook_id": "webhook_id",
+                "custom_name": "custom_name",
+                "url": "url",
+                "active": "active",
+                "events": "events",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,418 @@
+{
+  "slug": "coinbase",
+  "name": "Coinbase",
+  "aliases": [
+    "Coinbase Advanced",
+    "Coinbase Exchange"
+  ],
+  "description": "Let your AI read live crypto market data from Coinbase: prices and 24 hour changes of every trading pair, recent trades, best bid and ask, order book depth, price history as candles, and spot prices in any currency, also for a past day. Public data, no account or key needed. Read-only: it cannot trade or move funds.",
+  "instructions": "## Coinbase\nThis connector reads **public market data from Coinbase**, the crypto exchange: the trading pairs Coinbase lists, live prices and recent trades, the order book, price history as candles, and spot prices in any currency, today or on a past day. It calls the public market endpoints of the Coinbase Advanced Trade API (`https://api.coinbase.com/api/v3/brokerage/market`) and the Coinbase Data API spot price (`https://api.coinbase.com/v2/prices`). **No account, API key or sign-in is needed**, and nothing to set up.\n\n**Read-only by design: this connector cannot trade or move funds.** It has no tool that places, edits or cancels an order, buys, sells or converts crypto, or sends, withdraws, deposits or transfers crypto or money, and none can be switched on: it never signs in to a Coinbase account. It also cannot see anyone's balances, wallets, portfolios, orders or transactions. When the user asks for any of that, say so plainly and point them to the Coinbase app or website. Coinbase's account APIs need either a key that signs every single request, which this connector does not do, or a Coinbase OAuth app, which Coinbase only grants to approved partners.\n\n**Not financial advice.** Prices, volumes and order books are informational. Do not tell the user to buy, sell or hold anything; present the numbers, their time, and where they came from, and mention that crypto prices move fast and can fall sharply.\n\n**Valuing a portfolio**: the user can tell you what they hold (for example 0.5 BTC and 3 ETH). Multiply each amount by `coinbase_get_spot_price` in their currency (BTC-EUR, ETH-EUR) and add up. For a value on a past day, pass `date` as YYYY-MM-DD. State the time of the prices you used.\n\n**Pairs**: Coinbase names a pair BASE-QUOTE in capitals, e.g. `BTC-USD`, `ETH-EUR`, `SOL-USDC`. Not every pair exists (there may be BTC-EUR but no SOL-CHF); `coinbase_list_products` with `product_ids` checks several at once, and a pair that does not exist answers 404 \"not supported\". Some pairs are aliases of another (BTC-USDC trades in the BTC-USD book): see `alias_to`. `coinbase_get_spot_price` also takes fiat pairs such as USD-EUR.\n\n**Which tool**\n- Current price and 24 hour change of one or more pairs: `coinbase_list_products` with `product_ids`, or `coinbase_get_product`.\n- Live best bid and ask, and the latest trades: `coinbase_get_market_trades`.\n- Depth and spread: `coinbase_get_product_book` (10 levels per side by default).\n- History and charts: `coinbase_get_candles` with a granularity from ONE_MINUTE to ONE_DAY.\n- A price in another currency or on a past day: `coinbase_get_spot_price`.\n- The current time on Coinbase: `coinbase_get_server_time`.\n\n**Numbers and times**: prices and sizes come as strings to keep every digit; sizes and `volume_24h` are in the base currency, prices and `approximate_quote_24h_volume` in the quote currency. Candle `start` and the `start` and `end` parameters are Unix seconds; get the current value from `coinbase_get_server_time` (`epochSeconds`) and subtract (3600 for an hour, 86400 for a day) (seconds since 1 January 1970, UTC); trade times are ISO 8601 in UTC. Convert to the user's time zone before quoting a time. One candle request covers fewer than 350 candles: for a long history pick a larger granularity (ONE_DAY covers almost a year) rather than many calls.\n\n**Limits**: the public endpoints are rate limited per IP address; on 429 wait a few seconds before the next call. Coinbase caches market data for about a second.\n\n**Errors**\n- 404: the pair does not exist or is not supported.\n- 400 INVALID_ARGUMENT: a parameter is wrong, for example a window with 350 or more candles; Coinbase says which in `message`.\n\n**Out of scope here**: anything that needs a Coinbase account (balances, portfolios, orders, fills, fees, transactions, deposits, withdrawals, transfers and conversions), trading of any kind, WebSocket streams, and derivatives positions.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "coinbase",
+  "docsUrl": "https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/public/list-public-products",
+  "prerequisites": "Nothing: the connector reads Coinbase's public market data without an account or API key.",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "coinbase_get_server_time"
+  },
+  "connector": {
+    "name": "Coinbase public market data",
+    "type": "REST",
+    "baseUrl": "https://api.coinbase.com",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/v3/brokerage/time"
+  },
+  "tools": [
+    {
+      "name": "coinbase_get_server_time",
+      "description": "Read Coinbase's current server time as ISO 8601 and Unix seconds. Free, needs nothing; use it to work out the Unix timestamps that coinbase_get_candles and coinbase_get_market_trades take for start and end.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/brokerage/time"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "iso": "$.iso",
+            "epochSeconds": "$.epochSeconds"
+          }
+        }
+      }
+    },
+    {
+      "name": "coinbase_list_products",
+      "description": "List Coinbase trading pairs (products) with their last price, 24 hour change in percent, 24 hour volume, high and low, and status. Spot pairs by default, sorted by 24 hour volume, most traded first. Pass product_ids to look up specific pairs in one call. Prices are strings in the quote currency. Market data is informational, not financial advice. More results: call again with offset raised by limit while hasNext is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "description": "Only these pairs, e.g. [\"BTC-USD\", \"ETH-EUR\"]. Leave out to list all."
+          },
+          "product_type": {
+            "type": "string",
+            "enum": [
+              "SPOT",
+              "FUTURE"
+            ],
+            "description": "SPOT (default, crypto against fiat or stablecoins) or FUTURE (futures contracts, not available to every user)."
+          },
+          "products_sort_order": {
+            "type": "string",
+            "enum": [
+              "PRODUCTS_SORT_ORDER_VOLUME_24H_DESCENDING",
+              "PRODUCTS_SORT_ORDER_LIST_TIME_DESCENDING"
+            ],
+            "description": "Most traded first (default) or newest listings first."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Products per page (default 25 here, at most 100). Without a limit Coinbase returns all of its several hundred pairs."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of products to skip, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/brokerage/market/products",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "product_type": "$product_type",
+          "product_ids": "$product_ids",
+          "products_sort_order": "$products_sort_order"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "products": {
+              "$from": "$.products[*]",
+              "$select": {
+                "product_id": "product_id",
+                "base_name": "base_name",
+                "quote_name": "quote_name",
+                "price": "price",
+                "price_percentage_change_24h": "price_percentage_change_24h",
+                "volume_24h": "volume_24h",
+                "approximate_quote_24h_volume": "approximate_quote_24h_volume",
+                "high_24h": "high_24h",
+                "low_24h": "low_24h",
+                "status": "status",
+                "trading_disabled": "trading_disabled",
+                "product_type": "product_type"
+              }
+            },
+            "numProducts": "$.num_products",
+            "hasNext": "$.pagination.has_next"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "coinbase_get_product",
+      "description": "Read one Coinbase trading pair: last price, 24 hour change, volume, high and low, base and quote currency, listing date, status and whether trading is limited (cancel only, limit only, post only, disabled). Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Coinbase product id, the trading pair as BASE-QUOTE in capitals, e.g. BTC-USD, ETH-EUR or SOL-USDC. Find ids with coinbase_list_products.",
+            "pattern": "^[A-Z0-9]{1,20}-[A-Z0-9]{1,20}(-[A-Z0-9]{1,20})*$"
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/brokerage/market/products/{product_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "product_id": "$.product_id",
+            "display_name": "$.display_name",
+            "base_currency_id": "$.base_currency_id",
+            "base_name": "$.base_name",
+            "quote_currency_id": "$.quote_currency_id",
+            "quote_name": "$.quote_name",
+            "price": "$.price",
+            "price_percentage_change_24h": "$.price_percentage_change_24h",
+            "volume_24h": "$.volume_24h",
+            "volume_percentage_change_24h": "$.volume_percentage_change_24h",
+            "approximate_quote_24h_volume": "$.approximate_quote_24h_volume",
+            "high_24h": "$.high_24h",
+            "low_24h": "$.low_24h",
+            "status": "$.status",
+            "trading_disabled": "$.trading_disabled",
+            "cancel_only": "$.cancel_only",
+            "limit_only": "$.limit_only",
+            "post_only": "$.post_only",
+            "product_type": "$.product_type",
+            "alias_to": "$.alias_to",
+            "new_at": "$.new_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "coinbase_get_market_trades",
+      "description": "Read the most recent public trades of a Coinbase pair (price, size in the base currency, time, and side of the taker) together with the current best bid and best ask. Use it for the live price and the spread. Optional start and end (Unix seconds) look at an earlier window. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Coinbase product id, the trading pair as BASE-QUOTE in capitals, e.g. BTC-USD, ETH-EUR or SOL-USDC. Find ids with coinbase_list_products.",
+            "pattern": "^[A-Z0-9]{1,20}-[A-Z0-9]{1,20}(-[A-Z0-9]{1,20})*$"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Number of trades (default 20, at most 100)."
+          },
+          "start": {
+            "type": "string",
+            "pattern": "^[0-9]{9,11}$",
+            "description": "Optional start of the window as Unix seconds, e.g. 1760000000."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^[0-9]{9,11}$",
+            "description": "Optional end of the window as Unix seconds."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/brokerage/market/products/{product_id}/ticker",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start",
+          "end": "$end"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "best_bid": "$.best_bid",
+            "best_ask": "$.best_ask",
+            "trades": {
+              "$from": "$.trades[*]",
+              "$select": {
+                "trade_id": "trade_id",
+                "price": "price",
+                "size": "size",
+                "time": "time",
+                "side": "side"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "coinbase_get_candles",
+      "description": "Read price history of a Coinbase pair as candles (open, high, low, close and volume per interval), newest first. Pick the interval with granularity. start and end (Unix seconds; coinbase_get_server_time gives the current time) set the window, which must hold fewer than 350 candles: for the last 48 hours in ONE_HOUR candles, end = now and start = now minus 172800. start in each candle is Unix seconds. Market data is informational, not financial advice; past prices say nothing certain about future ones.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Coinbase product id, the trading pair as BASE-QUOTE in capitals, e.g. BTC-USD, ETH-EUR or SOL-USDC. Find ids with coinbase_list_products.",
+            "pattern": "^[A-Z0-9]{1,20}-[A-Z0-9]{1,20}(-[A-Z0-9]{1,20})*$"
+          },
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "ONE_MINUTE",
+              "FIVE_MINUTE",
+              "FIFTEEN_MINUTE",
+              "THIRTY_MINUTE",
+              "ONE_HOUR",
+              "TWO_HOUR",
+              "FOUR_HOUR",
+              "SIX_HOUR",
+              "ONE_DAY"
+            ],
+            "description": "Length of each candle."
+          },
+          "start": {
+            "type": "string",
+            "pattern": "^[0-9]{9,11}$",
+            "description": "Start of the window as Unix seconds, e.g. 1760000000."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^[0-9]{9,11}$",
+            "description": "End of the window as Unix seconds, after start."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 60,
+            "description": "Number of candles (default 60, at most 300 here)."
+          }
+        },
+        "required": [
+          "product_id",
+          "granularity",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/brokerage/market/products/{product_id}/candles",
+        "encodePathParams": true,
+        "queryParams": {
+          "granularity": "$granularity",
+          "start": "$start",
+          "end": "$end",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "candles": {
+              "$from": "$.candles[*]",
+              "$select": {
+                "start": "start",
+                "open": "open",
+                "high": "high",
+                "low": "low",
+                "close": "close",
+                "volume": "volume"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "coinbase_get_product_book",
+      "description": "Read the public order book of a Coinbase pair: the best bids and asks with price and size, the last price, the mid market price and the spread in basis points and absolute. limit sets how many price levels per side (default 10). Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Coinbase product id, the trading pair as BASE-QUOTE in capitals, e.g. BTC-USD, ETH-EUR or SOL-USDC. Find ids with coinbase_list_products.",
+            "pattern": "^[A-Z0-9]{1,20}-[A-Z0-9]{1,20}(-[A-Z0-9]{1,20})*$"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Price levels per side (default 10, at most 50 here; Coinbase would send 1,000 without a limit)."
+          },
+          "aggregation_price_increment": {
+            "type": "string",
+            "description": "Optional price step to group levels by, e.g. \"10\" to sum all bids and asks within each 10 units of the quote currency."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/brokerage/market/product_book",
+        "queryParams": {
+          "product_id": "$product_id",
+          "limit": "$limit",
+          "aggregation_price_increment": "$aggregation_price_increment"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "product_id": "$.pricebook.product_id",
+            "time": "$.pricebook.time",
+            "bids": "$.pricebook.bids",
+            "asks": "$.pricebook.asks",
+            "last": "$.last",
+            "mid_market": "$.mid_market",
+            "spread_bps": "$.spread_bps",
+            "spread_absolute": "$.spread_absolute"
+          },
+          "maxBytes": 12000
+        }
+      }
+    },
+    {
+      "name": "coinbase_get_spot_price",
+      "description": "Read Coinbase's spot price of one unit of a currency in another, now or on a past day: e.g. BTC-EUR, ETH-USD, or USD-EUR for a fiat rate. Use it to value holdings the user tells you about (amount times price). date (YYYY-MM-DD, UTC) gives the price of that day. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency_pair": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{1,20}-[A-Za-z]{3,10}$",
+            "description": "BASE-QUOTE, e.g. BTC-EUR, ETH-USD, USDC-EUR or USD-EUR."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Optional day in UTC as YYYY-MM-DD for a historical price; leave out for now."
+          }
+        },
+        "required": [
+          "currency_pair"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/prices/{currency_pair}/spot",
+        "encodePathParams": true,
+        "queryParams": {
+          "date": "$date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "amount": "$.data.amount",
+            "base": "$.data.base",
+            "currency": "$.data.currency"
+          }
+        }
+      }
+    }
+  ]
+}

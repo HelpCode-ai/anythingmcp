@@ -1,6 +1,6 @@
 {
   "name": "@anythingmcp/backend",
-  "version": "0.20.0",
+  "version": "0.36.2",
   "description": "AnythingMCP — NestJS Backend + Dynamic MCP Server",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -13,6 +13,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
+    "lint:check": "eslint \"{src,test}/**/*.ts\"",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -47,7 +48,7 @@
     "@rekog/mcp-nest": "^2.0.6",
     "@rekog/mcp-nest-auth": "^2.0.7",
     "@sentry/nestjs": "^10.75.3",
-    "@sentry/profiling-node": "^10.75.3",
+    "@sentry/profiling-node": "^10.76.2",
     "axios": "^1.20.0",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.11.1",
@@ -66,7 +67,7 @@
     "mssql": "^12.7.2",
     "mysql2": "^3.24.4",
     "nestjs-pino": "^4.6.1",
-    "nodemailer": "^10.0.9",
+    "nodemailer": "^10.0.16",
     "openid-client": "^6.8.8",
     "oracledb": "^6.10.0",
     "passport": "^0.7.0",
@@ -107,7 +108,7 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.70.1"
+    "typescript-eslint": "^8.71.1"
   },
   "jest": {
     "moduleFileExtensions": [

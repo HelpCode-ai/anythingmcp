@@ -407,6 +407,43 @@ describe('CatalogResyncService — the user\'s own tools are never touched', () 
     expect(tx.mcpTool.create.mock.calls[0][0].data.origin).toBe('catalog');
   });
 
+  it('adds a tool the catalog ships switched off as switched off, as an install would', async () => {
+    const off = getAdapter(SLUG)!.tools.find((t) => t.enabled === false)!;
+    expect(off).toBeDefined();
+    const { service, tx } = applySetup((tools) => {
+      const i = tools.findIndex((t) => t.name === off.name);
+      tools.splice(i, 1);
+    });
+    await service.resync('c1', 'full');
+    expect(tx.mcpTool.create).toHaveBeenCalledTimes(1);
+    expect(tx.mcpTool.create.mock.calls[0][0].data).toMatchObject({ name: off.name, isEnabled: false });
+  });
+
+  it('brings a read-only weclapp install up to date without touching the tools its users built', async () => {
+    // An install from before the write tools: the first 11 tools, plus the
+    // kind of tool workspaces build themselves on that connector.
+    const readOnly = new Set(getAdapter(SLUG)!.tools.slice(0, 11).map((t) => t.name));
+    const { service, tx } = applySetup((tools) => {
+      for (let i = tools.length - 1; i >= 0; i--) if (!readOnly.has(tools[i].name)) tools.splice(i, 1);
+      tools.push(userTool({ id: 'own1', name: 'weclapp_update_sales_invoice', origin: 'user' }));
+      tools.push(userTool({ id: 'own2', name: 'rechnung_verantwortlichen_setzen', origin: null }));
+    });
+    const diff = await service.computeDiff('c1');
+    expect(diff!.added.length).toBe(getAdapter(SLUG)!.tools.length - 11);
+    expect(diff!.custom.sort()).toEqual(['rechnung_verantwortlichen_setzen', 'weclapp_update_sales_invoice']);
+    await service.resync('c1', 'full');
+    const touched = [
+      ...tx.mcpTool.update.mock.calls.map((c: any) => c[0].where.id),
+    ];
+    expect(touched).not.toContain('own1');
+    expect(touched).not.toContain('own2');
+    const created = tx.mcpTool.create.mock.calls.map((c: any) => c[0].data);
+    expect(created.map((d: any) => d.name)).not.toContain('weclapp_update_sales_invoice');
+    expect(created.filter((d: any) => d.isEnabled === false).map((d: any) => d.name).sort()).toEqual(
+      getAdapter(SLUG)!.tools.filter((t) => t.enabled === false).map((t) => t.name).sort(),
+    );
+  });
+
   it('safe mode applies description fixes even when a new tool is also pending', async () => {
     const { service, tx } = applySetup((tools) => {
       tools[1] = { ...tools[1], description: 'stale description' };
@@ -474,5 +511,63 @@ describe('CatalogResyncService.computeDiff for an MCP adapter', () => {
     expect(diff!.added).toEqual([]);
     expect(diff!.removed).toEqual([]);
     expect(diff!.isUpToDate).toBe(true);
+  });
+});
+
+describe('CatalogResyncService.resync for an MCP adapter', () => {
+  // An instructions update is offered for a bridge too; applying it must not
+  // write the snapshot over the tools the server listed (a gateway's remote
+  // names, its descriptions) or retire the tools the snapshot lacks.
+  it('updates the instructions and leaves the tools alone, in full mode too', async () => {
+    const adapter = getAdapter('tradingview')!;
+    const connector = {
+      id: 'c1',
+      name: adapter.connector.name,
+      baseUrl: adapter.connector.baseUrl,
+      instructions: 'older catalog instructions',
+      createdAt: new Date('2026-10-01T00:00:00Z'),
+      config: {
+        adapterSlug: 'tradingview',
+        adapterVersion: 'old-version',
+        instructionsBaseline: hashInstructions('older catalog instructions'),
+        baseUrlBaseline: adapter.connector.baseUrl,
+      },
+      tools: [
+        {
+          id: 't1',
+          name: 'tradingview_get_ohlcv',
+          description: 'what the server says',
+          parameters: { type: 'object', properties: {} },
+          endpointMapping: { method: 'mcp-tv-get-ohlcv', path: '/mcp' },
+          origin: 'catalog',
+          deprecatedAt: null,
+          isEnabled: true,
+        },
+        {
+          id: 't2',
+          name: 'tradingview_mcp_tv_brand_new_tool',
+          description: 'a tool the snapshot lacks',
+          parameters: {},
+          endpointMapping: { method: 'mcp-tv-brand-new-tool', path: '/mcp' },
+          origin: 'catalog',
+          deprecatedAt: null,
+          isEnabled: true,
+        },
+      ],
+    };
+    const tx = {
+      connector: { findUnique: jest.fn().mockResolvedValue(connector), update: jest.fn().mockResolvedValue({}) },
+      mcpTool: { update: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      connector: { findUnique: jest.fn().mockResolvedValue(connector) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    } as any;
+    const { applied, diff } = await new CatalogResyncService(prisma).resync('c1', 'full');
+    expect(diff.instructionsRefreshable).toBe(true);
+    expect(applied).toBe(true);
+    expect(tx.mcpTool.update).not.toHaveBeenCalled();
+    expect(tx.mcpTool.create).not.toHaveBeenCalled();
+    expect(tx.connector.update.mock.calls[0][0].data.instructions).toBe(adapter.instructions);
   });
 });

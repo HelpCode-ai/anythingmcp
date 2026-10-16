@@ -1,4 +1,20 @@
+import axios from 'axios';
 import * as adapter from './wildberries.json';
+import { RestEngine } from '../../connectors/engines/rest.engine';
+import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
+import { LoginTokenService } from '../../connectors/engines/login-token.service';
+import { deriveToolAnnotations } from '../../mcp-server/tool-annotations';
+
+jest.mock('axios', () => {
+  const actual = jest.requireActual('axios');
+  const mocked = jest.fn();
+  return {
+    __esModule: true,
+    default: Object.assign(mocked, actual.default, { __actual: actual.default }),
+    AxiosError: actual.AxiosError,
+  };
+});
+const mockedAxios = axios as unknown as jest.Mock;
 
 type Tool = {
   name: string;
@@ -6,10 +22,13 @@ type Tool = {
   parameters: { properties?: Record<string, unknown>; required?: string[] };
   endpointMapping: Record<string, unknown> & { method: string; path: string };
   annotations?: Record<string, boolean>;
+  enabled?: boolean;
 };
 const a = adapter as unknown as {
   slug: string;
   probe: { tool: string };
+  instructions: string;
+  description: string;
   connector: { baseUrl: string; authType: string; authConfig: Record<string, string> };
   tools: Tool[];
 };
@@ -88,5 +107,115 @@ describe('wildberries adapter: static spec conformance', () => {
   it('stock bodies use size ids (chrtIds), not the old sku barcodes', () => {
     expect(tool('wildberries_get_stocks').endpointMapping.bodyMapping).toEqual({ chrtIds: '$chrt_ids' });
     expect(tool('wildberries_update_stocks').endpointMapping.bodyMapping).toEqual({ stocks: '$stocks' });
+  });
+});
+
+/**
+ * Feedbacks, questions and buyer returns. Checked against the official
+ * Customer Communication OpenAPI file of dev.wildberries.ru (paths, hosts,
+ * query names, body shapes) and against a workspace's own successful calls
+ * to POST /api/v1/feedbacks/answer and GET /api/v1/feedbacks. Both hosts
+ * check the token before the route, so an unauthenticated probe answers 401
+ * on any path and cannot tell a real route from a typo.
+ */
+describe('wildberries adapter: feedbacks, questions and returns', () => {
+  const FB = 'https://feedbacks-api.wildberries.ru';
+  const RET = 'https://returns-api.wildberries.ru';
+  const engine = new RestEngine({} as OAuth2TokenService, {} as LoginTokenService);
+  const call = (name: string, params: Record<string, unknown>) =>
+    engine.execute(
+      { baseUrl: a.connector.baseUrl, authType: 'API_KEY', authConfig: { headerName: 'Authorization', apiKey: 'tok' } },
+      tool(name).endpointMapping as never,
+      params,
+    );
+  const sent = () => mockedAxios.mock.calls[0][0];
+  const annotationsOf = (t: Tool) =>
+    deriveToolAnnotations({ name: t.name, connectorType: 'REST', endpointMapping: t.endpointMapping, annotations: t.annotations });
+
+  beforeEach(() => mockedAxios.mockReset());
+
+  const table: Array<[string, Record<string, unknown>, string, string]> = [
+    ['wildberries_count_unanswered_feedbacks', {}, 'GET', `${FB}/api/v1/feedbacks/count-unanswered`],
+    ['wildberries_count_unanswered_questions', {}, 'GET', `${FB}/api/v1/questions/count-unanswered`],
+    ['wildberries_check_new_feedbacks_questions', {}, 'GET', `${FB}/api/v1/new-feedbacks-questions`],
+    ['wildberries_list_feedbacks', { is_answered: false, take: 100, skip: 0 }, 'GET', `${FB}/api/v1/feedbacks`],
+    ['wildberries_get_feedback', { id: 'f1' }, 'GET', `${FB}/api/v1/feedback`],
+    ['wildberries_answer_feedback', { id: 'f1', text: 'Спасибо!' }, 'POST', `${FB}/api/v1/feedbacks/answer`],
+    ['wildberries_edit_feedback_answer', { id: 'f1', text: 'Спасибо!' }, 'PATCH', `${FB}/api/v1/feedbacks/answer`],
+    ['wildberries_list_questions', { is_answered: false, take: 100, skip: 0 }, 'GET', `${FB}/api/v1/questions`],
+    ['wildberries_answer_question', { id: 'q1', text: 'Да' }, 'PATCH', `${FB}/api/v1/questions`],
+    ['wildberries_reject_question', { id: 'q1', text: 'Спам' }, 'PATCH', `${FB}/api/v1/questions`],
+    ['wildberries_list_return_claims', { is_archive: false }, 'GET', `${RET}/api/v1/claims`],
+    ['wildberries_answer_return_claim', { id: 'c1', action: 'approve1' }, 'PATCH', `${RET}/api/v1/claim`],
+  ];
+
+  it.each(table)('%s sends %s to the right host with the token', async (name, params, method, url) => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call(name, params);
+    expect(sent()).toEqual(expect.objectContaining({ method, url, headers: expect.objectContaining({ Authorization: 'tok' }) }));
+  });
+
+  it('lists feedbacks with the camelCase query names Wildberries expects, false included', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('wildberries_list_feedbacks', { is_answered: false, take: 5000, skip: 0, nm_id: 123, order: 'dateDesc', date_from: 1, date_to: 2 });
+    expect(sent().params).toEqual({ isAnswered: false, take: 5000, skip: 0, nmId: 123, order: 'dateDesc', dateFrom: 1, dateTo: 2 });
+    for (const name of ['wildberries_list_feedbacks', 'wildberries_list_questions']) {
+      expect(tool(name).parameters.required).toEqual(['is_answered', 'take', 'skip']);
+    }
+  });
+
+  it('answers a feedback with id and text, as the working hand-built tool did', async () => {
+    mockedAxios.mockResolvedValue({ data: '' });
+    await call('wildberries_answer_feedback', { id: 'f1', text: 'Спасибо за отзыв' });
+    expect(sent().data).toEqual({ id: 'f1', text: 'Спасибо за отзыв' });
+  });
+
+  it('answers a question with state wbRu and rejects one with state none', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('wildberries_answer_question', { id: 'q1', text: 'Да' });
+    expect(sent().data).toEqual({ id: 'q1', answer: { text: 'Да' }, state: 'wbRu' });
+    mockedAxios.mockReset();
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('wildberries_reject_question', { id: 'q1', text: 'Спам' });
+    expect(sent().data).toEqual({ id: 'q1', answer: { text: 'Спам' }, state: 'none' });
+  });
+
+  it('decides on a return with the action and leaves the comment out unless given', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('wildberries_answer_return_claim', { id: 'c1', action: 'approve1' });
+    expect(sent().data).toEqual({ id: 'c1', action: 'approve1' });
+    mockedAxios.mockReset();
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('wildberries_answer_return_claim', { id: 'c1', action: 'rejectcustom', comment: 'Товар без дефектов' });
+    expect(sent().data).toEqual({ id: 'c1', action: 'rejectcustom', comment: 'Товар без дефектов' });
+    mockedAxios.mockReset();
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('wildberries_list_return_claims', { is_archive: false, limit: 200 });
+    expect(sent().params).toEqual({ is_archive: false, limit: 200 });
+  });
+
+  it('reads are read-only, writes confirm first, the rejection is switched off', () => {
+    for (const [name, , method] of table) {
+      const ann = annotationsOf(tool(name));
+      expect(`${name}:${ann.readOnlyHint}`).toBe(`${name}:${method === 'GET'}`);
+      if (method !== 'GET') expect(`${name}:${/confirm/i.test(tool(name).description)}`).toBe(`${name}:true`);
+    }
+    expect(a.tools.filter((t) => t.enabled === false).map((t) => t.name)).toEqual(['wildberries_reject_question']);
+    expect(annotationsOf(tool('wildberries_answer_return_claim')).destructiveHint).toBe(true);
+    expect(annotationsOf(tool('wildberries_answer_question')).destructiveHint).toBe(false);
+  });
+
+  it('warns about the Base token limit that made a workspace hit 429 on every other answer', () => {
+    expect(a.instructions).toMatch(/only 5 an hour/);
+    expect(tool('wildberries_answer_feedback').description).toMatch(/5 feedback or question calls an hour/);
+  });
+
+  it('only points the model at tools that exist, and the new text has no em dashes', () => {
+    const names = new Set(a.tools.map((t) => t.name));
+    const texts = [a.instructions, a.description, ...table.map(([n]) => JSON.stringify(tool(n)))];
+    for (const s of texts) {
+      for (const m of s.matchAll(/\bwildberries_[a-z_]+/g)) expect(names).toContain(m[0]);
+      expect(s).not.toMatch(/[–—]/);
+    }
   });
 });

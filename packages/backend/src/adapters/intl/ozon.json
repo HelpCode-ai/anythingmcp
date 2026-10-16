@@ -1,0 +1,1975 @@
+{
+  "slug": "ozon",
+  "name": "Ozon Seller",
+  "description": "Run an Ozon seller account from an AI agent: products, stock and prices, FBS and FBO postings, returns, finance accruals and the balance report, sales analytics, warehouses, promotions, reviews and buyer questions, with price and stock updates. One Client ID and API key.",
+  "instructions": "## Ozon Seller\nThis connector calls the **Ozon Seller API** (`https://api-seller.ozon.ru`) with the seller's own Client ID and API key: products, stock, prices, FBS and FBO postings (отправления), returns, finance accruals and balance, sales analytics, warehouses, promotions, reviews and questions. Almost every method is a `POST` with a JSON body, also for reads; the read tools are marked read-only.\n\n**Setup (about 3 minutes)**\n1. In the seller portal open **Settings > Seller API** (Настройки > Seller API, https://seller.ozon.ru/app/settings/api-keys) and click **Generate key** (Сгенерировать ключ).\n2. Name the key, choose its access level (роль): **Admin** covers every tool; a narrower role works for the tools it covers. Choose \"for an external service\" and name AnythingMCP as the service if asked.\n3. Copy the key, which is shown only once, into `OZON_API_KEY`, and the **Client ID** shown on the same page into `OZON_CLIENT_ID`.\n4. Keys expire after **3 months**: `ozon_get_api_key_info` shows the expiry date and the roles. Create a new key before it runs out.\n\n**Authentication**: every request carries the `Client-Id` and `Api-Key` headers. `401 Invalid Api-Key` means the key is wrong, expired or does not belong to this Client ID; `403 Api-Key is missing a required role for a method` means the key works but its role does not cover that tool; `403 Api-Key is restricted to specific IP addresses` means the key only allows certain networks.\n\n**Where to start**: `ozon_get_api_key_info` and `ozon_get_seller_info` take no arguments. `ozon_list_products` lists products (20 by default) and `ozon_get_products` gives details for their ids. `ozon_get_stocks`, `ozon_get_prices`, `ozon_list_returns` and `ozon_list_warehouses` work without arguments as well. `ozon_get_fbs_warehouse_stocks` needs `offer_ids` or `skus` (at least one; Ozon refuses the call otherwise). Both posting lists need a period (`since` and `to`); for today's work on FBS orders call `ozon_list_fbs_postings` with `statuses` = [\"awaiting_packaging\"].\n\n**Answer size**: the list tools return the fields sellers usually ask about (ids, names, status, dates, quantities, amounts). For the full record of one posting use `ozon_get_fbs_posting`, for one product `ozon_get_products`.\n\n**Ids**: `offer_id` is the seller's own article (артикул), `product_id` the Ozon product id, `sku` the Ozon SKU shown on the site. A posting number (номер отправления) looks like `89491381-0072-1`; an order number has one part fewer. `warehouse_id` comes from `ozon_list_warehouses`.\n\n**Pagination**: product lists use `last_id`; stocks, prices, postings and warehouses use `cursor` together with `has_next`; returns use the id of the last return as `last_id`. Pass the value from the previous answer and keep the other arguments the same. Defaults are small (20 rows); raise `limit` only when the user needs more.\n\n**Dates**: posting, review and question filters take ISO 8601 date-times in UTC (`2026-10-01T00:00:00Z`); finance and analytics take days (`2026-10-01`). The FBS posting period may not exceed one year, the balance report 30 days.\n\n**Finance**: `ozon_get_finance_balance` gives the totals of a period (as Finance > Balance in the portal). `ozon_list_accruals_by_day` lists every accrual (начисление) of one day and `ozon_get_posting_accruals` explains up to 200 postings; `ozon_list_accrual_types` names the `type_id` values. Ozon switched off the old transaction list (`/v3/finance/transaction/list`) in September 2026; these methods replace it.\n\n**Subscriptions**: reviews need the Review management (Управление отзывами) or Premium Pro subscription, questions need Premium Plus. Without Premium Plus, analytics returns only `revenue` and `ordered_units`, grouped by sku, spu, day, week or month, for the last 3 months and at most 50 calls a day; analytics allows 1 call a minute in any case.\n\n**Rate limits**: at most 50 requests a second per Client ID across all methods, and per-method limits on top (prices: 10 changes per product an hour; stock: one change per product and warehouse every 30 seconds, 80 requests a minute). A `429` carries `Retry-After`; wait that long instead of retrying at once. Ozon may block keys that send many identical or failing requests.\n\n**Writes**: `ozon_update_prices` and `ozon_update_stocks` change the live shop; both answer 200 with per-item `updated` and `errors`, so check them and read the values back. Replies to reviews and answers to questions are public on the product page. Show the user exactly what will change and wait for confirmation before every write. `ozon_ship_fbs_posting` and `ozon_cancel_fbs_posting` are installed switched off; an admin can enable them.\n\n**Out of scope**: creating or editing product cards, FBO supply requests, labels and acts, chats with buyers, promotions management, the Performance (advertising) API and Ozon Delivery methods that need an OAuth token.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "ozon",
+  "docsUrl": "https://docs.ozon.ru/api/seller/",
+  "aliases": [
+    "Озон",
+    "Ozon Seller API"
+  ],
+  "requiredEnvVars": [
+    "OZON_CLIENT_ID",
+    "OZON_API_KEY"
+  ],
+  "envVarMeta": {
+    "OZON_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Seller portal > Settings > Seller API: the Client ID shown above the list of keys. A number.",
+      "link": "https://seller.ozon.ru/app/settings/api-keys",
+      "example": "1234567",
+      "pattern": "^[0-9]{1,15}$",
+      "patternMessage": "The Ozon Client ID is a number, for example 1234567."
+    },
+    "OZON_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Seller portal > Settings > Seller API > Generate key. Pick the Admin role for every tool, or a narrower role. The key is shown once and expires after 3 months.",
+      "link": "https://seller.ozon.ru/app/settings/api-keys",
+      "example": "0a1b2c3d-4e5f-6789-abcd-ef0123456789",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "An Ozon API key looks like 0a1b2c3d-4e5f-6789-abcd-ef0123456789 (a UUID). Paste only the key."
+    }
+  },
+  "verifyHints": {
+    "400": "Ozon did not accept the credentials. The Client ID must be a number and the API key a UUID; copy both again from Settings > Seller API.",
+    "401": "Ozon refused the API key. Check that it was copied whole, that it belongs to this Client ID and that it has not expired (keys last 3 months).",
+    "403": "The key works but its role does not cover this method, or it is restricted to other IP addresses. Generate a key with the Admin role, or allow all networks for it.",
+    "rate_limited": "Ozon limits requests per Client ID. Wait for the time in Retry-After and try again."
+  },
+  "probe": {
+    "tool": "ozon_get_api_key_info"
+  },
+  "prerequisites": "An Ozon seller account and a Seller API key (Settings > Seller API) with its Client ID. Reviews need the Review management or Premium Pro subscription, questions need Premium Plus. About 3 minutes.",
+  "connector": {
+    "name": "Ozon Seller API",
+    "type": "REST",
+    "baseUrl": "https://api-seller.ozon.ru",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Api-Key",
+      "apiKey": "{{OZON_API_KEY}}",
+      "extraHeaders": {
+        "Client-Id": "{{OZON_CLIENT_ID}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/actions"
+  },
+  "tools": [
+    {
+      "name": "ozon_get_api_key_info",
+      "description": "Check the API key: the names of its roles (роли) and when it expires (keys last 3 months). Works with any valid key and costs nothing; use it first, and when another tool answers 403 'Api-Key is missing a required role'.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/roles",
+        "bodyMapping": {}
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "expires_at": "$.expires_at",
+            "roles": "$.roles[*].name"
+          },
+          "maxBytes": 8000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_seller_info",
+      "description": "Get the seller account (кабинет продавца) behind the key: company name, legal name, INN, OGRN, settlement currency, tax system, Premium subscription type and the seller ratings with their current values and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/seller/info",
+        "bodyMapping": {}
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "company": {
+              "name": "$.company.name",
+              "legal_name": "$.company.legal_name",
+              "inn": "$.company.inn",
+              "ogrn": "$.company.ogrn",
+              "country": "$.company.country",
+              "currency": "$.company.currency",
+              "tax_system": "$.company.tax_system",
+              "ownership_form": "$.company.ownership_form"
+            },
+            "subscription": "$.subscription",
+            "ratings": {
+              "$from": "$.ratings[*]",
+              "$select": {
+                "rating": "rating",
+                "name": "name",
+                "status": "status",
+                "value": "current_value.formatted",
+                "danger": "current_value.status.danger",
+                "warning": "current_value.status.warning"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_promotions",
+      "description": "List the Ozon promotions (акции Ozon) the seller can join: id, title, dates, discount value, whether the seller takes part and how many products participate or could. Read-only; joining a promotion is not available in this connector.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/actions"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "promotions": {
+              "$from": "$.result[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "date_start": "date_start",
+                "date_end": "date_end",
+                "discount_value": "discount_value",
+                "is_participating": "is_participating",
+                "participating_products_count": "participating_products_count",
+                "potential_products_count": "potential_products_count"
+              }
+            }
+          },
+          "maxBytes": 12000
+        }
+      }
+    },
+    {
+      "name": "ozon_list_products",
+      "description": "List the seller's products (товары): product_id, offer_id (seller article) and flags for archived, FBO stock, FBS stock and discounted. Call without arguments for the first 20 products; continue with last_id. Use ozon_get_products for names, prices and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "VISIBLE",
+              "INVISIBLE",
+              "EMPTY_STOCK",
+              "NOT_MODERATED",
+              "MODERATED",
+              "DISABLED",
+              "STATE_FAILED",
+              "READY_TO_SUPPLY",
+              "VALIDATION_STATE_PENDING",
+              "VALIDATION_STATE_FAIL",
+              "VALIDATION_STATE_SUCCESS",
+              "TO_SUPPLY",
+              "IN_SALE",
+              "REMOVED_FROM_SALE",
+              "OVERPRICED",
+              "CRITICALLY_OVERPRICED",
+              "EMPTY_BARCODE",
+              "BARCODE_EXISTS",
+              "QUARANTINE",
+              "ARCHIVED",
+              "OVERPRICED_WITH_STOCK",
+              "PARTIAL_APPROVED"
+            ],
+            "default": "ALL",
+            "description": "Visibility filter (видимость). ALL (default) = every product except archived ones; VISIBLE = shown to buyers; INVISIBLE = hidden; EMPTY_STOCK = no stock; ARCHIVED = archived products; IN_SALE, REMOVED_FROM_SALE, NOT_MODERATED, STATE_FAILED and the others follow the seller portal filters."
+          },
+          "offer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "description": "Optional seller articles (offer_id, артикул), for example [\"SKU-123\"]. With ids, visibility is ignored and every matching product is returned."
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Optional Ozon product ids (product_id) from ozon_list_products, for example [123456789]."
+          },
+          "last_id": {
+            "type": "string",
+            "description": "Pagination. Leave empty for the first page, then pass last_id from the previous answer."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Rows per page, 1 to 1000. Default 20; raise it only when the user needs more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/product/list",
+        "bodyMapping": {
+          "filter": {
+            "visibility": "$visibility",
+            "offer_id": "$offer_ids",
+            "product_id": "$product_ids"
+          },
+          "last_id": "$last_id",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.result.items[*]",
+              "$select": {
+                "product_id": "product_id",
+                "offer_id": "offer_id",
+                "archived": "archived",
+                "has_fbo_stocks": "has_fbo_stocks",
+                "has_fbs_stocks": "has_fbs_stocks",
+                "is_discounted": "is_discounted"
+              }
+            },
+            "total_items": "$.result.total_items",
+            "last_id": "$.result.last_id"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_products",
+      "description": "Get product details for up to 1000 products by offer_id, product_id or sku (pass one kind of id): name, SKU, barcodes, price, old price, minimum price, VAT, status and moderation status, stock presence, visibility, creation and update dates, and moderation errors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "description": "Seller articles (offer_id), for example [\"SKU-123\"]."
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Ozon product ids, for example [123456789]."
+          },
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Ozon SKUs, for example [987654321]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/product/info/list",
+        "bodyMapping": {
+          "offer_id": "$offer_ids",
+          "product_id": "$product_ids",
+          "sku": "$skus"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "product_id": "id",
+                "offer_id": "offer_id",
+                "sku": "sku",
+                "name": "name",
+                "barcodes": "barcodes",
+                "price": "price",
+                "old_price": "old_price",
+                "min_price": "min_price",
+                "currency_code": "currency_code",
+                "vat": "vat",
+                "status": "statuses.status",
+                "status_name": "statuses.status_name",
+                "moderate_status": "statuses.moderate_status",
+                "status_description": "statuses.status_description",
+                "has_stock": "stocks.has_stock",
+                "stocks": "stocks.stocks",
+                "visibility": "visibility_details",
+                "is_archived": "is_archived",
+                "is_autoarchived": "is_autoarchived",
+                "description_category_id": "description_category_id",
+                "type_id": "type_id",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "errors": {
+                  "$from": "errors[*]",
+                  "$select": {
+                    "code": "code",
+                    "level": "level",
+                    "field": "field",
+                    "message": "texts.short_description"
+                  }
+                }
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_stocks",
+      "description": "Stock per product (остатки) across schemes: for each product the present and reserved quantity per warehouse type (fbo = Ozon warehouse, fbs and rfbs = seller warehouse, fbp = partner warehouse). Call without arguments for 20 products; continue with cursor. For stock per individual seller warehouse use ozon_get_fbs_warehouse_stocks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "VISIBLE",
+              "INVISIBLE",
+              "EMPTY_STOCK",
+              "NOT_MODERATED",
+              "MODERATED",
+              "DISABLED",
+              "STATE_FAILED",
+              "READY_TO_SUPPLY",
+              "VALIDATION_STATE_PENDING",
+              "VALIDATION_STATE_FAIL",
+              "VALIDATION_STATE_SUCCESS",
+              "TO_SUPPLY",
+              "IN_SALE",
+              "REMOVED_FROM_SALE",
+              "OVERPRICED",
+              "CRITICALLY_OVERPRICED",
+              "EMPTY_BARCODE",
+              "BARCODE_EXISTS",
+              "QUARANTINE",
+              "ARCHIVED",
+              "OVERPRICED_WITH_STOCK",
+              "PARTIAL_APPROVED"
+            ],
+            "default": "ALL",
+            "description": "Visibility filter (видимость). ALL (default) = every product except archived ones; VISIBLE = shown to buyers; INVISIBLE = hidden; EMPTY_STOCK = no stock; ARCHIVED = archived products; IN_SALE, REMOVED_FROM_SALE, NOT_MODERATED, STATE_FAILED and the others follow the seller portal filters."
+          },
+          "offer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "description": "Optional seller articles (offer_id, артикул), for example [\"SKU-123\"]. With ids, visibility is ignored and every matching product is returned."
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Optional Ozon product ids (product_id) from ozon_list_products, for example [123456789]."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor. Leave empty for the first page, then pass the cursor value of the previous answer."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Rows per page, 1 to 1000. Default 20; raise it only when the user needs more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v4/product/info/stocks",
+        "bodyMapping": {
+          "filter": {
+            "visibility": "$visibility",
+            "offer_id": "$offer_ids",
+            "product_id": "$product_ids"
+          },
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "offer_id": "offer_id",
+                "product_id": "product_id",
+                "stocks": {
+                  "$from": "stocks[*]",
+                  "$select": {
+                    "type": "type",
+                    "present": "present",
+                    "reserved": "reserved"
+                  }
+                }
+              }
+            },
+            "total_items": "$.total_items",
+            "cursor": "$.cursor"
+          },
+          "maxBytes": 16000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_fbs_warehouse_stocks",
+      "description": "Stock on the seller's own FBS and rFBS warehouses for the given products, per warehouse: present, reserved and free_stock. Pass at least one of offer_ids or skus: Ozon refuses a call without them. Read this before ozon_update_stocks, because the stock you set excludes reserved units.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "description": "Seller articles (offer_id). Give this or skus (at least one of the two is needed)."
+          },
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Ozon SKUs. Give this or offer_ids (at least one of the two is needed)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor. Leave empty for the first page, then pass the cursor value of the previous answer."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Rows per page, 1 to 1000. Default 20; raise it only when the user needs more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/product/info/stocks-by-warehouse/fbs",
+        "bodyMapping": {
+          "offer_id": "$offer_ids",
+          "sku": "$skus",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "products": {
+              "$from": "$.products[*]",
+              "$select": {
+                "sku": "sku",
+                "offer_id": "offer_id",
+                "warehouse_id": "warehouse_id",
+                "warehouse_name": "warehouse_name",
+                "present": "present",
+                "reserved": "reserved",
+                "free_stock": "free_stock"
+              }
+            },
+            "has_next": "$.has_next",
+            "cursor": "$.cursor"
+          },
+          "maxBytes": 16000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_prices",
+      "description": "Prices per product (цены): price, old (strikethrough) price, minimum price, the price after the seller's promotions, currency, the price index colour and the sales commission percentage for FBO and FBS. Call without arguments for 20 products; continue with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "VISIBLE",
+              "INVISIBLE",
+              "EMPTY_STOCK",
+              "NOT_MODERATED",
+              "MODERATED",
+              "DISABLED",
+              "STATE_FAILED",
+              "READY_TO_SUPPLY",
+              "VALIDATION_STATE_PENDING",
+              "VALIDATION_STATE_FAIL",
+              "VALIDATION_STATE_SUCCESS",
+              "TO_SUPPLY",
+              "IN_SALE",
+              "REMOVED_FROM_SALE",
+              "OVERPRICED",
+              "CRITICALLY_OVERPRICED",
+              "EMPTY_BARCODE",
+              "BARCODE_EXISTS",
+              "QUARANTINE",
+              "ARCHIVED",
+              "OVERPRICED_WITH_STOCK",
+              "PARTIAL_APPROVED"
+            ],
+            "default": "ALL",
+            "description": "Visibility filter (видимость). ALL (default) = every product except archived ones; VISIBLE = shown to buyers; INVISIBLE = hidden; EMPTY_STOCK = no stock; ARCHIVED = archived products; IN_SALE, REMOVED_FROM_SALE, NOT_MODERATED, STATE_FAILED and the others follow the seller portal filters."
+          },
+          "offer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "description": "Optional seller articles (offer_id, артикул), for example [\"SKU-123\"]. With ids, visibility is ignored and every matching product is returned."
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Optional Ozon product ids (product_id) from ozon_list_products, for example [123456789]."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor. Leave empty for the first page, then pass the cursor value of the previous answer."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Rows per page, 1 to 1000. Default 20; raise it only when the user needs more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v5/product/info/prices",
+        "bodyMapping": {
+          "filter": {
+            "visibility": "$visibility",
+            "offer_id": "$offer_ids",
+            "product_id": "$product_ids"
+          },
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "offer_id": "offer_id",
+                "product_id": "product_id",
+                "price": "price.price",
+                "old_price": "price.old_price",
+                "min_price": "price.min_price",
+                "marketing_seller_price": "price.marketing_seller_price",
+                "currency": "price.currency_code",
+                "price_index": "price_indexes.color_index",
+                "commission_percent_fbo": "commissions.sales_percent_fbo",
+                "commission_percent_fbs": "commissions.sales_percent_fbs"
+              }
+            },
+            "total_items": "$.total_items",
+            "cursor": "$.cursor"
+          },
+          "maxBytes": 16000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_fbs_postings",
+      "description": "List FBS and rFBS postings (отправления, orders shipped from the seller's own warehouse) in a period of at most one year: posting number, order number, status, substatus, accepted and shipping dates, warehouse id and the products with quantity and price. Filter by status, for example awaiting_packaging for orders to pack now. For delivery, tracking, cancellation and finance details call ozon_get_fbs_posting. Buyer contact data is not returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "string",
+            "description": "Start of the period (in_process_at). ISO 8601 date-time in UTC, for example 2026-10-01T00:00:00Z."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period. ISO 8601 date-time in UTC, for example 2026-10-01T00:00:00Z."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "awaiting_registration",
+                "acceptance_in_progress",
+                "awaiting_approve",
+                "awaiting_packaging",
+                "awaiting_deliver",
+                "arbitration",
+                "client_arbitration",
+                "delivering",
+                "driver_pickup",
+                "delivered",
+                "cancelled",
+                "not_accepted",
+                "sent_by_seller"
+              ]
+            },
+            "description": "Optional statuses: awaiting_packaging (ожидает упаковки), awaiting_deliver (ожидает отгрузки), delivering, delivered, cancelled and others."
+          },
+          "warehouse_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Optional seller warehouse ids from ozon_list_warehouses."
+          },
+          "sort_dir": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC",
+            "description": "DESC (default) newest first, ASC oldest first."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor. Leave empty for the first page, then pass the cursor value of the previous answer."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Postings per page, 1 to 100. Default 20; raise it only when the user needs more."
+          }
+        },
+        "required": [
+          "since",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v4/posting/fbs/list",
+        "bodyMapping": {
+          "filter": {
+            "since": "$since",
+            "to": "$to",
+            "statuses": "$statuses",
+            "warehouse_ids": "$warehouse_ids"
+          },
+          "sort_dir": "$sort_dir",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "postings": {
+              "$from": "$.postings[*]",
+              "$select": {
+                "posting_number": "posting_number",
+                "order_number": "order_number",
+                "status": "status",
+                "substatus": "substatus",
+                "in_process_at": "in_process_at",
+                "shipment_date": "shipment_date",
+                "warehouse_id": "delivery_method.warehouse_id",
+                "products": {
+                  "$from": "products[*]",
+                  "$select": {
+                    "offer_id": "offer_id",
+                    "name": "name",
+                    "quantity": "quantity",
+                    "price": "price"
+                  }
+                }
+              }
+            },
+            "has_next": "$.has_next",
+            "cursor": "$.cursor"
+          },
+          "maxBytes": 16000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_fbs_posting",
+      "description": "Get one FBS or rFBS posting by its posting number: status, substatus, previous substatus, dates, delivery method, tracking number, cancellation, products, and optionally financial data (commissions, payout per product) and analytics data. Buyer contact data is not returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "posting_number": {
+            "type": "string",
+            "description": "Posting number (номер отправления), for example 89491381-0072-1."
+          },
+          "with_financial_data": {
+            "type": "boolean",
+            "default": false,
+            "description": "Add commissions and payout per product."
+          },
+          "with_analytics_data": {
+            "type": "boolean",
+            "default": false,
+            "description": "Add region, city, delivery type and warehouse."
+          }
+        },
+        "required": [
+          "posting_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/posting/fbs/get",
+        "bodyMapping": {
+          "posting_number": "$posting_number",
+          "with": {
+            "financial_data": "$with_financial_data",
+            "analytics_data": "$with_analytics_data"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "posting_number": "$.result.posting_number",
+            "order_id": "$.result.order_id",
+            "order_number": "$.result.order_number",
+            "status": "$.result.status",
+            "substatus": "$.result.substatus",
+            "previous_substatus": "$.result.previous_substatus",
+            "in_process_at": "$.result.in_process_at",
+            "shipment_date": "$.result.shipment_date",
+            "delivering_date": "$.result.delivering_date",
+            "fact_delivery_date": "$.result.fact_delivery_date",
+            "delivery_method": "$.result.delivery_method",
+            "tracking_number": "$.result.tracking_number",
+            "is_express": "$.result.is_express",
+            "cancellation": "$.result.cancellation",
+            "products": {
+              "$from": "$.result.products[*]",
+              "$select": {
+                "sku": "sku",
+                "offer_id": "offer_id",
+                "name": "name",
+                "quantity": "quantity",
+                "price": "price",
+                "currency_code": "currency_code"
+              }
+            },
+            "financial_data": "$.result.financial_data",
+            "analytics_data": "$.result.analytics_data",
+            "related_postings": "$.result.related_postings"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_fbo_postings",
+      "description": "List FBO postings (orders shipped from Ozon warehouses) in a period of at most one year: posting number, order number, status, dates, Ozon warehouse and the products with quantity and price. since and to are both required by Ozon.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "string",
+            "description": "Start of the period. ISO 8601 date-time in UTC, for example 2026-10-01T00:00:00Z."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period. ISO 8601 date-time in UTC, for example 2026-10-01T00:00:00Z."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "awaiting_packaging",
+                "awaiting_deliver",
+                "delivering",
+                "delivered",
+                "cancelled"
+              ]
+            },
+            "description": "Optional statuses."
+          },
+          "posting_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "description": "Optional posting numbers."
+          },
+          "sort_dir": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC",
+            "description": "DESC (default) newest first."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor. Leave empty for the first page, then pass the cursor value of the previous answer."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Postings per page, 1 to 100. Default 20; raise it only when the user needs more."
+          }
+        },
+        "required": [
+          "since",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/posting/fbo/list",
+        "bodyMapping": {
+          "filter": {
+            "since": "$since",
+            "to": "$to",
+            "statuses": "$statuses",
+            "posting_numbers": "$posting_numbers"
+          },
+          "sort_dir": "$sort_dir",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "postings": {
+              "$from": "$.postings[*]",
+              "$select": {
+                "posting_number": "posting_number",
+                "order_number": "order_number",
+                "status": "status",
+                "created_at": "created_at",
+                "in_process_at": "in_process_at",
+                "warehouse": "analytics_data.warehouse_name",
+                "products": {
+                  "$from": "products[*]",
+                  "$select": {
+                    "offer_id": "offer_id",
+                    "name": "name",
+                    "quantity": "quantity",
+                    "price": "price"
+                  }
+                }
+              }
+            },
+            "has_next": "$.has_next",
+            "cursor": "$.cursor"
+          },
+          "maxBytes": 16000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_returns",
+      "description": "List FBO and FBS returns (возвраты): return id, scheme, posting number, product (article, name, quantity, price), reason, current status and return date. Call without arguments for the latest 20; continue with last_id while has_next is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_schema": {
+            "type": "string",
+            "enum": [
+              "FBS",
+              "FBO"
+            ],
+            "description": "Optional scheme filter."
+          },
+          "posting_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "description": "Optional posting numbers, at most 50."
+          },
+          "offer_id": {
+            "type": "string",
+            "description": "Optional seller article."
+          },
+          "visual_status_name": {
+            "type": "string",
+            "description": "Optional return status, for example DisputeOpened, OnSellerApproval, ArrivedAtReturnPlace, ReturnedToSeller."
+          },
+          "logistic_return_date": {
+            "type": "object",
+            "properties": {
+              "time_from": {
+                "type": "string"
+              },
+              "time_to": {
+                "type": "string"
+              }
+            },
+            "description": "Optional period of the return date, {\"time_from\": \"2026-10-01T00:00:00Z\", \"time_to\": \"2026-10-15T00:00:00Z\"}."
+          },
+          "last_id": {
+            "type": "integer",
+            "description": "Pagination: the id of the last return of the previous page."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20,
+            "description": "Returns per page, 1 to 500. Default 20; raise it only when the user needs more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/returns/list",
+        "bodyMapping": {
+          "filter": {
+            "return_schema": "$return_schema",
+            "posting_numbers": "$posting_numbers",
+            "offer_id": "$offer_id",
+            "visual_status_name": "$visual_status_name",
+            "logistic_return_date": "$logistic_return_date"
+          },
+          "last_id": "$last_id",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "returns": {
+              "$from": "$.returns[*]",
+              "$select": {
+                "id": "id",
+                "schema": "schema",
+                "posting_number": "posting_number",
+                "offer_id": "product.offer_id",
+                "name": "product.name",
+                "quantity": "product.quantity",
+                "price": "product.price.price",
+                "reason": "return_reason_name",
+                "status": "visual.status.display_name",
+                "return_date": "logistic.return_date"
+              }
+            },
+            "has_next": "$.has_next"
+          },
+          "maxBytes": 16000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_finance_balance",
+      "description": "Balance report for a period of up to 30 days, as in the seller portal under Finance > Balance (Финансы > Баланс): opening and closing balance, accrued and paid totals, sales and returns with commissions, and the services charged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, at most 30 days after date_from."
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/finance/balance",
+        "bodyMapping": {
+          "date_from": "$date_from",
+          "date_to": "$date_to"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "total": "$.total",
+            "sales": "$.cashflows.sales",
+            "returns": "$.cashflows.returns",
+            "services": "$.cashflows.services"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_accruals_by_day",
+      "description": "Every accrual (начисление) of one day: per posting, per product, per container or without a product, with amounts and accrual type ids (names come from ozon_list_accrual_types). Replaces the old transaction list. Continue with last_id, passing the same date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Day, YYYY-MM-DD, not before 2022-01-01."
+          },
+          "last_id": {
+            "type": "string",
+            "description": "Pagination: last_id of the previous answer (valid 15 minutes). Keep the same date."
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/finance/accrual/by-day",
+        "bodyMapping": {
+          "date": "$date",
+          "last_id": "$last_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "accruals": "$.accruals",
+            "last_id": "$.last_id"
+          },
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_posting_accruals",
+      "description": "Accruals of up to 200 postings: for each posting the dated amounts per SKU, the seller price and the accrual type id. Use it to explain what Ozon charged or paid for an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "posting_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Posting numbers, for example [\"89491381-0072-1\"]."
+          }
+        },
+        "required": [
+          "posting_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/finance/accrual/postings",
+        "bodyMapping": {
+          "posting_numbers": "$posting_numbers"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "posting_accruals": "$.posting_accruals"
+          },
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_accrual_types",
+      "description": "The reference list of accrual types (справочник начислений): id and name. The type_id values in the accrual tools refer to it.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/finance/accrual/types",
+        "bodyMapping": {}
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "accrual_types": {
+              "$from": "$.accrual_types[*]",
+              "$select": {
+                "id": "id",
+                "name": "name"
+              }
+            }
+          },
+          "maxBytes": 12000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_analytics",
+      "description": "Sales analytics (Аналитика > Графики): metrics such as revenue and ordered_units grouped by day, week, month, sku or spu for a period. Without Premium Plus only revenue and ordered_units, the last 3 months and 50 calls a day are available. At most 1 call a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD (within the last 3 months without Premium)."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "revenue",
+                "ordered_units",
+                "hits_view_search",
+                "hits_view_pdp",
+                "hits_view",
+                "hits_tocart_search",
+                "hits_tocart_pdp",
+                "hits_tocart",
+                "session_view_search",
+                "session_view_pdp",
+                "session_view",
+                "conv_tocart_search",
+                "conv_tocart_pdp",
+                "conv_tocart",
+                "returns",
+                "cancellations",
+                "delivered_units",
+                "position_category"
+              ]
+            },
+            "maxItems": 14,
+            "default": [
+              "revenue",
+              "ordered_units"
+            ],
+            "description": "Up to 14 metrics. Default revenue and ordered_units (available to every seller); the others need Premium Plus."
+          },
+          "dimension": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "sku",
+                "spu",
+                "day",
+                "week",
+                "month",
+                "year",
+                "category1",
+                "category2",
+                "brand",
+                "modelID"
+              ]
+            },
+            "default": [
+              "day"
+            ],
+            "description": "Grouping. Default day. sku, spu, day, week and month are available to every seller; year, category1, category2, brand and modelID need Premium Plus."
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "string",
+                  "enum": [
+                    "ASC",
+                    "DESC"
+                  ]
+                }
+              }
+            },
+            "description": "Optional sort, for example [{\"key\": \"revenue\", \"order\": \"DESC\"}]."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Rows per page, 1 to 1000. Default 20; raise it only when the user needs more."
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/analytics/data",
+        "bodyMapping": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "metrics": "$metrics",
+          "dimension": "$dimension",
+          "sort": "$sort",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": "$.result.data",
+            "totals": "$.result.totals",
+            "timestamp": "$.timestamp"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_warehouses",
+      "description": "List the seller's own FBS and rFBS warehouses (склады): warehouse_id, name, status and whether it is an rFBS warehouse. The warehouse_id is what ozon_update_stocks and ozon_get_fbs_warehouse_stocks report and need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor. Leave empty for the first page, then pass the cursor value of the previous answer."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Warehouses per page, 1 to 200. Default 20; raise it only when the user needs more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/warehouse/list",
+        "bodyMapping": {
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "warehouses": {
+              "$from": "$.warehouses[*]",
+              "$select": {
+                "warehouse_id": "warehouse_id",
+                "name": "name",
+                "status": "status",
+                "is_rfbs": "is_rfbs"
+              }
+            },
+            "has_next": "$.has_next",
+            "cursor": "$.cursor"
+          },
+          "maxBytes": 12000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_reviews",
+      "description": "List product reviews (отзывы): id, SKU, rating, text, publication date, review status (NEW, VIEWED, PROCESSED), order status and counts of comments, photos and videos. Needs the Review management (Управление отзывами) or Premium Pro subscription; otherwise Ozon refuses the call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "NEW",
+              "VIEWED",
+              "PROCESSED"
+            ],
+            "default": "ALL",
+            "description": "Review status. Default ALL; NEW for reviews nobody has looked at."
+          },
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Optional SKUs."
+          },
+          "published_from": {
+            "type": "string",
+            "description": "Optional start of the publication period. ISO 8601 date-time in UTC, for example 2026-10-01T00:00:00Z."
+          },
+          "published_to": {
+            "type": "string",
+            "description": "Optional end of the publication period. ISO 8601 date-time in UTC, for example 2026-10-01T00:00:00Z."
+          },
+          "sort_dir": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC",
+            "description": "DESC (default) newest first."
+          },
+          "last_id": {
+            "type": "string",
+            "description": "Pagination. Leave empty for the first page, then pass last_id from the previous answer."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 20,
+            "maximum": 100,
+            "default": 20,
+            "description": "Reviews per page, 20 to 100. Default 20; raise it only when the user needs more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/review/list",
+        "bodyMapping": {
+          "filters": {
+            "status": "$status",
+            "skus": "$skus",
+            "published_from": "$published_from",
+            "published_to": "$published_to"
+          },
+          "sort_dir": "$sort_dir",
+          "last_id": "$last_id",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "reviews": {
+              "$from": "$.reviews[*]",
+              "$select": {
+                "id": "id",
+                "sku": "sku",
+                "rating": "rating",
+                "text": "text",
+                "published_at": "published_at",
+                "status": "status",
+                "order_status": "order_status",
+                "comments_amount": "comments_amount",
+                "photos_amount": "photos_amount",
+                "videos_amount": "videos_amount"
+              }
+            },
+            "has_next": "$.has_next",
+            "last_id": "$.last_id"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_questions",
+      "description": "List buyer questions about products (вопросы): id, SKU, text, status, publication date, number of answers and links. Needs the Premium Plus subscription; otherwise Ozon refuses the call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "NEW",
+              "VIEWED",
+              "PROCESSED",
+              "UNPROCESSED"
+            ],
+            "default": "ALL",
+            "description": "Question status. Default ALL; UNPROCESSED for questions still waiting for an answer."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Optional start of the period. ISO 8601 date-time in UTC, for example 2026-10-01T00:00:00Z."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Optional end of the period. ISO 8601 date-time in UTC, for example 2026-10-01T00:00:00Z."
+          },
+          "sort_dir": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC",
+            "description": "DESC (default) newest first."
+          },
+          "last_id": {
+            "type": "string",
+            "description": "Pagination. Leave empty for the first page, then pass last_id from the previous answer."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Questions per page, 1 to 100. Default 20; raise it only when the user needs more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/question/list",
+        "bodyMapping": {
+          "filter": {
+            "status": "$status",
+            "date_from": "$date_from",
+            "date_to": "$date_to"
+          },
+          "sort_dir": "$sort_dir",
+          "last_id": "$last_id",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "questions": {
+              "$from": "$.questions[*]",
+              "$select": {
+                "id": "id",
+                "sku": "sku",
+                "text": "text",
+                "status": "status",
+                "published_at": "published_at",
+                "answers_count": "answers_count",
+                "product_url": "product_url",
+                "question_link": "question_link"
+              }
+            },
+            "has_next": "$.has_next",
+            "last_id": "$.last_id"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_cancel_reasons",
+      "description": "List the cancellation reasons allowed for FBS postings: reason id, title and who cancels (seller or buyer). Read-only; use it before ozon_cancel_fbs_posting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "posting_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Posting numbers, for example [\"89491381-0072-1\"]."
+          }
+        },
+        "required": [
+          "posting_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/posting/fbs/cancel-reason",
+        "bodyMapping": {
+          "related_posting_numbers": "$posting_numbers"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "result": {
+              "$from": "$.result[*]",
+              "$select": {
+                "posting_number": "posting_number",
+                "reasons": "reasons"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_reply_to_review",
+      "description": "Publish the seller's comment under a product review. The comment is public on the product page. Show the user the exact text and ask for confirmation before calling. Needs the Review management or Premium Pro subscription.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "review_id": {
+            "type": "string",
+            "description": "Review id from ozon_list_reviews."
+          },
+          "text": {
+            "type": "string",
+            "description": "Comment text, as approved by the user."
+          },
+          "mark_review_as_processed": {
+            "type": "boolean",
+            "description": "true to set the review status to PROCESSED as well."
+          },
+          "parent_comment_id": {
+            "type": "string",
+            "description": "Optional id of the comment this one answers."
+          }
+        },
+        "required": [
+          "review_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/review/comment/create",
+        "bodyMapping": {
+          "review_id": "$review_id",
+          "text": "$text",
+          "mark_review_as_processed": "$mark_review_as_processed",
+          "parent_comment_id": "$parent_comment_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "comment_id": "$.comment_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "ozon_answer_question",
+      "description": "Publish the seller's answer to a buyer question (2 to 3000 characters). The answer is public on the product page. Show the user the exact text and ask for confirmation before calling. Needs Premium Plus.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "description": "Question id from ozon_list_questions."
+          },
+          "sku": {
+            "type": "integer",
+            "description": "SKU of the product the question is about (sku from ozon_list_questions)."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 3000,
+            "description": "Answer text, as approved by the user."
+          }
+        },
+        "required": [
+          "question_id",
+          "sku",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/question/answer/create",
+        "bodyMapping": {
+          "question_id": "$question_id",
+          "sku": "$sku",
+          "text": "$text"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "answer_id": "$.answer_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "ozon_update_prices",
+      "description": "Change the prices of up to 1000 products on the live shop. Each product's price can change at most 10 times an hour. Show the user every product with its old and new price and ask for confirmation before calling, then check result[].updated and errors, and read the prices back with ozon_get_prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prices": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "description": "One entry per product, identified by offer_id or product_id (not both). Prices are strings in the account currency, for example [{\"offer_id\": \"SKU-123\", \"price\": \"1490\", \"old_price\": \"1990\"}]. old_price must be higher than price, or \"0\" to remove it.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "offer_id": {
+                  "type": "string",
+                  "description": "Seller article."
+                },
+                "product_id": {
+                  "type": "integer",
+                  "description": "Ozon product id."
+                },
+                "price": {
+                  "type": "string",
+                  "description": "New price (цена) without promotions."
+                },
+                "old_price": {
+                  "type": "string",
+                  "description": "Strikethrough price, or \"0\" to remove it."
+                },
+                "min_price": {
+                  "type": "string",
+                  "description": "Minimum price for automatic promotions and pricing strategies."
+                },
+                "currency_code": {
+                  "type": "string",
+                  "description": "Currency of the account, RUB by default."
+                },
+                "auto_action_enabled": {
+                  "type": "string",
+                  "enum": [
+                    "UNKNOWN",
+                    "ENABLED",
+                    "DISABLED"
+                  ],
+                  "description": "Automatic promotions: UNKNOWN keeps the current setting."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "prices"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/product/import/prices",
+        "bodyMapping": {
+          "prices": "$prices"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "result": {
+              "$from": "$.result[*]",
+              "$select": {
+                "offer_id": "offer_id",
+                "product_id": "product_id",
+                "updated": "updated",
+                "errors": "errors"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ozon_update_stocks",
+      "description": "Set the available stock of up to 100 product and warehouse pairs on the seller's own FBS or rFBS warehouses. The value replaces the current stock and must exclude reserved units (read them with ozon_get_fbs_warehouse_stocks first). One pair can change once every 30 seconds. Show the user the changes and ask for confirmation before calling, then check result[].updated and errors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stocks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "For example [{\"product_id\": 123456789, \"offer_id\": \"SKU-123\", \"warehouse_id\": 22142605386000, \"stock\": 15}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_id": {
+                  "type": "integer",
+                  "description": "Ozon product id."
+                },
+                "offer_id": {
+                  "type": "string",
+                  "description": "Seller article."
+                },
+                "warehouse_id": {
+                  "type": "integer",
+                  "description": "Warehouse id from ozon_list_warehouses."
+                },
+                "stock": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Available units without reserved ones."
+                }
+              },
+              "required": [
+                "product_id",
+                "warehouse_id",
+                "stock"
+              ]
+            }
+          }
+        },
+        "required": [
+          "stocks"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/products/stocks",
+        "bodyMapping": {
+          "stocks": "$stocks"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "result": {
+              "$from": "$.result[*]",
+              "$select": {
+                "offer_id": "offer_id",
+                "product_id": "product_id",
+                "warehouse_id": "warehouse_id",
+                "updated": "updated",
+                "errors": "errors"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ozon_ship_fbs_posting",
+      "description": "Assemble an FBS posting (собрать заказ): split it into packages and move it to awaiting_deliver. Installed switched off. Show the user the packages and ask for confirmation before calling; a 200 answer does not guarantee success, so check the posting afterwards with ozon_get_fbs_posting (substatus ship_failed means retry).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "posting_number": {
+            "type": "string",
+            "description": "Posting number in status awaiting_packaging."
+          },
+          "packages": {
+            "type": "array",
+            "minItems": 1,
+            "description": "One entry per package, for example [{\"products\": [{\"product_id\": 185479045, \"quantity\": 2}]}]. Several entries split the order.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "products": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "product_id": {
+                        "type": "integer"
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "product_id",
+                      "quantity"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "products"
+              ]
+            }
+          }
+        },
+        "required": [
+          "posting_number",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v4/posting/fbs/ship",
+        "bodyMapping": {
+          "posting_number": "$posting_number",
+          "packages": "$packages"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "result": "$.result",
+            "additional_data": "$.additional_data"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "ozon_cancel_fbs_posting",
+      "description": "Cancel an FBS posting; the buyer's order is cancelled and the cancellation may count against the seller rating. Cannot be undone. Installed switched off. Ask the user for explicit confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "posting_number": {
+            "type": "string",
+            "description": "Posting number."
+          },
+          "cancel_reason_id": {
+            "type": "integer",
+            "description": "Cancellation reason id allowed for this posting, from ozon_get_cancel_reasons (for example 352 out of stock at the seller warehouse, 400 only defective goods left, 402 other, seller's fault)."
+          },
+          "cancel_reason_message": {
+            "type": "string",
+            "description": "Explanation; required when cancel_reason_id is 402."
+          }
+        },
+        "required": [
+          "posting_number",
+          "cancel_reason_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/posting/fbs/cancel",
+        "bodyMapping": {
+          "posting_number": "$posting_number",
+          "cancel_reason_id": "$cancel_reason_id",
+          "cancel_reason_message": "$cancel_reason_message"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "result": "$.result"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

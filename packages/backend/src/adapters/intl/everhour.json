@@ -1,0 +1,1275 @@
+{
+  "slug": "everhour",
+  "name": "Everhour",
+  "description": "Track time in Everhour from your AI: find tasks, log and correct time, start and stop timers, and read projects, clients, team time records, invoices, expenses, the schedule and project and user reports.",
+  "instructions": "## Everhour\nThis connector calls the **Everhour API** (`https://api.everhour.com`) with the user's own API key: users, projects, tasks, clients, time records, timers, invoices, expenses, the resource planner and the projects and users reports. It can log time, change a time record and start or stop a timer; deleting a time record is installed switched off.\n\n**Writes need a yes.** Before `everhour_add_time`, `everhour_update_time_record`, `everhour_start_timer` or `everhour_stop_timer`, tell the user what will be recorded (task, day, duration, comment) and wait for their confirmation. Time records feed invoices and payroll, so never guess a task or a duration.\n\n**Setup (about 1 minute)**\n1. Sign in at https://app.everhour.com and open **Settings, My Profile** (https://app.everhour.com/#/account/profile).\n2. Copy the **API Token** at the bottom of the page into `EVERHOUR_API_KEY`. It is sent as the `X-Api-Key` header and only to api.everhour.com. The key acts as you: members see their own data, admins see the team.\n\n**Units**: time is always in **seconds** (3600 = 1 hour) and money in **cents** (500 = 5.00). Dates are `YYYY-MM-DD`.\n\n**IDs**: projects and tasks carry their platform prefix, `ev:` for Everhour itself and `as:` (Asana), `tr:` (Trello), `jr:` (Jira), `gh:` (GitHub) and so on for integrations. Users, clients, invoices and time records have plain numbers.\n\n**Workflow**\n- Log time: find the task with `everhour_search_tasks` (or `everhour_list_projects` and `everhour_list_project_tasks`), confirm with the user, then `everhour_add_time`.\n- Timers: `everhour_get_running_timer`, `everhour_start_timer`, `everhour_stop_timer`; `everhour_list_team_timers` shows who is tracking now.\n- Review time: `everhour_list_time_records` (whole team), `everhour_list_user_time_records`, `everhour_list_project_time_records`; ids of people come from `everhour_get_me` and `everhour_list_users`.\n- Billing and planning: `everhour_list_clients`, `everhour_get_project`, `everhour_get_task`, `everhour_list_invoices`, `everhour_get_invoice`, `everhour_list_expenses`, `everhour_list_schedule`, `everhour_projects_report`, `everhour_users_report`.\n- Corrections: `everhour_update_time_record`; `everhour_delete_time_record` only if an admin has switched it on.\n\n**Rate limit**: about 20 requests per 10 seconds per key. A 429 carries `Retry-After` in seconds; wait that long.\n\n**Common errors**\n- 401 or 403 `Access denied`: the API key is wrong, was regenerated, or your role may not see this data (members see only their own time and projects).\n- 404: the id does not exist, or the platform prefix is missing (`ev:123`, not `123`).\n- 422: a required field is missing or the record is locked or already invoiced.\n\n**Out of scope here**: creating or changing projects, tasks, clients, invoices and expenses, timecards (clock in and out), timesheet approvals, time off allocations, custom fields and webhooks.",
+  "region": "intl",
+  "category": "time-tracking",
+  "icon": "everhour",
+  "docsUrl": "https://developers.everhour.com/",
+  "prerequisites": "An Everhour account and its API token from Settings, My Profile (bottom of the page). About 1 minute.",
+  "requiredEnvVars": [
+    "EVERHOUR_API_KEY"
+  ],
+  "envVarMeta": {
+    "EVERHOUR_API_KEY": {
+      "label": "Everhour API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "app.everhour.com, Settings, My Profile: API Token at the bottom of the page. It acts with your role (admin, supervisor or member).",
+      "link": "https://app.everhour.com/#/account/profile",
+      "example": "abcd-efgh-1234567-7890ab-cdefgh12",
+      "pattern": "^[A-Za-z0-9-]{16,80}$",
+      "patternMessage": "Paste the API token as shown in your profile, letters, digits and dashes only, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Everhour refused the API token. Copy it again from Settings, My Profile at https://app.everhour.com/#/account/profile.",
+    "403": "Everhour refused the API token (Access denied). Copy it again from Settings, My Profile; a token is replaced when it is regenerated.",
+    "429": "Everhour is rate limiting this token. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "everhour_get_me",
+    "params": {}
+  },
+  "connector": {
+    "name": "Everhour",
+    "type": "REST",
+    "baseUrl": "https://api.everhour.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{EVERHOUR_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "X-Accept-Version": "1.2",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users/me"
+  },
+  "tools": [
+    {
+      "name": "everhour_get_me",
+      "description": "Show the Everhour user the API key belongs to: id, name, headline, role (admin, supervisor or member) and status. Use the id as user in other tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "email": "$.email",
+            "headline": "$.headline",
+            "role": "$.role",
+            "status": "$.status"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_users",
+      "description": "List or search the team's users: id, name, email, headline, role and status (active, invited, pending, removed). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search users by name or email."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/team/users",
+        "queryParams": {
+          "query": "$query"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "users": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "email": "email",
+                "headline": "headline",
+                "role": "role",
+                "status": "status"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_projects",
+      "description": "List projects, optionally searched by name or limited to one integration (Asana, Trello, Jira...): id with platform prefix, name, workspace, client id, type, assigned user ids, billing type and budget. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search projects by name."
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "ev",
+              "as",
+              "b3",
+              "b2",
+              "pv",
+              "gh",
+              "in",
+              "tr",
+              "jr"
+            ],
+            "description": "Only projects of this integration: ev Everhour, as Asana, b3/b2 Basecamp, pv Pivotal Tracker, gh GitHub, in Insightly, tr Trello, jr Jira."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 100,
+            "description": "Projects per page. Default 100."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "query": "$query",
+          "platform": "$platform",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "projects": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "workspace": "workspaceName",
+                "client": "client",
+                "type": "type",
+                "users": "users",
+                "billing": "billing.type",
+                "budget": "budget"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "everhour_get_project",
+      "description": "Get one project: name, workspace, client, type, assigned users, billing type and fee, rates and budget with its progress (money in cents, time in seconds). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id with its platform prefix, e.g. ev:1234567890 for an Everhour project or as:1203817 for an Asana one, from everhour_list_projects."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "workspace": "$.workspaceName",
+            "client": "$.client",
+            "type": "$.type",
+            "users": "$.users",
+            "billing": "$.billing",
+            "rate": "$.rate",
+            "budget": "$.budget"
+          },
+          "maxBytes": 10000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_project_tasks",
+      "description": "List the tasks of one project: id, name, status, due date, labels, total tracked time and estimate (seconds). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id with its platform prefix, e.g. ev:1234567890 for an Everhour project or as:1203817 for an Asana one, from everhour_list_projects."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search tasks by name."
+          },
+          "exclude_closed": {
+            "type": "boolean",
+            "description": "Leave out closed or completed tasks."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 100,
+            "description": "Tasks per page, at most 250. Default 100."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/tasks",
+        "queryParams": {
+          "query": "$query",
+          "exclude-closed": "$exclude_closed",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "tasks": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "projects": "projects",
+                "status": "status",
+                "dueAt": "dueAt",
+                "labels": "labels",
+                "totalTime": "time.total",
+                "estimate": "estimate.total"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "everhour_search_tasks",
+      "description": "Search tasks by name across all projects, to find the task id needed to log time or start a timer: id, name, projects, status, due date, tracked time and estimate. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words from the task name."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Maximum results. Default 20."
+          },
+          "search_in_closed": {
+            "type": "boolean",
+            "description": "Also search closed or completed tasks."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/search",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit",
+          "searchInClosed": "$search_in_closed"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "tasks": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "projects": "projects",
+                "status": "status",
+                "dueAt": "dueAt",
+                "labels": "labels",
+                "totalTime": "time.total",
+                "estimate": "estimate.total"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "everhour_get_task",
+      "description": "Get one task: name, projects, section, status, due date, labels, description, tracked time per user and estimate (seconds). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id with its platform prefix, e.g. ev:3000010034, from everhour_search_tasks or everhour_list_project_tasks."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/{task_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "projects": "$.projects",
+            "section": "$.section",
+            "status": "$.status",
+            "dueAt": "$.dueAt",
+            "labels": "$.labels",
+            "description": "$.description",
+            "time": "$.time",
+            "estimate": "$.estimate",
+            "unbillable": "$.unbillable"
+          },
+          "maxBytes": 15000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_clients",
+      "description": "List clients, optionally searched by name: id, name, project ids, business details and budget. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search clients by name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients",
+        "queryParams": {
+          "query": "$query"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "clients": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "projects": "projects",
+                "businessDetails": "businessDetails",
+                "budget": "budget"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_time_records",
+      "description": "List the whole team's time records in a date range: id, date, time (seconds), user id, comment, task id and name, project ids, locked and invoiced flags. Use everhour_list_users to name the users. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 500,
+            "description": "Records per page. Default 500."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page. Call again with page + 1 while a full page comes back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/team/time",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "timeRecords": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "date": "date",
+                "time": "time",
+                "user": "user",
+                "comment": "comment",
+                "taskId": "task.id",
+                "taskName": "task.name",
+                "projects": "task.projects",
+                "isLocked": "isLocked",
+                "isInvoiced": "isInvoiced"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_user_time_records",
+      "description": "List one user's time records in a date range, same fields as everhour_list_time_records. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "User id from everhour_list_users or everhour_get_me."
+          },
+          "from": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 500,
+            "description": "Records per page. Default 500."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page. Call again with page + 1 while a full page comes back."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/time",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "timeRecords": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "date": "date",
+                "time": "time",
+                "user": "user",
+                "comment": "comment",
+                "taskId": "task.id",
+                "taskName": "task.name",
+                "projects": "task.projects",
+                "isLocked": "isLocked",
+                "isInvoiced": "isInvoiced"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_project_time_records",
+      "description": "List the time records of one project in a date range, same fields as everhour_list_time_records. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id with its platform prefix, e.g. ev:1234567890 for an Everhour project or as:1203817 for an Asana one, from everhour_list_projects."
+          },
+          "from": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 500,
+            "description": "Records per page. Default 500."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page. Call again with page + 1 while a full page comes back."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/time",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "timeRecords": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "date": "date",
+                "time": "time",
+                "user": "user",
+                "comment": "comment",
+                "taskId": "task.id",
+                "taskName": "task.name",
+                "projects": "task.projects",
+                "isLocked": "isLocked",
+                "isInvoiced": "isInvoiced"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "everhour_add_time",
+      "description": "Log time on a task for a day (adds to what is already there). time is in seconds: 1 h 30 min is 5400. Without user it is logged for the key's owner; admins can log for others. Before calling, show the user exactly what will be recorded and confirm with the user first; wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id with its platform prefix, e.g. ev:3000010034, from everhour_search_tasks or everhour_list_project_tasks."
+          },
+          "date": {
+            "type": "string",
+            "description": "Day worked, YYYY-MM-DD. Default today."
+          },
+          "time": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Time in seconds, e.g. 3600 for one hour."
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "User to log the time for. Default: the key owner."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Note on the time record."
+          }
+        },
+        "required": [
+          "task_id",
+          "time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/time",
+        "bodyMapping": {
+          "task": "$task_id",
+          "date": "$date",
+          "time": "$time",
+          "user": "$user_id",
+          "comment": "$comment"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "date": "$.date",
+            "time": "$.time",
+            "user": "$.user",
+            "comment": "$.comment",
+            "taskId": "$.task.id",
+            "taskName": "$.task.name",
+            "isLocked": "$.isLocked",
+            "isInvoiced": "$.isInvoiced",
+            "lockReasons": "$.lockReasons",
+            "warning": "$.warning"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "everhour_update_time_record",
+      "description": "Change one time record: set its time (seconds), and optionally its date, task, user or comment. Locked or invoiced records may be refused. Before calling, show the user exactly what will be recorded and confirm with the user first; wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_id": {
+            "type": "integer",
+            "description": "Time record id from a time records list."
+          },
+          "date": {
+            "type": "string",
+            "description": "Move the record to this day, YYYY-MM-DD."
+          },
+          "time": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Time in seconds. Required by Everhour: send the current value when only the comment or date changes."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id with its platform prefix, e.g. ev:3000010034, from everhour_search_tasks or everhour_list_project_tasks."
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "User of the record."
+          },
+          "comment": {
+            "type": "string",
+            "description": "New comment."
+          }
+        },
+        "required": [
+          "time_id",
+          "time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/time/{time_id}",
+        "bodyMapping": {
+          "time": "$time",
+          "date": "$date",
+          "task": "$task_id",
+          "user": "$user_id",
+          "comment": "$comment"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "date": "$.date",
+            "time": "$.time",
+            "user": "$.user",
+            "comment": "$.comment",
+            "taskId": "$.task.id",
+            "taskName": "$.task.name",
+            "isLocked": "$.isLocked",
+            "isInvoiced": "$.isInvoiced",
+            "lockReasons": "$.lockReasons",
+            "warning": "$.warning"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "everhour_delete_time_record",
+      "description": "Delete one time record for good. Installed switched off. Only when the user asks to delete that exact record: show its date, task and time, confirm with the user first, and wait for their yes.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_id": {
+            "type": "integer",
+            "description": "Time record id from a time records list."
+          }
+        },
+        "required": [
+          "time_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/time/{time_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "date": "$.date",
+            "time": "$.time",
+            "user": "$.user",
+            "comment": "$.comment",
+            "taskId": "$.task.id",
+            "taskName": "$.task.name",
+            "isLocked": "$.isLocked",
+            "isInvoiced": "$.isInvoiced",
+            "lockReasons": "$.lockReasons",
+            "warning": "$.warning"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "everhour_get_running_timer",
+      "description": "Show the key owner's timer: status (active or stopped), task, comment, when it started and how long it has run (seconds). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timers/current"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "status": "$.status",
+            "duration": "$.duration",
+            "today": "$.today",
+            "startedAt": "$.startedAt",
+            "userDate": "$.userDate",
+            "comment": "$.comment",
+            "taskId": "$.task.id",
+            "taskName": "$.task.name",
+            "userId": "$.user.id",
+            "userName": "$.user.name"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_team_timers",
+      "description": "List the timers running for the team right now: user, task, start time and duration (seconds). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/team/timers"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "timers": {
+              "$from": "$[*]",
+              "$select": {
+                "status": "status",
+                "duration": "duration",
+                "startedAt": "startedAt",
+                "comment": "comment",
+                "taskId": "task.id",
+                "taskName": "task.name",
+                "userId": "user.id",
+                "userName": "user.name"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "everhour_start_timer",
+      "description": "Start the key owner's timer on a task; a timer already running is stopped and its time saved first. Stop it with everhour_stop_timer. Before calling, show the user exactly what will be recorded and confirm with the user first; wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id with its platform prefix, e.g. ev:3000010034, from everhour_search_tasks or everhour_list_project_tasks."
+          },
+          "user_date": {
+            "type": "string",
+            "description": "Day to book the time on, YYYY-MM-DD. Default today in the user's time zone."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Note for the time record."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/timers",
+        "bodyMapping": {
+          "task": "$task_id",
+          "userDate": "$user_date",
+          "comment": "$comment"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "status": "$.status",
+            "duration": "$.duration",
+            "today": "$.today",
+            "startedAt": "$.startedAt",
+            "userDate": "$.userDate",
+            "comment": "$.comment",
+            "taskId": "$.task.id",
+            "taskName": "$.task.name",
+            "userId": "$.user.id",
+            "userName": "$.user.name"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "everhour_stop_timer",
+      "description": "Stop the key owner's running timer and save its time to the task; returns the saved time record. Before calling, show the user exactly what will be recorded and confirm with the user first; wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/timers/current"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "status": "$.status",
+            "savedTimeRecordId": "$.taskTime.id",
+            "savedTime": "$.taskTime.time",
+            "date": "$.taskTime.date",
+            "taskId": "$.taskTime.task.id",
+            "taskName": "$.taskTime.task.name",
+            "comment": "$.taskTime.comment"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_invoices",
+      "description": "List invoices: id, number, client, status (draft, sent, paid), issue and due date, period, total time (seconds) and amounts in cents (list, net, total). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "invoices": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "publicId": "publicId",
+                "clientId": "client.id",
+                "clientName": "client.name",
+                "status": "status",
+                "issueDate": "issueDate",
+                "dueDate": "dueDate",
+                "dateFrom": "limitDateFrom",
+                "dateTill": "limitDateTill",
+                "totalTime": "totalTime",
+                "listAmount": "listAmount",
+                "netAmount": "netAmount",
+                "totalAmount": "totalAmount"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "everhour_get_invoice",
+      "description": "Get one invoice with its line items (name, billed time in seconds, amounts in cents), tax, discount and totals. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id from everhour_list_invoices."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "publicId": "$.publicId",
+            "clientId": "$.client.id",
+            "clientName": "$.client.name",
+            "status": "$.status",
+            "issueDate": "$.issueDate",
+            "dueDate": "$.dueDate",
+            "dateFrom": "$.limitDateFrom",
+            "dateTill": "$.limitDateTill",
+            "projects": "$.projects",
+            "tax": "$.tax",
+            "discount": "$.discount",
+            "totalTime": "$.totalTime",
+            "listAmount": "$.listAmount",
+            "netAmount": "$.netAmount",
+            "totalAmount": "$.totalAmount",
+            "items": {
+              "$from": "$.invoiceItems[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "billedTime": "billedTime",
+                "listAmount": "listAmount",
+                "netAmount": "netAmount",
+                "totalAmount": "totalAmount"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_expenses",
+      "description": "List expenses: id, date, user id, project, category id, amount (cents), quantity, billable flag and details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "expenses": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "date": "date",
+                "user": "user",
+                "project": "project",
+                "category": "category",
+                "amount": "amount",
+                "quantity": "quantity",
+                "billable": "billable",
+                "details": "details"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "everhour_list_schedule",
+      "description": "List resource planner assignments (scheduled work and time off) by date, project, task or client: id, type (project or time-off), user id, project, start and end date, workdays and scheduled time (seconds). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "assignment",
+              "time-off"
+            ],
+            "description": "Only scheduled work (assignment) or only time off."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Only this project, e.g. ev:3456780034."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Only this task, e.g. ev:1123000456."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Only this client id."
+          },
+          "from": {
+            "type": "string",
+            "description": "Assignments from this day, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Assignments until this day, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/resource-planner/assignments",
+        "queryParams": {
+          "type": "$type",
+          "project": "$project_id",
+          "task": "$task_id",
+          "client": "$client_id",
+          "from": "$from",
+          "to": "$to"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "assignments": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "user": "user",
+                "project": "project",
+                "startDate": "startDate",
+                "endDate": "endDate",
+                "days": "days",
+                "time": "time",
+                "timeOffPeriod": "timeOffPeriod"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "everhour_projects_report",
+      "description": "Projects report for a period: per project the tracked time, billable and non-billable time (seconds), billable amount, costs, profit, expenses and uninvoiced amount (cents). Filter by project, client or user. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Report start date, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Report end date, YYYY-MM-DD."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Only this project, e.g. ev:1234567890."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Only this client id."
+          },
+          "member_id": {
+            "type": "integer",
+            "description": "Only this user id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dashboards/projects",
+        "queryParams": {
+          "date.gte": "$date_from",
+          "date.lte": "$date_to",
+          "projectId": "$project_id",
+          "clientId": "$client_id",
+          "memberId": "$member_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "projects": {
+              "$from": "$[*]",
+              "$select": {
+                "projectId": "projectId",
+                "projectName": "projectName",
+                "projectStatus": "projectStatus",
+                "clientId": "clientId",
+                "clientName": "clientName",
+                "billingType": "billingType",
+                "time": "time",
+                "billableTime": "billableTime",
+                "nonBillableTime": "nonBillableTime",
+                "billableAmount": "billableAmount",
+                "costs": "costs",
+                "profit": "profit",
+                "expenses": "expenses",
+                "uninvoicedAmount": "uninvoicedAmount"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "everhour_users_report",
+      "description": "Users report for a period: per team member the tracked, billable and non-billable time, time off (seconds), billable amount, costs and profit (cents). Filter by project, client or user. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Report start date, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Report end date, YYYY-MM-DD."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Only this project, e.g. ev:1234567890."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Only this client id."
+          },
+          "member_id": {
+            "type": "integer",
+            "description": "Only this user id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dashboards/users",
+        "queryParams": {
+          "date.gte": "$date_from",
+          "date.lte": "$date_to",
+          "projectId": "$project_id",
+          "clientId": "$client_id",
+          "memberId": "$member_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "users": {
+              "$from": "$[*]",
+              "$select": {
+                "memberId": "memberId",
+                "memberName": "memberName",
+                "memberHeadline": "memberHeadline",
+                "memberStatus": "memberStatus",
+                "time": "time",
+                "billableTime": "billableTime",
+                "nonBillableTime": "nonBillableTime",
+                "timeOffTime": "timeOffTime",
+                "timeOffDays": "timeOffDays",
+                "billableAmount": "billableAmount",
+                "costs": "costs",
+                "profit": "profit",
+                "uninvoicedAmount": "uninvoicedAmount"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    }
+  ]
+}

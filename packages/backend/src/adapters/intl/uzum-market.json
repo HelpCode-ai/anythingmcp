@@ -2,7 +2,7 @@
   "slug": "uzum-market",
   "name": "Uzum Market",
   "description": "Manage an Uzum Market (Uzbekistan) seller account from an AI agent: shops, products and SKUs, FBS and DBS orders, stock, prices, sales and seller expenses, supply and return invoices. 16 tools on the official seller OpenAPI, one API token.",
-  "instructions": "This connector uses the Uzum Market seller OpenAPI (`https://api-seller.uzum.uz/api/seller-openapi`).\n\n**Setup**:\n1. Sign in to the Uzum Market seller cabinet (https://seller.uzum.uz) with the account that owns the shops.\n2. Open the settings and create an API token in the API section.\n3. Copy the token into `UZUM_API_TOKEN`.\n\n**Authentication**: the token goes into the `Authorization` header as is, without a `Bearer` prefix (Uzum documents it this way). A 401 or 403 means the token is wrong, revoked, or belongs to another seller.\n\n**Where to start**: `uzum_market_list_shops` returns the shops the token can see. Almost every other tool needs a `shop_id` (or `shop_ids`) from it. Then:\n- products and SKUs with their stock and statuses: `uzum_market_list_products`;\n- new orders to process: `uzum_market_list_orders` with status `CREATED` (default), then `uzum_market_confirm_order` or `uzum_market_cancel_order`;\n- stock for FBS and DBS: `uzum_market_list_stocks`, then `uzum_market_update_stocks`;\n- money: `uzum_market_list_sales` (sold items with commission and seller profit) and `uzum_market_list_expenses` (fees and services charged).\n\n**Dates** in filters (`date_from`, `date_to`) are Unix timestamps in milliseconds, for example 1727427283895. Dates in answers are ISO strings or millisecond timestamps.\n\n**Pagination**: page numbers start at 0. Orders and returns allow at most 50 per page, FBS invoices 20, stock 100. `uzum_market_list_stocks` also has a cursor mode: pass `sku_id_from` = 0, then the skuId of the last item, until the list is empty; it is the stable way to read a whole catalogue.\n\n**Order statuses**: CREATED (new, to confirm), PACKING, PENDING_DELIVERY, DELIVERING, DELIVERED, ACCEPTED_AT_DP, DELIVERED_TO_CUSTOMER_DELIVERY_POINT, COMPLETED, CANCELED, PENDING_CANCELLATION, RETURNED. Orders have to be confirmed before their acceptUntil time, otherwise Uzum cancels them.\n\n**Personal data**: DBS orders carry the buyer's name, phone and address in `deliveryInfo`. Only pass them on where the task needs them.\n\n**Rate limits**: Uzum enforces a per-second and a per-day request budget per token and reports it in the response headers `X-RateLimit-Remaining`, `X-RateLimit-Burst-Capacity`, `X-RateLimit-Limit-Per-Day` and `X-RateLimit-Remaining-Per-Day`. Read pages one at a time and back off on HTTP 429.\n\n**Writes**: `uzum_market_update_stocks` sets absolute FBS/DBS stock per SKU (identified by its barcode), `uzum_market_update_prices` changes full and sale prices of a product's SKUs, `uzum_market_confirm_order` and `uzum_market_cancel_order` change an order. All act on the live shop.",
+  "instructions": "This connector uses the Uzum Market seller OpenAPI (`https://api-seller.uzum.uz/api/seller-openapi`).\n\n**Setup**:\n1. Sign in to the Uzum Market seller cabinet (https://seller.uzum.uz) with the account that owns the shops.\n2. Open the settings and create an API token in the API section.\n3. Copy the token into `UZUM_API_TOKEN`.\n\n**Authentication**: the token goes into the `Authorization` header as is, without a `Bearer` prefix (Uzum documents it this way). A 401 or 403 means the token is wrong, revoked, or belongs to another seller; Uzum answers a malformed token with a 500.\n\n**Network**: Uzum's API gateway answers 400 to every request from AnythingMCP Cloud's servers, so the tools are routed through AnythingMCP's outbound proxy. Self-hosted instances call Uzum directly unless `CONNECTOR_PROXY_URL` is set; if your server gets a 400 HTML page for every call, set it.\n\n**Where to start**: `uzum_market_list_shops` returns the shops the token can see. Almost every other tool needs a `shop_id` (or `shop_ids`) from it. Then:\n- products and SKUs with their stock and statuses: `uzum_market_list_products`;\n- new orders to process: `uzum_market_list_orders` with status `CREATED` (default), then `uzum_market_confirm_order` or `uzum_market_cancel_order`;\n- stock for FBS and DBS: `uzum_market_list_stocks`, then `uzum_market_update_stocks`;\n- money: `uzum_market_list_sales` (sold items with commission and seller profit) and `uzum_market_list_expenses` (fees and services charged).\n\n**Dates** in filters (`date_from`, `date_to`) are Unix timestamps in milliseconds, for example 1727427283895. Dates in answers are ISO strings or millisecond timestamps.\n\n**Pagination**: page numbers start at 0. Orders and returns allow at most 50 per page, FBS invoices 20, stock 100. `uzum_market_list_stocks` also has a cursor mode: pass `sku_id_from` = 0, then the skuId of the last item, until the list is empty; it is the stable way to read a whole catalogue.\n\n**Order statuses**: CREATED (new, to confirm), PACKING, PENDING_DELIVERY, DELIVERING, DELIVERED, ACCEPTED_AT_DP, DELIVERED_TO_CUSTOMER_DELIVERY_POINT, COMPLETED, CANCELED, PENDING_CANCELLATION, RETURNED. Orders have to be confirmed before their acceptUntil time, otherwise Uzum cancels them.\n\n**Personal data**: DBS orders carry the buyer's name, phone and address in `deliveryInfo`. Only pass them on where the task needs them.\n\n**Rate limits**: Uzum enforces a per-second and a per-day request budget per token and reports it in the response headers `X-RateLimit-Remaining`, `X-RateLimit-Burst-Capacity`, `X-RateLimit-Limit-Per-Day` and `X-RateLimit-Remaining-Per-Day`. Read pages one at a time and back off on HTTP 429.\n\n**Writes**: `uzum_market_update_stocks` sets absolute FBS/DBS stock per SKU (identified by its barcode), `uzum_market_update_prices` changes full and sale prices of a product's SKUs, `uzum_market_confirm_order` and `uzum_market_cancel_order` change an order. All act on the live shop.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "uzum-market",
@@ -23,6 +23,7 @@
   "verifyHints": {
     "401": "Uzum Market refused the token. Check that it was copied whole, without Bearer in front, and that it was not revoked in the seller cabinet.",
     "403": "Uzum Market refused the token for this request. Check that the token belongs to the seller who owns the shop.",
+    "500": "Uzum Market answered with an internal error, which is what it does for a token it cannot read. Copy the token again from the seller cabinet, whole and without Bearer in front, and check that it was not revoked.",
     "rate_limited": "Uzum Market limits requests per second and per day for each token. Wait a moment and try again."
   },
   "connector": {
@@ -45,6 +46,7 @@
     {
       "name": "uzum_market_list_shops",
       "description": "List the seller's own shops (id and name). Call this first: the shop id is needed by the product, order, price, sales and invoice tools.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {}
@@ -57,6 +59,7 @@
     {
       "name": "uzum_market_list_products",
       "description": "List the products of one shop with their SKUs: product id, category, status, moderation, commission, and per SKU the skuId, barcode, price and stock quantities (active, FBS, sold, returned). Paginated by page and size.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -150,6 +153,7 @@
     {
       "name": "uzum_market_list_orders",
       "description": "List FBS and DBS orders of one or more shops in one status (default CREATED, the new orders to confirm): id, status, dates, acceptUntil and deliverUntil deadlines, price, items, drop-off point and delivery info. Up to 50 per page.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -225,6 +229,7 @@
     {
       "name": "uzum_market_count_orders",
       "description": "Count FBS orders by status (default CREATED), shop and date range. A cheap way to see how many new orders wait for confirmation before listing them.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -276,6 +281,7 @@
     {
       "name": "uzum_market_get_order",
       "description": "Get one FBS or DBS order by id: status and all status dates, deadlines, price, items, invoice number, time slot, drop-off point and, for DBS, delivery info.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -296,6 +302,7 @@
     {
       "name": "uzum_market_confirm_order",
       "description": "Confirm a new (CREATED) FBS or DBS order so it moves to packing. Must happen before the order's acceptUntil time. Returns the updated order.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -316,6 +323,7 @@
     {
       "name": "uzum_market_cancel_order",
       "description": "Cancel an FBS or DBS order with a reason (for example OUT_OF_STOCK). Cannot be undone, and cancellations affect the seller's rating.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -363,6 +371,7 @@
     {
       "name": "uzum_market_list_cancel_reasons",
       "description": "List the reason codes Uzum accepts when an order is cancelled or returned (OUT_OF_STOCK, OUT_OF_TIME, OTHER, ...). Reference data for uzum_market_cancel_order.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {}
@@ -375,6 +384,7 @@
     {
       "name": "uzum_market_list_stocks",
       "description": "List FBS and DBS stock per SKU across the seller's shops: skuId, titles, barcode, amount, and whether FBS or DBS is allowed and linked. Page mode (newest skuId first) or cursor mode with sku_id_from (ascending, recommended for a full read).",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -409,6 +419,7 @@
     {
       "name": "uzum_market_update_stocks",
       "description": "Set the FBS and DBS stock of one or more SKUs. Each entry overwrites the amount of the SKU identified by its Uzum barcode. Changes what buyers can order; read back with uzum_market_list_stocks.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -457,6 +468,7 @@
     {
       "name": "uzum_market_update_prices",
       "description": "Change the full price and sale price of the SKUs of one product in a shop. Prices are in Uzbek som. Changes live prices; check them afterwards with uzum_market_list_products.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -514,6 +526,7 @@
     {
       "name": "uzum_market_list_sales",
       "description": "List sold order items of one or more shops from the finance section: order and item, price, quantity, commission, seller profit, status (TO_WITHDRAW, PROCESSING, CANCELED, PARTIALLY_CANCELLED) and dates. Use for revenue and payout questions.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -579,6 +592,7 @@
     {
       "name": "uzum_market_list_expenses",
       "description": "List the seller's expenses charged by Uzum (logistics, storage, services and other payments): name, source, shop, amount, price, status and dates, as OUTCOME or INCOME. Filter by shop, period and source.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -630,6 +644,7 @@
     {
       "name": "uzum_market_list_supply_invoices",
       "description": "List FBO supply invoices (deliveries of goods to Uzum warehouses) of one shop: invoice number, status, dates, quantities sent and accepted, and price.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -662,6 +677,7 @@
     {
       "name": "uzum_market_list_fbs_invoices",
       "description": "List FBS invoices (hand-over documents that group FBS orders for a drop-off point) by status: number, status, order counts, prices, drop-off point and time slot. Up to 20 per page.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -716,6 +732,7 @@
     {
       "name": "uzum_market_list_returns",
       "description": "List the seller's return invoices (goods coming back from Uzum warehouses: defects, returns, FBS): id, type, status, dates and returned SKUs with amounts. One return via return_id.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {

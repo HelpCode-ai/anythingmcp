@@ -1,0 +1,874 @@
+{
+  "slug": "gumroad",
+  "name": "Gumroad",
+  "description": "Let your AI read your Gumroad store: products, sales with filters, membership subscribers, offer codes, checkout fields, license keys and webhooks. It can publish or unpublish a product and create an offer code after you confirm. Refunds are switched off. Access token from your Gumroad application.",
+  "instructions": "## Gumroad\nThis connector reads your **Gumroad** store through the official **Gumroad API v2** (`https://api.gumroad.com/v2`): your profile, products, sales with filters, subscribers of memberships, offer codes, custom checkout fields, license keys and the webhooks (resource subscriptions) set up for your account. It can also publish or unpublish a product and create an offer code, after you confirm.\n\n**Setup (about 3 minutes)**\n1. Sign in to Gumroad and open **Settings**, **Advanced**, **Applications** (https://gumroad.com/settings/advanced#application-form).\n2. Create an application: any name, and any https address as redirect URI (it is not used here), then click **Create application**.\n3. On the application, click **Generate access token** and copy the token into `GUMROAD_ACCESS_TOKEN`.\n4. Install and run `gumroad_get_user`.\n\n**What the token can do**: a generated token carries every scope Gumroad offers (read products and sales, edit products, and also refund sales). This connector only uses what its tools need: refunds are installed switched off, and there is no tool that deletes a product, an offer code or a custom field. Keep the token private; anyone who has it can manage your store. To revoke it, delete the application or generate a new token.\n\n**Writes: confirm first.** `gumroad_enable_product` publishes a product (it goes on sale), `gumroad_disable_product` takes it off sale, and `gumroad_create_offer_code` creates a discount code customers can use right away. Show the user what will change and wait for a clear yes before calling. `gumroad_refund_sale` is installed switched off: refunds send money back to the buyer and cannot be undone; it only does anything if an admin switches it on.\n\n**Customer data is personal data.** Sales and subscribers carry buyers' e-mail addresses, names and license keys. Read only what the user asks for and do not copy it elsewhere.\n\n**How to work**\n1. `gumroad_get_user` for the account, `gumroad_list_products` for product ids, names, prices and sales counts; `gumroad_get_product` for one product with its description and variants.\n2. Sales: `gumroad_list_sales` with filters (after, before as YYYY-MM-DD, product_id, email, order_id, name, license_key), then `gumroad_get_sale` for one. Gumroad returns 10 sales per page; for more, call again with `page_key` = `next_page_key` until it is missing. To total revenue over a long period, page through and add up, and tell the user how many sales you counted.\n3. Memberships: `gumroad_list_subscribers` for one product (100 per page, `page_key` again), `gumroad_get_subscriber` for one.\n4. Discounts: `gumroad_list_offer_codes`, `gumroad_create_offer_code`.\n5. Checkout questions: `gumroad_list_custom_fields`.\n6. License keys: `gumroad_verify_license` checks a key for a product without counting a use (unless you ask it to).\n7. Webhooks: `gumroad_list_resource_subscriptions` for one event type (sale, refund, dispute, dispute_won, cancellation, subscription_updated, subscription_ended, subscription_restarted).\n\n**Money**: amounts such as `price`, `gumroad_fee`, `amount_cents`, `sales_usd_cents` are in cents (or the smallest unit of the product's currency); `formatted_total_price` is ready to show. Dates are ISO 8601 in UTC.\n\n**Errors**: Gumroad answers some failures with `success: false` and a `message`, e.g. \"The product was not found.\"; the connector turns those into errors. 401 means the token is wrong or revoked; 404 from `gumroad_verify_license` means the license key does not exist for that product, was disabled, or its purchase lost access.\n\n**Out of scope**: creating, editing or deleting products, variants and files, refunds (switched off), marking sales as shipped, revoking access, resending receipts, payouts and tax forms, e-mails and workflows, and creating or deleting webhooks.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "gumroad",
+  "docsUrl": "https://gumroad.com/api",
+  "prerequisites": "A Gumroad account with products, to create an application under Settings, Advanced, Applications and generate an access token there. About 3 minutes.",
+  "appRegistrationUrl": "https://gumroad.com/settings/advanced#application-form",
+  "requiredEnvVars": [
+    "GUMROAD_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "GUMROAD_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Gumroad, Settings, Advanced, Applications: create an application, then click Generate access token on it.",
+      "link": "https://gumroad.com/settings/advanced#application-form",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste only the token, without the word Bearer or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Gumroad does not accept this access token: it is wrong, or the application was deleted. Generate a new token on your application under Settings, Advanced, Applications.",
+    "404": "Gumroad does not know this id, or the license key does not exist for that product."
+  },
+  "probe": {
+    "tool": "gumroad_get_user"
+  },
+  "connector": {
+    "name": "Gumroad API v2",
+    "type": "REST",
+    "baseUrl": "https://api.gumroad.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{GUMROAD_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/user",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": "message",
+          "messageMatches": "not found|does not exist",
+          "status": 404
+        },
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "gumroad_get_user",
+      "description": "Read the Gumroad account the token belongs to: name, user id, e-mail, profile URL, bio and profile picture. Use it first to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "user": {
+              "user_id": "$.user.user_id",
+              "name": "$.user.name",
+              "email": "$.user.email",
+              "url": "$.user.url",
+              "bio": "$.user.bio",
+              "twitter_handle": "$.user.twitter_handle",
+              "profile_picture_url": "$.user.profile_picture_url"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "gumroad_list_products",
+      "description": "List all your Gumroad products: id, name, published, price in cents with currency and formatted price, membership details, URL, tags and sales count and revenue in USD cents. Descriptions are left out; read one with gumroad_get_product.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "products": {
+              "$from": "$.products[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "published": "published",
+                "deleted": "deleted",
+                "price": "price",
+                "currency": "currency",
+                "formatted_price": "formatted_price",
+                "customizable_price": "customizable_price",
+                "subscription_duration": "subscription_duration",
+                "is_tiered_membership": "is_tiered_membership",
+                "recurrences": "recurrences",
+                "max_purchase_count": "max_purchase_count",
+                "short_url": "short_url",
+                "custom_permalink": "custom_permalink",
+                "tags": "tags",
+                "category": "category",
+                "sales_count": "sales_count",
+                "sales_usd_cents": "sales_usd_cents"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "gumroad_get_product",
+      "description": "Read one product: name, description (HTML), price, currency, published, URL, membership recurrences, variants with their options and prices, custom fields, tags and sales count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product's id, e.g. A-m3CDDC5dlrSdKZp0RFhA== (from gumroad_list_products).",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.product.id",
+            "name": "$.product.name",
+            "published": "$.product.published",
+            "deleted": "$.product.deleted",
+            "price": "$.product.price",
+            "currency": "$.product.currency",
+            "formatted_price": "$.product.formatted_price",
+            "customizable_price": "$.product.customizable_price",
+            "subscription_duration": "$.product.subscription_duration",
+            "is_tiered_membership": "$.product.is_tiered_membership",
+            "recurrences": "$.product.recurrences",
+            "max_purchase_count": "$.product.max_purchase_count",
+            "short_url": "$.product.short_url",
+            "custom_permalink": "$.product.custom_permalink",
+            "tags": "$.product.tags",
+            "category": "$.product.category",
+            "sales_count": "$.product.sales_count",
+            "sales_usd_cents": "$.product.sales_usd_cents",
+            "description": "$.product.description",
+            "custom_summary": "$.product.custom_summary",
+            "custom_fields": "$.product.custom_fields",
+            "require_shipping": "$.product.require_shipping",
+            "variants": {
+              "$from": "$.product.variants[*]",
+              "$select": {
+                "title": "title",
+                "options": "options[*].name"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "gumroad_enable_product",
+      "description": "Publish a product so it can be bought again (Gumroad calls this enable). It goes on sale at once. Show the user which product will be published and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product's id, e.g. A-m3CDDC5dlrSdKZp0RFhA== (from gumroad_list_products).",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}/enable",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.product.id",
+            "name": "$.product.name",
+            "published": "$.product.published",
+            "short_url": "$.product.short_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "gumroad_disable_product",
+      "description": "Unpublish a product so it can no longer be bought (Gumroad calls this disable). Existing buyers keep their access. Show the user which product will be taken off sale and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product's id, e.g. A-m3CDDC5dlrSdKZp0RFhA== (from gumroad_list_products).",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}/disable",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.product.id",
+            "name": "$.product.name",
+            "published": "$.product.published",
+            "short_url": "$.product.short_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "gumroad_list_sales",
+      "description": "List successful sales, newest first, 10 per page, with filters: after and before (YYYY-MM-DD), product_id, buyer email, order_id, buyer name or license_key. Each sale has id, date, product, buyer e-mail, price and fee in cents, formatted total, quantity, variants, refund and dispute state, subscription and license key. More: call again with page_key = next_page_key until it is missing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "string",
+            "description": "Only sales after this date, YYYY-MM-DD.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "before": {
+            "type": "string",
+            "description": "Only sales before this date, YYYY-MM-DD.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Only sales of this product id."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only sales to this buyer e-mail."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Only the sale with this order number (digits)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only sales to buyers with this name."
+          },
+          "license_key": {
+            "type": "string",
+            "description": "Only the sale with this license key."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "next_page_key from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "product_id": "$product_id",
+          "email": "$email",
+          "order_id": "$order_id",
+          "name": "$name",
+          "license_key": "$license_key",
+          "page_key": "$page_key"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "sales": {
+              "$from": "$.sales[*]",
+              "$select": {
+                "id": "id",
+                "created_at": "created_at",
+                "order_id": "order_id",
+                "product_id": "product_id",
+                "product_name": "product_name",
+                "email": "email",
+                "full_name": "full_name",
+                "price": "price",
+                "gumroad_fee": "gumroad_fee",
+                "tax_cents": "tax_cents",
+                "shipping_cents": "shipping_cents",
+                "formatted_total_price": "formatted_total_price",
+                "currency_symbol": "currency_symbol",
+                "quantity": "quantity",
+                "variants": "variants",
+                "offer_code": "offer_code",
+                "custom_fields": "custom_fields",
+                "paid": "paid",
+                "refunded": "refunded",
+                "partially_refunded": "partially_refunded",
+                "amount_refundable_in_currency": "amount_refundable_in_currency",
+                "chargedback": "chargedback",
+                "disputed": "disputed",
+                "dispute_won": "dispute_won",
+                "access_revoked": "access_revoked",
+                "subscription_id": "subscription_id",
+                "subscription_duration": "subscription_duration",
+                "is_recurring_billing": "is_recurring_billing",
+                "recurring_charge": "recurring_charge",
+                "cancelled": "cancelled",
+                "ended": "ended",
+                "license_key": "license_key",
+                "license_uses": "license_uses",
+                "license_disabled": "license_disabled",
+                "referrer": "referrer",
+                "utm_source": "utm_source",
+                "utm_medium": "utm_medium",
+                "utm_campaign": "utm_campaign",
+                "country": "country",
+                "is_gift_receiver_purchase": "is_gift_receiver_purchase",
+                "affiliate": "affiliate"
+              }
+            },
+            "next_page_key": "$.next_page_key"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "gumroad_get_sale",
+      "description": "Read one sale by its id: product, buyer, price and fees in cents, quantity, variants, custom fields, offer code, refund, chargeback and dispute state, subscription, license key and shipping.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "The sale id, e.g. B28UKN-dvxYabdavG97Y-Q==.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales/{sale_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.sale.id",
+            "created_at": "$.sale.created_at",
+            "order_id": "$.sale.order_id",
+            "product_id": "$.sale.product_id",
+            "product_name": "$.sale.product_name",
+            "email": "$.sale.email",
+            "full_name": "$.sale.full_name",
+            "price": "$.sale.price",
+            "gumroad_fee": "$.sale.gumroad_fee",
+            "tax_cents": "$.sale.tax_cents",
+            "shipping_cents": "$.sale.shipping_cents",
+            "formatted_total_price": "$.sale.formatted_total_price",
+            "currency_symbol": "$.sale.currency_symbol",
+            "quantity": "$.sale.quantity",
+            "variants": "$.sale.variants",
+            "offer_code": "$.sale.offer_code",
+            "custom_fields": "$.sale.custom_fields",
+            "paid": "$.sale.paid",
+            "refunded": "$.sale.refunded",
+            "partially_refunded": "$.sale.partially_refunded",
+            "amount_refundable_in_currency": "$.sale.amount_refundable_in_currency",
+            "chargedback": "$.sale.chargedback",
+            "disputed": "$.sale.disputed",
+            "dispute_won": "$.sale.dispute_won",
+            "access_revoked": "$.sale.access_revoked",
+            "subscription_id": "$.sale.subscription_id",
+            "subscription_duration": "$.sale.subscription_duration",
+            "is_recurring_billing": "$.sale.is_recurring_billing",
+            "recurring_charge": "$.sale.recurring_charge",
+            "cancelled": "$.sale.cancelled",
+            "ended": "$.sale.ended",
+            "license_key": "$.sale.license_key",
+            "license_uses": "$.sale.license_uses",
+            "license_disabled": "$.sale.license_disabled",
+            "referrer": "$.sale.referrer",
+            "utm_source": "$.sale.utm_source",
+            "utm_medium": "$.sale.utm_medium",
+            "utm_campaign": "$.sale.utm_campaign",
+            "country": "$.sale.country",
+            "is_gift_receiver_purchase": "$.sale.is_gift_receiver_purchase",
+            "affiliate": "$.sale.affiliate",
+            "shipping_information": "$.sale.shipping_information",
+            "is_product_physical": "$.sale.is_product_physical",
+            "tracking_url": "$.sale.tracking_url",
+            "shipped": "$.sale.shipped"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "gumroad_list_subscribers",
+      "description": "List the subscribers of a membership or subscription product, 100 per page: subscriber id, buyer e-mail, status (alive, pending_cancellation, failed_payment, cancelled and others), recurrence, start, cancellation, end and failure dates, and license key. Filter by email. More: call again with page_key = next_page_key until it is missing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product's id, e.g. A-m3CDDC5dlrSdKZp0RFhA== (from gumroad_list_products).",
+            "minLength": 1
+          },
+          "email": {
+            "type": "string",
+            "description": "Only the subscriber with this e-mail."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "next_page_key from the previous page."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/subscribers",
+        "encodePathParams": true,
+        "queryParams": {
+          "email": "$email",
+          "page_key": "$page_key",
+          "paginated": "true"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "subscribers": {
+              "$from": "$.subscribers[*]",
+              "$select": {
+                "id": "id",
+                "product_id": "product_id",
+                "product_name": "product_name",
+                "user_id": "user_id",
+                "user_email": "user_email",
+                "email": "email",
+                "purchase_ids": "purchase_ids",
+                "created_at": "created_at",
+                "status": "status",
+                "recurrence": "recurrence",
+                "charge_occurrence_count": "charge_occurrence_count",
+                "user_requested_cancellation_at": "user_requested_cancellation_at",
+                "cancelled_at": "cancelled_at",
+                "ended_at": "ended_at",
+                "failed_at": "failed_at",
+                "free_trial_ends_at": "free_trial_ends_at",
+                "license_key": "license_key"
+              }
+            },
+            "next_page_key": "$.next_page_key"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "gumroad_get_subscriber",
+      "description": "Read one subscriber by id: product, buyer e-mail, status, recurrence, charges so far, purchase ids and the cancellation, end and failure dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": {
+            "type": "string",
+            "description": "The subscriber id from gumroad_list_subscribers.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "subscriber_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscribers/{subscriber_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.subscriber.id",
+            "product_id": "$.subscriber.product_id",
+            "product_name": "$.subscriber.product_name",
+            "user_id": "$.subscriber.user_id",
+            "user_email": "$.subscriber.user_email",
+            "email": "$.subscriber.email",
+            "purchase_ids": "$.subscriber.purchase_ids",
+            "created_at": "$.subscriber.created_at",
+            "status": "$.subscriber.status",
+            "recurrence": "$.subscriber.recurrence",
+            "charge_occurrence_count": "$.subscriber.charge_occurrence_count",
+            "user_requested_cancellation_at": "$.subscriber.user_requested_cancellation_at",
+            "cancelled_at": "$.subscriber.cancelled_at",
+            "ended_at": "$.subscriber.ended_at",
+            "failed_at": "$.subscriber.failed_at",
+            "free_trial_ends_at": "$.subscriber.free_trial_ends_at",
+            "license_key": "$.subscriber.license_key"
+          }
+        }
+      }
+    },
+    {
+      "name": "gumroad_list_offer_codes",
+      "description": "List the offer (discount) codes of a product, including universal codes valid for all products: id, code, amount off in cents or percent off, usage limit, minimum amount and how often it was used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product's id, e.g. A-m3CDDC5dlrSdKZp0RFhA== (from gumroad_list_products).",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/offer_codes",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "offer_codes": {
+              "$from": "$.offer_codes[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "amount_cents": "amount_cents",
+                "percent_off": "percent_off",
+                "max_purchase_count": "max_purchase_count",
+                "minimum_amount_cents": "minimum_amount_cents",
+                "universal": "universal",
+                "times_used": "times_used"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "gumroad_create_offer_code",
+      "description": "Create a discount code for a product (or for all products with universal true). It works at checkout right away. offer_type cents takes amount_off in cents, percent takes a whole percentage. Show the user the code, discount and limits and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product's id, e.g. A-m3CDDC5dlrSdKZp0RFhA== (from gumroad_list_products).",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "The code customers type at checkout, e.g. SPRING20.",
+            "minLength": 1
+          },
+          "amount_off": {
+            "type": "integer",
+            "description": "Discount: cents off for offer_type cents, percent off (1 to 100) for percent.",
+            "minimum": 1
+          },
+          "offer_type": {
+            "type": "string",
+            "description": "cents (default) or percent.",
+            "enum": [
+              "cents",
+              "percent"
+            ],
+            "default": "cents"
+          },
+          "max_purchase_count": {
+            "type": "integer",
+            "description": "How many times the code can be used in total. Leave out for no limit.",
+            "minimum": 1
+          },
+          "minimum_amount_cents": {
+            "type": "integer",
+            "description": "Minimum order amount in cents for the code to apply.",
+            "minimum": 0
+          },
+          "universal": {
+            "type": "boolean",
+            "description": "true makes the code valid for all your products. Default false.",
+            "default": false
+          }
+        },
+        "required": [
+          "product_id",
+          "name",
+          "amount_off"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/{product_id}/offer_codes",
+        "encodePathParams": true,
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "name": "$name",
+          "amount_off": "$amount_off",
+          "offer_type": "$offer_type",
+          "max_purchase_count": "$max_purchase_count",
+          "minimum_amount_cents": "$minimum_amount_cents",
+          "universal": "$universal"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.offer_code.id",
+            "name": "$.offer_code.name",
+            "amount_cents": "$.offer_code.amount_cents",
+            "percent_off": "$.offer_code.percent_off",
+            "max_purchase_count": "$.offer_code.max_purchase_count",
+            "minimum_amount_cents": "$.offer_code.minimum_amount_cents",
+            "universal": "$.offer_code.universal",
+            "times_used": "$.offer_code.times_used"
+          }
+        }
+      }
+    },
+    {
+      "name": "gumroad_list_custom_fields",
+      "description": "List the custom fields a product asks for at checkout (for example a phone number or a terms checkbox): name, type and whether it is required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product's id, e.g. A-m3CDDC5dlrSdKZp0RFhA== (from gumroad_list_products).",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/custom_fields",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "custom_fields": {
+              "$from": "$.custom_fields[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "type": "type",
+                "required": "required",
+                "global": "global",
+                "collect_per_product": "collect_per_product"
+              }
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "gumroad_verify_license",
+      "description": "Check a license key for a product: whether it exists and is valid, how often it was used, and the purchase it belongs to (buyer e-mail, date, refund, chargeback and subscription state). Does not count a use unless increment_uses_count is true. 404 means the key is unknown for that product, disabled or its access was revoked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product's id, e.g. A-m3CDDC5dlrSdKZp0RFhA== (from gumroad_list_products).",
+            "minLength": 1
+          },
+          "license_key": {
+            "type": "string",
+            "description": "The license key the customer has, e.g. 83DB262A-C19D3B06-A5235A6B-8C079166.",
+            "minLength": 1
+          },
+          "increment_uses_count": {
+            "type": "boolean",
+            "description": "true counts this check as one more use of the key. Default false.",
+            "default": false
+          }
+        },
+        "required": [
+          "product_id",
+          "license_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/licenses/verify",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "product_id": "$product_id",
+          "license_key": "$license_key",
+          "increment_uses_count": "$increment_uses_count"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "success": "$.success",
+            "uses": "$.uses",
+            "purchase": {
+              "sale_id": "$.purchase.sale_id",
+              "product_id": "$.purchase.product_id",
+              "product_name": "$.purchase.product_name",
+              "email": "$.purchase.email",
+              "sale_timestamp": "$.purchase.sale_timestamp",
+              "price": "$.purchase.price",
+              "currency": "$.purchase.currency",
+              "quantity": "$.purchase.quantity",
+              "variants": "$.purchase.variants",
+              "license_key": "$.purchase.license_key",
+              "is_multiseat_license": "$.purchase.is_multiseat_license",
+              "refunded": "$.purchase.refunded",
+              "chargebacked": "$.purchase.chargebacked",
+              "disputed": "$.purchase.disputed",
+              "subscription_id": "$.purchase.subscription_id",
+              "recurrence": "$.purchase.recurrence",
+              "subscription_ended_at": "$.purchase.subscription_ended_at",
+              "subscription_cancelled_at": "$.purchase.subscription_cancelled_at",
+              "subscription_failed_at": "$.purchase.subscription_failed_at"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gumroad_list_resource_subscriptions",
+      "description": "List the webhooks (resource subscriptions) set up for one event type: id, event and the URL Gumroad posts to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_name": {
+            "type": "string",
+            "description": "Event type.",
+            "enum": [
+              "sale",
+              "refund",
+              "dispute",
+              "dispute_won",
+              "cancellation",
+              "subscription_updated",
+              "subscription_ended",
+              "subscription_restarted"
+            ]
+          }
+        },
+        "required": [
+          "resource_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/resource_subscriptions",
+        "queryParams": {
+          "resource_name": "$resource_name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "resource_subscriptions": {
+              "$from": "$.resource_subscriptions[*]",
+              "$select": {
+                "id": "id",
+                "resource_name": "resource_name",
+                "post_url": "post_url"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "gumroad_refund_sale",
+      "description": "Refund a sale in full, or partly with amount_cents. The money goes back to the buyer and this cannot be undone. Installed switched off. Only when the user explicitly asks; confirm the sale, buyer and amount first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "The sale id.",
+            "minLength": 1
+          },
+          "amount_cents": {
+            "type": "integer",
+            "description": "Partial refund in cents. Leave out for a full refund.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sales/{sale_id}/refund",
+        "encodePathParams": true,
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "amount_cents": "$amount_cents"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.sale.id",
+            "refunded": "$.sale.refunded",
+            "partially_refunded": "$.sale.partially_refunded",
+            "amount_refundable_in_currency": "$.sale.amount_refundable_in_currency"
+          }
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

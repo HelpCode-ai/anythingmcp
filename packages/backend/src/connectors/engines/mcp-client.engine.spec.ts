@@ -1,4 +1,9 @@
-import { McpClientEngine, assertNotThisServer, explainMcpConnectError } from './mcp-client.engine';
+import {
+  McpClientEngine,
+  assertNotThisServer,
+  explainMcpConnectError,
+  isUnauthorized,
+} from './mcp-client.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
@@ -230,6 +235,73 @@ describe('McpClientEngine endpoint resolution', () => {
         'https://mcp.example.com/deep/path/mcp',
       );
     });
+  });
+
+  describe('OAuth2: a token the server refused', () => {
+    // What @modelcontextprotocol/client throws for Cloudinary's 401: the
+    // message is the body only, the status sits in `data`.
+    const cloudinary401 = () =>
+      Object.assign(
+        new Error(
+          'Error POSTing to endpoint: {"error":"invalid_token","error_description":"OAuth token is invalid or expired. Please re-authenticate."}',
+        ),
+        { code: 'CLIENT_HTTP_NOT_IMPLEMENTED', data: { status: 401, statusText: 'Unauthorized' } },
+      );
+
+    it('renews the token once and retries the call with it, with the connector id', async () => {
+      const tokens = {
+        getAccessToken: jest.fn().mockResolvedValue('expired'),
+        renewAfterRejection: jest.fn().mockResolvedValue('renewed'),
+      };
+      engine = new McpClientEngine(tokens as unknown as OAuth2TokenService);
+      client.connect.mockRejectedValueOnce(cloudinary401());
+
+      const result = await engine.execute(
+        {
+          baseUrl: 'https://asset-management.mcp.cloudinary.com/mcp',
+          authType: 'OAUTH2',
+          authConfig: { tokenUrl: 'https://asset-management.mcp.cloudinary.com/token', refreshToken: 'rt' },
+          connectorId: 'cmv-cloudinary',
+        },
+        { method: 'list-images', path: '/mcp' },
+        {},
+      );
+
+      expect(result).toEqual({ content: [] });
+      expect(tokens.getAccessToken).toHaveBeenCalledWith(expect.any(Object), 'cmv-cloudinary');
+      expect(tokens.renewAfterRejection).toHaveBeenCalledWith(
+        expect.any(Object),
+        'cmv-cloudinary',
+        expect.any(Number),
+      );
+      const retryHeaders = MockedTransport.mock.calls[1][1].requestInit.headers;
+      expect(retryHeaders.Authorization).toBe('Bearer renewed');
+    });
+  });
+});
+
+describe('isUnauthorized', () => {
+  it('reads the status the SDK puts in data, whatever the message says', () => {
+    expect(
+      isUnauthorized(Object.assign(new Error('Error POSTing to endpoint: nope'), { data: { status: 401 } })),
+    ).toBe(true);
+  });
+
+  it('recognises the older message with the status, and an invalid_token body', () => {
+    expect(isUnauthorized(new Error('Error POSTing to endpoint (HTTP 401): Unauthorized'))).toBe(true);
+    expect(isUnauthorized(new Error('Error POSTing to endpoint: {"error":"invalid_token"}'))).toBe(true);
+  });
+
+  it('looks into the cause', () => {
+    const outer = new Error('MCP error') as Error & { cause?: unknown };
+    outer.cause = Object.assign(new Error('x'), { status: 401 });
+    expect(isUnauthorized(outer)).toBe(true);
+  });
+
+  it('leaves other failures alone', () => {
+    expect(isUnauthorized(Object.assign(new Error('Error POSTing to endpoint: x'), { data: { status: 403 } }))).toBe(false);
+    expect(isUnauthorized(new Error('Tool returned 4010 rows'))).toBe(false);
+    expect(isUnauthorized(undefined)).toBe(false);
   });
 });
 

@@ -29,7 +29,7 @@ if (!chrome) throw new Error('Google Chrome not found; set CHROME_PATH');
 
 const icon = (n) => readFileSync(join(ROOT, 'docs/assets/icons/clients', `${n}.svg`), 'utf8').trim();
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-const MAINTAINER = { 'HelpCode-ai': 'helpcode.ai', kochfreiburg: 'KOCH Freiburg GmbH', keysersoft: '@keysersoft' };
+const MAINTAINER = { 'HelpCode-ai': 'helpcode.ai', kochfreiburg: 'KOCH Freiburg GmbH', helpcodeai: '@helpcodeai' };
 const GENERIC_SUB = {
   soap: 'Any SOAP/WSDL service as MCP tools. No code.',
   sql: 'PostgreSQL, MySQL, SQL Server, Oracle, SAP HANA, MongoDB. Read-only by default.',

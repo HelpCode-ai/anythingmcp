@@ -1,7 +1,6 @@
 import axios from 'axios';
 import {
   formatDownloads,
-  formatStars,
   formatToolCalls,
   formatTrustStats,
   formatWorkspaces,
@@ -13,18 +12,6 @@ jest.mock('axios');
 const mockedGet = axios.get as jest.Mock;
 
 describe('trust number formatting (always rounded down)', () => {
-  it.each([
-    [984, '984'],
-    [999, '999'],
-    [1000, '1,000+'],
-    [1099, '1,000+'],
-    [1100, '1,100+'],
-    [12_345, '12,300+'],
-    [0, null],
-    [null, null],
-    [Number.NaN, null],
-  ])('stars %p -> %p', (n, out) => expect(formatStars(n as any)).toBe(out));
-
   it.each([
     [32_456, '32,000+'],
     [999, null],
@@ -48,11 +35,11 @@ describe('trust number formatting (always rounded down)', () => {
   it('formats a whole set, never below the floors', () => {
     expect(
       formatTrustStats({ githubStars: 984, dockerPulls: 32_456, workspaces: 3_871, toolCalls30d: 654_321, updatedAt: null }),
-    ).toEqual({ stars: '1,000+', downloads: '200,000+', workspaces: '3,800+', toolCalls: '1M+' });
+    ).toEqual({ downloads: '200,000+', workspaces: '3,800+', toolCalls: '1M+' });
     expect(
       formatTrustStats({ githubStars: 1_234, dockerPulls: 250_400, workspaces: null, toolCalls30d: 2_100_000, updatedAt: null }),
-    ).toEqual({ stars: '1,200+', downloads: '250,000+', workspaces: null, toolCalls: '2M+' });
-    expect(formatTrustStats(null)).toEqual({ stars: '1,000+', downloads: '200,000+', workspaces: null, toolCalls: '1M+' });
+    ).toEqual({ downloads: '250,000+', workspaces: null, toolCalls: '2M+' });
+    expect(formatTrustStats(null)).toEqual({ downloads: '200,000+', workspaces: null, toolCalls: '1M+' });
   });
 });
 

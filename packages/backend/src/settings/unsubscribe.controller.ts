@@ -92,7 +92,7 @@ export class UnsubscribeController {
       renderAuthPage({
         title: 'Email preferences — AnythingMCP',
         card,
-        trust: { cloud: this.deployment.isCloud(), stars: null },
+        trust: { cloud: this.deployment.isCloud() },
       }),
     );
   }

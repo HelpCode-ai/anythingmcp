@@ -7,6 +7,105 @@ describe('deriveErrorHint', () => {
     ).toBeUndefined();
   });
 
+  it('tells the model to have the connector re-authorized when a scope is missing', () => {
+    const hint = deriveErrorHint({
+      host: 'openapi.etsy.com',
+      status: 403,
+      body: { error: 'Access token lacks scope for this request (requires scope: listings_w).' },
+    });
+    expect(hint).toMatch(/Authorize with Provider/);
+    expect(deriveErrorHint({ status: 403, body: { error: 'insufficient_scope' } })).toMatch(/Authorize/);
+  });
+
+  it('sends the model to the field list on an unknown Odoo field or model', () => {
+    const field = deriveErrorHint({
+      host: 'acme.odoo.com',
+      status: 500,
+      body: { name: 'builtins.ValueError', message: "Invalid field 'expense_policy' on 'product.product'" },
+    });
+    expect(field).toMatch(/fields_get/);
+    expect(
+      deriveErrorHint({ message: "JSON-RPC error 200: Odoo Server Error: Invalid field sale.order.commercial_partner_id in leaf ('x')" }),
+    ).toMatch(/fields_get/);
+    expect(
+      deriveErrorHint({ message: "JSON-RPC error 200: Odoo Server Error: Object stock.production.lot doesn't exist" }),
+    ).toMatch(/stock\.lot/);
+  });
+
+  it('names phone when Odoo 18.3+ refuses the dropped mobile field on contacts', () => {
+    // 10 Oct 2026: 28 calls in a day asked res.partner for mobile on Odoo 19.
+    const rest = deriveErrorHint({
+      host: 'acme.odoo.com',
+      status: 500,
+      body: { name: 'builtins.ValueError', message: "Invalid field 'mobile' on 'res.partner'" },
+    });
+    expect(rest).toMatch(/`phone`/);
+    expect(
+      deriveErrorHint({ message: "JSON-RPC error 200: Odoo Server Error: Invalid field res.partner.mobile in leaf ('mobile', '!=', False)" }),
+    ).toMatch(/`phone`/);
+    // Another model's own mobile field keeps the generic advice.
+    expect(
+      deriveErrorHint({ status: 500, body: { message: "Invalid field 'mobile' on 'hr.employee'" } }),
+    ).toMatch(/fields_get/);
+  });
+
+  describe('SAP S/4HANA Cloud client credentials', () => {
+    it('lists the four causes when the token request is refused', () => {
+      const hint = deriveErrorHint({
+        host: 'my123456-api.s4hana.cloud.sap',
+        status: 401,
+        message:
+          'OAuth2 client_credentials: could not obtain an access token from my123456-api.s4hana.cloud.sap (HTTP 401: invalid_client). No request was sent to the API.',
+      })!;
+      expect(hint).toMatch(/-api\.s4hana\.cloud\.sap\/sap\/bc\/sec\/oauth2\/token/);
+      expect(hint).toMatch(/not a BTP/);
+      expect(hint).toMatch(/communication user/);
+      expect(hint).toMatch(/active communication arrangement/);
+      expect(hint).toMatch(/scope/);
+    });
+
+    it('names the missing arrangement on a 403 from the API', () => {
+      expect(
+        deriveErrorHint({ host: 'my123456-api.s4hana.cloud.sap', status: 403, body: 'Forbidden' }),
+      ).toMatch(/SAP_COM_0008/);
+    });
+  });
+
+  describe('Odoo API keys', () => {
+    it('says the key has most likely expired on a JSON-2 401 "Invalid apikey"', () => {
+      // As stored on the cloud, 14 Oct 2026 (63 calls, 5 workspaces in two weeks).
+      const hint = deriveErrorHint({
+        host: 'acme.odoo.com',
+        status: 401,
+        message:
+          '401 UNAUTHORIZED: Request failed with status code 401: body={"name":"werkzeug.exceptions.Unauthorized","message":"Invalid apikey","arguments":["Invalid apikey",401]}',
+      })!;
+      expect(hint).toMatch(/expired/);
+      expect(hint).toMatch(/1 Day/);
+      expect(hint).toMatch(/"Persistent Key"/);
+      expect(hint).toMatch(/ODOO_API_KEY/);
+    });
+
+    it('names the expired key next to a mismatch on a JSON-RPC Access Denied', () => {
+      for (const message of [
+        'JSON-RPC error 200: Odoo Server Error: Access Denied',
+        'JSON-RPC error 200: Odoo Server Error: Access denied',
+        'JSON-RPC error 0: Odoo Server Error: Access Denied',
+      ]) {
+        const hint = deriveErrorHint({ host: 'erp.example.com', message })!;
+        expect(hint).toMatch(/ODOO_UID/);
+        expect(hint).toMatch(/expired/);
+        expect(hint).toMatch(/"Persistent Key"/);
+      }
+    });
+
+    it('leaves an unrelated "Access Denied" page alone', () => {
+      expect(
+        deriveErrorHint({ host: 'example.com', status: 403, body: '<html><title>Access Denied</title></html>' }),
+      ).toBeUndefined();
+    });
+  });
+
   describe('weclapp', () => {
     it('explains unknown properties instead of letting the model guess spellings', () => {
       const hint = deriveErrorHint({
@@ -22,6 +121,19 @@ describe('deriveErrorHint', () => {
       const hint = deriveErrorHint({ host: 'x.weclapp.com', status: 400, body: { detail: 'unknown property: shippingAddress' } });
       expect(hint).toMatch(/`deliveryAddress` \(not `shippingAddress`\)/);
       expect(hint).toMatch(/`unitId` \(not `unitName`\)/);
+    });
+
+    it('first tells the model to retry without `properties`', () => {
+      // 14 Oct 2026: ~50 failures in ten days, all guessed names in `properties`.
+      const hint = deriveErrorHint({
+        host: 'x.weclapp.com',
+        status: 400,
+        body: { detail: 'unknown property: openAmount' },
+      })!;
+      expect(hint).toMatch(/retry the same call with `properties` left out/);
+      expect(hint.indexOf('left out')).toBeLessThan(hint.indexOf('camelCase'));
+      expect(hint).toMatch(/no `customerNumber`/);
+      expect(hint).toMatch(/`openAmount`/);
     });
 
     it('treats "unexpected filter property" the same way', () => {
@@ -44,6 +156,35 @@ describe('deriveErrorHint', () => {
       expect(
         deriveErrorHint({ host: 'tenant.weclapp.com', body: 'unknown property: x' }),
       ).toBeDefined();
+    });
+
+    it('tells the model to send only changed fields when weclapp refuses a read-only one', () => {
+      const hint = deriveErrorHint({
+        host: 'x.weclapp.com',
+        status: 400,
+        body: {
+          detail: 'Validation failed',
+          validationErrors: [
+            {
+              detail: 'property statusHistory is read-only',
+              errorCode: 'platform.read_only_property',
+              location: 'statusHistory',
+            },
+          ],
+        },
+      });
+      expect(hint).toMatch(/send only the fields that change/);
+      expect(hint).toMatch(/ignoreMissingProperties=true/);
+    });
+
+    it('explains a stale version on an optimistic lock error', () => {
+      const hint = deriveErrorHint({
+        host: 'x.weclapp.com',
+        status: 409,
+        body: { detail: 'optimistic lock error', status: 409, type: '/webapp/view/api/errors.html#!/errors/optimistic_lock' },
+      });
+      expect(hint).toMatch(/Read the record again/);
+      expect(hint).toMatch(/`version`/);
     });
 
     it('does not fire for another vendor that happens to say "unknown property"', () => {
@@ -130,6 +271,23 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
     ).toBeUndefined();
   });
 
+  it('reads Figma\'s "File not found" on dev resources as missing Dev Mode, not a missing file', () => {
+    const read = deriveErrorHint({
+      host: 'api.figma.com',
+      status: 404,
+      body: { error: true, status: 404, message: 'File not found', i18n: 'error.not_found' },
+    });
+    expect(read).toMatch(/Dev Mode/);
+    const write = deriveErrorHint({
+      host: 'api.figma.com',
+      status: 400,
+      message: 'The API answered with an error in a successful response: File not found',
+      body: { links_created: [], errors: [{ file_key: 'k', node_id: '1:2', error: 'File not found' }] },
+    });
+    expect(write).toBe(read);
+    expect(deriveErrorHint({ host: 'api.figma.com', status: 404, body: { status: 404, err: 'Not found' } })).toBeUndefined();
+  });
+
   it('tells the user to install the Shopify app when the token answers app_not_installed', () => {
     const hint = deriveErrorHint({
       host: 'acme.myshopify.com',
@@ -214,5 +372,113 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
         body: { message: "voucherStatus filter 'overdue' cannot be used in combination with other states" },
       }),
     ).toMatch(/one call with voucherStatus=overdue/);
+  });
+});
+
+describe('deriveErrorHint: generative AI APIs', () => {
+  const gemini = 'generativelanguage.googleapis.com';
+  const openai = 'api.openai.com';
+
+  it('explains the Gemini failures a retry cannot fix', () => {
+    expect(
+      deriveErrorHint({
+        host: gemini,
+        status: 400,
+        body: { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT', details: [{ reason: 'API_KEY_INVALID' }] } },
+      }),
+    ).toContain('aistudio.google.com/apikey');
+    expect(
+      deriveErrorHint({ host: gemini, status: 429, body: { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'You exceeded your current quota' } } }),
+    ).toMatch(/free tier.*image models have no free tier/);
+    expect(
+      deriveErrorHint({ host: gemini, status: 404, body: { error: { message: 'models/gemini-9-ultra is not found for API version v1beta, or is not supported for generateContent.' } } }),
+    ).toMatch(/gemini_list_models/);
+    expect(
+      deriveErrorHint({ host: gemini, status: 400, body: { error: { status: 'FAILED_PRECONDITION', message: 'User location is not supported for the API use.' } } }),
+    ).toMatch(/billing/);
+    expect(deriveErrorHint({ host: gemini, status: 403, body: { error: { status: 'PERMISSION_DENIED', message: 'The caller does not have permission' } } })).toMatch(
+      /API restrictions/,
+    );
+  });
+
+  it('reads the safety blocks that the gemini adapter turns into errors', () => {
+    expect(
+      deriveErrorHint({ host: gemini, status: 400, message: 'The API answered with an error in a successful response: SAFETY' }),
+    ).toMatch(/safety or content filters/);
+    expect(
+      deriveErrorHint({ host: gemini, status: 400, message: 'The API answered with an error in a successful response: IMAGE_SAFETY Unable to show the generated image.' }),
+    ).toMatch(/Retrying the same request will not help/);
+    expect(
+      deriveErrorHint({ host: gemini, status: 400, body: { error: { message: "Invalid value at 'safety_settings[0].category'" } } }),
+    ).toBeUndefined();
+  });
+
+  it('explains the OpenAI failures a retry cannot fix', () => {
+    expect(
+      deriveErrorHint({ host: openai, status: 401, body: { error: { message: 'Incorrect API key provided: sk-abc***', code: 'invalid_api_key' } } }),
+    ).toContain('platform.openai.com/api-keys');
+    expect(
+      deriveErrorHint({ host: openai, status: 429, body: { error: { message: 'You exceeded your current quota', code: 'insufficient_quota' } } }),
+    ).toMatch(/add credit/);
+    expect(
+      deriveErrorHint({ host: openai, status: 429, body: { error: { message: 'Rate limit reached for gpt-image-1-mini', code: 'rate_limit_exceeded' } } }),
+    ).toMatch(/Do not retry in a loop/);
+    expect(
+      deriveErrorHint({ host: openai, status: 403, body: { error: { message: 'Your organization must be verified to use the model `gpt-image-2`.' } } }),
+    ).toMatch(/Verify Organization/);
+    expect(
+      deriveErrorHint({ host: openai, status: 404, body: { error: { message: 'The model `gpt-9` does not exist or you do not have access to it.', code: 'model_not_found' } } }),
+    ).toMatch(/openai_list_models/);
+    expect(
+      deriveErrorHint({ host: openai, status: 400, body: { error: { message: 'Your request was rejected by the safety system.', code: 'moderation_blocked' } } }),
+    ).toMatch(/safety system refused/);
+  });
+
+  it('stays quiet for these phrases on other hosts', () => {
+    expect(deriveErrorHint({ host: 'api.example.com', status: 429, body: { error: 'insufficient_quota' } })).toBeUndefined();
+    expect(deriveErrorHint({ host: 'api.example.com', status: 400, message: 'SAFETY' })).toBeUndefined();
+  });
+});
+
+describe('deriveErrorHint: web search APIs for agents', () => {
+  const tavily = 'api.tavily.com';
+  const perplexity = 'api.perplexity.ai';
+  const serpapi = 'serpapi.com';
+
+  it('reads the Tavily answers documented in its OpenAPI document', () => {
+    expect(deriveErrorHint({ host: tavily, status: 401, body: { detail: { error: 'Unauthorized: missing or invalid API key.' } } })).toContain('app.tavily.com');
+    expect(
+      deriveErrorHint({ host: tavily, status: 432, body: { detail: { error: "This request exceeds your plan's set usage limit." } } }),
+    ).toMatch(/used up its credits/);
+    expect(deriveErrorHint({ host: tavily, status: 433, body: { detail: { error: 'This request exceeds the pay-as-you-go limit.' } } })).toMatch(/pay-as-you-go/);
+    expect(deriveErrorHint({ host: tavily, status: 429, body: { detail: { error: 'Your request has been blocked due to excessive requests.' } } })).toMatch(
+      /Do not retry in a loop/,
+    );
+    expect(deriveErrorHint({ host: tavily, status: 400, body: { detail: { error: 'Query is too short. Min query length is 2 characters.' } } })).toMatch(
+      /at least 2 characters/,
+    );
+    expect(deriveErrorHint({ host: tavily, status: 422, body: { detail: [{ loc: ['body', 'extract_depth'] }] } })).toMatch(/names it/);
+  });
+
+  it('reads Perplexity 401 as a wrong key or no credits, and its rate and validation errors', () => {
+    expect(
+      deriveErrorHint({ host: perplexity, status: 401, body: { error: { message: 'Invalid API key provided.', type: 'invalid_api_key', code: 401 } } }),
+    ).toMatch(/no API credits left/);
+    expect(deriveErrorHint({ host: perplexity, status: 429, body: { error: { message: 'Too many requests' } } })).toMatch(/usage tier/);
+    expect(deriveErrorHint({ host: perplexity, status: 400, body: { error: { message: 'Invalid model' } } })).toMatch(/perplexity_list_models/);
+  });
+
+  it('reads the SerpApi status codes', () => {
+    expect(
+      deriveErrorHint({ host: serpapi, status: 401, body: { error: 'Invalid API key. Your API key should be here: https://serpapi.com/manage-api-key' } }),
+    ).toContain('serpapi.com/manage-api-key');
+    expect(deriveErrorHint({ host: serpapi, status: 429, body: { error: 'Your account has run out of searches.' } })).toMatch(/serpapi_get_account/);
+    expect(deriveErrorHint({ host: serpapi, status: 400, body: { error: 'Unsupported `NOPE` data type parameter.' } })).toMatch(/serpapi_search_locations/);
+    expect(deriveErrorHint({ host: serpapi, status: 403, body: { error: 'Forbidden' } })).toMatch(/dashboard/);
+  });
+
+  it('stays quiet for these statuses on other hosts', () => {
+    expect(deriveErrorHint({ host: 'api.example.com', status: 432 })).toBeUndefined();
+    expect(deriveErrorHint({ host: 'example-serpapi.com', status: 401 })).toBeUndefined();
   });
 });

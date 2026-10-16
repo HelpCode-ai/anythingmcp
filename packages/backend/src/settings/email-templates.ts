@@ -14,6 +14,8 @@ import {
   steps,
   usageBox,
 } from './email-layout';
+import { withEmailLinkToken } from '../common/email-link-token';
+import { withSourceParam } from '../license/license-checkout';
 
 /**
  * Every email the backend sends, as pure functions of their inputs: no
@@ -68,7 +70,6 @@ export function verificationEmail(
   input: { code: string; verifyUrl: string },
   ctx: EmailBrandContext,
 ): RenderedEmail {
-  const shown = /^\d{6}$/.test(input.code) ? `${input.code.slice(0, 3)} ${input.code.slice(3)}` : input.code;
   return build({
     // Code first: it is what the inbox preview shows, and what iOS reads to
     // offer it above the keyboard (autocomplete one-time-code).
@@ -77,7 +78,11 @@ export function verificationEmail(
     bodyHtml:
       h1('Confirm your email,', 'and you are in.') +
       p('Enter this code in the AnythingMCP window you just left. It is valid for 15 minutes.') +
-      codeBox(shown) +
+      // The code exactly as it is typed: no space between the two halves. The
+      // box's letter-spacing already spaces the digits out to read, while a
+      // real space was copied along with them, so a pasted "504 452" no
+      // longer fitted the six-character field (October 2026).
+      codeBox(input.code) +
       p('Or confirm with one click:', { size: 15, muted: true, mb: 4 }) +
       button(input.verifyUrl, 'Verify my email') +
       small("Didn't sign up? You can ignore this email; the address stays unverified without the code."),
@@ -288,11 +293,24 @@ export function trialLifecycleEmail(
     recap: { connectors: number; successfulCalls: number; daysLeft: number };
     cloudUrl: string;
     marketingUrl: string;
+    /**
+     * The recipient's address token (common/email-link-token.ts), so the
+     * pricing page knows who buys and refuses a second subscription.
+     */
+    emailToken?: string | null;
   },
   ctx: EmailBrandContext,
 ): RenderedEmail {
   const { stage, recap, cloudUrl } = input;
-  const pricingUrl = `${input.marketingUrl}/pricing?return_url=${encodeURIComponent(`${cloudUrl}/settings/license/activate`)}`;
+  // `source` reaches the checkout's Stripe metadata (checkout_source), so a
+  // purchase from this email can be told apart from the pricing page's own.
+  const pricingUrl = withEmailLinkToken(
+    withSourceParam(
+      `${input.marketingUrl}/pricing?return_url=${encodeURIComponent(`${cloudUrl}/settings/license/activate`)}`,
+      `email_trial_${stage}`,
+    ),
+    input.emailToken,
+  );
   const licenseUrl = `${cloudUrl}/settings/license`;
   const hi = greeting(input.name);
   const days = Math.max(0, Math.round(recap.daysLeft));
@@ -431,11 +449,21 @@ export type WinbackOffer =
 const dayAndMonth = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
 
 export function trialWinbackEmail(
-  input: { name: string; offer: WinbackOffer; cloudUrl: string; marketingUrl: string },
+  input: {
+    name: string;
+    offer: WinbackOffer;
+    cloudUrl: string;
+    marketingUrl: string;
+    /** The recipient's address token for the pricing links (see trialLifecycleEmail). */
+    emailToken?: string | null;
+  },
   ctx: MarketingContext,
 ): RenderedEmail {
   const { offer, cloudUrl, marketingUrl } = input;
   const returnUrl = encodeURIComponent(`${cloudUrl}/settings/license/activate`);
+  // Every pricing link carries `source=email_winback` into the checkout's
+  // Stripe metadata; the promo code already tells the offers apart.
+  const priced = (url: string) => withEmailLinkToken(withSourceParam(url, 'email_winback'), input.emailToken);
   const hi = greeting(input.name);
   const endedOn = dayAndMonth(offer.trialEndedAt);
   const replyLine = 'Not the right time, or something was missing? Reply and tell us; we read every answer.';
@@ -448,7 +476,7 @@ export function trialWinbackEmail(
   if (offer.kind === 'firstMonth') {
     const price = esc(offer.price);
     const regular = esc(offer.regularPrice);
-    const pricingUrl = `${marketingUrl}/pricing?promo=${encodeURIComponent(offer.promoCode)}&return_url=${returnUrl}`;
+    const pricingUrl = priced(`${marketingUrl}/pricing?promo=${encodeURIComponent(offer.promoCode)}&return_url=${returnUrl}`);
     return build({
       subject: `Your first month of AnythingMCP Cloud for ${offer.price}`,
       preheader: `Your workspace is still there. Cloud Starter for ${offer.price} the first month, then ${offer.regularPrice}/month.`,
@@ -475,7 +503,7 @@ export function trialWinbackEmail(
 
   if (offer.kind === 'discount') {
     const percent = Math.round(offer.percentOff);
-    const pricingUrl = `${marketingUrl}/pricing?promo=${encodeURIComponent(offer.promoCode)}&return_url=${returnUrl}`;
+    const pricingUrl = priced(`${marketingUrl}/pricing?promo=${encodeURIComponent(offer.promoCode)}&return_url=${returnUrl}`);
     const ended = offer.stage === 'first' ? `ended on ${endedOn}` : 'ended a month ago';
     return build({
       subject:
@@ -500,7 +528,7 @@ export function trialWinbackEmail(
     });
   }
 
-  const pricingUrl = `${marketingUrl}/pricing?return_url=${returnUrl}`;
+  const pricingUrl = priced(`${marketingUrl}/pricing?return_url=${returnUrl}`);
   const connectorsUrl = `${cloudUrl}/connectors`;
   const mcpUrl = `${cloudUrl}/mcp`;
   return build({
@@ -522,6 +550,68 @@ export function trialWinbackEmail(
       `The assistant installs the connector and gives you a one-time link to sign in to the app.\n\n` +
       `Or pick from 200+ apps: ${connectorsUrl}\nPlans: ${pricingUrl}\n\n` +
       `Not sure it fits what you need? Reply with the app you want to connect and we'll tell you honestly.`,
+    ctx,
+    unsubscribeUrl: ctx.unsubscribeUrl,
+  });
+}
+
+/**
+ * The card-trial offer after a workspace's first successful tool call
+ * (card-trial-offer.service.ts), 30 to 90 minutes after it. Value first:
+ * the connection works, here is what to ask next. Then the trial's end date
+ * and the way to keep it running. No card, charge or price talk.
+ */
+export interface CardTrialOfferEmailInput {
+  name: string;
+  /** The connector's name in the workspace; null when it is gone. */
+  connectorName: string | null;
+  /** Up to three things to ask next, from the connector's tools. */
+  nextSteps: Array<{ name: string; text: string }>;
+  trialEndsAt: Date;
+  /** Where the button leads: /start-trial (card trial) or the plans. */
+  ctaUrl: string;
+  /** True when the card trial can still start; false links to the plans. */
+  cardTrial: boolean;
+}
+
+export function cardTrialOfferEmail(input: CardTrialOfferEmailInput, ctx: MarketingContext): RenderedEmail {
+  const hi = greeting(input.name);
+  const named = input.connectorName?.trim() || null;
+  const app = named ?? 'your app';
+  const endsOn = dayAndMonth(input.trialEndsAt);
+  const replyLine = 'Something did not work the way you expected? Just reply: a person reads every email.';
+  const keep = input.cardTrial
+    ? 'To keep it running after that, start your trial on the plan that fits you. It takes a minute, in the app.'
+    : 'To keep it running after that, choose the plan that fits you. It takes a minute, in the app.';
+  const cta = input.cardTrial ? 'Start your trial' : 'Choose a plan';
+
+  const stepsHtml = input.nextSteps.length
+    ? p('A few things to ask your AI next, in the same chat:') +
+      steps(input.nextSteps.map((s) => ({ title: esc(s.text), detail: esc(s.name) })))
+    : p(`Ask your AI what it can do with ${esc(app)}: it knows every tool the connection offers and picks the right one.`);
+  const stepsText = input.nextSteps.length
+    ? `A few things to ask your AI next, in the same chat:\n${input.nextSteps.map((s, i) => `${i + 1}. ${s.text}`).join('\n')}\n\n`
+    : `Ask your AI what it can do with ${app}: it knows every tool the connection offers and picks the right one.\n\n`;
+
+  return build({
+    subject: named ? `Your ${named} connection works` : 'Your first connection works',
+    preheader: 'Your AI just used it for real. Here is what to try next.',
+    bodyHtml:
+      h1(`Your ${esc(app)} connection works.`, 'Here is what to try next.') +
+      p(
+        `${esc(hi)} your AI just made its first successful call to ${esc(app)} through AnythingMCP. ` +
+          'The setup is done: from now on you ask in plain language and it does the work.',
+      ) +
+      stepsHtml +
+      p(`Your trial ends on <strong style="font-weight:600;">${esc(endsOn)}</strong>. ${keep}`) +
+      button(input.ctaUrl, cta) +
+      small(replyLine),
+    bodyText:
+      `${hi}\n\nYour AI just made its first successful call to ${app} through AnythingMCP. ` +
+      'The setup is done: from now on you ask in plain language and it does the work.\n\n' +
+      stepsText +
+      `Your trial ends on ${endsOn}. ${keep}\n\n${cta}: ${input.ctaUrl}\n\n` +
+      replyLine,
     ctx,
     unsubscribeUrl: ctx.unsubscribeUrl,
   });

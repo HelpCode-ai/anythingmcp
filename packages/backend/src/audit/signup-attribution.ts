@@ -5,11 +5,12 @@
  * `signup_attributed` product event; see docs/operations/signup-attribution.md
  * for the reporting queries.
  *
- * Campaign-level, plus one exception: a Google Ads click id (gclid, gbraid,
- * wbraid), kept only when the touch says the visitor granted ad consent, so
- * a purchase can be reported back to Google Ads as an offline conversion.
- * Without `ad_consent: 'granted'` the id is dropped here, whatever the
- * client sent: never a click id without consent. The client already drops
+ * Campaign-level, plus one exception: an ad click id (Google Ads' gclid,
+ * gbraid, wbraid; ChatGPT Ads' oppref), kept only when the touch says the
+ * visitor granted ad consent, so a sign-up, an activation or a purchase can
+ * be reported back to the ad platform as a conversion. Without
+ * `ad_consent: 'granted'` the id is dropped here, whatever the client sent:
+ * never a click id without consent. The client already drops
  * referrer paths and query strings; this is the server's own pass over an
  * untrusted body, with the same key set: anything else is dropped, strings
  * are capped, and a value that looks like an email address is refused.
@@ -28,17 +29,32 @@ export const TOUCH_STRING_KEYS = [
 export const MAX_TOUCH_FIELD = 100;
 
 /** Google Ads click ids, in the order Google prefers them for an upload. */
-export const CLICK_ID_KEYS = ['gclid', 'gbraid', 'wbraid'] as const;
+export const GOOGLE_CLICK_ID_KEYS = ['gclid', 'gbraid', 'wbraid'] as const;
+export type GoogleClickIdKey = (typeof GOOGLE_CLICK_ID_KEYS)[number];
+/**
+ * Every ad click id a touch may carry: Google's, then `oppref`, the click
+ * reference OpenAI appends to a ChatGPT Ads landing URL.
+ */
+export const CLICK_ID_KEYS = [...GOOGLE_CLICK_ID_KEYS, 'oppref'] as const;
 export type ClickIdKey = (typeof CLICK_ID_KEYS)[number];
 export const MAX_CLICK_ID = 150;
 /** Google's ids are URL-safe base64-ish tokens; anything else is not one. */
 export const CLICK_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+/**
+ * `oppref` is opaque: OpenAI asks for the original string, unmodified, and
+ * documents no format. Printable ASCII without spaces, quotes, angle
+ * brackets, backslash or `@` (never an address), and at most 500 characters,
+ * Stripe's limit for a metadata value, since a purchase carries it there.
+ */
+export const MAX_OPPREF = 500;
+export const OPPREF_PATTERN = /^[A-Za-z0-9!#$%&()*+,./:;=?[\]^_{|}~-]+$/;
 
 export const AD_CONSENT_VALUES = ['granted', 'denied', 'unknown'] as const;
 export type AdConsent = (typeof AD_CONSENT_VALUES)[number];
 
 export type Channel =
   | 'google_ads'
+  | 'chatgpt_ads'
   | 'paid_other'
   | 'ai_assistant'
   | 'github'
@@ -138,6 +154,9 @@ const onAny = (host: string, domains: string[]) => domains.some((d) => onDomain(
 /** google.com, google.de, google.co.uk, … */
 const isGoogleSearch = (host: string) => /(^|\.)google\.[a-z.]{2,6}$/.test(host);
 
+/** utm_source of our ChatGPT Ads URLs; organic ChatGPT links say `chatgpt.com`. */
+export const CHATGPT_ADS_SOURCE = 'chatgpt_ads';
+
 /** The channel one touch belongs to. Paid first, then the named sources, then referrers. */
 export function classifyTouch(t: Omit<StoredTouch, 'channel'>): Channel {
   const source = (t.utm_source ?? '').toLowerCase();
@@ -145,6 +164,9 @@ export function classifyTouch(t: Omit<StoredTouch, 'channel'>): Channel {
   const host = t.referrer_host ?? '';
   const paidMedium = PAID_MEDIUMS.includes(medium);
 
+  // Before the AI-assistant rules: a ChatGPT Ads click comes from chatgpt.com
+  // too, and must not be counted as an organic assistant referral.
+  if (source === CHATGPT_ADS_SOURCE || t.oppref) return 'chatgpt_ads';
   if (t.paid || t.gad_source || (paidMedium && (source === 'google' || source === 'adwords'))) {
     return 'google_ads';
   }
@@ -178,11 +200,13 @@ function cleanString(value: unknown): string | undefined {
   return v;
 }
 
-function cleanClickId(value: unknown): string | undefined {
+/** A click id of the kind `key`, or undefined for anything that is not one. */
+export function cleanClickId(key: ClickIdKey, value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const v = value.trim();
-  if (!v || v.length > MAX_CLICK_ID || !CLICK_ID_PATTERN.test(v)) return undefined;
-  return v;
+  if (!v) return undefined;
+  if (key === 'oppref') return v.length <= MAX_OPPREF && OPPREF_PATTERN.test(v) ? v : undefined;
+  return v.length <= MAX_CLICK_ID && CLICK_ID_PATTERN.test(v) ? v : undefined;
 }
 
 function cleanHost(value: unknown): string | undefined {
@@ -229,10 +253,11 @@ export function sanitizeTouch(input: unknown, now = Date.now()): StoredTouch | u
   // only on a touch that says ad consent was granted.
   if (out.ad_consent === 'granted') {
     for (const key of CLICK_ID_KEYS) {
-      const v = cleanClickId(raw[key]);
+      const v = cleanClickId(key, raw[key]);
       if (v) out[key] = v;
     }
-    if (CLICK_ID_KEYS.some((key) => out[key])) out.paid = true;
+    // `paid` means a Google Ads click (it makes the touch google_ads).
+    if (GOOGLE_CLICK_ID_KEYS.some((key) => out[key])) out.paid = true;
   }
   if (Object.keys(out).length === 0) return undefined;
   return { ...out, channel: classifyTouch(out) };
@@ -263,29 +288,48 @@ export function sanitizeSignupAttribution(
   return out;
 }
 
-/** What a signed-in user may read back about their own sign-up: one click id and its consent. */
+/**
+ * What a signed-in user may read back about their own sign-up: at most one
+ * Google click id, an `oppref`, or both, and the consent they were stored with.
+ */
 export type AttributionClickId = Partial<Record<ClickIdKey, string>> & {
   ad_consent: 'granted';
-  /** When the touch that carried it was recorded, ISO 8601. */
+  /** When the touch that carried the (first returned) id was recorded, ISO 8601. */
   captured_at?: string;
 };
 
 /**
- * The click id to report a purchase against, from stored `signup_attributed`
- * metadata: the most recent touch that carries one (the last touch, else the
- * first), and only one id, the one Google prefers. Stored rows are sanitized
- * again on the way out, so a row written before the consent rule, or edited
- * by hand, still never yields an id without `ad_consent: 'granted'`.
+ * The click ids to report a conversion against, from stored
+ * `signup_attributed` metadata: for Google, the most recent touch that
+ * carries one (the last touch, else the first), and only one id, the one
+ * Google prefers; for ChatGPT Ads, the most recent `oppref` the same way.
+ * Stored rows are sanitized again on the way out, so a row written before
+ * the consent rule, or edited by hand, still never yields an id without
+ * `ad_consent: 'granted'`.
  */
 export function clickIdFromAttribution(metadata: unknown): AttributionClickId | null {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
   const raw = metadata as Record<string, unknown>;
+  let google: { key: GoogleClickIdKey; value: string; ts?: string } | undefined;
+  let oppref: { value: string; ts?: string } | undefined;
   for (const candidate of [raw.last_touch, raw.first_touch]) {
     const touch = sanitizeTouch(candidate);
     if (!touch || touch.ad_consent !== 'granted') continue;
-    const key = CLICK_ID_KEYS.find((k) => touch[k]);
-    if (!key) continue;
-    return { [key]: touch[key], ad_consent: 'granted', ...(touch.ts && { captured_at: touch.ts }) };
+    const key = GOOGLE_CLICK_ID_KEYS.find((k) => touch[k]);
+    if (!google && key) google = { key, value: touch[key]!, ts: touch.ts };
+    if (!oppref && touch.oppref) oppref = { value: touch.oppref, ts: touch.ts };
   }
-  return null;
+  if (!google && !oppref) return null;
+  const ts = google?.ts ?? oppref?.ts;
+  return {
+    ...(google && { [google.key]: google.value }),
+    ...(oppref && { oppref: oppref.value }),
+    ad_consent: 'granted',
+    ...(ts && { captured_at: ts }),
+  };
+}
+
+/** The Google click id of a read-back attribution, or undefined. */
+export function googleClickIdKey(click: Partial<Record<ClickIdKey, string>>): GoogleClickIdKey | undefined {
+  return GOOGLE_CLICK_ID_KEYS.find((k) => click[k]);
 }

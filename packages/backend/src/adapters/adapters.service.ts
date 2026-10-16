@@ -16,7 +16,7 @@ import {
   withoutOperatorProvided,
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
-import { odooDatabaseHint } from './odoo-database-hint';
+import { odooCheckAdvice } from './odoo-database-hint';
 import { outboundRequest } from '../common/outbound-http';
 import { interpolateString } from '../common/env-interpolation.util';
 import { normalizeAddressVariables } from '../common/base-url-variable.util';
@@ -39,6 +39,7 @@ import {
   SetupKind,
 } from './env-var-meta';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
+import { storableBaseUrl } from '../connectors/catalog-env-rebuild.util';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
@@ -296,6 +297,10 @@ export class AdaptersService {
       adapter.connector.baseUrl,
       resolvedBaseUrl,
     );
+    // What the connector stores: a secret in the address (Telegram's bot
+    // token, a Bitrix24 webhook URL) stays `{{VAR}}` and is resolved per call
+    // from the encrypted variables, never written to the base URL in clear.
+    const storedBaseUrl = storableBaseUrl(adapter, credentials);
 
     // Resolve {{VAR}} placeholders in static connector headers (e.g. Harvest
     // requires a per-tenant Harvest-Account-Id header on every call).
@@ -317,6 +322,7 @@ export class AdaptersService {
       resolvedAuthConfig,
       encryptedAuth,
       resolvedBaseUrl,
+      storedBaseUrl,
       resolvedHeaders,
       envVarsToPersist,
     };
@@ -418,6 +424,7 @@ export class AdaptersService {
         call.params,
         call.toolName,
         tool.parameters,
+        { useProxy: tool.useProxy === true },
       );
       const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
       return {
@@ -433,7 +440,7 @@ export class AdaptersService {
           : typeof err?.response?.status === 'number'
             ? err.response.status
             : undefined;
-      const upstream = String(err?.message ?? err ?? 'unknown error').slice(0, 400);
+      const upstream = withResponseExcerpt(String(err?.message ?? err ?? 'unknown error'), err).slice(0, 400);
       const classified = classifyToolExecutionError({
         status,
         authType: adapter.connector.authType,
@@ -444,24 +451,32 @@ export class AdaptersService {
       const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.[classified.kind];
       const hint = typeof own === 'string' ? own : own?.hint ?? classified.hint;
       const message = hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream;
-      // A wrong Odoo database name: look up the right one rather than send
-      // the user looking for a value Odoo shows nowhere.
-      const database = await odooDatabaseHint(
-        adapter.slug,
+      // Odoo: a JSON-2 404 is told apart by asking Odoo its version (older
+      // than 19, a wrong database name, no database at this address), and a
+      // wrong database name is looked up rather than left for the user to
+      // find. When that says what is wrong, the adapter's own suggestion (the
+      // JSON-RPC connector) stands only if the advice repeats it.
+      const odoo = await odooCheckAdvice({
+        adapterSlug: adapter.slug,
+        status,
+        kind: classified.kind,
         message,
-        prepared.resolvedBaseUrl,
-        credentials?.ODOO_DB,
-      );
-      // ...in which case the JSON-RPC adapter is not the better choice either.
-      const suggest =
-        !database && typeof own === 'object' && own?.suggest ? own.suggest : undefined;
+        upstream,
+        baseUrl: prepared.resolvedBaseUrl,
+        enteredDatabase: credentials?.ODOO_DB,
+      });
+      const suggest = odoo
+        ? odoo.suggest
+        : typeof own === 'object' && own?.suggest
+          ? own.suggest
+          : undefined;
       return {
         ok: false,
         kind: classified.kind,
         toolName: call.toolName,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
-        message: database ? `${database} ${message}` : message,
+        message: odoo ? odoo.message : message,
         ...(suggest ? { suggest, suggestName: getAdapter(suggest)?.name ?? suggest } : {}),
       };
     }
@@ -568,6 +583,7 @@ export class AdaptersService {
           params,
           tool.name,
           tool.parameters,
+          { useProxy: tool.useProxy === true },
         );
         const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
         results.push({ tool: tool.name, outcome: 'ok', durationMs: Date.now() - started, shape: describeShape(shaped) });
@@ -626,7 +642,7 @@ export class AdaptersService {
     const {
       resolvedAuthConfig,
       encryptedAuth,
-      resolvedBaseUrl,
+      storedBaseUrl,
       resolvedHeaders,
       envVarsToPersist,
     } = this.prepareConnector(adapter, credentials);
@@ -637,7 +653,7 @@ export class AdaptersService {
         organizationId,
         name: adapter.connector.name,
         type: adapter.connector.type as any,
-        baseUrl: resolvedBaseUrl,
+        baseUrl: storedBaseUrl,
         isActive: true,
         authType: (adapter.connector.authType as any) || 'NONE',
         authConfig: encryptedAuth,
@@ -662,7 +678,7 @@ export class AdaptersService {
           // catalog moves, this is the only way to tell "we fixed a wrong
           // hostname" from "the operator deliberately pointed this at their
           // own region or sandbox" — the two look identical without it.
-          baseUrlBaseline: resolvedBaseUrl,
+          baseUrlBaseline: storedBaseUrl,
         },
       },
     });
@@ -831,6 +847,7 @@ export class AdaptersService {
         call.params,
         call.toolName,
         tool.parameters,
+        { useProxy: tool.useProxy === true },
       );
       const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
       return {
@@ -853,14 +870,21 @@ export class AdaptersService {
         message: upstream,
       });
       const message = hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream;
-      const database = await odooDatabaseHint(adapter.slug, message, baseUrl, envVars.ODOO_DB);
+      const odoo = await odooCheckAdvice({
+        adapterSlug: adapter.slug,
+        status,
+        message,
+        upstream,
+        baseUrl,
+        enteredDatabase: envVars.ODOO_DB,
+      });
       return {
         ok: false,
         toolName: call.toolName,
         durationMs: Date.now() - started,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
-        message: database ? `${database} ${message}` : message,
+        message: odoo ? odoo.message : message,
       };
     }
   }
@@ -1033,6 +1057,26 @@ function describeShape(value: unknown): string {
 }
 
 /** A short, printable slice of the probe's response for the install form. */
+/**
+ * The setup check's error with the start of the provider's answer appended,
+ * when the message does not carry it already. A bare "Request failed with
+ * status code 500" told one ShipStation user on 10 Oct 2026 nothing; the body
+ * holds the provider's own reason and the request id its support asks for.
+ */
+function withResponseExcerpt(message: string, err: any, max = 200): string {
+  const data = err?.response?.data;
+  if (data === undefined || data === null || message.includes('body=')) return message;
+  let body: string;
+  try {
+    body = typeof data === 'string' ? data : JSON.stringify(data);
+  } catch {
+    return message;
+  }
+  body = body.replace(/\s+/g, ' ').trim();
+  if (!body || body === '{}' || body === '""' || message.includes(body)) return message;
+  return `${message.replace(/[.\s]+$/, '')}: ${body.length > max ? `${body.slice(0, max)}…` : body}`;
+}
+
 function truncateSample(value: unknown, max = 600): string {
   let text: string;
   try {

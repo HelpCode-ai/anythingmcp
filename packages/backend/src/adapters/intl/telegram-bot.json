@@ -1,8 +1,9 @@
 {
   "slug": "telegram-bot",
   "name": "Telegram Bot",
-  "description": "Send Telegram messages, photos, documents, audio, location and polls from any AI agent via the Telegram Bot API. 14 tools, bot-token auth. Outbound + lightweight read of recent updates (no long-polling).",
-  "instructions": "This connector uses the official Telegram Bot API (https://core.telegram.org/bots/api).\n\n**Setup**:\n1. In Telegram, open chat with **@BotFather** → `/newbot` → pick a display name and a username ending in `bot`.\n2. BotFather replies with an HTTP API token like `123456789:ABCDEFghijklmnopqrstuvwxyz`. **Treat as a secret** — anyone with it can send as your bot.\n3. Set `TELEGRAM_BOT_TOKEN` to the full token.\n\n**Authentication model** (Telegram-specific): the bot token goes in the URL path, NOT in a header. The base URL is `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` and every endpoint is appended as `/methodName`. The adapter substitutes the token via the `{{TELEGRAM_BOT_TOKEN}}` env-var template in `baseUrl`.\n\n**chat_id model**: every Telegram chat (user, group, channel) has a numeric `chat_id`. For groups and channels the bot must be ADDED first; for users, the user must have sent a `/start` to the bot at least once (Telegram's privacy rule). Once you have a chat_id (extract it from `getUpdates`), pin it.\n\n**Channels**: for **public channels** you can also pass `@channelusername` (with the `@`) instead of a numeric chat_id. Private channels REQUIRE the numeric ID, which always starts with `-100`.\n\n**Markdown vs HTML**: messages support 3 parse modes — `MarkdownV2` (current, escape special chars), `HTML` (`<b>`, `<i>`, `<a href>`), or no formatting. Telegram's `MarkdownV2` requires escaping `_ * [ ] ( ) ~ ` > # + - = | { } . !` — agents that don't escape will get 400 'can't parse entities'. The HTML mode is easier for agents to compose safely.\n\n**File send model**: media tools (sendPhoto, sendDocument, sendAudio, etc.) accept the media as:\n  - **HTTPS URL** (recommended on AnythingMCP): Telegram fetches it server-side. URL must be ≤ 5MB for photos, ≤ 20MB for documents via URL.\n  - **file_id**: a string returned from a previous send (caching — reuse the same file_id to re-send the same content without re-uploading).\n  - **multipart binary**: NOT supported by this connector in a single tool call. Pre-upload elsewhere and pass the resulting URL or file_id.\n\n**getUpdates vs webhooks**: this connector exposes `telegram_get_updates` (long-polling pull) for one-shot reading of recent inbound messages. For continuous inbound stream (chatbot), use Telegram's webhook (setWebhook) and host the receiver yourself — outside the MCP request/response model.\n\n**Rate limits**: 30 messages/sec to different chats, 1 msg/sec to the same chat, 20 messages/minute to the same group. On 429, honor the `retry_after` in the response.\n\n**Out of scope**: payments, inline mode, callback query answers (these usually require a long-running webhook), passport, game scores, sticker management.",
+  "aliases": ["BotFather"],
+  "description": "Send Telegram messages, photos, albums, documents, audio, video, animations, stickers, contacts, venues, locations and polls from any AI agent via the Telegram Bot API. 18 tools, bot-token auth. Outbound plus a lightweight read of recent updates (no long-polling).",
+  "instructions": "This connector uses the official Telegram Bot API (https://core.telegram.org/bots/api).\n\n**Setup**:\n1. In Telegram, open chat with **@BotFather** → `/newbot` → pick a display name and a username ending in `bot`.\n2. BotFather replies with an HTTP API token like `123456789:ABCDEFghijklmnopqrstuvwxyz`. **Treat as a secret**: anyone with it can send as your bot.\n3. Set `TELEGRAM_BOT_TOKEN` to the full token.\n\n**Authentication model** (Telegram-specific): the bot token goes in the URL path, NOT in a header. The base URL is `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` and every endpoint is appended as `/methodName`. The adapter substitutes the token via the `{{TELEGRAM_BOT_TOKEN}}` env-var template in `baseUrl`.\n\n**chat_id model**: every Telegram chat (user, group, channel) has a numeric `chat_id`. For groups and channels the bot must be ADDED first; for users, the user must have sent a `/start` to the bot at least once (Telegram's privacy rule). Once you have a chat_id (extract it from `getUpdates`), pin it.\n\n**Channels**: for **public channels** you can also pass `@channelusername` (with the `@`) instead of a numeric chat_id. Private channels REQUIRE the numeric ID, which always starts with `-100`.\n\n**Markdown vs HTML**: messages support 3 parse modes: `MarkdownV2` (current, escape special chars), `HTML` (`<b>`, `<i>`, `<a href>`), or no formatting. Telegram's `MarkdownV2` requires escaping `_ * [ ] ( ) ~ ` > # + - = | { } . !`; agents that don't escape will get 400 'can't parse entities'. The HTML mode is easier for agents to compose safely.\n\n**File send model**: media tools (sendPhoto, sendDocument, sendAudio, etc.) accept the media as:\n  - **HTTPS URL** (recommended on AnythingMCP): Telegram fetches it server-side. URL must be ≤ 5MB for photos, ≤ 20MB for documents via URL.\n  - **file_id**: a string returned from a previous send (caching: reuse the same file_id to re-send the same content without re-uploading).\n  - **multipart binary**: NOT supported by this connector in a single tool call. Pre-upload elsewhere and pass the resulting URL or file_id.\n\n**Albums**: `telegram_bot_send_album` sends 2 to 10 photos and videos as one grouped message (or 2 to 10 documents, or 2 to 10 audio files). Put the caption on the first item. If Telegram answers `failed to send message #N with the error message WEBPAGE_CURL_FAILED`, it could not download item N: the URL must be public and point straight at the file, not at a web page.\n\n**getUpdates vs webhooks**: this connector exposes `telegram_get_updates` (long-polling pull) for one-shot reading of recent inbound messages. For continuous inbound stream (chatbot), use Telegram's webhook (setWebhook) and host the receiver yourself, outside the MCP request/response model.\n\n**Rate limits**: 30 messages/sec to different chats, 1 msg/sec to the same chat, 20 messages/minute to the same group. On 429, honor the `retry_after` in the response.\n\n**Out of scope**: payments, inline mode, callback query answers (these usually require a long-running webhook), passport, game scores, sticker management.",
   "region": "intl",
   "category": "messaging",
   "icon": "telegram",
@@ -353,6 +354,148 @@
           "limit": "$limit",
           "timeout": "$timeout",
           "allowed_updates": "$allowed_updates"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_album",
+      "description": "Send 2 to 10 photos or videos as one album (sendMediaGroup), or 2 to 10 documents, or 2 to 10 audio files; documents and audio cannot be mixed with other types. Each item is a public HTTPS URL or a file_id. The caption goes on the first item and shows under the album. Returns the sent messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {"type": "string", "description": "Chat ID or @channelusername."},
+          "media": {"type": "array", "minItems": 2, "maxItems": 10, "description": "Album items, e.g. [{\"type\": \"photo\", \"media\": \"https://example.com/1.jpg\", \"caption\": \"<b>New in</b>\", \"parse_mode\": \"HTML\"}, {\"type\": \"photo\", \"media\": \"https://example.com/2.jpg\"}]. type is photo, video, document or audio; media is an HTTPS URL or file_id.", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": ["photo", "video", "document", "audio"], "description": "Kind of item."}, "media": {"type": "string", "description": "HTTPS URL (photos up to 5 MB, other files up to 20 MB) or file_id."}, "caption": {"type": "string", "description": "Caption, at most 1024 characters."}, "parse_mode": {"type": "string", "description": "HTML or MarkdownV2 for the caption."}, "has_spoiler": {"type": "boolean", "description": "Hide a photo or video behind a spoiler."}}, "required": ["type", "media"]}},
+          "disable_notification": {"type": "boolean", "description": "Silent send."},
+          "protect_content": {"type": "boolean", "description": "If true, the message cannot be forwarded or saved."},
+          "message_thread_id": {"type": "integer", "description": "Forum topic (message_thread_id) to post in, for forum supergroups."},
+          "reply_parameters": {"type": "object", "description": "Reply target, e.g. {\"message_id\": 42}."},
+          "business_connection_id": {"type": "string", "description": "Business connection id, to send on behalf of a connected business account."}
+        },
+        "required": ["chat_id", "media"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendMediaGroup",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "media": "$media",
+          "disable_notification": "$disable_notification",
+          "protect_content": "$protect_content",
+          "message_thread_id": "$message_thread_id",
+          "reply_parameters": "$reply_parameters",
+          "business_connection_id": "$business_connection_id"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_animation",
+      "description": "Send a GIF or a silent MP4 animation by HTTPS URL or file_id; Telegram plays it on a loop. Optional caption supports parse_mode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {"type": "string", "description": "Chat ID or @channelusername."},
+          "animation": {"type": "string", "description": "HTTPS URL of a GIF or MP4 (up to 20 MB) or a file_id."},
+          "caption": {"type": "string", "description": "Caption, at most 1024 characters."},
+          "parse_mode": {"type": "string", "description": "MarkdownV2, HTML, or omit."},
+          "has_spoiler": {"type": "boolean", "description": "Hide it behind a spoiler."},
+          "disable_notification": {"type": "boolean", "description": "Silent send."},
+          "reply_parameters": {"type": "object", "description": "Reply target, e.g. {\"message_id\": 42}."}
+        },
+        "required": ["chat_id", "animation"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendAnimation",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "animation": "$animation",
+          "caption": "$caption",
+          "parse_mode": "$parse_mode",
+          "has_spoiler": "$has_spoiler",
+          "disable_notification": "$disable_notification",
+          "reply_parameters": "$reply_parameters"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_sticker",
+      "description": "Send a sticker by file_id (any sticker the bot has seen, e.g. from telegram_bot_get_updates) or by HTTPS URL of a .WEBP image.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {"type": "string", "description": "Chat ID or @channelusername."},
+          "sticker": {"type": "string", "description": "Sticker file_id, or HTTPS URL of a .WEBP file."},
+          "disable_notification": {"type": "boolean", "description": "Silent send."},
+          "reply_parameters": {"type": "object", "description": "Reply target, e.g. {\"message_id\": 42}."}
+        },
+        "required": ["chat_id", "sticker"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendSticker",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "sticker": "$sticker",
+          "disable_notification": "$disable_notification",
+          "reply_parameters": "$reply_parameters"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_contact",
+      "description": "Send a phone contact card that the recipient can save or call. Needs a phone number and a first name; an optional vCard adds more fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {"type": "string", "description": "Chat ID or @channelusername."},
+          "phone_number": {"type": "string", "description": "Phone number, ideally in international format, e.g. +4915112345678."},
+          "first_name": {"type": "string", "description": "Contact's first name."},
+          "last_name": {"type": "string", "description": "Contact's last name."},
+          "vcard": {"type": "string", "description": "Extra data as a vCard, up to 2048 bytes."},
+          "disable_notification": {"type": "boolean", "description": "Silent send."}
+        },
+        "required": ["chat_id", "phone_number", "first_name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendContact",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "phone_number": "$phone_number",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "vcard": "$vcard",
+          "disable_notification": "$disable_notification"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_venue",
+      "description": "Send a venue: a map pin with a name and address, e.g. a shop or meeting point. For a bare location or live location use telegram_bot_send_location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {"type": "string", "description": "Chat ID or @channelusername."},
+          "latitude": {"type": "number", "description": "Latitude in decimal degrees."},
+          "longitude": {"type": "number", "description": "Longitude in decimal degrees."},
+          "title": {"type": "string", "description": "Name of the venue."},
+          "address": {"type": "string", "description": "Address of the venue."},
+          "google_place_id": {"type": "string", "description": "Optional Google Places id."},
+          "disable_notification": {"type": "boolean", "description": "Silent send."}
+        },
+        "required": ["chat_id", "latitude", "longitude", "title", "address"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendVenue",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "title": "$title",
+          "address": "$address",
+          "google_place_id": "$google_place_id",
+          "disable_notification": "$disable_notification"
         }
       }
     }

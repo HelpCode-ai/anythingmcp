@@ -95,6 +95,50 @@ export function parseLicenseBilling(raw: unknown): LicenseBilling | null {
   };
 }
 
+/**
+ * A paid licence that stopped because a payment was declined while Stripe
+ * still holds the subscription (past_due, unpaid). Fixed by updating the card,
+ * not by buying again: a new checkout would bill a second subscription beside
+ * the one Stripe keeps retrying.
+ */
+export function isPaymentFailedBilling(billing: LicenseBilling | null | undefined): boolean {
+  return !!billing && !billing.cancelling && (billing.status === 'past_due' || billing.status === 'unpaid');
+}
+
+/** Stripe subscription states in which Stripe may still collect a payment. */
+const LIVE_SUBSCRIPTION_STATUSES = ['past_due', 'unpaid', 'trialing', 'active'] as const;
+
+/**
+ * A workspace licence that means the workspace pays, or is about to: a paid
+ * licence that is active (a card trial included: it is a 'starter' or 'team'
+ * licence while Stripe says trialing), or one stopped on a declined card
+ * while Stripe still retries its subscription (isPaymentFailedBilling, the
+ * same rule as the app's "Update card" wall).
+ *
+ * The billing of any other stopped licence is a snapshot taken before it
+ * stopped (until 15 Oct 2026 the site sent none for invalid licences), so a
+ * revoked licence whose snapshot still says trialing does not count.
+ */
+export function isLivePaidLicence(
+  licence: { plan: string; status: string; expiresAt: Date | null; billing?: unknown },
+  now: Date = new Date(),
+): boolean {
+  if (licence.plan === 'trial') return false;
+  if (licence.status === 'active') return !licence.expiresAt || licence.expiresAt.getTime() > now.getTime();
+  return isPaymentFailedBilling(parseLicenseBilling(licence.billing));
+}
+
+/** Answer of LicenseService.workspacesWithPaidPlan. */
+export interface PaidPlanCheck {
+  /** Workspaces that pay or are about to (see workspacesWithPaidPlan). */
+  paid: Set<string>;
+  /** Workspaces the licence site could not answer for: decide nothing yet. */
+  unknown: Set<string>;
+}
+
+/** Billing-portal flows the app can open directly. */
+export type BillingPortalFlow = 'cancel' | 'payment_method_update';
+
 export interface RemoteVerifyResponse {
   valid: boolean;
   plan?: string;
@@ -105,7 +149,11 @@ export interface RemoteVerifyResponse {
   paymentIssue?: boolean;
   /** End of the payment grace period (also returned as expiresAt). */
   graceUntil?: string;
-  /** The subscription's state (Cloud, service token, paid licences only). */
+  /**
+   * The subscription's state (Cloud, service token, licences with a
+   * subscription). Also sent for an invalid licence, so a declined card can be
+   * told apart from a cancelled subscription.
+   */
   billing?: unknown;
 }
 
@@ -160,14 +208,25 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
    * user can manage payment method, invoices, or cancel their subscription.
    * We hold only the license key locally; the licensing site (which owns the
    * Stripe customer/subscription mapping) mints the actual portal URL.
+   *
+   * A workspace whose paid licence stopped on a declined card has no active
+   * paid licence, only the subscription Stripe keeps retrying: the portal
+   * opens for that one, so the card can be updated.
    */
   async createBillingPortalSession(
     organizationId: string,
     returnUrl?: string,
-    /** 'cancel' opens Stripe's cancellation page directly. */
-    flow?: 'cancel',
+    /**
+     * 'cancel' opens Stripe's cancellation page directly;
+     * 'payment_method_update' the page to add a card.
+     */
+    flow?: BillingPortalFlow,
   ): Promise<{ url: string }> {
-    const license = await this.getCurrentLicense(organizationId);
+    const current = await this.getCurrentLicense(organizationId);
+    const license =
+      current && current.plan !== 'trial'
+        ? current
+        : ((await this.getPaymentFailedLicense(organizationId)) ?? current);
     if (!license?.licenseKey) {
       throw new Error('No active license for this organization.');
     }
@@ -206,7 +265,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
    * is harmless (it simply expires unused). Every failure comes out as a
    * CheckoutUnavailableError; the upstream detail stays in our log.
    */
-  async createCheckoutIntent(payload: CheckoutIntentPayload): Promise<{ url: string }> {
+  async createCheckoutIntent(payload: CheckoutIntentPayload): Promise<{ url: string; trial: boolean }> {
     const headers = this.serviceHeaders();
     if (!headers['x-amcp-service-token']) {
       this.logger.error('Checkout link requested but LICENSE_SERVICE_TOKEN is not set.');
@@ -224,7 +283,9 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         if (!/^https?:\/\//i.test(url)) {
           throw new CheckoutUnavailableError('Checkout intent answered without a URL');
         }
-        return { url };
+        // The site says whether it granted the card trial: an address that had
+        // a subscription before is charged today even when a trial was asked.
+        return { url, trial: !!payload.trialEnd && data?.trial === true };
       } catch (err: any) {
         lastErr = err;
         if (
@@ -481,22 +542,46 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
 
     const due = await this.prisma.license.findMany({
       where: {
-        status: 'active',
         plan: { not: 'trial' },
-        OR: [
-          { lastVerifiedAt: null },
-          { lastVerifiedAt: { lt: new Date(Date.now() - 20 * 60 * 60 * 1000) } },
+        AND: [
+          {
+            OR: [
+              { status: 'active' },
+              // Stopped while its subscription was still live (a declined
+              // card): Stripe keeps retrying, and the licence comes back when
+              // a retry goes through. Checked until the site reports the
+              // subscription ended. Snapshots taken before the site reported
+              // billing for invalid licences still say trialing or active.
+              ...LIVE_SUBSCRIPTION_STATUSES.map((status) => ({
+                status: { in: ['revoked', 'expired'] },
+                billing: { path: ['status'], equals: status },
+              })),
+            ],
+          },
+          {
+            OR: [
+              { lastVerifiedAt: null },
+              { lastVerifiedAt: { lt: new Date(Date.now() - 20 * 60 * 60 * 1000) } },
+            ],
+          },
         ],
       },
-      select: { licenseKey: true, organizationId: true },
+      select: { licenseKey: true, organizationId: true, status: true },
       orderBy: { lastVerifiedAt: { sort: 'asc', nulls: 'first' } },
       take: limit,
     });
 
-    for (const { licenseKey, organizationId } of due) {
+    for (const { licenseKey, organizationId, status } of due) {
       out.checked++;
       const result = await this.verifyLicense(licenseKey);
-      if (result.valid) {
+      if (status !== 'active') {
+        // A payment-failed licence: still blocked, or back after a retry.
+        if (result.valid) {
+          this.logger.log(`Licence ${licenseKey.slice(0, 9)}… (org ${organizationId}) is active again.`);
+        } else if (result.error === 'Verification service unreachable') {
+          out.unreachable++;
+        }
+      } else if (result.valid) {
         if (result.paymentIssue) {
           out.inGrace++;
           this.logger.warn(
@@ -612,6 +697,11 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
           : data.error?.includes('expired')
             ? 'expired'
             : 'invalid';
+        // Whether the subscription behind it is still being retried (a
+        // declined card) or has ended. Without an answer the last snapshot
+        // stays, as before.
+        const billing = parseLicenseBilling(data.billing);
+        if (billing) updateData.billing = billing;
       }
 
       await this.prisma.license
@@ -819,6 +909,56 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     return out;
   }
 
+  /**
+   * Which of these workspaces already pay, or are about to, so that nothing
+   * invites them to buy again. Cloud's free-trial emails ("your trial ends
+   * tomorrow", "your trial has ended", the win-back) link to the pricing
+   * page: on 14 Oct 2026 three admins holding a Cloud Starter card trial
+   * bought Cloud Starter a second time within 15 to 100 minutes of one.
+   *
+   * A workspace counts as paying when
+   *   - it holds a live paid licence (isLivePaidLicence): a paid plan, a card
+   *     trial, or a declined card Stripe is still retrying; or
+   *   - one of its admins' addresses has held an AnythingMCP subscription, per
+   *     the licence site (subscriptionHistory). That catches a card trial or a
+   *     purchase that never reached this server: its licence was not activated
+   *     here, or was activated in another workspace. The site answers "has
+   *     had", not "has": an admin whose card trial was cancelled counts too.
+   *
+   * The licence site is asked only about workspaces the local licences do not
+   * settle, in one batched lookup. When it cannot answer, those workspaces are
+   * returned as unknown and the caller sends nothing to them yet.
+   */
+  async workspacesWithPaidPlan(
+    workspaces: Array<{ organizationId: string; adminEmails: string[] }>,
+    now: Date = new Date(),
+  ): Promise<PaidPlanCheck> {
+    const out: PaidPlanCheck = { paid: new Set(), unknown: new Set() };
+    const ids = [...new Set(workspaces.map((w) => w.organizationId))];
+    if (ids.length === 0) return out;
+
+    const licences = await this.prisma.license.findMany({
+      where: { organizationId: { in: ids }, plan: { not: 'trial' } },
+      select: { organizationId: true, plan: true, status: true, expiresAt: true, billing: true },
+    });
+    for (const l of licences) {
+      if (l.organizationId && isLivePaidLicence(l, now)) out.paid.add(l.organizationId);
+    }
+
+    const rest = workspaces.filter((w) => !out.paid.has(w.organizationId));
+    const emails = rest.flatMap((w) => w.adminEmails);
+    if (emails.length === 0) return out;
+    const history = await this.subscriptionHistory(emails).catch(() => null);
+    for (const w of rest) {
+      if (!history) {
+        if (w.adminEmails.length > 0) out.unknown.add(w.organizationId);
+        continue;
+      }
+      if (w.adminEmails.some((e) => history.get(e.trim().toLowerCase()) === true)) out.paid.add(w.organizationId);
+    }
+    return out;
+  }
+
   // ── Get Current License ────────────────────────────────────────────────────
 
   /**
@@ -835,6 +975,22 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       select: { plan: true, status: true, expiresAt: true },
     });
     return license ?? null;
+  }
+
+  /**
+   * The workspace's paid licence that stopped on a declined payment while its
+   * subscription is still being retried (see isPaymentFailedBilling), unless a
+   * paid licence is active. Null otherwise. Cloud only.
+   */
+  async getPaymentFailedLicense(organizationId: string): Promise<LicenseInfo | null> {
+    if (!this.deployment.isCloud()) return null;
+    const latest = await this.prisma.license.findFirst({
+      where: { organizationId, plan: { not: 'trial' } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!latest || latest.status === 'active') return null;
+    const info = this.toLicenseInfo(latest);
+    return isPaymentFailedBilling(info.billing) ? info : null;
   }
 
   async getCurrentLicense(organizationId?: string): Promise<LicenseInfo | null> {
@@ -938,11 +1094,14 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       // Bounded: drop the oldest half rather than grow forever.
       for (const k of [...this.lastRefresh.keys()].slice(0, 2500)) this.lastRefresh.delete(k);
     }
-    const license = await this.prisma.license.findFirst({
-      where: { organizationId, status: 'active', plan: { not: 'trial' } },
-      orderBy: { createdAt: 'desc' },
-      select: { licenseKey: true },
-    });
+    // The active paid licence, or one stopped on a declined card: after the
+    // card is updated, this is what lifts the wall.
+    const license =
+      (await this.prisma.license.findFirst({
+        where: { organizationId, status: 'active', plan: { not: 'trial' } },
+        orderBy: { createdAt: 'desc' },
+        select: { licenseKey: true },
+      })) ?? (await this.getPaymentFailedLicense(organizationId));
     if (!license) return false;
     await this.verifyLicense(license.licenseKey);
     return true;

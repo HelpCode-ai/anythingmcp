@@ -1,0 +1,1755 @@
+{
+  "slug": "bitbucket",
+  "name": "Bitbucket",
+  "aliases": [
+    "Bitbucket Cloud",
+    "Bitbucket Pipelines"
+  ],
+  "description": "Let your AI work in Bitbucket Cloud: browse repositories, branches, commits and files, review pull requests with diffs and comments, approve, comment and merge after you confirm, and check Bitbucket Pipelines runs, step logs and deployments.",
+  "instructions": "## Bitbucket Cloud\nThis connector works with Bitbucket Cloud through the **REST API 2.0** (`https://api.bitbucket.org/2.0`): workspaces, repositories, branches, commits and files, pull requests with diffs, comments, approvals and merges, Bitbucket Pipelines runs, steps and logs, and deployment environments. It acts as the user (or access token) behind the token: the AI sees and changes exactly what that token can.\n\n**Setup (about 3 minutes)**\n1. Open https://id.atlassian.com/manage-profile/security/api-tokens and click **Create API token with scopes**. Name it (for example AnythingMCP), pick an expiry and choose the app **Bitbucket**.\n2. Tick the scopes: `read:user:bitbucket`, `read:workspace:bitbucket`, `read:repository:bitbucket`, `read:pullrequest:bitbucket` and `read:pipeline:bitbucket`. To create pull requests, comment, approve and merge add `write:pullrequest:bitbucket`; to start pipelines add `write:pipeline:bitbucket`.\n3. Copy the token (it starts with ATATT) and paste it into `BITBUCKET_API_TOKEN`. It is sent as `Authorization: Bearer <token>`, so your Atlassian email is not needed.\n4. Check the setup with `bitbucket_get_current_user`, then `bitbucket_list_workspaces`.\n\n**App passwords no longer work.** Bitbucket stopped creating app passwords on 9 September 2025 and switched off the remaining ones on 28 July 2026. Use an API token with scopes as above. A **repository, project or workspace access token** (Repository settings > Access tokens; project and workspace tokens need a Premium plan) also works in the same field: it acts as a bot limited to that repository, project or workspace, so `bitbucket_get_current_user` and `bitbucket_list_workspaces` may be refused and tools outside its scope answer 403 or 404.\n\n**How to work**\n1. `bitbucket_list_workspaces` gives the workspace slug, `bitbucket_list_repositories` the repo slug (both are in the URL bitbucket.org/<workspace>/<repo>).\n2. Code: `bitbucket_get_repository` (main branch), `bitbucket_list_branches`, `bitbucket_list_commits`, `bitbucket_get_commit`, `bitbucket_get_file` (a file's text or a folder listing).\n3. Reviews: `bitbucket_list_pull_requests`, `bitbucket_get_pull_request`, `bitbucket_get_pull_request_diffstat`, `bitbucket_get_pull_request_diff`, `bitbucket_list_pull_request_commits`, `bitbucket_list_pull_request_comments`.\n4. Pipelines: `bitbucket_list_pipelines` then `bitbucket_get_pipeline`, `bitbucket_list_pipeline_steps` and `bitbucket_get_pipeline_step_log` for the failing step. Pipeline and step uuids include curly braces; pass them as returned.\n5. Deployments: `bitbucket_list_environments` and `bitbucket_list_deployments`.\n\n**Writes always need the user's confirmation**: `bitbucket_create_pull_request`, `bitbucket_add_pull_request_comment`, `bitbucket_approve_pull_request`, `bitbucket_merge_pull_request` (changes the destination branch for everyone and can start deployments) and `bitbucket_run_pipeline` (uses build minutes and runs deploy steps). Describe what will happen first and call only after the user agrees. Nothing here deletes branches, repositories or comments, except that a merge with close_source_branch removes the source branch.\n\n**Pagination**: list answers carry `next` when there is another page. Call again with `page` set to the page value in that link (a number for most lists, an opaque token for commit lists). `pagelen` sets the page size.\n\n**Filtering**: `q` takes Bitbucket's query language, for example `name ~ \"api\"`, `state = \"OPEN\"` or `destination.branch.name = \"main\"`; `sort` takes a field, with a minus for descending.\n\n**Issues and wikis**: Bitbucket removed its built-in issue tracker and wiki on 20 August 2026 (the API answers 410). Use a Jira connector for issues.\n\n**Errors**: 401 means the token is wrong, expired or revoked (or an old app password). 403 means a scope is missing (the message names it) or the user lacks permission. 404 means the workspace, repository or item does not exist or the token cannot see it. 429 means the hourly rate limit is reached; wait and retry.\n\n**Out of scope here**: creating or deleting repositories and branches, editing files or pushing commits, declining pull requests, stopping pipelines, repository variables and settings, and administration.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "bitbucket",
+  "docsUrl": "https://developer.atlassian.com/cloud/bitbucket/rest/intro/",
+  "prerequisites": "A Bitbucket Cloud account with access to the repositories, and an Atlassian API token with Bitbucket scopes (read scopes, plus write scopes for pull requests and pipelines). About 3 minutes.",
+  "requiredEnvVars": [
+    "BITBUCKET_API_TOKEN"
+  ],
+  "appRegistrationUrl": "https://id.atlassian.com/manage-profile/security/api-tokens",
+  "envVarMeta": {
+    "BITBUCKET_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "id.atlassian.com, Security, API tokens, Create API token with scopes, app Bitbucket. A repository, project or workspace access token also works. Paste only the token, without Bearer.",
+      "link": "https://id.atlassian.com/manage-profile/security/api-tokens",
+      "example": "ATATT3xFfGF0...",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token (an API token usually starts with ATATT), without spaces or the word Bearer. App passwords no longer work."
+    }
+  },
+  "verifyHints": {
+    "401": "Bitbucket refused the token: it is wrong, expired or revoked, or it is an app password, which Bitbucket switched off in 2026. Create an API token with scopes at id.atlassian.com.",
+    "403": "The token works but lacks a scope for this call (the message names it, e.g. read:user:bitbucket), or it is an access token limited to one repository.",
+    "rate_limited": "Bitbucket's hourly API limit for this account is reached. Wait and verify again."
+  },
+  "probe": {
+    "tool": "bitbucket_get_current_user"
+  },
+  "connector": {
+    "name": "Bitbucket Cloud REST API 2.0",
+    "type": "REST",
+    "baseUrl": "https://api.bitbucket.org/2.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{BITBUCKET_API_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/user"
+  },
+  "tools": [
+    {
+      "name": "bitbucket_get_current_user",
+      "description": "Get the Bitbucket account the token belongs to: display name, nickname, uuid, account_id and profile link. A quick check that the token works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "uuid": "$.uuid",
+            "account_id": "$.account_id",
+            "display_name": "$.display_name",
+            "nickname": "$.nickname",
+            "account_status": "$.account_status",
+            "created_on": "$.created_on",
+            "html_url": "$.links.html.href"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_list_workspaces",
+      "description": "List the workspaces the token's user belongs to: slug, name, uuid and whether the user is an administrator there. The slug is what every other tool calls workspace. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administrator": {
+            "type": "boolean",
+            "description": "Only workspaces where the user is an administrator."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, e.g. workspace.slug or -workspace.updated_on."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has next, call again with the page number shown in that link.",
+            "minimum": 1
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 50, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/workspaces",
+        "queryParams": {
+          "administrator": "$administrator",
+          "sort": "$sort",
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "workspaces": {
+              "$from": "$.values[*]",
+              "$select": {
+                "slug": "workspace.slug",
+                "name": "workspace.name",
+                "uuid": "workspace.uuid",
+                "administrator": "administrator"
+              }
+            },
+            "next": "$.next",
+            "page": "$.page",
+            "size": "$.size"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_list_repositories",
+      "description": "List repositories in a workspace, most recently updated first: full_name, slug, description, private flag, language, main branch, project key and web link. Narrow with role or a query such as name ~ \"api\". Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "role": {
+            "type": "string",
+            "description": "Only repositories where the user has this role.",
+            "enum": [
+              "member",
+              "contributor",
+              "admin",
+              "owner"
+            ]
+          },
+          "q": {
+            "type": "string",
+            "description": "Bitbucket query filter, e.g. name ~ \"api\" or project.key = \"WEB\"."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; default -updated_on (newest first).",
+            "default": "-updated_on"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has next, call again with the page number shown in that link.",
+            "minimum": 1
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 25, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        },
+        "required": [
+          "workspace"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}",
+        "encodePathParams": true,
+        "queryParams": {
+          "role": "$role",
+          "q": "$q",
+          "sort": "$sort",
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "repositories": {
+              "$from": "$.values[*]",
+              "$select": {
+                "full_name": "full_name",
+                "slug": "slug",
+                "name": "name",
+                "description": "description",
+                "is_private": "is_private",
+                "language": "language",
+                "main_branch": "mainbranch.name",
+                "project": "project.key",
+                "updated_on": "updated_on",
+                "size": "size",
+                "html_url": "links.html.href"
+              }
+            },
+            "next": "$.next",
+            "page": "$.page",
+            "size": "$.size"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_get_repository",
+      "description": "Get one repository: description, main branch, project, privacy, language, size, fork parent, clone URLs and web link. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "full_name": "$.full_name",
+            "slug": "$.slug",
+            "name": "$.name",
+            "uuid": "$.uuid",
+            "description": "$.description",
+            "is_private": "$.is_private",
+            "language": "$.language",
+            "main_branch": "$.mainbranch.name",
+            "project": {
+              "key": "$.project.key",
+              "name": "$.project.name"
+            },
+            "workspace": "$.workspace.slug",
+            "size": "$.size",
+            "fork_policy": "$.fork_policy",
+            "parent": "$.parent.full_name",
+            "created_on": "$.created_on",
+            "updated_on": "$.updated_on",
+            "clone": "$.links.clone",
+            "html_url": "$.links.html.href"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_list_branches",
+      "description": "List branches of a repository with the latest commit of each (hash, date, message, author). Filter with q, e.g. name ~ \"release\". Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "q": {
+            "type": "string",
+            "description": "Bitbucket query filter, e.g. name ~ \"feature/\"."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, e.g. -target.date for the most recently changed first.",
+            "default": "-target.date"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has next, call again with the page number shown in that link.",
+            "minimum": 1
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 25, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/refs/branches",
+        "encodePathParams": true,
+        "queryParams": {
+          "q": "$q",
+          "sort": "$sort",
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "branches": {
+              "$from": "$.values[*]",
+              "$select": {
+                "name": "name",
+                "commit": "target.hash",
+                "date": "target.date",
+                "message": "target.message",
+                "author": "target.author.raw"
+              }
+            },
+            "next": "$.next",
+            "page": "$.page",
+            "size": "$.size"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_list_commits",
+      "description": "List commits newest first: hash, date, message, author and parents. Without include it covers every branch; set include to a branch to read its history, path to see only commits that touched a file or folder. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "include": {
+            "type": "string",
+            "description": "Branch, tag or commit whose history to list, e.g. main."
+          },
+          "exclude": {
+            "type": "string",
+            "description": "Leave out commits reachable from this branch, e.g. main, to see what a feature branch adds."
+          },
+          "path": {
+            "type": "string",
+            "description": "Only commits that changed this file or folder, e.g. src/app.ts."
+          },
+          "page": {
+            "type": "string",
+            "description": "Page token: copy the page value from next in the previous answer. Commit pages are not numbered."
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/commits",
+        "encodePathParams": true,
+        "queryParams": {
+          "include": "$include",
+          "exclude": "$exclude",
+          "path": "$path",
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "commits": {
+              "$from": "$.values[*]",
+              "$select": {
+                "hash": "hash",
+                "date": "date",
+                "message": "message",
+                "author": "author.raw",
+                "author_account": "author.user.display_name",
+                "parents": "parents[*].hash"
+              }
+            },
+            "next": "$.next"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "bitbucket_get_commit",
+      "description": "Get one commit: full hash, date, full message, author, parents and web link. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "commit": {
+            "type": "string",
+            "description": "Commit hash (full or short), from bitbucket_list_commits."
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "commit"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/commit/{commit}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "hash": "$.hash",
+            "date": "$.date",
+            "message": "$.message",
+            "author": "$.author.raw",
+            "author_account": "$.author.user.display_name",
+            "parents": "$.parents[*].hash",
+            "html_url": "$.links.html.href"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_get_file",
+      "description": "Read a file or list a folder at a commit or branch. For a file it returns the raw text (cut at 200 KB); for a folder a page of entries with path, type (commit_file or commit_directory) and size. Leave path empty for the repository root. Set format to meta for a file's size and attributes without its content. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "commit": {
+            "type": "string",
+            "description": "Commit hash or branch name; HEAD (default) is the main branch. For a branch whose name contains a slash, pass its commit hash from bitbucket_list_branches instead.",
+            "default": "HEAD"
+          },
+          "path": {
+            "type": "string",
+            "description": "File or folder path inside the repository, e.g. src/app.ts or docs. Empty (default) lists the root.",
+            "default": ""
+          },
+          "format": {
+            "type": "string",
+            "description": "meta returns the file's metadata as JSON instead of its content.",
+            "enum": [
+              "meta"
+            ]
+          },
+          "max_depth": {
+            "type": "integer",
+            "description": "For folders: also list subfolders this many levels deep (default 1)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has next, call again with the page number shown in that link.",
+            "minimum": 1
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/src/{commit}/{path}",
+        "queryParams": {
+          "format": "$format",
+          "max_depth": "$max_depth",
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "values[*].links",
+            "values[*].commit.links",
+            "values[*].commit.type",
+            "links",
+            "commit.links"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "bitbucket_list_pull_requests",
+      "description": "List pull requests of a repository, open ones by default: id, title, state, draft, author, source and destination branch, comment and task counts and web link. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "state": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "MERGED",
+                "DECLINED",
+                "SUPERSEDED"
+              ]
+            },
+            "default": [
+              "OPEN"
+            ],
+            "description": "States to include (default OPEN). Pass several, e.g. [\"MERGED\", \"DECLINED\"]."
+          },
+          "q": {
+            "type": "string",
+            "description": "Bitbucket query filter, e.g. author.nickname = \"jane\" or destination.branch.name = \"main\"."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; default -updated_on.",
+            "default": "-updated_on"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has next, call again with the page number shown in that link.",
+            "minimum": 1
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 25, maximum 50).",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 25
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/pullrequests",
+        "encodePathParams": true,
+        "queryParams": {
+          "state": "$state",
+          "q": "$q",
+          "sort": "$sort",
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "pull_requests": {
+              "$from": "$.values[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "state": "state",
+                "draft": "draft",
+                "author": "author.display_name",
+                "source_branch": "source.branch.name",
+                "destination_branch": "destination.branch.name",
+                "comment_count": "comment_count",
+                "task_count": "task_count",
+                "created_on": "created_on",
+                "updated_on": "updated_on",
+                "html_url": "links.html.href"
+              }
+            },
+            "next": "$.next",
+            "page": "$.page",
+            "size": "$.size"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_get_pull_request",
+      "description": "Get one pull request: title, description, state, branches and commits, merge commit, reviewers and participants with their approval state, counts and web link. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pull_request_id": {
+            "type": "integer",
+            "description": "Pull request number (id), as shown in the UI as #12. From bitbucket_list_pull_requests."
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pull_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "title": "$.title",
+            "description": "$.description",
+            "state": "$.state",
+            "draft": "$.draft",
+            "queued": "$.queued",
+            "author": "$.author.display_name",
+            "source_branch": "$.source.branch.name",
+            "source_commit": "$.source.commit.hash",
+            "source_repository": "$.source.repository.full_name",
+            "destination_branch": "$.destination.branch.name",
+            "destination_commit": "$.destination.commit.hash",
+            "merge_commit": "$.merge_commit.hash",
+            "close_source_branch": "$.close_source_branch",
+            "closed_by": "$.closed_by.display_name",
+            "reason": "$.reason",
+            "comment_count": "$.comment_count",
+            "task_count": "$.task_count",
+            "created_on": "$.created_on",
+            "updated_on": "$.updated_on",
+            "participants": {
+              "$from": "$.participants[*]",
+              "$select": {
+                "name": "user.display_name",
+                "uuid": "user.uuid",
+                "role": "role",
+                "approved": "approved",
+                "state": "state"
+              }
+            },
+            "html_url": "$.links.html.href"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_get_pull_request_diffstat",
+      "description": "List the files a pull request changes: status (added, removed, modified, renamed), old and new path, lines added and removed. Use it before bitbucket_get_pull_request_diff to see the size of the change. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pull_request_id": {
+            "type": "integer",
+            "description": "Pull request number (id), as shown in the UI as #12. From bitbucket_list_pull_requests."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has next, call again with the page number shown in that link.",
+            "minimum": 1
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 500).",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pull_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/diffstat",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "files": {
+              "$from": "$.values[*]",
+              "$select": {
+                "status": "status",
+                "old_path": "old.path",
+                "new_path": "new.path",
+                "lines_added": "lines_added",
+                "lines_removed": "lines_removed"
+              }
+            },
+            "next": "$.next",
+            "page": "$.page",
+            "size": "$.size"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_get_pull_request_diff",
+      "description": "Read the unified diff of a pull request as plain text. Diffs over 200 KB are cut and marked _truncated; check bitbucket_get_pull_request_diffstat first for large changes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pull_request_id": {
+            "type": "integer",
+            "description": "Pull request number (id), as shown in the UI as #12. From bitbucket_list_pull_requests."
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pull_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/diff",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "bitbucket_list_pull_request_commits",
+      "description": "List the commits a pull request contains, newest first: hash, date, message and author. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pull_request_id": {
+            "type": "integer",
+            "description": "Pull request number (id), as shown in the UI as #12. From bitbucket_list_pull_requests."
+          },
+          "page": {
+            "type": "string",
+            "description": "Page token from next in the previous answer."
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 30, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pull_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/commits",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "commits": {
+              "$from": "$.values[*]",
+              "$select": {
+                "hash": "hash",
+                "date": "date",
+                "message": "message",
+                "author": "author.raw"
+              }
+            },
+            "next": "$.next"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "bitbucket_list_pull_request_comments",
+      "description": "List comments on a pull request, oldest first: id, author, text, inline position (file and line) for code comments, parent id for replies, and created and updated times. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pull_request_id": {
+            "type": "integer",
+            "description": "Pull request number (id), as shown in the UI as #12. From bitbucket_list_pull_requests."
+          },
+          "q": {
+            "type": "string",
+            "description": "Bitbucket query filter, e.g. deleted = false or inline.path = \"src/app.ts\"."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, e.g. -created_on for newest first."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has next, call again with the page number shown in that link.",
+            "minimum": 1
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 50, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pull_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/comments",
+        "encodePathParams": true,
+        "queryParams": {
+          "q": "$q",
+          "sort": "$sort",
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "comments": {
+              "$from": "$.values[*]",
+              "$select": {
+                "id": "id",
+                "author": "user.display_name",
+                "text": "content.raw",
+                "inline": "inline",
+                "parent_id": "parent.id",
+                "deleted": "deleted",
+                "pending": "pending",
+                "created_on": "created_on",
+                "updated_on": "updated_on"
+              }
+            },
+            "next": "$.next",
+            "page": "$.page",
+            "size": "$.size"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "bitbucket_create_pull_request",
+      "description": "Open a pull request from a source branch into a destination branch of the same repository, as the token's user. The branch must already be pushed. Show the user what will happen and call only after they confirm. Returns the new pull request with its id and web link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "title": {
+            "type": "string",
+            "description": "Pull request title."
+          },
+          "source_branch": {
+            "type": "string",
+            "description": "Branch with the changes, e.g. feature/login."
+          },
+          "destination_branch": {
+            "type": "string",
+            "description": "Branch to merge into, e.g. main. bitbucket_get_repository shows the main branch."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description in Markdown."
+          },
+          "close_source_branch": {
+            "type": "boolean",
+            "description": "Delete the source branch after the merge."
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "Open it as a draft."
+          },
+          "reviewers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uuid": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Reviewers as objects with the account uuid including braces, e.g. [{\"uuid\": \"{504c3b62-...}\"}]; uuids come from bitbucket_get_pull_request participants or bitbucket_get_current_user."
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "title",
+          "source_branch",
+          "destination_branch"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/repositories/{workspace}/{repo_slug}/pullrequests",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "source": {
+            "branch": {
+              "name": "$source_branch"
+            }
+          },
+          "destination": {
+            "branch": {
+              "name": "$destination_branch"
+            }
+          },
+          "close_source_branch": "$close_source_branch",
+          "draft": "$draft",
+          "reviewers": "$reviewers"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "title": "$.title",
+            "description": "$.description",
+            "state": "$.state",
+            "draft": "$.draft",
+            "queued": "$.queued",
+            "author": "$.author.display_name",
+            "source_branch": "$.source.branch.name",
+            "source_commit": "$.source.commit.hash",
+            "source_repository": "$.source.repository.full_name",
+            "destination_branch": "$.destination.branch.name",
+            "destination_commit": "$.destination.commit.hash",
+            "merge_commit": "$.merge_commit.hash",
+            "close_source_branch": "$.close_source_branch",
+            "closed_by": "$.closed_by.display_name",
+            "reason": "$.reason",
+            "comment_count": "$.comment_count",
+            "task_count": "$.task_count",
+            "created_on": "$.created_on",
+            "updated_on": "$.updated_on",
+            "participants": {
+              "$from": "$.participants[*]",
+              "$select": {
+                "name": "user.display_name",
+                "uuid": "user.uuid",
+                "role": "role",
+                "approved": "approved",
+                "state": "state"
+              }
+            },
+            "html_url": "$.links.html.href"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_add_pull_request_comment",
+      "description": "Post a comment on a pull request as the token's user: a general comment, a reply (parent) or a code comment on a line (inline). Everyone on the pull request sees it and may get a notification. Show the user what will happen and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pull_request_id": {
+            "type": "integer",
+            "description": "Pull request number (id), as shown in the UI as #12. From bitbucket_list_pull_requests."
+          },
+          "text": {
+            "type": "string",
+            "description": "Comment text in Markdown."
+          },
+          "inline": {
+            "type": "object",
+            "description": "For a code comment: {\"path\": \"src/app.ts\", \"to\": 42} comments line 42 of the new version; use \"from\" instead of \"to\" for a line of the old version.",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "to": {
+                "type": "integer"
+              },
+              "from": {
+                "type": "integer"
+              }
+            }
+          },
+          "parent": {
+            "type": "object",
+            "description": "To reply to a comment: {\"id\": <comment id>} from bitbucket_list_pull_request_comments.",
+            "properties": {
+              "id": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pull_request_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/comments",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "content": {
+            "raw": "$text"
+          },
+          "inline": "$inline",
+          "parent": "$parent"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "author": "$.user.display_name",
+            "text": "$.content.raw",
+            "inline": "$.inline",
+            "parent_id": "$.parent.id",
+            "created_on": "$.created_on",
+            "html_url": "$.links.html.href"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_approve_pull_request",
+      "description": "Approve a pull request as the token's user. The approval counts toward merge checks and is shown to everyone on the pull request. Show the user what will happen and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pull_request_id": {
+            "type": "integer",
+            "description": "Pull request number (id), as shown in the UI as #12. From bitbucket_list_pull_requests."
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pull_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/approve",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "user": "$.user.display_name",
+            "role": "$.role",
+            "approved": "$.approved",
+            "state": "$.state",
+            "participated_on": "$.participated_on"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "bitbucket_merge_pull_request",
+      "description": "Merge an open pull request into its destination branch. This changes the destination branch for everyone, may start deployment pipelines and, with close_source_branch, deletes the source branch. Check bitbucket_get_pull_request (state, approvals) first, tell the user the branches and merge strategy, and call only after they confirm. If the merge takes long Bitbucket answers 202; check the state with bitbucket_get_pull_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pull_request_id": {
+            "type": "integer",
+            "description": "Pull request number (id), as shown in the UI as #12. From bitbucket_list_pull_requests."
+          },
+          "merge_strategy": {
+            "type": "string",
+            "description": "How to merge; omit for the repository's default.",
+            "enum": [
+              "merge_commit",
+              "squash",
+              "fast_forward",
+              "squash_fast_forward",
+              "rebase_fast_forward",
+              "rebase_merge"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Commit message for the merge or squash commit."
+          },
+          "close_source_branch": {
+            "type": "boolean",
+            "description": "Delete the source branch after merging."
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pull_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/merge",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "type": "pullrequest_merge_parameters",
+          "merge_strategy": "$merge_strategy",
+          "message": "$message",
+          "close_source_branch": "$close_source_branch"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "title": "$.title",
+            "state": "$.state",
+            "merge_commit": "$.merge_commit.hash",
+            "destination_branch": "$.destination.branch.name",
+            "closed_by": "$.closed_by.display_name",
+            "html_url": "$.links.html.href"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "bitbucket_list_pipelines",
+      "description": "List Bitbucket Pipelines runs of a repository, newest first: uuid, build number, state (PENDING, IN_PROGRESS, COMPLETED), result (SUCCESSFUL, FAILED, ERROR, STOPPED), branch or tag, commit, trigger, creator and duration. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Only runs for this branch."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only runs in this state, e.g. COMPLETED or IN_PROGRESS."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; default -created_on (newest first).",
+            "default": "-created_on"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has next, call again with the page number shown in that link.",
+            "minimum": 1
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/pipelines",
+        "encodePathParams": true,
+        "queryParams": {
+          "target.branch": "$branch",
+          "status": "$status",
+          "sort": "$sort",
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "pipelines": {
+              "$from": "$.values[*]",
+              "$select": {
+                "uuid": "uuid",
+                "build_number": "build_number",
+                "state": "state.name",
+                "result": "state.result.name",
+                "stage": "state.stage.name",
+                "ref_type": "target.ref_type",
+                "ref_name": "target.ref_name",
+                "commit": "target.commit.hash",
+                "selector": "target.selector",
+                "trigger": "trigger.name",
+                "creator": "creator.display_name",
+                "created_on": "created_on",
+                "completed_on": "completed_on",
+                "duration_in_seconds": "duration_in_seconds",
+                "build_seconds_used": "build_seconds_used"
+              }
+            },
+            "next": "$.next",
+            "page": "$.page",
+            "size": "$.size"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_get_pipeline",
+      "description": "Get one pipeline run: state, result, branch or tag, commit, custom pipeline name, trigger, creator, start, end and duration. Variables are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pipeline_uuid": {
+            "type": "string",
+            "description": "Pipeline UUID including the curly braces, e.g. {a1b2c3d4-...}, from bitbucket_list_pipelines. The braces are URL-encoded for you."
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pipeline_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/pipelines/{pipeline_uuid}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "uuid": "$.uuid",
+            "build_number": "$.build_number",
+            "state": "$.state.name",
+            "result": "$.state.result.name",
+            "stage": "$.state.stage.name",
+            "ref_type": "$.target.ref_type",
+            "ref_name": "$.target.ref_name",
+            "commit": "$.target.commit.hash",
+            "selector": "$.target.selector",
+            "trigger": "$.trigger.name",
+            "creator": "$.creator.display_name",
+            "created_on": "$.created_on",
+            "completed_on": "$.completed_on",
+            "duration_in_seconds": "$.duration_in_seconds",
+            "build_seconds_used": "$.build_seconds_used"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_list_pipeline_steps",
+      "description": "List the steps of a pipeline run: uuid, name, state, result, start, end, duration, build image name and script command names. Use a step uuid with bitbucket_get_pipeline_step_log. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pipeline_uuid": {
+            "type": "string",
+            "description": "Pipeline UUID including the curly braces, e.g. {a1b2c3d4-...}, from bitbucket_list_pipelines. The braces are URL-encoded for you."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has next, call again with the page number shown in that link.",
+            "minimum": 1
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 50, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pipeline_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/pipelines/{pipeline_uuid}/steps",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "steps": {
+              "$from": "$.values[*]",
+              "$select": {
+                "uuid": "uuid",
+                "name": "name",
+                "state": "state.name",
+                "result": "state.result.name",
+                "started_on": "started_on",
+                "completed_on": "completed_on",
+                "duration_in_seconds": "duration_in_seconds",
+                "image": "image.name",
+                "commands": "script_commands[*].name"
+              }
+            },
+            "next": "$.next",
+            "page": "$.page",
+            "size": "$.size"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_get_pipeline_step_log",
+      "description": "Read the log of one pipeline step as plain text. Logs over 200 KB are cut and marked _truncated, keeping the beginning; the error is usually at the end, so for long logs pass range, e.g. bytes=-150000 for the last 150 KB. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "pipeline_uuid": {
+            "type": "string",
+            "description": "Pipeline UUID including the curly braces, e.g. {a1b2c3d4-...}, from bitbucket_list_pipelines. The braces are URL-encoded for you."
+          },
+          "step_uuid": {
+            "type": "string",
+            "description": "Step UUID including the curly braces, from bitbucket_list_pipeline_steps."
+          },
+          "range": {
+            "type": "string",
+            "description": "Optional HTTP Range, e.g. bytes=0-99999 for the first 100 KB or bytes=-150000 for the last 150 KB."
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "pipeline_uuid",
+          "step_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/pipelines/{pipeline_uuid}/steps/{step_uuid}/log",
+        "encodePathParams": true,
+        "headers": {
+          "Range": "$range"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "bitbucket_run_pipeline",
+      "description": "Start a Bitbucket Pipelines run on a branch or tag, optionally a custom pipeline from bitbucket-pipelines.yml. This uses build minutes and runs whatever the pipeline does, including deployments. Tell the user the branch and pipeline and call only after they confirm. Returns the new run's uuid and build number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "ref_name": {
+            "type": "string",
+            "description": "Branch or tag name to run on, e.g. main."
+          },
+          "ref_type": {
+            "type": "string",
+            "description": "branch (default) or tag.",
+            "enum": [
+              "branch",
+              "tag"
+            ],
+            "default": "branch"
+          },
+          "selector": {
+            "type": "object",
+            "description": "Which pipeline definition to run. Omit for the default pipeline of that branch. For a custom pipeline: {\"type\": \"custom\", \"pattern\": \"deploy-to-staging\"}.",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "pattern": {
+                "type": "string"
+              }
+            }
+          },
+          "commit": {
+            "type": "object",
+            "description": "Optional specific commit on that branch: {\"type\": \"commit\", \"hash\": \"<full hash>\"}. Omit for the latest commit.",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            }
+          },
+          "variables": {
+            "type": "array",
+            "description": "Optional variables for a custom pipeline: [{\"key\": \"ENV\", \"value\": \"staging\"}]. Add \"secured\": true for a value that must not appear in logs.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "secured": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug",
+          "ref_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/repositories/{workspace}/{repo_slug}/pipelines",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "target": {
+            "type": "pipeline_ref_target",
+            "ref_type": "$ref_type",
+            "ref_name": "$ref_name",
+            "selector": "$selector",
+            "commit": "$commit"
+          },
+          "variables": "$variables"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "uuid": "$.uuid",
+            "build_number": "$.build_number",
+            "state": "$.state.name",
+            "result": "$.state.result.name",
+            "stage": "$.state.stage.name",
+            "ref_type": "$.target.ref_type",
+            "ref_name": "$.target.ref_name",
+            "commit": "$.target.commit.hash",
+            "selector": "$.target.selector",
+            "trigger": "$.trigger.name",
+            "creator": "$.creator.display_name",
+            "created_on": "$.created_on",
+            "completed_on": "$.completed_on",
+            "duration_in_seconds": "$.duration_in_seconds",
+            "build_seconds_used": "$.build_seconds_used"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_list_environments",
+      "description": "List the deployment environments of a repository (for example Test, Staging, Production): uuid, name, type, rank and lock state. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/environments",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "environments": {
+              "$from": "$.values[*]",
+              "$select": {
+                "uuid": "uuid",
+                "name": "name",
+                "slug": "slug",
+                "type": "environment_type.name",
+                "rank": "rank",
+                "lock": "lock.name",
+                "hidden": "hidden"
+              }
+            },
+            "next": "$.next",
+            "page": "$.page",
+            "size": "$.size"
+          }
+        }
+      }
+    },
+    {
+      "name": "bitbucket_list_deployments",
+      "description": "List deployments of a repository: environment uuid, state (UNDEPLOYED, IN_PROGRESS, COMPLETED), status (SUCCESSFUL, FAILED, STOPPED), who deployed, start and end, and the released commit. Match environment uuids with bitbucket_list_environments. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug, the first part of bitbucket.org/<workspace>/<repo>, e.g. acme. From bitbucket_list_workspaces."
+          },
+          "repo_slug": {
+            "type": "string",
+            "description": "Repository slug, the second part of bitbucket.org/<workspace>/<repo>, e.g. web-app. From bitbucket_list_repositories."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has next, call again with the page number shown in that link.",
+            "minimum": 1
+          },
+          "pagelen": {
+            "type": "integer",
+            "description": "Items per page (default 25, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        },
+        "required": [
+          "workspace",
+          "repo_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repositories/{workspace}/{repo_slug}/deployments",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "pagelen": "$pagelen"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deployments": {
+              "$from": "$.values[*]",
+              "$select": {
+                "uuid": "uuid",
+                "environment": "environment.uuid",
+                "state": "state.name",
+                "status": "state.status.name",
+                "deployer": "state.deployer.display_name",
+                "started": "state.start_date",
+                "completed": "state.completion_date",
+                "release": "release.name",
+                "commit": "release.commit.hash",
+                "release_url": "release.url"
+              }
+            },
+            "next": "$.next",
+            "page": "$.page",
+            "size": "$.size"
+          }
+        }
+      }
+    }
+  ]
+}

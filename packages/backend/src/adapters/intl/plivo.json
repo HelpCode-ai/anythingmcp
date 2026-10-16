@@ -1,0 +1,1339 @@
+{
+  "slug": "plivo",
+  "name": "Plivo",
+  "description": "Let your AI work with Plivo: check balance and prices, send SMS and MMS, place calls and read call records, end live calls, list recordings and transcriptions, find and look up phone numbers, and send and check one-time codes with Verify.",
+  "instructions": "## Plivo\nThis connector works with one Plivo account through the **Plivo REST API** (`https://api.plivo.com/v1/Account/<Auth ID>/`) with the Auth ID and Auth Token (HTTP Basic auth): account balance and prices, SMS and MMS, outbound calls and call records, live calls, recordings and transcriptions, rented and available numbers, number lookup (`https://lookup.plivo.com`) and Verify one-time codes.\n\n**Setup (about 2 minutes)**\n1. Sign in to the Plivo console at https://cx.plivo.com.\n2. The **Auth ID** (starts with MA, or SA for a subaccount) and the **Auth Token** are shown on the overview page. A subaccount (Account, Subaccounts) limits what the connector can reach.\n3. Paste them into `PLIVO_AUTH_ID` and `PLIVO_AUTH_TOKEN` and install. Check the setup with `plivo_get_account`.\n\nThe token acts for the whole account and can spend its balance: share this MCP server only with people allowed to spend money on it.\n\n**Sending, calling and buying cost money and reach real people: confirm first.** `plivo_send_message`, `plivo_make_call`, `plivo_send_verification` are billed per message part, minute or verification. Before calling them, show the user sender, recipient and content (and the price from `plivo_get_pricing` when asked) and wait for the user's yes. `plivo_hangup_call` cuts off a running call and is installed switched off, because Plivo ends every running call on the account when the call id is missing; an admin can switch it on, and then confirm which call first. `plivo_lookup_number` is billed per lookup: confirm before looking up more than a few numbers. `plivo_buy_number` rents a number for a monthly fee and is installed switched off.\n\n**Personal data.** Message logs, call records, phone numbers, recordings and transcriptions are personal data. Recording URLs can be played by anyone who has them: share them only with people allowed to hear the call.\n\n**How to work**\n1. Account and prices: `plivo_get_account`, `plivo_get_pricing`.\n2. Messages: `plivo_send_message` returns message_uuid; follow the state with `plivo_get_message`; review traffic with `plivo_list_messages`. A US or Canadian sender must be registered for 10DLC or toll-free texting, or messages fail.\n3. Calls: `plivo_make_call` needs an answer_url that returns Plivo XML (for example `<Response><Speak>Hello</Speak></Response>` hosted on your server); set time_limit to cap the cost. Running calls: `plivo_list_live_calls`, `plivo_get_live_call`, `plivo_hangup_call`. Ended calls: `plivo_list_calls`, `plivo_get_call`.\n4. Recordings: `plivo_list_recordings`, `plivo_get_recording`, and `plivo_get_transcription` when transcription was ordered for the recording.\n5. Numbers: `plivo_list_numbers`, `plivo_get_number` for rented numbers, `plivo_search_available_numbers` to find new ones (free), `plivo_buy_number` to rent one (switched off). `plivo_lookup_number` checks carrier and line type.\n6. Verify: `plivo_send_verification` sends a code and returns session_uuid, `plivo_validate_verification` checks what the person typed, `plivo_get_verification` shows status and charges.\n\n**Numbers and times**: send numbers in E.164 (`+14155550123`); Plivo lists and call parameters show them without the plus (`14155550123`). Time filters are UTC as `YYYY-MM-DD HH:MM:SS`. Call and recording searches cover the last 7 days unless a range is given, at most 30 days per search.\n\n**Paging**: lists answer with `meta` (limit, offset, total_count, next) and `objects`. limit is at most 20; pass offset=20, 40, and so on until meta.next is null.\n\n**Rate limit**: 300 API requests per 5 seconds per account; outbound calls also have a calls-per-second and a concurrent-calls limit (403 \"Concurrency Limit Breached\"). A 429 means wait and try again.\n\n**Common errors**\n- 401: wrong Auth ID or Auth Token, or a token that was regenerated.\n- 404: no such message, call, recording or number on this account.\n- 400: a missing or malformed parameter (number format, src not owned by the account).\n- Sends or calls that fail on a low balance: check cash_credits with `plivo_get_account` and add credit in the console.\n\n**Out of scope here**: WhatsApp templates, conferences and multi-party calls, call transfer and recording control, applications and endpoints, subaccounts, compliance documents, releasing numbers.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "plivo",
+  "docsUrl": "https://www.plivo.com/docs/",
+  "requiredEnvVars": [
+    "PLIVO_AUTH_ID",
+    "PLIVO_AUTH_TOKEN"
+  ],
+  "appRegistrationUrl": "https://cx.plivo.com",
+  "envVarMeta": {
+    "PLIVO_AUTH_ID": {
+      "label": "Auth ID",
+      "kind": "credential",
+      "help": "Plivo console overview page: the Auth ID (starts with MA, or SA for a subaccount).",
+      "link": "https://cx.plivo.com",
+      "example": "MAXXXXXXXXXXXXXXXXXX",
+      "pattern": "^(MA|SA)[A-Z0-9]{18}$",
+      "patternMessage": "The Auth ID is 20 characters, capital letters and digits, starting with MA (or SA for a subaccount)."
+    },
+    "PLIVO_AUTH_TOKEN": {
+      "label": "Auth Token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Plivo console overview page: the Auth Token next to the Auth ID (click to reveal). It changes when it is regenerated.",
+      "link": "https://cx.plivo.com",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste the Auth Token without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Plivo refused the Auth ID and Auth Token: they are wrong, swapped, or the token was regenerated. Copy both again from the Plivo console overview page.",
+    "403": "Plivo accepted the credentials but refused this request, for example a subaccount without access or an IP restriction under API access control.",
+    "404": "Plivo does not know this resource on this account. Check that PLIVO_AUTH_ID is the account the id belongs to.",
+    "429": "Plivo is rate limiting this account (300 requests per 5 seconds). Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "plivo_get_account"
+  },
+  "prerequisites": "A Plivo account (a trial works for reading; sending and calling need credit and, for trial accounts, verified numbers) with its Auth ID and Auth Token from the Plivo console. About 2 minutes.",
+  "connector": {
+    "name": "Plivo REST API",
+    "type": "REST",
+    "baseUrl": "https://api.plivo.com/v1/Account/{{PLIVO_AUTH_ID}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{PLIVO_AUTH_ID}}",
+      "password": "{{PLIVO_AUTH_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/"
+  },
+  "tools": [
+    {
+      "name": "plivo_get_account",
+      "description": "Read the Plivo account: name, account type, billing mode (prepaid or postpaid), remaining cash credits, auto recharge, time zone and the Auth ID. Use it first to check the credentials and the balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "auth_id": "$.auth_id",
+            "name": "$.name",
+            "account_type": "$.account_type",
+            "billing_mode": "$.billing_mode",
+            "cash_credits": "$.cash_credits",
+            "auto_recharge": "$.auto_recharge",
+            "timezone": "$.timezone",
+            "city": "$.city",
+            "state": "$.state"
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_get_pricing",
+      "description": "Read Plivo's prices for one country: outbound and inbound SMS per message, voice per minute (local, toll-free, SIP and per prefix) and monthly rent for local and toll-free numbers, in USD. Use it to tell the user what a message, call or number will cost before sending, calling or buying.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country_iso": {
+            "type": "string",
+            "description": "Two-letter country code, e.g. US, DE, GB.",
+            "pattern": "^[A-Z]{2}$"
+          }
+        },
+        "required": [
+          "country_iso"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Pricing/",
+        "queryParams": {
+          "country_iso": "$country_iso"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "country": "$.country",
+            "country_iso": "$.country_iso",
+            "country_code": "$.country_code",
+            "message": "$.message",
+            "voice": "$.voice",
+            "phone_numbers": "$.phone_numbers"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "plivo_send_message",
+      "description": "Send an SMS or MMS from a Plivo number or sender id. This reaches real people and costs money per message part (check plivo_get_pricing), so show the user the sender, every recipient and the exact text and call only after the user confirms. Set src (or powerpack_uuid) and dst; several recipients are joined with < (e.g. 14155550123<14155550124), each billed. Returns message_uuid (a list); read the delivery state later with plivo_get_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dst": {
+            "type": "string",
+            "description": "Recipient in E.164 format without spaces, e.g. +14155550123. Several recipients: join with <."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text. Long texts are split into several parts, each billed (up to 1600 GSM or 737 Unicode characters)."
+          },
+          "src": {
+            "type": "string",
+            "description": "Sender: a Plivo number of this account in E.164, a short code or an alphanumeric sender id where the country allows it. Leave out when powerpack_uuid is set."
+          },
+          "powerpack_uuid": {
+            "type": "string",
+            "description": "Send through this Powerpack (number pool) instead of src."
+          },
+          "type": {
+            "type": "string",
+            "description": "sms (default) or mms. MMS works in the US and Canada and costs more.",
+            "enum": [
+              "sms",
+              "mms"
+            ]
+          },
+          "media_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "For MMS: public URLs of images or files (up to 10, 5 MB in total)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Your URL that receives delivery status callbacks for this message."
+          },
+          "log": {
+            "type": "string",
+            "description": "Whether Plivo keeps the content and numbers in its logs: true (default), false, content_only or number_only.",
+            "enum": [
+              "true",
+              "false",
+              "content_only",
+              "number_only"
+            ]
+          }
+        },
+        "required": [
+          "dst",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Message/",
+        "bodyMapping": {
+          "src": "$src",
+          "powerpack_uuid": "$powerpack_uuid",
+          "dst": "$dst",
+          "text": "$text",
+          "type": "$type",
+          "media_urls": "$media_urls",
+          "url": "$url",
+          "log": "$log"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "message_uuid": "$.message_uuid",
+            "invalid_number": "$.invalid_number",
+            "api_id": "$.api_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "plivo_get_message",
+      "description": "Read one message by message_uuid: state (queued, sent, delivered, undelivered, failed, received, read), direction, numbers, time sent, number of billed parts (units), price (total_amount) and error code with message when it failed. Message details are personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_uuid": {
+            "type": "string",
+            "description": "The message_uuid returned by plivo_send_message or plivo_list_messages.",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "minLength": 36
+          }
+        },
+        "required": [
+          "message_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Message/{message_uuid}/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message_uuid": "$.message_uuid",
+            "message_direction": "$.message_direction",
+            "message_state": "$.message_state",
+            "message_type": "$.message_type",
+            "from_number": "$.from_number",
+            "to_number": "$.to_number",
+            "message_time": "$.message_time",
+            "message_sent_time": "$.message_sent_time",
+            "message_updated_time": "$.message_updated_time",
+            "units": "$.units",
+            "total_amount": "$.total_amount",
+            "total_rate": "$.total_rate",
+            "error_code": "$.error_code",
+            "error_message": "$.error_message",
+            "powerpack_id": "$.powerpack_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_list_messages",
+      "description": "List SMS, MMS and WhatsApp messages of the account, newest first, with state, direction, numbers, times, billed parts, price and errors (no message text). Filter by direction, state, type, numbers, error code and time. Message logs are personal data. 20 per page; page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_direction": {
+            "type": "string",
+            "description": "Only inbound or only outbound messages.",
+            "enum": [
+              "inbound",
+              "outbound"
+            ]
+          },
+          "message_state": {
+            "type": "string",
+            "description": "Only messages in this state.",
+            "enum": [
+              "queued",
+              "sent",
+              "delivered",
+              "undelivered",
+              "failed",
+              "received",
+              "read"
+            ]
+          },
+          "message_type": {
+            "type": "string",
+            "description": "Only this type.",
+            "enum": [
+              "sms",
+              "mms",
+              "whatsapp"
+            ]
+          },
+          "from_number": {
+            "type": "string",
+            "description": "Only messages from this number (E.164 without +, as Plivo stores it, e.g. 14155550123)."
+          },
+          "to_number": {
+            "type": "string",
+            "description": "Only messages to this number (E.164 without +)."
+          },
+          "error_code": {
+            "type": "integer",
+            "description": "Only messages that failed with this Plivo error code."
+          },
+          "sent_after": {
+            "type": "string",
+            "description": "Only messages after this time. UTC time as YYYY-MM-DD HH:MM:SS (e.g. 2026-10-01 00:00:00)."
+          },
+          "sent_before": {
+            "type": "string",
+            "description": "Only messages before this time. UTC time as YYYY-MM-DD HH:MM:SS (e.g. 2026-10-01 00:00:00)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 20 (default 20).",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of results to skip, for the next page (e.g. 20, 40). meta.next is null on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Message/",
+        "queryParams": {
+          "message_direction": "$message_direction",
+          "message_state": "$message_state",
+          "message_type": "$message_type",
+          "from_number": "$from_number",
+          "to_number": "$to_number",
+          "error_code": "$error_code",
+          "message_time__gt": "$sent_after",
+          "message_time__lt": "$sent_before",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "objects": {
+              "$from": "$.objects[*]",
+              "$select": {
+                "message_uuid": "message_uuid",
+                "message_direction": "message_direction",
+                "message_state": "message_state",
+                "message_type": "message_type",
+                "from_number": "from_number",
+                "to_number": "to_number",
+                "message_time": "message_time",
+                "message_sent_time": "message_sent_time",
+                "message_updated_time": "message_updated_time",
+                "units": "units",
+                "total_amount": "total_amount",
+                "total_rate": "total_rate",
+                "error_code": "error_code",
+                "error_message": "error_message",
+                "powerpack_id": "powerpack_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_make_call",
+      "description": "Place an outbound phone call. Plivo rings the number and, when it is answered, fetches your answer_url, which must return Plivo XML saying what to do (speak, play, connect). This calls a real person and costs money per minute (check plivo_get_pricing), so show the user the number, the caller id and what will happen and call only after the user confirms. Set time_limit to cap the cost. Returns request_uuid; the call appears in plivo_list_live_calls while it runs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Number to call in E.164 without + (e.g. 14155550123) or a SIP URI. Several numbers joined with < are called at once, each billed."
+          },
+          "from": {
+            "type": "string",
+            "description": "Caller id: a Plivo number of this account or a verified caller id, E.164 without + (e.g. 14155550100)."
+          },
+          "answer_url": {
+            "type": "string",
+            "description": "Public URL that returns Plivo XML when the call is answered, e.g. https://example.com/answer.xml."
+          },
+          "answer_method": {
+            "type": "string",
+            "description": "HTTP method for answer_url (default POST).",
+            "enum": [
+              "GET",
+              "POST"
+            ]
+          },
+          "time_limit": {
+            "type": "integer",
+            "description": "Maximum call length in seconds (default 14400, i.e. 4 hours). Set a short limit, e.g. 120, to cap the cost."
+          },
+          "ring_timeout": {
+            "type": "integer",
+            "description": "Seconds to let it ring before giving up (default 120)."
+          },
+          "caller_name": {
+            "type": "string",
+            "description": "Caller name shown on SIP calls (up to 50 characters)."
+          },
+          "hangup_url": {
+            "type": "string",
+            "description": "URL notified when the call ends, with duration and cost."
+          },
+          "machine_detection": {
+            "type": "string",
+            "description": "Detect answering machines: true to report it, hangup to end the call (billed extra).",
+            "enum": [
+              "true",
+              "hangup"
+            ]
+          }
+        },
+        "required": [
+          "to",
+          "from",
+          "answer_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Call/",
+        "bodyMapping": {
+          "to": "$to",
+          "from": "$from",
+          "answer_url": "$answer_url",
+          "answer_method": "$answer_method",
+          "time_limit": "$time_limit",
+          "ring_timeout": "$ring_timeout",
+          "caller_name": "$caller_name",
+          "hangup_url": "$hangup_url",
+          "machine_detection": "$machine_detection"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "request_uuid": "$.request_uuid",
+            "api_id": "$.api_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "plivo_list_calls",
+      "description": "List ended calls (call detail records) of the last 7 days unless ended_after or ended_before is set (at most 30 days per search, 90 days back): direction, numbers, start, answer and end time, duration, billed duration, price, hangup cause and source. Call records are personal data. 20 per page; page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_direction": {
+            "type": "string",
+            "description": "Only inbound or only outbound calls.",
+            "enum": [
+              "inbound",
+              "outbound"
+            ]
+          },
+          "from_number": {
+            "type": "string",
+            "description": "Only calls from this number."
+          },
+          "to_number": {
+            "type": "string",
+            "description": "Only calls to this number."
+          },
+          "ended_after": {
+            "type": "string",
+            "description": "Only calls that ended at or after this time. UTC time as YYYY-MM-DD HH:MM:SS (e.g. 2026-10-01 00:00:00)."
+          },
+          "ended_before": {
+            "type": "string",
+            "description": "Only calls that ended at or before this time. UTC time as YYYY-MM-DD HH:MM:SS (e.g. 2026-10-01 00:00:00)."
+          },
+          "min_bill_duration": {
+            "type": "integer",
+            "description": "Only calls billed longer than this many seconds."
+          },
+          "hangup_cause_code": {
+            "type": "integer",
+            "description": "Only calls with this hangup cause code."
+          },
+          "hangup_source": {
+            "type": "string",
+            "description": "Only calls hung up by this side.",
+            "enum": [
+              "customer",
+              "carrier",
+              "zentrunk"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 20 (default 20).",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of results to skip, for the next page (e.g. 20, 40). meta.next is null on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Call/",
+        "queryParams": {
+          "call_direction": "$call_direction",
+          "from_number": "$from_number",
+          "to_number": "$to_number",
+          "end_time__gte": "$ended_after",
+          "end_time__lte": "$ended_before",
+          "bill_duration__gt": "$min_bill_duration",
+          "hangup_cause_code": "$hangup_cause_code",
+          "hangup_source": "$hangup_source",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "objects": {
+              "$from": "$.objects[*]",
+              "$select": {
+                "call_uuid": "call_uuid",
+                "call_direction": "call_direction",
+                "from_number": "from_number",
+                "to_number": "to_number",
+                "call_state": "call_state",
+                "initiation_time": "initiation_time",
+                "answer_time": "answer_time",
+                "end_time": "end_time",
+                "call_duration": "call_duration",
+                "bill_duration": "bill_duration",
+                "billed_duration": "billed_duration",
+                "total_amount": "total_amount",
+                "total_rate": "total_rate",
+                "hangup_cause_name": "hangup_cause_name",
+                "hangup_cause_code": "hangup_cause_code",
+                "hangup_source": "hangup_source",
+                "parent_call_uuid": "parent_call_uuid",
+                "stir_verification": "stir_verification"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_get_call",
+      "description": "Read one ended call by call_uuid: direction, numbers, times, duration, billed duration, rate and total price, hangup cause and source. For a call still running use plivo_get_live_call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_uuid": {
+            "type": "string",
+            "description": "The call_uuid from plivo_list_calls.",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "minLength": 36
+          }
+        },
+        "required": [
+          "call_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Call/{call_uuid}/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_uuid": "$.call_uuid",
+            "call_direction": "$.call_direction",
+            "from_number": "$.from_number",
+            "to_number": "$.to_number",
+            "call_state": "$.call_state",
+            "initiation_time": "$.initiation_time",
+            "answer_time": "$.answer_time",
+            "end_time": "$.end_time",
+            "call_duration": "$.call_duration",
+            "bill_duration": "$.bill_duration",
+            "billed_duration": "$.billed_duration",
+            "total_amount": "$.total_amount",
+            "total_rate": "$.total_rate",
+            "hangup_cause_name": "$.hangup_cause_name",
+            "hangup_cause_code": "$.hangup_cause_code",
+            "hangup_source": "$.hangup_source",
+            "parent_call_uuid": "$.parent_call_uuid",
+            "stir_verification": "$.stir_verification"
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_list_live_calls",
+      "description": "List the calls running right now on the account, as a list of call_uuid values. Read one with plivo_get_live_call and end it with plivo_hangup_call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_direction": {
+            "type": "string",
+            "description": "Only inbound or only outbound calls.",
+            "enum": [
+              "inbound",
+              "outbound"
+            ]
+          },
+          "from_number": {
+            "type": "string",
+            "description": "Only calls from this number."
+          },
+          "to_number": {
+            "type": "string",
+            "description": "Only calls to this number."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 20 (default 20).",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of results to skip, for the next page (e.g. 20, 40). meta.next is null on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Call/",
+        "queryParams": {
+          "status": "live",
+          "call_direction": "$call_direction",
+          "from_number": "$from_number",
+          "to_number": "$to_number",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "calls": "$.calls",
+            "api_id": "$.api_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_get_live_call",
+      "description": "Read a call that is running right now: call_status (ringing, in-progress), direction, from, to, caller name and session start.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_uuid": {
+            "type": "string",
+            "description": "The call_uuid from plivo_list_live_calls.",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "minLength": 36
+          }
+        },
+        "required": [
+          "call_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Call/{call_uuid}/",
+        "queryParams": {
+          "status": "live"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_uuid": "$.call_uuid",
+            "call_status": "$.call_status",
+            "direction": "$.direction",
+            "from": "$.from",
+            "to": "$.to",
+            "caller_name": "$.caller_name",
+            "session_start": "$.session_start",
+            "request_uuid": "$.request_uuid"
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_hangup_call",
+      "enabled": false,
+      "description": "End one running call at once (it cuts off the people on the line). Always pass the full call_uuid of that one call: Plivo ends every running call of the account when no call is named. Show the user which call (numbers, start) will be ended and call only after the user confirms. Answers 204 with no body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_uuid": {
+            "type": "string",
+            "description": "The full call_uuid of the running call (36 characters) from plivo_list_live_calls. Never empty.",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "minLength": 36
+          }
+        },
+        "required": [
+          "call_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/Call/{call_uuid}/"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "plivo_list_recordings",
+      "description": "List call and conference recordings of the last 7 days unless a time range is set (at most 30 days per search): recording_id, call_uuid, numbers, format, duration in ms, start time, storage cost and recording_url, a link anyone can play. Recordings are personal data: share the links only with people allowed to hear them. 20 per page; page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_uuid": {
+            "type": "string",
+            "description": "Only recordings of this call."
+          },
+          "from_number": {
+            "type": "string",
+            "description": "Only recordings of calls from this number."
+          },
+          "to_number": {
+            "type": "string",
+            "description": "Only recordings of calls to this number."
+          },
+          "added_after": {
+            "type": "string",
+            "description": "Only recordings created at or after this time. UTC time as YYYY-MM-DD HH:MM:SS (e.g. 2026-10-01 00:00:00)."
+          },
+          "added_before": {
+            "type": "string",
+            "description": "Only recordings created at or before this time. UTC time as YYYY-MM-DD HH:MM:SS (e.g. 2026-10-01 00:00:00)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 20 (default 20).",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of results to skip, for the next page (e.g. 20, 40). meta.next is null on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Recording/",
+        "queryParams": {
+          "call_uuid": "$call_uuid",
+          "from_number": "$from_number",
+          "to_number": "$to_number",
+          "add_time__gte": "$added_after",
+          "add_time__lte": "$added_before",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "objects": {
+              "$from": "$.objects[*]",
+              "$select": {
+                "recording_id": "recording_id",
+                "call_uuid": "call_uuid",
+                "recording_type": "recording_type",
+                "recording_format": "recording_format",
+                "recording_duration_ms": "recording_duration_ms",
+                "recording_start_ms": "recording_start_ms",
+                "recording_end_ms": "recording_end_ms",
+                "recording_url": "recording_url",
+                "add_time": "add_time",
+                "conference_name": "conference_name",
+                "from_number": "from_number",
+                "to_number": "to_number",
+                "recording_storage_duration": "recording_storage_duration",
+                "monthly_recording_storage_amount": "monthly_recording_storage_amount"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_get_recording",
+      "description": "Read one recording by recording_id: call_uuid, format, duration, start and end, storage cost and recording_url (playable by anyone with the link). Recordings are personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recording_id": {
+            "type": "string",
+            "description": "The recording_id from plivo_list_recordings."
+          }
+        },
+        "required": [
+          "recording_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Recording/{recording_id}/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "recording_id": "$.recording_id",
+            "call_uuid": "$.call_uuid",
+            "recording_type": "$.recording_type",
+            "recording_format": "$.recording_format",
+            "recording_duration_ms": "$.recording_duration_ms",
+            "recording_start_ms": "$.recording_start_ms",
+            "recording_end_ms": "$.recording_end_ms",
+            "recording_url": "$.recording_url",
+            "add_time": "$.add_time",
+            "conference_name": "$.conference_name",
+            "from_number": "$.from_number",
+            "to_number": "$.to_number",
+            "recording_storage_duration": "$.recording_storage_duration",
+            "monthly_recording_storage_amount": "$.monthly_recording_storage_amount"
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_get_transcription",
+      "description": "Read the transcription of a recording, if one was created (transcription is a paid Plivo option set on the recording): status, the text, cost and duration. type diarized splits the text by speaker. Transcripts are personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recording_id": {
+            "type": "string",
+            "description": "The recording_id from plivo_list_recordings."
+          },
+          "type": {
+            "type": "string",
+            "description": "transcription (default text), raw, or diarized (by speaker).",
+            "enum": [
+              "transcription",
+              "raw",
+              "diarized"
+            ]
+          }
+        },
+        "required": [
+          "recording_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Transcription/{recording_id}/",
+        "queryParams": {
+          "type": "$type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "status": "$.status",
+            "transcription": "$.transcription",
+            "recording_duration_ms": "$.recording_duration_ms",
+            "recording_start_ms": "$.recording_start_ms",
+            "cost": "$.cost",
+            "rate": "$.rate"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "plivo_list_numbers",
+      "description": "List the phone numbers rented on this account: number, alias, type, country, region, voice, SMS and MMS capability, linked application, monthly rent, renewal date and compliance or 10DLC status. 20 per page; page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Only this number type.",
+            "enum": [
+              "local",
+              "mobile",
+              "fixed",
+              "national",
+              "tollfree"
+            ]
+          },
+          "number_startswith": {
+            "type": "string",
+            "description": "Only numbers starting with these digits, e.g. 1415."
+          },
+          "alias": {
+            "type": "string",
+            "description": "Only the number with exactly this alias."
+          },
+          "services": {
+            "type": "string",
+            "description": "Only numbers with these capabilities: voice, sms, mms or a comma-separated combination such as voice,sms."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 20 (default 20).",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of results to skip, for the next page (e.g. 20, 40). meta.next is null on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Number/",
+        "queryParams": {
+          "type": "$type",
+          "number_startswith": "$number_startswith",
+          "alias": "$alias",
+          "services": "$services",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "objects": {
+              "$from": "$.objects[*]",
+              "$select": {
+                "number": "number",
+                "alias": "alias",
+                "number_type": "number_type",
+                "country": "country",
+                "region": "region",
+                "city": "city",
+                "active": "active",
+                "voice_enabled": "voice_enabled",
+                "sms_enabled": "sms_enabled",
+                "mms_enabled": "mms_enabled",
+                "application": "application",
+                "sub_account": "sub_account",
+                "monthly_rental_rate": "monthly_rental_rate",
+                "renewal_date": "renewal_date",
+                "added_on": "added_on",
+                "compliance_status": "compliance_status",
+                "tendlc_registration_status": "tendlc_registration_status"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_get_number",
+      "description": "Read one rented number: alias, type, capabilities, linked application, monthly rent, renewal date and compliance status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "The number in E.164 without +, e.g. 14155550100.",
+            "pattern": "^[0-9]{6,15}$"
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Number/{number}/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "number": "$.number",
+            "alias": "$.alias",
+            "number_type": "$.number_type",
+            "country": "$.country",
+            "region": "$.region",
+            "city": "$.city",
+            "active": "$.active",
+            "voice_enabled": "$.voice_enabled",
+            "sms_enabled": "$.sms_enabled",
+            "mms_enabled": "$.mms_enabled",
+            "application": "$.application",
+            "sub_account": "$.sub_account",
+            "monthly_rental_rate": "$.monthly_rental_rate",
+            "renewal_date": "$.renewal_date",
+            "added_on": "$.added_on",
+            "compliance_status": "$.compliance_status",
+            "tendlc_registration_status": "$.tendlc_registration_status"
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_search_available_numbers",
+      "description": "Search numbers that can be rented in a country (free, nothing is bought): number, type, region or city, capabilities, monthly rent, setup fee, per-minute and per-message rates and the documents some countries require. 20 per page; page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country_iso": {
+            "type": "string",
+            "description": "Two-letter country code, e.g. US, DE, GB.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "type": {
+            "type": "string",
+            "description": "Number type.",
+            "enum": [
+              "local",
+              "mobile",
+              "fixed",
+              "national",
+              "tollfree"
+            ]
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Digits the number should start with after the country code, e.g. 415."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region name, e.g. Frankfurt (fixed numbers)."
+          },
+          "city": {
+            "type": "string",
+            "description": "City name (local numbers)."
+          },
+          "services": {
+            "type": "string",
+            "description": "Required capabilities: voice, sms, mms, voice,sms or voice,sms,mms."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 20 (default 20).",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of results to skip, for the next page (e.g. 20, 40). meta.next is null on the last page."
+          }
+        },
+        "required": [
+          "country_iso"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/PhoneNumber/",
+        "queryParams": {
+          "country_iso": "$country_iso",
+          "type": "$type",
+          "pattern": "$pattern",
+          "region": "$region",
+          "city": "$city",
+          "services": "$services",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "objects": {
+              "$from": "$.objects[*]",
+              "$select": {
+                "number": "number",
+                "type": "type",
+                "country": "country",
+                "region": "region",
+                "city": "city",
+                "prefix": "prefix",
+                "voice_enabled": "voice_enabled",
+                "sms_enabled": "sms_enabled",
+                "mms_enabled": "mms_enabled",
+                "monthly_rental_rate": "monthly_rental_rate",
+                "setup_rate": "setup_rate",
+                "voice_rate": "voice_rate",
+                "sms_rate": "sms_rate",
+                "restriction": "restriction",
+                "restriction_text": "restriction_text",
+                "prerequisites": "prerequisites"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_buy_number",
+      "description": "Rent a number found with plivo_search_available_numbers. This costs money: the setup fee and a monthly rent are charged until the number is released. Installed switched off; an administrator turns it on deliberately. Before calling, show the user the number with its monthly rent and setup fee and call only after the user confirms. Some countries need compliance documents first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "The number to rent, exactly as returned by the search (E.164 without +).",
+            "pattern": "^[0-9]{6,15}$"
+          },
+          "app_id": {
+            "type": "string",
+            "description": "Plivo application id to link the number to, so its calls and messages are handled."
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/PhoneNumber/{number}/",
+        "bodyMapping": {
+          "app_id": "$app_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "status": "$.status",
+            "numbers": "$.numbers",
+            "api_id": "$.api_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "plivo_lookup_number",
+      "description": "Look up a phone number: whether it is valid, its country, formats, carrier name, line type (mobile, fixed, voip, toll-free) and whether it was ported. Each lookup is billed (a fraction of a cent), so for more than a few numbers tell the user the count and the cost and continue only after the user confirms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "The number in E.164 format, e.g. +14155550123."
+          }
+        },
+        "required": [
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://lookup.plivo.com/v1/Number/{phone_number}",
+        "queryParams": {
+          "type": "carrier"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "phone_number": "$.phone_number",
+            "country": "$.country",
+            "format": "$.format",
+            "carrier": "$.carrier"
+          }
+        }
+      }
+    },
+    {
+      "name": "plivo_send_verification",
+      "description": "Send a one-time code to a phone number by SMS or voice call with Plivo Verify and start a verification session. This reaches a real person and costs money (per verification plus the SMS or call), so confirm the number and channel with the user first. Returns session_uuid; check the code the person received with plivo_validate_verification.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "type": "string",
+            "description": "Phone number that receives the code, E.164, e.g. +14155550123."
+          },
+          "channel": {
+            "type": "string",
+            "description": "sms (default) or voice.",
+            "enum": [
+              "sms",
+              "voice"
+            ]
+          },
+          "app_uuid": {
+            "type": "string",
+            "description": "Verify application to use (its template, code length and expiry); the default application when left out."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the message, e.g. en, de, fr_FR (default en)."
+          },
+          "brand_name": {
+            "type": "string",
+            "description": "Brand name filled into the message template."
+          },
+          "code_length": {
+            "type": "integer",
+            "description": "Length of the code, 4 to 8 (overrides the application)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Your URL that receives status callbacks for this session."
+          }
+        },
+        "required": [
+          "recipient"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Verify/Session/",
+        "bodyMapping": {
+          "recipient": "$recipient",
+          "channel": "$channel",
+          "app_uuid": "$app_uuid",
+          "locale": "$locale",
+          "brand_name": "$brand_name",
+          "code_length": "$code_length",
+          "url": "$url"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "session_uuid": "$.session_uuid",
+            "api_id": "$.api_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "plivo_validate_verification",
+      "description": "Check the one-time code a person entered against a Verify session. Answers \"session validated successfully.\" when it is right, an error when it is wrong or expired. Each try counts towards the session's attempt limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_uuid": {
+            "type": "string",
+            "description": "The session_uuid from plivo_send_verification.",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "minLength": 36
+          },
+          "otp": {
+            "type": "string",
+            "description": "The code the person entered."
+          }
+        },
+        "required": [
+          "session_uuid",
+          "otp"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Verify/Session/{session_uuid}/",
+        "bodyMapping": {
+          "otp": "$otp"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "api_id": "$.api_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "plivo_get_verification",
+      "description": "Read a Verify session: recipient, channel, status (in-progress, verified, expired), the delivery attempts and the charges.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_uuid": {
+            "type": "string",
+            "description": "The session_uuid from plivo_send_verification.",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "minLength": 36
+          }
+        },
+        "required": [
+          "session_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Verify/Session/{session_uuid}/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "session_uuid": "$.session_uuid",
+            "app_uuid": "$.app_uuid",
+            "recipient": "$.recipient",
+            "channel": "$.channel",
+            "status": "$.status",
+            "count": "$.count",
+            "attempt_details": "$.attempt_details",
+            "charges": "$.charges",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at"
+          }
+        }
+      }
+    }
+  ]
+}

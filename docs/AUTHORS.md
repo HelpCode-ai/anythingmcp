@@ -2,10 +2,6 @@
 
 AnythingMCP is built by **helpcode.ai GmbH**, an independent team based in Freiburg, Germany.
 
-## Core team
-
-- **Matteo Morelli** ([@keysersoft](https://github.com/keysersoft)) — Architecture, backend, adapters
-
 ## Development approach
 
 AnythingMCP is built by a small team using AI coding assistants (primarily Claude). Every commit is human-reviewed before merge; every adapter is validated by the catalog test suite (`packages/backend/src/adapters/catalog.spec.ts`); production deployments — including the one running this gateway since 2025 at the original industrial group that gave rise to the project — are operated by humans.

@@ -1,6 +1,7 @@
 {
   "slug": "sap-business-one",
   "name": "SAP Business One",
+  "aliases": ["SAP B1", "B1", "SBO"],
   "description": "Drive SAP Business One ERP from any AI agent: business partners, items, sales orders and invoices, plus finance (A/P invoices, payments, journal entries, chart of accounts, bank statements). Service Layer OData v4, session-cookie auth via /Login.",
   "region": "de",
   "category": "erp",

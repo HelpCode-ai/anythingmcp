@@ -1,0 +1,1510 @@
+{
+  "slug": "daftra",
+  "name": "Daftra",
+  "description": "Work with Daftra, the cloud accounting and ERP of the Middle East, from your AI: look up invoices, clients, products, stock and the ledger, and create invoices, payments, expenses, purchases and journal entries with confirmation.",
+  "aliases": ["Daftara", "دفترة"],
+  "instructions": "## Daftra\nThis connector calls the **Daftra REST API** (`https://<subdomain>.daftra.com/api2`) of one Daftra account with an API key: sales invoices, credit notes and refunds, payments, clients and suppliers, products and stock, purchase invoices, expenses, treasuries and the general ledger (journals and chart of accounts).\n\n**Getting credentials (about 2 minutes)**\n1. Sign in to Daftra as an administrator.\n2. Open **Settings > API > API Keys** and click **Generate API key**; give it a name such as AnythingMCP.\n3. Paste the key into `DAFTRA_API_KEY` and the first part of your Daftra address into `DAFTRA_SUBDOMAIN` (`acme` for `acme.daftra.com`). The key is sent in the `APIKEY` header, only to your Daftra account, and acts with that account's permissions.\n\n**Request shape**: Daftra wraps every record in its model name. Writes send `{\"Invoice\": {...}, \"InvoiceItem\": [...]}`, `{\"PurchaseOrder\": {...}, \"PurchaseOrderItem\": [...]}` or `{\"Journal\": {...}, \"JournalTransaction\": [...]}`; the tools build that envelope. Lists answer with `data` (each row under its model name) and a pagination block; page with `page` and `limit` (up to 1000).\n\n**Ids**: every tool takes the internal `id`, not the printed number (an invoice `no` such as 000123). Find ids with the list tools; `daftra_list_stores`, `daftra_list_treasuries` and `daftra_list_journal_accounts` give the ids that documents refer to; tax ids appear on existing invoice lines.\n\n**Writes change the books.** Invoices, payments, expenses, journals, purchases, refunds and stock movements post to the ledger and to stock. Describe the change and wait for the user's yes before any write. Deletes (`daftra_delete_invoice`, `daftra_delete_invoice_payment`, `daftra_delete_expense`) are installed switched off.\n\n**Dates** are `YYYY-MM-DD`; amounts are in the document currency.\n\n**Common errors**\n- 401 or 403: the API key is wrong, deleted or lacks permission. Generate a new one under Settings > API > API Keys.\n- 404 on every call: the subdomain is wrong. It is the part before `.daftra.com` in the address you sign in at.\n- 400 or 422: a required field is missing or an id does not exist; the message names it.\n\n**Cloud and self-hosted**: both call the account's own `daftra.com` subdomain over the internet; nothing else differs.\n\n**Out of scope here**: estimates, incomes and taxes (405 through the API key), OAuth sign-in, work orders, appointments, staff, time tracking, notes and attachments.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "daftra",
+  "docsUrl": "https://docs.daftara.dev/",
+  "requiredEnvVars": ["DAFTRA_SUBDOMAIN", "DAFTRA_API_KEY"],
+  "envVarMeta": {
+    "DAFTRA_SUBDOMAIN": {
+      "label": "Daftra subdomain",
+      "kind": "address",
+      "help": "Only the first part of your Daftra address: acme for acme.daftra.com. A pasted full address is shortened to it.",
+      "example": "acme",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+      "patternMessage": "Enter only the subdomain, for example acme for acme.daftra.com."
+    },
+    "DAFTRA_API_KEY": {
+      "label": "Daftra API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Daftra: Settings > API > API Keys > Generate API key. Sent in the APIKEY header, only to your Daftra account.",
+      "link": "https://docs.daftra.com/tutorial/api/",
+      "example": "0a1b2c3d4e5f...",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the key, without spaces or a header name."
+    }
+  },
+  "verifyHints": {
+    "401": "Daftra refused the API key. Generate a new one under Settings > API > API Keys and paste it again.",
+    "403": "The API key has no access to this data. Use a key created by an administrator under Settings > API > API Keys.",
+    "404": "No Daftra account answers at this subdomain. It is the part before .daftra.com in the address you sign in at."
+  },
+  "probe": {
+    "tool": "daftra_list_stores"
+  },
+  "prerequisites": "A Daftra account and an administrator who can create API keys under Settings > API. About 2 minutes.",
+  "connector": {
+    "name": "Daftra",
+    "type": "REST",
+    "baseUrl": "https://{{DAFTRA_SUBDOMAIN}}.daftra.com/api2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "APIKEY",
+      "apiKey": "{{DAFTRA_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/stores.json"
+  },
+  "tools": [
+    {
+      "name": "daftra_list_invoices",
+      "description": "List sales invoices, newest first, each with its client, totals and payment status. Filter by client, invoice date range, payment status or warehouse; page with page and limit. Use daftra_get_invoice for the lines, taxes and payments of one invoice. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Only invoices of this client id (see daftra_list_clients)."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Only invoices dated on or after this day, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Only invoices dated on or before this day, YYYY-MM-DD."
+          },
+          "payment_status": {
+            "type": "integer",
+            "enum": [-1, 0, 1, 2, 3, 4],
+            "description": "Payment status: 0 unpaid, 1 partially paid, 2 paid, 3 refunded, 4 overpaid, -1 draft."
+          },
+          "store_id": {
+            "type": "integer",
+            "description": "Only invoices of this warehouse id (see daftra_list_stores)."
+          },
+          "recursive": {
+            "type": "integer",
+            "enum": [0, 1],
+            "description": "1 also returns the line items, taxes and payments of every invoice in the page. Makes the answer much longer; prefer daftra_get_invoice for one invoice."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "client_id": "$client_id",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "payment_status": "$payment_status",
+          "store_id": "$store_id",
+          "recursive": "$recursive"
+        }
+      }
+    },
+    {
+      "name": "daftra_get_invoice",
+      "description": "Get one sales invoice by its internal id with client, line items (InvoiceItem), taxes, payments and totals. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Internal Daftra id of the invoice (the id field, not the printed document number)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{id}.json"
+      }
+    },
+    {
+      "name": "daftra_list_credit_notes",
+      "description": "List credit notes issued to clients, newest first, with client and totals. Page with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credit_notes.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_list_refund_receipts",
+      "description": "List sales refund receipts (returned goods against an invoice), newest first, with client and totals. Page with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/refund_receipts.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_list_invoice_payments",
+      "description": "List payments recorded against sales invoices, newest first: invoice id, amount, method, date, treasury and status. Page with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice_payments.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_list_clients",
+      "description": "List clients (customers) with their id, business or personal name, contact details and balance. Page with page and limit; the client id is what invoices and payments need. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_get_client",
+      "description": "Get one client by its internal id with contact details, addresses and account settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Internal Daftra id of the client (the id field, not the printed document number)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/{id}.json"
+      }
+    },
+    {
+      "name": "daftra_list_suppliers",
+      "description": "List suppliers (vendors) with their id, name and contact details. Page with page and limit; the supplier id is what purchase invoices need. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_get_supplier",
+      "description": "Get one supplier by its internal id with contact details and account settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Internal Daftra id of the supplier (the id field, not the printed document number)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers/{id}.json"
+      }
+    },
+    {
+      "name": "daftra_list_products",
+      "description": "List products and services with id, name, code, selling and buying prices and stock settings. Page with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_get_product",
+      "description": "Get one product by its internal id: prices, taxes, type, stock per warehouse and, for a bundle, its components (ProductBundle). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Internal Daftra id of the product (the id field, not the printed document number)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{id}.json"
+      }
+    },
+    {
+      "name": "daftra_list_product_categories",
+      "description": "List the product categories with their ids and names. Page with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_categories.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_list_stores",
+      "description": "List warehouses (stores in Daftra) with their ids and names. Invoices, refunds and stock movements refer to a store_id from here. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stores.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_list_stock_transactions",
+      "description": "List stock movements (goods in and out per product and warehouse) with quantity, price, date and source. Page with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock_transactions.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_list_purchase_invoices",
+      "description": "List purchase invoices from suppliers, newest first, with supplier, totals and payment status. Page with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchase_invoices.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_get_purchase_invoice",
+      "description": "Get one purchase invoice by its internal id with supplier, every line (PurchaseOrderItem) with units and prices, taxes and totals. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Internal Daftra id of the purchase invoice (the id field, not the printed document number)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchase_invoices/{id}.json"
+      }
+    },
+    {
+      "name": "daftra_list_expenses",
+      "description": "List expenses with amount, date, category, vendor, treasury and accounts. Page with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_list_treasuries",
+      "description": "List treasuries: cash boxes, bank accounts and wallets, with id, name, type and currency. Payments and expenses refer to a treasury_id from here. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/treasuries.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_list_journals",
+      "description": "List journal entries of the general ledger, newest first, with date, description, totals and source document. Page with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/journals.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_get_journal",
+      "description": "Get one journal entry by its internal id with all its debit and credit lines (JournalTransaction) and their accounts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Internal Daftra id of the journal entry (the id field, not the printed document number)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/journals/{id}.json"
+      }
+    },
+    {
+      "name": "daftra_list_journal_accounts",
+      "description": "List the posting accounts of the chart of accounts with id, code, name, parent category (journal_cat_id) and type. Journal lines need a journal_account_id from here. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/journal_accounts.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_list_journal_categories",
+      "description": "List the parent (summary) accounts of the chart of accounts with id, code, name and their own parent (journal_cat_id, -1 at the top level). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/journal_cats.json",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "daftra_create_invoice",
+      "description": "Create a sales invoice for a client. Needs the client in Invoice.client_id and at least one line in InvoiceItem. Returns the new invoice id. Set Invoice.draft to 1 to keep it as a draft. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Invoice": {
+            "type": "object",
+            "description": "Invoice header. Required: client_id. Common: store_id (warehouse), date (YYYY-MM-DD, default today), currency_code (3 letters, default the account currency), draft (0 or 1), discount (percent), discount_amount, notes, po_number.",
+            "properties": {
+              "client_id": {
+                "type": "integer",
+                "description": "Client id from daftra_list_clients."
+              },
+              "store_id": {
+                "type": "integer",
+                "description": "Warehouse id from daftra_list_stores."
+              },
+              "date": {
+                "type": "string",
+                "description": "Invoice date, YYYY-MM-DD."
+              },
+              "currency_code": {
+                "type": "string",
+                "description": "Currency code such as SAR, EGP or USD."
+              },
+              "draft": {
+                "type": "integer",
+                "enum": [0, 1],
+                "description": "1 saves a draft, 0 issues the invoice."
+              },
+              "notes": {
+                "type": "string",
+                "description": "Notes printed on the invoice."
+              }
+            },
+            "required": ["client_id"]
+          },
+          "InvoiceItem": {
+            "type": "array",
+            "description": "Invoice lines, sent next to Invoice. Each: product_id or item (free text name), quantity, unit_price (before tax); optional description, discount, discount_type (1 percent, 2 amount), tax1 and tax2 (tax ids as set up in Daftra; read them from the lines of an existing invoice with daftra_get_invoice).",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": ["Invoice", "InvoiceItem"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices.json",
+        "bodyMapping": {
+          "Invoice": "$Invoice",
+          "InvoiceItem": "$InvoiceItem"
+        }
+      }
+    },
+    {
+      "name": "daftra_create_invoice_payment",
+      "description": "Record a payment received against a sales invoice: amount, date, method and the treasury it went into. This only records money already received; it does not charge anyone. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Internal id of the sales invoice being paid."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount received, in the invoice currency."
+          },
+          "payment_method": {
+            "type": "string",
+            "description": "Payment method code as set up in Daftra, for example cash or bank."
+          },
+          "date": {
+            "type": "string",
+            "description": "Payment date, YYYY-MM-DD (a time may follow: YYYY-MM-DD HH:MM:SS)."
+          },
+          "treasury_id": {
+            "type": "integer",
+            "description": "Treasury (cash box or bank account) id from daftra_list_treasuries."
+          },
+          "transaction_id": {
+            "type": "string",
+            "description": "Bank or gateway reference of the payment."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency code; leave out to use the invoice currency."
+          }
+        },
+        "required": ["invoice_id", "amount"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoice_payments.json",
+        "bodyMapping": {
+          "InvoicePayment": {
+            "invoice_id": "$invoice_id",
+            "amount": "$amount",
+            "payment_method": "$payment_method",
+            "date": "$date",
+            "treasury_id": "$treasury_id",
+            "transaction_id": "$transaction_id",
+            "notes": "$notes",
+            "currency_code": "$currency_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "daftra_create_client",
+      "description": "Create a client (customer) with name and contact details. Returns the new client id for invoices. Check with daftra_list_clients first that the client does not exist yet. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_name": {
+            "type": "string",
+            "description": "Company or display name of the client."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name of the contact person."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name of the contact person."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone1": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Two-letter country code, for example SA, EG or AE."
+          },
+          "default_currency_code": {
+            "type": "string",
+            "description": "Currency used for this client, for example SAR."
+          },
+          "type": {
+            "type": "integer",
+            "description": "Client type as Daftra numbers it; the documented example of a company uses 2. Leave out for the account default."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes."
+          }
+        },
+        "required": ["business_name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/clients.json",
+        "bodyMapping": {
+          "Client": {
+            "business_name": "$business_name",
+            "first_name": "$first_name",
+            "last_name": "$last_name",
+            "email": "$email",
+            "phone1": "$phone1",
+            "address1": "$address1",
+            "city": "$city",
+            "state": "$state",
+            "postal_code": "$postal_code",
+            "country_code": "$country_code",
+            "default_currency_code": "$default_currency_code",
+            "type": "$type",
+            "notes": "$notes"
+          }
+        }
+      }
+    },
+    {
+      "name": "daftra_update_client",
+      "description": "Change fields of an existing client; only the fields you pass are changed. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Internal id of the client."
+          },
+          "business_name": {
+            "type": "string",
+            "description": "New company or display name."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name of the contact person."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name of the contact person."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone1": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Two-letter country code."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/clients/{id}.json",
+        "bodyMapping": {
+          "Client": {
+            "business_name": "$business_name",
+            "first_name": "$first_name",
+            "last_name": "$last_name",
+            "email": "$email",
+            "phone1": "$phone1",
+            "address1": "$address1",
+            "city": "$city",
+            "state": "$state",
+            "postal_code": "$postal_code",
+            "country_code": "$country_code",
+            "notes": "$notes"
+          }
+        }
+      }
+    },
+    {
+      "name": "daftra_create_supplier",
+      "description": "Create a supplier (vendor) with name and contact details. Returns the new supplier id for purchase invoices. Check with daftra_list_suppliers first that it does not exist yet. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_name": {
+            "type": "string",
+            "description": "Company name of the supplier."
+          },
+          "supplier_number": {
+            "type": "string",
+            "description": "Your own supplier number; leave out to let Daftra number it."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name of the contact person."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name of the contact person."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone1": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Two-letter country code."
+          },
+          "default_currency_code": {
+            "type": "string",
+            "description": "Currency used with this supplier, for example SAR."
+          }
+        },
+        "required": ["business_name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/suppliers.json",
+        "bodyMapping": {
+          "Supplier": {
+            "business_name": "$business_name",
+            "supplier_number": "$supplier_number",
+            "first_name": "$first_name",
+            "last_name": "$last_name",
+            "email": "$email",
+            "phone1": "$phone1",
+            "address1": "$address1",
+            "city": "$city",
+            "state": "$state",
+            "postal_code": "$postal_code",
+            "country_code": "$country_code",
+            "default_currency_code": "$default_currency_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "daftra_create_product",
+      "description": "Create a product, service or bundle. Pass the fields in Product; for a bundle also pass its components in ProductBundle. Returns the new product id. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Product": {
+            "type": "object",
+            "description": "Product fields. Common: name (required), product_code, barcode, description, unit_price (selling price), buy_price, tax1 and tax2 (tax ids), supplier_id, brand, category, track_stock (0 or 1), low_stock_thershold (spelled this way by Daftra), type (1 for a stocked product, 3 for a bundle).",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Product name."
+              }
+            },
+            "required": ["name"]
+          },
+          "ProductBundle": {
+            "type": "array",
+            "description": "Only for a bundle: its components as [{\"product_id\": 12, \"quantity\": 2}], quantity per one bundle unit in the component's base unit.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": ["Product"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products.json",
+        "bodyMapping": {
+          "Product": "$Product",
+          "ProductBundle": "$ProductBundle"
+        }
+      }
+    },
+    {
+      "name": "daftra_update_product",
+      "description": "Change fields of an existing product; only the fields in Product are changed (for example name, product_code, prices, status). Passing ProductBundle replaces all components of a bundle. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Internal id of the product."
+          },
+          "Product": {
+            "type": "object",
+            "description": "Fields to change, for example {\"unit_price\": 49.5} or {\"name\": \"New name\"}."
+          },
+          "ProductBundle": {
+            "type": "array",
+            "description": "Only for a bundle: the complete new list of components [{\"product_id\": 12, \"quantity\": 2}]; it replaces the current one.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": ["id", "Product"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{id}.json",
+        "bodyMapping": {
+          "Product": "$Product",
+          "ProductBundle": "$ProductBundle"
+        }
+      }
+    },
+    {
+      "name": "daftra_create_purchase_invoice",
+      "description": "Create a purchase invoice from a supplier: header in PurchaseOrder (supplier_id required) and the lines in PurchaseOrderItem. Returns the new id. Posting it can update stock and the ledger. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "PurchaseOrder": {
+            "type": "object",
+            "description": "Header. Required: supplier_id. Common: date (YYYY-MM-DD), currency_code, store_id (receiving warehouse), draft (0 or 1), notes, is_received (1 when the goods arrived).",
+            "properties": {
+              "supplier_id": {
+                "type": "integer",
+                "description": "Supplier id from daftra_list_suppliers."
+              }
+            },
+            "required": ["supplier_id"]
+          },
+          "PurchaseOrderItem": {
+            "type": "array",
+            "description": "Lines, sent next to PurchaseOrder. Each: product_id or item (name), quantity, unit_price; optional description, discount, discount_type, tax1, tax2.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": ["PurchaseOrder", "PurchaseOrderItem"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/purchase_invoices.json",
+        "bodyMapping": {
+          "PurchaseOrder": "$PurchaseOrder",
+          "PurchaseOrderItem": "$PurchaseOrderItem"
+        }
+      }
+    },
+    {
+      "name": "daftra_update_purchase_invoice",
+      "description": "Update a purchase invoice. Read it first with daftra_get_purchase_invoice: when you change lines, send the header and ALL lines, because lines left out may be removed. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Internal id of the purchase invoice."
+          },
+          "PurchaseOrder": {
+            "type": "object",
+            "description": "Header fields to change, for example {\"date\": \"2026-10-01\", \"is_received\": 1}."
+          },
+          "PurchaseOrderItem": {
+            "type": "array",
+            "description": "The complete list of lines, only when lines change.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": ["id", "PurchaseOrder"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/purchase_invoices/{id}.json",
+        "bodyMapping": {
+          "PurchaseOrder": "$PurchaseOrder",
+          "PurchaseOrderItem": "$PurchaseOrderItem"
+        }
+      }
+    },
+    {
+      "name": "daftra_create_expense",
+      "description": "Record an expense: amount, date, vendor, category and the treasury it was paid from. Daftra posts it to the ledger. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "Amount paid."
+          },
+          "date": {
+            "type": "string",
+            "description": "Expense date, YYYY-MM-DD."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency code; leave out for the account currency."
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Who was paid."
+          },
+          "category": {
+            "type": "string",
+            "description": "Expense category name as used in Daftra."
+          },
+          "treasury_id": {
+            "type": "integer",
+            "description": "Treasury paid from, id from daftra_list_treasuries."
+          },
+          "note": {
+            "type": "string",
+            "description": "Description of the expense."
+          },
+          "tax1_id": {
+            "type": "integer",
+            "description": "Tax id from daftra_list_taxes, when the expense carries a tax."
+          },
+          "tax1_included": {
+            "type": "integer",
+            "enum": [0, 1],
+            "description": "1 when amount already includes that tax."
+          }
+        },
+        "required": ["amount"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/expenses.json",
+        "bodyMapping": {
+          "Expense": {
+            "amount": "$amount",
+            "date": "$date",
+            "currency_code": "$currency_code",
+            "vendor": "$vendor",
+            "category": "$category",
+            "treasury_id": "$treasury_id",
+            "note": "$note",
+            "tax1_id": "$tax1_id",
+            "tax1_included": "$tax1_included"
+          }
+        }
+      }
+    },
+    {
+      "name": "daftra_update_expense",
+      "description": "Change fields of an existing expense, for example the treasury it was paid from, the amount or the note; only the fields you pass are changed. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Internal id of the expense."
+          },
+          "amount": {
+            "type": "number",
+            "description": "New amount."
+          },
+          "date": {
+            "type": "string",
+            "description": "New date, YYYY-MM-DD."
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Who was paid."
+          },
+          "category": {
+            "type": "string",
+            "description": "Expense category name."
+          },
+          "treasury_id": {
+            "type": "integer",
+            "description": "Treasury paid from."
+          },
+          "note": {
+            "type": "string",
+            "description": "Description."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/expenses/{id}.json",
+        "bodyMapping": {
+          "Expense": {
+            "amount": "$amount",
+            "date": "$date",
+            "vendor": "$vendor",
+            "category": "$category",
+            "treasury_id": "$treasury_id",
+            "note": "$note"
+          }
+        }
+      }
+    },
+    {
+      "name": "daftra_create_journal",
+      "description": "Post a manual journal entry: a header in Journal and two or more lines in JournalTransaction. Total debit must equal total credit. Check the account ids with daftra_list_journal_accounts first. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Journal": {
+            "type": "object",
+            "description": "Header: date (YYYY-MM-DD), description, currency_code, draft (0 posts it, 1 keeps a draft).",
+            "properties": {
+              "date": {
+                "type": "string",
+                "description": "Entry date, YYYY-MM-DD."
+              },
+              "description": {
+                "type": "string",
+                "description": "What the entry is for."
+              }
+            }
+          },
+          "JournalTransaction": {
+            "type": "array",
+            "description": "Lines, sent next to Journal. Each: journal_account_id, currency_debit or currency_credit (the other 0), description. Example: [{\"journal_account_id\": 51, \"currency_debit\": 100, \"currency_credit\": 0, \"description\": \"Rent\"}, {\"journal_account_id\": 12, \"currency_debit\": 0, \"currency_credit\": 100, \"description\": \"Bank\"}].",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 2
+          }
+        },
+        "required": ["Journal", "JournalTransaction"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/journals.json",
+        "bodyMapping": {
+          "Journal": "$Journal",
+          "JournalTransaction": "$JournalTransaction"
+        }
+      }
+    },
+    {
+      "name": "daftra_create_journal_account",
+      "description": "Add a posting account to the chart of accounts under an existing parent category. The code must be unique. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Account name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Account code, digits, unique in the chart of accounts."
+          },
+          "journal_cat_id": {
+            "type": "integer",
+            "description": "Parent category id from daftra_list_journal_categories."
+          },
+          "type": {
+            "type": "integer",
+            "enum": [0, 1],
+            "description": "Nature of the account: 0 credit, 1 debit."
+          }
+        },
+        "required": ["name", "code", "journal_cat_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/journal_accounts.json",
+        "bodyMapping": {
+          "JournalAccount": {
+            "name": "$name",
+            "code": "$code",
+            "journal_cat_id": "$journal_cat_id",
+            "type": "$type"
+          }
+        }
+      }
+    },
+    {
+      "name": "daftra_create_stock_transaction",
+      "description": "Record a manual stock movement (goods in or out) for one product in one warehouse, for example to correct a balance. Changes stock levels and their valuation. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "StockTransaction": {
+            "type": "object",
+            "description": "Fields: product_id, store_id, transaction_type, quantity, price (unit cost), date, notes. transaction_type is Daftra's code for the direction of the movement; look at an existing movement of the same kind with daftra_list_stock_transactions to use the right code.",
+            "properties": {
+              "product_id": {
+                "type": "integer",
+                "description": "Product id."
+              },
+              "store_id": {
+                "type": "integer",
+                "description": "Warehouse id."
+              },
+              "quantity": {
+                "type": "number",
+                "description": "Quantity moved, in the product's base unit."
+              }
+            },
+            "required": ["product_id", "store_id", "quantity"]
+          }
+        },
+        "required": ["StockTransaction"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stock_transactions.json",
+        "bodyMapping": {
+          "StockTransaction": "$StockTransaction"
+        }
+      }
+    },
+    {
+      "name": "daftra_create_refund_receipt",
+      "description": "Create a sales refund receipt (a return) against an existing invoice: header in RefundReceipt with the original invoice id in subscription_id, returned lines in InvoiceItem. Changes stock and the ledger. Changes live accounting data in Daftra: show the user what will be written and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "RefundReceipt": {
+            "type": "object",
+            "description": "Header: subscription_id (id of the original invoice), client_id, store_id, date (YYYY-MM-DD), currency_code, notes.",
+            "properties": {
+              "subscription_id": {
+                "type": "integer",
+                "description": "Internal id of the invoice being refunded."
+              },
+              "client_id": {
+                "type": "integer",
+                "description": "Client id of that invoice."
+              }
+            },
+            "required": ["subscription_id", "client_id"]
+          },
+          "InvoiceItem": {
+            "type": "array",
+            "description": "Returned lines, sent next to RefundReceipt. Each: product_id, item (name), quantity, unit_price (before tax), tax1.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": ["RefundReceipt", "InvoiceItem"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refund_receipts.json",
+        "bodyMapping": {
+          "RefundReceipt": "$RefundReceipt",
+          "InvoiceItem": "$InvoiceItem"
+        }
+      }
+    },
+    {
+      "name": "daftra_delete_invoice",
+      "enabled": false,
+      "description": "Delete a sales invoice by its internal id, with its effect on stock and the ledger. Cannot be undone; issuing a credit note is usually the correct way to cancel an invoice. Installed switched off. Confirm the invoice number and client with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Internal Daftra id of the invoice (the id field, not the printed document number)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/invoices/{id}.json"
+      }
+    },
+    {
+      "name": "daftra_delete_invoice_payment",
+      "enabled": false,
+      "description": "Delete a payment recorded against an invoice, by the payment id (not the invoice id). The invoice becomes unpaid or partially paid again. Installed switched off. Confirm the payment with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Internal Daftra id of the payment (the id field, not the printed document number)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/invoice_payments/{id}.json"
+      }
+    },
+    {
+      "name": "daftra_delete_expense",
+      "enabled": false,
+      "description": "Delete an expense by its internal id, with its ledger entry. Cannot be undone. Installed switched off. Confirm the expense (amount, date, vendor) with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Internal Daftra id of the expense (the id field, not the printed document number)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/expenses/{id}.json"
+      }
+    }
+  ]
+}

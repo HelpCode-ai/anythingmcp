@@ -24,6 +24,8 @@ type Tool = {
   annotations?: Record<string, unknown>;
 };
 const adapter = adapterJson as unknown as {
+  unlisted?: boolean;
+  requiredEnvVars: string[];
   probe: { tool: string };
   connector: { type: string; baseUrl: string; authType: string; authConfig: Record<string, any>; headers: Record<string, string> };
   tools: Tool[];
@@ -55,6 +57,14 @@ describe('sap-signavio adapter (static)', () => {
         expect({ tool: t.name, param: p, reaches: reaches(t, p) }).toEqual({ tool: t.name, param: p, reaches: true });
       }
     }
+  });
+
+  it('requires the workspace ID: an empty tenant is refused as login.tenantNotFound', () => {
+    expect(adapter.requiredEnvVars).toContain('SIGNAVIO_WORKSPACE_ID');
+  });
+
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(adapter.unlisted).toBeUndefined();
   });
 
   it('probe needs no arguments', () => {

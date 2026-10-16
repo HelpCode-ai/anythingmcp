@@ -1,0 +1,667 @@
+{
+  "slug": "microsoft-excel",
+  "name": "Excel (Microsoft 365)",
+  "description": "Let your AI work with Excel workbooks in OneDrive and SharePoint: list sheets, read any range or a sheet's used range, write values and formulas, read and append table rows, add sheets and create tables. Microsoft 365 through the Microsoft Graph workbook API, signed in with your Microsoft account.",
+  "instructions": "## Excel\nThis connector reads and writes Excel workbooks (.xlsx) stored in OneDrive or SharePoint through the **Microsoft Graph workbook API** (`https://graph.microsoft.com/v1.0`): worksheets, cell ranges, the used range of a sheet, Excel tables and their rows. It works on the file in the cloud, as the user who authorized the connector; Excel for the web and desktop see the changes. Work or school accounts (Microsoft 365) are fully supported; personal OneDrive supports most read and range tools but not table rows.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com (or https://portal.azure.com) → **Applications → App registrations → New registration**.\n2. Name it (e.g. \"AnythingMCP Microsoft 365\") and choose the **supported account types**:\n   - *Accounts in this organizational directory only* (single tenant): only your organisation's users can sign in. Set `MICROSOFT_TENANT_ID` to the **Directory (tenant) ID** shown on the app's Overview page (a GUID), or to your domain such as `contoso.onmicrosoft.com`.\n   - *Accounts in any organizational directory* (multi-tenant): set `MICROSOFT_TENANT_ID` to `organizations`.\n   - *... and personal Microsoft accounts*: set `MICROSOFT_TENANT_ID` to `common` (work, school and personal accounts) or `consumers` (personal accounts only).\n   The value must match the app's account type, otherwise Microsoft refuses the sign-in (AADSTS50194 or AADSTS50020).\n3. Under **Redirect URI** pick platform **Web** and enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**: add `offline_access`, `User.Read`, `Files.ReadWrite`.\n5. **Certificates & secrets → New client secret**. Copy the secret **Value** (not the Secret ID); it is shown once. Note its expiry date: when it expires the connector stops working until you paste a new one.\n6. Paste the **Application (client) ID** into `MICROSOFT_CLIENT_ID`, the secret value into `MICROSOFT_CLIENT_SECRET`, the tenant value from step 2 into `MICROSOFT_TENANT_ID`, and install.\n7. On the connector page click **Authorize with Provider** and sign in with the account whose workbooks the AI should work with. The refresh token is stored encrypted and access tokens (about 1 hour) are renewed automatically.\n\n**One Entra app for all Microsoft connectors**: the app registration made for the Outlook connector works here as well. Open it, add the delegated permissions from step 4 under **API permissions**, keep the same redirect URI, and reuse the same `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and `MICROSOFT_TENANT_ID`. Each connector asks only for its own scopes when you authorize it. The permissions per connector:\n- Outlook: `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`\n- OneDrive: `Files.ReadWrite`\n- Excel: `Files.ReadWrite` (plus `Files.ReadWrite.All` for workbooks in SharePoint or shared with the user)\n- SharePoint: `Sites.ReadWrite.All` and `Files.ReadWrite.All`\nEvery connector also needs `offline_access` and `User.Read`.\n\n**Admin consent**: these delegated permissions normally do not need an administrator, but many organisations turn off user consent. If the sign-in shows \"Need admin approval\" (AADSTS65001 or AADSTS90094), a tenant administrator opens the app registration → **API permissions → Grant admin consent for <organisation>** once; afterwards every user can authorize. Each connector still works only with what the account that signed in may see.\n\n**Scopes**: `offline_access User.Read Files.ReadWrite`. `offline_access` is what makes Microsoft issue a refresh token. `Files.ReadWrite` covers workbooks in the user's own OneDrive. For workbooks in SharePoint libraries or shared by other people, add `Files.ReadWrite.All` to the app registration and replace `Files.ReadWrite` with it in the connector's OAuth settings, then authorize again. Even reading a workbook needs write permission, because Graph opens it in an Excel session. To keep the AI from changing workbooks, disable `excel_update_range`, `excel_add_worksheet`, `excel_add_table_rows`, `excel_create_table`.\n\n**Switched off at install**: `excel_clear_range` and `excel_delete_worksheet`. Turn them on per tool if the AI needs them.\n\n**Finding a workbook**: every tool takes the workbook's `drive_id` and `item_id`.\n- In the user's OneDrive: `excel_find_workbooks` (search) or `excel_get_workbook_by_path` (e.g. `Finance/Budget 2026.xlsx`) return `id` and `parentReference.driveId`.\n- In SharePoint: use the SharePoint connector's `sharepoint_list_drives` and `sharepoint_search_drive` for the library's drive id and the file's id.\nOnly `.xlsx` (and `.xlsm`, `.xlsb`) files work; `.xls` and `.csv` answer an error. Then call `excel_list_worksheets` to learn the sheet names.\n\n**Reading**: `excel_read_range` reads an address on one sheet (`A1:D50`, `A:C`, `B2`); `excel_read_used_range` reads everything that holds values and tells the sheet's size. `values` are a list of rows; numbers come as numbers and dates as Excel serial numbers (days since 30 December 1899): ask for `text` in `fields` to get them as displayed. There is no pagination: read big sheets in blocks of rows (`A1:Z500`, `A501:Z1000`), keeping each answer under the 200 KB cap. Tables: `excel_list_tables`, `excel_list_table_columns`, `excel_list_table_rows` (paged with `top` and `skip`).\n\n**Writing**\n- `excel_update_range` overwrites a range with `values` or `formulas` (English function names and commas, e.g. `=SUM(B2:B20)`), optionally with `number_format`. The arrays must match the range's shape exactly.\n- `excel_add_table_rows` appends rows to a table; it is the safest way to add records, because the table grows and keeps its formulas and formats. Send many rows in one call.\n- `excel_add_worksheet` adds a tab; `excel_create_table` turns a range into a table.\nChanges are saved to the file immediately. If someone has the file open in Excel desktop with unsaved changes, or a large workbook is still loading, Graph can answer 409 or 504: wait a moment and retry.\n\n**Limits**: Graph handles workbooks up to about 100 MB; requests time out after about 30 seconds, so keep ranges moderate. Excel throttles per workbook; a throttled call answers 429 with Retry-After.\n\n**Common errors**\n- 401 `InvalidAuthenticationToken`: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 `accessDenied`: a permission is missing, or the workbook belongs to someone else and the scope lacks `Files.ReadWrite.All`.\n- 404 `itemNotFound`: wrong drive or item id, or a worksheet or table name that does not exist (names are case-sensitive in some places; check `excel_list_worksheets`).\n- 400 `InvalidArgument`: an address Excel cannot read, or values whose shape does not match the range. 400 `ItemAlreadyExists`: a sheet with that name exists.\n- `UnsupportedWorkbook` or `NotSupported`: the file is not .xlsx, is password protected, or is too large for the workbook API.\n\n**Out of scope here**: creating new workbook files, charts, pivot tables, formatting beyond number formats, named items, and workbook sessions (every call is saved directly).",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "microsoft-excel",
+  "docsUrl": "https://learn.microsoft.com/en-us/graph/api/resources/excel",
+  "requiredEnvVars": [
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_TENANT_ID"
+  ],
+  "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  "envVarMeta": {
+    "MICROSOFT_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center → App registrations → your app → Overview: Application (client) ID. The app registration made for the Outlook connector works here too.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "help": "Same app → Certificates & secrets → New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    },
+    "MICROSOFT_TENANT_ID": {
+      "label": "Tenant",
+      "kind": "setting",
+      "help": "Single-tenant app: the Directory (tenant) ID from the app's Overview page (or your domain, e.g. contoso.onmicrosoft.com). Multi-tenant app: organizations. App that also accepts personal accounts: common (or consumers for personal accounts only).",
+      "example": "organizations",
+      "pattern": "^(common|organizations|consumers|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)$",
+      "patternMessage": "Use a tenant GUID, a verified domain such as contoso.onmicrosoft.com, or one of common, organizations, consumers."
+    }
+  },
+  "verifyHints": {
+    "401": "Microsoft refused the access token. Click Authorize with Provider again; if the client secret has expired, create a new one in the app registration first.",
+    "403": "The app lacks a Graph permission or consent for it. Add Files.ReadWrite (or Files.ReadWrite.All) and User.Read as delegated permissions, grant admin consent if your organisation requires it, and authorize again.",
+    "404": "Microsoft Graph found no OneDrive for this account. Work or school accounts need a OneDrive licence, and the user must have opened OneDrive once.",
+    "rate_limited": "Microsoft Graph is throttling this account or workbook. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "excel_get_my_drive"
+  },
+  "prerequisites": "An app registration in Microsoft Entra (free, about 10 minutes) with the redirect URI below, the delegated Graph permissions `offline_access`, `User.Read` and `Files.ReadWrite` (`Files.ReadWrite.All` for workbooks in SharePoint), and a client secret. The app registration of the Outlook connector can be reused: add the permission to it. Some organisations only let an admin grant consent.",
+  "connector": {
+    "name": "Excel (Microsoft Graph)",
+    "type": "REST",
+    "baseUrl": "https://graph.microsoft.com/v1.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/token",
+      "scopes": "offline_access User.Read Files.ReadWrite"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me/drive"
+  },
+  "tools": [
+    {
+      "name": "excel_get_my_drive",
+      "description": "Get the signed-in user's OneDrive: its id (the drive_id for workbooks stored there), type and owner. A cheap check that the connector works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive",
+        "queryParams": {
+          "$select": "id,driveType,name,owner,webUrl"
+        }
+      }
+    },
+    {
+      "name": "excel_find_workbooks",
+      "description": "Search the user's OneDrive for workbooks by name or content, e.g. \"budget\" or \"xlsx\". Returns id, name, parentReference.driveId (the drive_id the other tools need), size, dates and webUrl. Only .xlsx files work with the workbook tools. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, matched against file names, metadata and content, e.g. \"budget 2026\". Write a single quote as two (''), e.g. \"O''Brien\"."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/root/search(q='{query}')",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,lastModifiedDateTime,lastModifiedBy,parentReference,file",
+          "$top": "$top",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "excel_get_workbook_by_path",
+      "description": "Look up a workbook in the user's OneDrive by path, e.g. \"Documents/Budget 2026.xlsx\", and return its id and parentReference.driveId for the other tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path from the top of the OneDrive without a leading slash, e.g. \"Finance/Budget 2026.xlsx\". Names containing #, % or ? cannot be addressed by path: use excel_find_workbooks."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/root:/{path}",
+        "queryParams": {
+          "$select": "id,name,size,webUrl,lastModifiedDateTime,parentReference,file"
+        }
+      }
+    },
+    {
+      "name": "excel_list_worksheets",
+      "description": "List the worksheets (tabs) of a workbook: id, name, position (0-based) and visibility. Call it first to learn the sheet names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/worksheets",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,position,visibility"
+        }
+      }
+    },
+    {
+      "name": "excel_read_range",
+      "description": "Read a range of one worksheet, e.g. \"A1:D20\": returns address and values (a list of rows, numbers as numbers, dates as serial numbers) by default, plus text, formulas or numberFormat when asked through fields. Output over 200 KB is cut and marked _truncated: read big sheets in blocks of rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          },
+          "worksheet": {
+            "type": "string",
+            "description": "Worksheet name (e.g. \"Sheet1\", \"Sales 2026\") or id, from excel_list_worksheets."
+          },
+          "address": {
+            "type": "string",
+            "description": "Cell range in A1 notation without the sheet name, e.g. \"A1:D20\", \"B2\", \"A:C\" (whole columns) or \"2:5\" (whole rows)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Range properties to return, comma-separated: address, values, text (as displayed), formulas, numberFormat, valueTypes, rowCount, columnCount, rowIndex, columnIndex.",
+            "default": "address,values,rowCount,columnCount"
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "worksheet",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/worksheets/{worksheet}/range(address='{address}')",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "excel_read_used_range",
+      "description": "Read the part of a worksheet that holds values (its used range): address (e.g. Sheet1!A1:F120), rowCount, columnCount and values. Use it to learn a sheet's size before reading blocks. Output over 200 KB is cut and marked _truncated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          },
+          "worksheet": {
+            "type": "string",
+            "description": "Worksheet name (e.g. \"Sheet1\", \"Sales 2026\") or id, from excel_list_worksheets."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Range properties to return, comma-separated: address, values, text (as displayed), formulas, numberFormat, valueTypes, rowCount, columnCount, rowIndex, columnIndex.",
+            "default": "address,values,rowCount,columnCount"
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "worksheet"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/worksheets/{worksheet}/usedRange(valuesOnly=true)",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "excel_update_range",
+      "description": "Write into a range, overwriting what is there: values, or formulas (e.g. [[\"=SUM(B2:B20)\"]]), and optionally numberFormat. The arrays must have exactly the range's rows and columns (\"A1:B2\" takes 2 rows of 2). Returns the range with its new values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          },
+          "worksheet": {
+            "type": "string",
+            "description": "Worksheet name (e.g. \"Sheet1\", \"Sales 2026\") or id, from excel_list_worksheets."
+          },
+          "address": {
+            "type": "string",
+            "description": "Cell range in A1 notation without the sheet name, e.g. \"A1:D20\", \"B2\", \"A:C\" (whole columns) or \"2:5\" (whole rows)."
+          },
+          "values": {
+            "type": "array",
+            "description": "Rows of cell values, e.g. [[\"Date\", \"Amount\"], [\"2026-10-09\", 120.5]]. Each inner list is one row and every row must have the same number of cells. A value starting with = is entered as a formula.",
+            "items": {
+              "type": "array",
+              "items": {
+                "description": "A cell value: string, number, boolean or null."
+              }
+            }
+          },
+          "formulas": {
+            "type": "array",
+            "description": "Rows of formulas in English notation, e.g. [[\"=A2*1.19\"]], instead of values.",
+            "items": {
+              "type": "array",
+              "items": {
+                "description": "A formula or value."
+              }
+            }
+          },
+          "number_format": {
+            "type": "array",
+            "description": "Rows of Excel number formats, e.g. [[\"0.00\", \"dd/mm/yyyy\"]].",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "A number format code."
+              }
+            }
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "worksheet",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/worksheets/{worksheet}/range(address='{address}')",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "values": "$values",
+          "formulas": "$formulas",
+          "numberFormat": "$number_format"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "excel_add_worksheet",
+      "description": "Add a worksheet (tab) at the end of the workbook. Returns its id, name, position and visibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the new sheet, unique in the workbook, at most 31 characters, without : \\ / ? * [ ]."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/worksheets/add",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "excel_list_tables",
+      "description": "List the tables (formatted Excel tables) of a workbook: id, name, showHeaders, showTotals and style. Table rows are read and appended with excel_list_table_rows and excel_add_table_rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/tables",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,showHeaders,showTotals,style"
+        }
+      }
+    },
+    {
+      "name": "excel_list_table_columns",
+      "description": "List a table's columns: id, name (the header text) and index. Use it to put values in the right order before adding rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          },
+          "table": {
+            "type": "string",
+            "description": "Table name (e.g. \"Table1\") or id, from excel_list_tables."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/tables/{table}/columns",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,index"
+        }
+      }
+    },
+    {
+      "name": "excel_list_table_rows",
+      "description": "Read the data rows of a table (without the header): each row's index and values. Page with top and skip. Output over 200 KB is cut and marked _truncated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          },
+          "table": {
+            "type": "string",
+            "description": "Table name (e.g. \"Table1\") or id, from excel_list_tables."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return.",
+            "minimum": 1
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip from the top of the table, for the next page.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/tables/{table}/rows",
+        "encodePathParams": true,
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "excel_add_table_rows",
+      "description": "Append rows at the end of a table (or insert them at a 0-based index); the table grows and formulas and formats of the table columns carry over. values is a list of rows with one value per table column. Add many rows in one call rather than one at a time. Work or school accounts only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          },
+          "table": {
+            "type": "string",
+            "description": "Table name (e.g. \"Table1\") or id, from excel_list_tables."
+          },
+          "values": {
+            "type": "array",
+            "description": "Rows of cell values, e.g. [[\"Date\", \"Amount\"], [\"2026-10-09\", 120.5]]. Each inner list is one row and every row must have the same number of cells. A value starting with = is entered as a formula.",
+            "items": {
+              "type": "array",
+              "items": {
+                "description": "A cell value: string, number, boolean or null."
+              }
+            }
+          },
+          "index": {
+            "type": "integer",
+            "description": "Optional 0-based position among the data rows; rows below move down. Default: the end.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "table",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/tables/{table}/rows",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "values": "$values",
+          "index": "$index"
+        }
+      }
+    },
+    {
+      "name": "excel_create_table",
+      "description": "Turn a range into an Excel table, e.g. address \"Sheet1!A1:D1\" with has_headers true to start an empty table from a header row. Returns the table's id and name (Table1, Table2...).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          },
+          "address": {
+            "type": "string",
+            "description": "Range with the sheet name, e.g. \"Sheet1!A1:D1\" or \"'Sales 2026'!A1:F50\"."
+          },
+          "has_headers": {
+            "type": "boolean",
+            "description": "true when the first row of the range holds the column names."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "address",
+          "has_headers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/tables/add",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "address": "$address",
+          "hasHeaders": "$has_headers"
+        }
+      }
+    },
+    {
+      "name": "excel_clear_range",
+      "description": "Clear a range: its contents, its formats, or both. Cannot be undone through the API, only from the file's version history. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          },
+          "worksheet": {
+            "type": "string",
+            "description": "Worksheet name (e.g. \"Sheet1\", \"Sales 2026\") or id, from excel_list_worksheets."
+          },
+          "address": {
+            "type": "string",
+            "description": "Cell range in A1 notation without the sheet name, e.g. \"A1:D20\", \"B2\", \"A:C\" (whole columns) or \"2:5\" (whole rows)."
+          },
+          "apply_to": {
+            "type": "string",
+            "description": "What to clear: \"Contents\" (values and formulas), \"Formats\" or \"All\" (default).",
+            "enum": [
+              "All",
+              "Contents",
+              "Formats"
+            ],
+            "default": "All"
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "worksheet",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/worksheets/{worksheet}/range(address='{address}')/clear",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "applyTo": "$apply_to"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "excel_delete_worksheet",
+      "description": "Delete a worksheet with everything on it. Cannot be undone through the API, only from the file's version history. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the workbook: parentReference.driveId from excel_find_workbooks or excel_get_workbook_by_path, or the id from excel_get_my_drive for the user's own OneDrive. For a SharePoint library, the drive id from the SharePoint connector's sharepoint_list_drives."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Drive item id of the .xlsx file, from excel_find_workbooks or excel_get_workbook_by_path."
+          },
+          "worksheet": {
+            "type": "string",
+            "description": "Worksheet name (e.g. \"Sheet1\", \"Sales 2026\") or id, from excel_list_worksheets."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "worksheet"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/drives/{drive_id}/items/{item_id}/workbook/worksheets/{worksheet}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    }
+  ]
+}

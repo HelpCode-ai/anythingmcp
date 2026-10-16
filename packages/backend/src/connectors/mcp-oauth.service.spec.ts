@@ -427,6 +427,44 @@ describe('McpOAuthService PKCE', () => {
     expect(params.get('client_id')).toBe('keystring');
   });
 
+  it('leaves PKCE out of the authorization URL when there is no challenge (LinkedIn, pkce: false)', () => {
+    const url = new URL(
+      service.buildAuthorizationUrl({
+        authorizationEndpoint: 'https://www.linkedin.com/oauth/v2/authorization',
+        clientId: 'li-client',
+        redirectUri: 'https://cloud.anythingmcp.com/api/mcp-oauth/callback',
+        state: 'state-li',
+        scope: 'r_ads r_ads_reporting',
+      }),
+    );
+    expect(url.searchParams.get('response_type')).toBe('code');
+    expect(url.searchParams.get('state')).toBe('state-li');
+    expect(url.searchParams.has('code_challenge')).toBe(false);
+    expect(url.searchParams.has('code_challenge_method')).toBe(false);
+  });
+
+  it('sends no code_verifier on the exchange when the flow ran without PKCE', async () => {
+    mockedAxios.post.mockReset();
+    mockedAxios.post.mockResolvedValue({
+      data: { access_token: 'li.at', expires_in: 5184000 },
+    } as any);
+
+    await service.exchangeCodeForTokens({
+      tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
+      code: 'the-code',
+      redirectUri: 'https://cloud.anythingmcp.com/api/mcp-oauth/callback',
+      clientId: 'li-client',
+      clientSecret: 'li-secret',
+    });
+
+    const params = new URLSearchParams(String(mockedAxios.post.mock.calls[0][1]));
+    expect(params.has('code_verifier')).toBe(false);
+    // LinkedIn's standard flow: client credentials in the body.
+    expect(params.get('client_id')).toBe('li-client');
+    expect(params.get('client_secret')).toBe('li-secret');
+    expect(params.get('grant_type')).toBe('authorization_code');
+  });
+
   it('keeps the verifier with its state, until it expires or is taken', async () => {
     const s = new McpOAuthService();
     const flow = {

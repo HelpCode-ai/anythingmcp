@@ -139,6 +139,28 @@ describe('ConnectorSetupService — find', () => {
     expect(logged[2].metadata).toEqual({ query: 'zzqx', results: 0, missing: 'zzqx', via: 'mcp' });
   });
 
+  it('forgives a typo and knows other names, and records how it matched', async () => {
+    const { service, ctx, productEvents } = build();
+    const typo: any = (await service.find(ctx, { query: 'bot de telgram' })).body;
+    expect(typo.results[0].adapter).toBe('telegram-bot');
+    const alias: any = (await service.find(ctx, { query: 'mercado livre' })).body;
+    expect(alias.results[0].adapter).toBe('mercado-libre');
+    const logged = productEvents.log.mock.calls.map(([e]: any) => e.metadata);
+    expect(logged[0]).toEqual(expect.objectContaining({ query: 'bot de telgram', match: 'fuzzy' }));
+    expect(logged[0].missing).toBeUndefined();
+    expect(logged[1]).toEqual(expect.objectContaining({ query: 'mercado livre', match: 'direct' }));
+  });
+
+  it('never offers an unlisted adapter, whatever the query', async () => {
+    const { service, ctx } = build();
+    for (const query of ['teamsystem', 'zucchetti', 'zucheti', 'cas genesisworld', 'asite']) {
+      const out: any = (await service.find(ctx, { query, limit: 10 })).body;
+      expect(out.results.map((r: any) => r.adapter)).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/^(teamsystem|zucchetti|cas-genesisworld|asite)$/)]),
+      );
+    }
+  });
+
   it('never offers payment, banking or trading connectors', async () => {
     const { service, ctx } = build();
     const out: any = (await service.find(ctx, { query: 'payone sorare', limit: 10 })).body;
@@ -234,7 +256,7 @@ describe('ConnectorSetupService — install', () => {
     const out: any = await service.install(ctx, { adapter: 'openplz' });
     expect(out.body).toMatchObject({
       error: 'Trial limit reached (2 connectors).',
-      upgradeUrl: 'https://cloud.example.com/start-trial',
+      upgradeUrl: 'https://cloud.example.com/start-trial?source=chat_setup',
     });
     expect(out.body.whatTheUserCanDo).toMatch(/nothing is charged before the trial ends/);
   });
@@ -244,7 +266,7 @@ describe('ConnectorSetupService — install', () => {
     licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('Connector limit reached.'));
     licenseGuard.getUsage.mockResolvedValueOnce({ plan: 'cloud_starter', connectors: { current: 5, max: 5 } });
     const out: any = await service.install(ctx, { adapter: 'openplz' });
-    expect(out.body.upgradeUrl).toBe('https://cloud.example.com/settings/license');
+    expect(out.body.upgradeUrl).toBe('https://cloud.example.com/settings/license?source=chat_setup');
   });
 
   it('at the limit, tells an editor who can lift it, without a billing link', async () => {
@@ -270,7 +292,7 @@ describe('ConnectorSetupService — status', () => {
     expect(out.trial).toEqual({
       daysLeft: 5,
       endsAt: expect.any(String),
-      choosePlanUrl: 'https://cloud.example.com/start-trial',
+      choosePlanUrl: 'https://cloud.example.com/start-trial?source=chat_setup',
       afterTheTrial: expect.stringMatching(/Nothing is charged before then/),
     });
   });
@@ -278,7 +300,7 @@ describe('ConnectorSetupService — status', () => {
   it('sends an admin to the licence page once a card trial no longer fits', async () => {
     const { service, ctx } = build({ role: 'ADMIN', trial: running(1, false) });
     const out: any = (await service.status(ctx)).body;
-    expect(out.trial).toMatchObject({ daysLeft: 1, choosePlanUrl: 'https://cloud.example.com/settings/license' });
+    expect(out.trial).toMatchObject({ daysLeft: 1, choosePlanUrl: 'https://cloud.example.com/settings/license?source=chat_setup' });
     expect(out.trial.afterTheTrial).not.toMatch(/card/i);
   });
 
@@ -291,7 +313,7 @@ describe('ConnectorSetupService — status', () => {
   it('reports an ended trial, with the licence page for an admin', async () => {
     const ended = { endsAt: new Date(Date.now() - DAY), active: false, cardTrialAvailable: false };
     const admin: any = (await build({ role: 'ADMIN', trial: ended }).service.status(build().ctx)).body;
-    expect(admin.trial).toMatchObject({ ended: true, choosePlanUrl: 'https://cloud.example.com/settings/license' });
+    expect(admin.trial).toMatchObject({ ended: true, choosePlanUrl: 'https://cloud.example.com/settings/license?source=chat_setup' });
     const editor: any = (await build({ role: 'EDITOR', trial: ended }).service.status(build().ctx)).body;
     expect(editor.trial).toEqual({ ended: true, endedAt: expect.any(String), afterTheTrial: expect.stringMatching(/administrator/) });
   });

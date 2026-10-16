@@ -520,6 +520,7 @@ describe('LoginController', () => {
     let cloud: LoginController;
     let productEvents: { log: jest.Mock };
     let licenseGuard: { getTrialState: jest.Mock };
+    let eligibility: { hadSubscription: jest.Mock };
     let cloudPrisma: {
       user: { findUnique: jest.Mock };
       organizationMember: { findFirst: jest.Mock };
@@ -541,7 +542,7 @@ describe('LoginController', () => {
       }
       cloudPrisma.user.findUnique.mockImplementation(({ select }: any) =>
         select?.organizationId
-          ? { organizationId: 'org-1' }
+          ? { organizationId: 'org-1', email: 'a@b.com' }
           : { id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'hash' },
       );
       cloudPrisma.organizationMember.findFirst.mockResolvedValue({ role: opts.role ?? 'ADMIN' });
@@ -571,6 +572,7 @@ describe('LoginController', () => {
       };
       productEvents = { log: jest.fn().mockResolvedValue(undefined) };
       licenseGuard = { getTrialState: jest.fn().mockResolvedValue(null) };
+      eligibility = { hadSubscription: jest.fn().mockResolvedValue(false) };
       config.get.mockImplementation((key: string) =>
         key === 'FRONTEND_URL' ? 'https://cloud.example/' : undefined,
       );
@@ -584,6 +586,7 @@ describe('LoginController', () => {
         grants as any,
         productEvents as any,
         licenseGuard as any,
+        eligibility as any,
       );
     });
 
@@ -635,7 +638,7 @@ describe('LoginController', () => {
         expect(res._sent).toContain('Your free trial runs until October&nbsp;13.');
         expect(res._sent).toContain('Nothing is charged before October&nbsp;13.');
         expect(res._sent).toMatch(
-          /<a href="https:\/\/cloud\.example\/start-trial" target="_blank" rel="noopener noreferrer">add a card now \(new tab\)<\/a>/,
+          /<a href="https:\/\/cloud\.example\/start-trial\?source=post_approve" target="_blank" rel="noopener noreferrer">add a card now \(new tab\)<\/a>/,
         );
         // Continue stays the first and only button.
         const html = res._sent ?? '';
@@ -663,6 +666,29 @@ describe('LoginController', () => {
         expect(productEvents.log).toHaveBeenCalledWith(
           expect.objectContaining({ metadata: { client: 'Claude' } }),
         );
+      });
+
+      it('is left out for an address that had a subscription: it would pay today', async () => {
+        arrange();
+        licenseGuard.getTrialState.mockResolvedValue(trial());
+        eligibility.hadSubscription.mockResolvedValue(true);
+        const res = await login();
+
+        expect(eligibility.hadSubscription).toHaveBeenCalledWith('a@b.com');
+        expect(res._sent).toContain('Claude is connected');
+        expect(res._sent).not.toContain('start-trial');
+        expect(res._sent).not.toContain('Nothing is charged');
+      });
+
+      it('keeps the line when the history is unknown, and never waits long for it', async () => {
+        arrange();
+        licenseGuard.getTrialState.mockResolvedValue(trial());
+        eligibility.hadSubscription.mockReturnValue(new Promise(() => undefined));
+        const started = Date.now();
+        const res = await login();
+
+        expect(Date.now() - started).toBeLessThan(3000);
+        expect(res._sent).toContain('start-trial');
       });
 
       it('is never shown to an editor, whose licence is not looked up', async () => {
@@ -746,7 +772,7 @@ describe('LoginController', () => {
       cloud: { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false },
       selfHosted: { mode: 'self-hosted', isCloud: () => false, isSelfHosted: () => true },
     };
-    const make = (deployment: object, p: object = prisma, trustStats?: object) =>
+    const make = (deployment: object, p: object = prisma) =>
       new LoginController(
         authService as unknown as AuthService,
         p as unknown as PrismaService,
@@ -755,9 +781,6 @@ describe('LoginController', () => {
         sso as unknown as SsoService,
         deployment as any,
         grants as any,
-        undefined,
-        undefined,
-        trustStats as any,
       );
     const session = (redirectUri: string, clientName: string) => {
       store.getOAuthSession.mockResolvedValue({
@@ -846,14 +869,14 @@ describe('LoginController', () => {
       expect(html.indexOf('value="approve"')).toBeLessThan(html.indexOf('value="deny"'));
     });
 
-    it('makes Frankfurt and DPA claims on Cloud only, with the live star count', async () => {
+    it('makes Frankfurt and DPA claims on Cloud only, and shows no star count', async () => {
       session('https://claude.ai/api/mcp/auth_callback', 'Claude');
-      const stats = { peek: () => ({ githubStars: 1234 }) };
-      const cloudHtml = await page(make(DEPLOY.cloud, prisma, stats));
+      const cloudHtml = await page(make(DEPLOY.cloud, prisma));
       expect(cloudHtml).toContain('Hosted in Frankfurt');
       expect(cloudHtml).toContain('GDPR &middot; DPA');
-      expect(cloudHtml).toContain('1,200+ on GitHub');
-      const selfHtml = await page(make(DEPLOY.selfHosted, prisma, stats));
+      expect(cloudHtml).toContain('Open source on GitHub');
+      expect(cloudHtml).not.toContain('&#9733;');
+      const selfHtml = await page(make(DEPLOY.selfHosted, prisma));
       expect(selfHtml).not.toMatch(/Frankfurt|DPA/);
       expect(selfHtml).toContain('AES-256-GCM');
     });

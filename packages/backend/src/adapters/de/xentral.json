@@ -1,203 +1,1992 @@
 {
   "slug": "xentral",
   "name": "Xentral ERP",
-  "description": "Access Xentral Cloud ERP — the SaaS ERP built specifically for German SMBs in e-commerce, wholesale, and manufacturing. Manage articles, customers, sales orders, invoices, and warehouse stock through the Xentral REST API.",
-  "instructions": "This connector uses the Xentral v1 REST API.\n\n**Instance URL**: Xentral is self-hosted per tenant. Paste your instance URL (without trailing slash) into `XENTRAL_URL` when importing — e.g. `https://koch.xentral.biz`. Do NOT append `/api`; the adapter handles that.\n\n**Credentials**: the classic API uses Basic authentication. Generate an API user in your Xentral instance under Einstellungen → Benutzer → API. The username is the API user's login, the password is its password. Set them as `XENTRAL_USER` and `XENTRAL_PASSWORD` at import time.\n\n**Entities covered**: articles (products), customers, sales orders (`/Auftrag`), invoices (`/Rechnung`), vendors, stock levels (`/Lager`), addresses.\n\n**Pagination**: list endpoints accept `page` and `items_per_page`. Default is 50 items per page.\n\n**Filtering**: use `filter` query parameter with Xentral filter DSL — e.g. `?filter=customer_number:eq:10001`.\n\n**Webhooks**: Xentral also supports webhooks for real-time events (configured in-instance, outside this adapter).",
+  "aliases": ["Wawision"],
+  "description": "Connect Xentral ERP to your AI: search products and stock per warehouse and storage location, customers and suppliers, sales orders, delivery notes with tracking, invoices with payment status, credit notes, purchase orders and supplier invoices, and create sales order drafts. Current Xentral API with a Personal Access Token.",
+  "instructions": "## Xentral ERP\nThis connector works with one Xentral cloud instance through the **current Xentral API** (developer.xentral.com). Each endpoint carries its own version in the path, and the connector calls the newest stable one per resource: `/api/v3/...` for sales orders, delivery notes, invoices, credit notes and purchase orders, `/api/v2/...` for products and customers, `/api/v1/...` for stock, warehouses, suppliers, supplier invoices, payment methods and projects. The old Basic-auth API user is not used.\n\n**Setup (about 5 minutes, needs an admin)**\n1. In Xentral, click **Administration** at the bottom left, then **Account settings** (Kontoeinstellungen) → **Developer settings** (Developer Einstellungen) → **Personal Access Tokens**. A quicker way: type \"Personal Access Token\" into the Smart Search.\n2. Click **Create token** (Token erzeugen). Give it a name such as `AnythingMCP-Read`, a description and a lifetime (default 180 days).\n3. Grant **Read** on the areas the AI should see: products and stock, customers (CRM), sales documents (sales orders, delivery notes, invoices, credit notes), purchasing (purchase orders, suppliers, liabilities) and settings such as payment methods and projects. Add **Create** and **Delete** on sales orders only if the AI may prepare order drafts. Avoid the Admin scopes.\n4. Click **Create** and copy the token right away: Xentral shows it only once.\n5. Set `XENTRAL_URL` to the address you open Xentral at, e.g. `https://acme.xentral.biz` (or your own domain), with no `/api`, no path and no trailing slash, and `XENTRAL_TOKEN` to the token. The connector sends it as `Authorization: Bearer <token>`.\n\nA token's permissions cannot be edited later: to change them, create a new token and replace `XENTRAL_TOKEN`. Tokens expire at the date you chose, and Xentral deletes tokens that were unused for 180 days.\n\n**Ids and numbers**: every tool takes Xentral's internal `id`, not the printed number. Find the id with a list tool first (a filter on `number`, `documentNumber` or `customerNumber`, or `search`). A customer's id is also its address id: documents show it as `address.id`, and `xentral_create_sales_order` takes it as `addressId`.\n\n**Filters** are lists of conditions that must all match, each with a field (`key`), an operator (`op`) and a `value`:\n- `[{\"key\": \"paymentStatus\", \"op\": \"in\", \"value\": [\"pending\", \"partiallyPaid\"]}]` lists open invoices;\n- `[{\"key\": \"documentDate\", \"op\": \"greaterThanOrEquals\", \"value\": \"2026-10-01\"}, {\"key\": \"status\", \"op\": \"equals\", \"value\": \"released\"}]` lists released documents since 1 October.\n\nOperators: `equals`, `notEquals`, `in` and `notIn` (value is a list), `contains`, `startsWith`, `endsWith`, `greaterThan`, `greaterThanOrEquals`, `lessThan`, `lessThanOrEquals`, and on documents `isNull` and `isNotNull` (no value). Each tool lists the fields it accepts; Xentral answers any other field with a 400 validation error. Document dates are `YYYY-MM-DD`; `updatedAt` on products takes an ISO 8601 date-time with offset (`2026-10-01T00:00:00+02:00`). Customer filters only match exactly (no `contains`).\n\n**Document search and sorting** (sales orders, delivery notes, invoices, credit notes, purchase orders): `search` is a free-text search over the number, customer or supplier name and number, email, ZIP and external order numbers. `sort` takes field names, a leading minus sorts descending (`-documentDate`). `include` embeds related data such as `lineItems` or `address`.\n\n**Statuses**: sales orders are `draft`, `released`, `completed` or `cancelled`; invoices, delivery notes and purchase orders also have `sent`. `paymentStatus` on invoices and credit notes is `pending`, `paid`, `partiallyPaid`, `cancelled`, `partiallyCancelled`, `badDebt` or `debited`.\n\n**Stock**: `xentral_get_product_stock` returns several figures. `sellable` is what can still be promised to a customer, `physical` what is on the shelves, `reserved` what open orders hold. Warehouses (Lager) contain storage locations (Lagerplaetze), and `xentral_list_product_storage_locations` shows where a product lies.\n\n**Pagination**: document lists take `page` and `perPage` (up to 1000, default 25 here); `pagination: table` adds the total count. The other lists take `page` and `pageSize` (10 to 50).\n\n**Writing**: `xentral_create_sales_order` only creates a **draft**: no order number, nothing reserved or shipped until someone releases it in Xentral. `xentral_delete_sales_order_draft` removes such a draft; it is installed switched off. Every other tool only reads.\n\n**Rate limit**: about 100 requests per minute per instance, whatever the plan. Above that Xentral answers 429 with a `Retry-After` header. Prefer one filtered list call over many single lookups.\n\n**Common errors**\n- 401: the token is wrong, expired or deleted.\n- 403: the token lacks the permission for that area. Create a new token with it.\n- 400 \"Generic request validation failed\" or \"filter must be an array\": a filter field or operator the endpoint does not accept, or a malformed value. Use the fields listed in the tool.\n- 404 \"Route not found\": `XENTRAL_URL` contains a path such as `/api/v1`, or the instance does not offer that endpoint yet.\n- 409 when deleting a sales order: only drafts can be deleted.",
   "region": "de",
   "category": "erp",
   "icon": "xentral",
-  "docsUrl": "https://developer.xentral.com/docs",
+  "docsUrl": "https://developer.xentral.com/reference/intro",
   "requiredEnvVars": [
     "XENTRAL_URL",
-    "XENTRAL_USER",
-    "XENTRAL_PASSWORD"
+    "XENTRAL_TOKEN"
   ],
-  "connector": {
-    "name": "Xentral",
-    "type": "REST",
-    "baseUrl": "{{XENTRAL_URL}}/api/v1",
-    "authType": "BASIC_AUTH",
-    "authConfig": {
-      "username": "{{XENTRAL_USER}}",
-      "password": "{{XENTRAL_PASSWORD}}"
+  "envVarMeta": {
+    "XENTRAL_URL": {
+      "label": "Instance URL",
+      "kind": "address",
+      "help": "The address you open Xentral at, without a path or trailing slash: https://<your-id>.xentral.biz, or your own domain if Xentral runs under one.",
+      "example": "https://acme.xentral.biz",
+      "pattern": "^https://[^/\\s]+$",
+      "patternMessage": "Use the instance root, e.g. https://acme.xentral.biz, with no /api, no path and no trailing slash."
+    },
+    "XENTRAL_TOKEN": {
+      "label": "Personal Access Token",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Xentral: Administration (bottom left) > Account settings > Developer settings > Personal Access Tokens > Create token. Give it read access to the areas you want the AI to see. The token is shown only once.",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the token on its own, without \"Bearer\" and without spaces."
     }
+  },
+  "prerequisites": "A Xentral cloud instance and an admin account there, to create a Personal Access Token. About 5 minutes.",
+  "probe": {
+    "tool": "xentral_list_products",
+    "params": {
+      "pageSize": 10
+    }
+  },
+  "verifyHints": {
+    "401": "Xentral did not accept the token. Check that XENTRAL_TOKEN holds the whole Personal Access Token and that it has not expired or been deleted (Administration > Account settings > Developer settings > Personal Access Tokens), then create a new one if needed.",
+    "403": "The token is valid but has no access to this area. Token permissions cannot be edited in Xentral: create a new Personal Access Token with read access to products (and the other areas you need) and replace XENTRAL_TOKEN.",
+    "404": "Nothing answered at this address. XENTRAL_URL must be the root of your instance, e.g. https://acme.xentral.biz, without /api or any other path.",
+    "rate_limited": "Xentral allows about 100 API requests per minute per instance. Wait a minute and try again."
+  },
+  "connector": {
+    "name": "Xentral API",
+    "type": "REST",
+    "baseUrl": "{{XENTRAL_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{XENTRAL_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/v2/products"
   },
   "tools": [
     {
-      "name": "xentral_list_articles",
-      "description": "List articles (products) from Xentral. Returns SKU (Nummer), name, sales price, stock level, tax class, and status. Supports filtering by SKU, EAN, or name prefix.",
+      "name": "xentral_list_products",
+      "description": "List or search products (Artikel) in Xentral: product number, name, EAN, manufacturer, prices and stock counts. Filter by product number, name, EAN, manufacturer, category, project or supplier. Use xentral_get_product_stock for per-warehouse stock.",
       "parameters": {
         "type": "object",
         "properties": {
           "filter": {
-            "type": "string",
-            "description": "Xentral filter DSL, e.g. 'nummer:eq:A-1234' or 'bezeichnung:contains:Schraube'."
+            "type": "array",
+            "description": "Filter conditions, all of which must match. Examples: [{\"key\": \"number\", \"op\": \"equals\", \"value\": \"700123\"}], [{\"key\": \"name\", \"op\": \"contains\", \"value\": \"Schraube\"}], [{\"key\": \"ean\", \"op\": \"equals\", \"value\": \"4006381333931\"}]. updatedAt takes an ISO 8601 date-time with offset, e.g. 2026-10-01T00:00:00+02:00.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "search",
+                    "id",
+                    "number",
+                    "name",
+                    "ean",
+                    "manufacturerName",
+                    "manufacturerNumber",
+                    "category",
+                    "categoryId",
+                    "project",
+                    "standardSupplier",
+                    "salesChannel",
+                    "availableCount",
+                    "updatedAt",
+                    "isVariant",
+                    "variantOf",
+                    "externalReferenceNumber",
+                    "tagId",
+                    "customsTariffNumber"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "notEquals",
+                    "in",
+                    "notIn",
+                    "exactlyIn",
+                    "allIn",
+                    "allNotIn",
+                    "contains",
+                    "notContains",
+                    "startsWith",
+                    "endsWith",
+                    "greaterThan",
+                    "lessThan",
+                    "is",
+                    "lessThanOrEquals",
+                    "greaterThanOrEquals"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
+          },
+          "order": {
+            "type": "array",
+            "description": "Sort order, most important first, e.g. [{\"field\": \"name\", \"dir\": \"asc\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "customsTariffNumber",
+                    "description",
+                    "ean",
+                    "id",
+                    "manufacturerName",
+                    "manufacturerNumber",
+                    "name",
+                    "number",
+                    "project",
+                    "purchasePriceGross",
+                    "purchasePriceNet",
+                    "salesPriceGross",
+                    "salesPriceNet"
+                  ]
+                },
+                "dir": {
+                  "type": "string",
+                  "enum": [
+                    "asc",
+                    "desc"
+                  ]
+                }
+              },
+              "required": [
+                "field"
+              ]
+            }
           },
           "page": {
-            "type": "number",
-            "description": "Page number, 1-based."
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
           },
-          "items_per_page": {
-            "type": "number",
-            "description": "Results per page (default 50, max 500)."
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 50
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/articles",
+        "path": "/api/v2/products",
         "queryParams": {
           "filter": "$filter",
-          "page": "$page",
-          "items_per_page": "$items_per_page"
+          "order": "$order",
+          "page": {
+            "number": "$page",
+            "size": "$pageSize"
+          }
         }
       }
     },
     {
-      "name": "xentral_get_article",
-      "description": "Retrieve a single article by its Xentral internal id. Returns all fields including description, cost price, barcodes, bulk pricing tiers, and assigned categories.",
+      "name": "xentral_get_product",
+      "description": "Get one product by its Xentral id: number, name, descriptions, EAN, unit, prices, measurements, customs data, category and stock settings.",
       "parameters": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "The Xentral article id."
+            "description": "Xentral product id (the id field from xentral_list_products, not the product number)."
           }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/articles/{id}"
+        "path": "/api/v2/products/{id}"
       }
     },
     {
-      "name": "xentral_list_customers",
-      "description": "List customers (Kunden). Returns customer number, name, billing address, email, payment terms, and status.",
+      "name": "xentral_get_product_stock",
+      "description": "Stock of one product: totals (physical, sellable, reserved, open sales order quantity, calculated, producible) and the same figures per warehouse and per sales channel. sellable is what can still be promised to customers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral product id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/products/{id}/stocks"
+      }
+    },
+    {
+      "name": "xentral_list_product_storage_locations",
+      "description": "Where one product is stored: each storage location (Lagerplatz) that holds it, with its warehouse and the quantity there.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral product id."
+          },
+          "order": {
+            "type": "array",
+            "description": "Sort order, most important first, e.g. [{\"field\": \"name\", \"dir\": \"asc\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "amount",
+                    "warehouse",
+                    "warehouseName"
+                  ]
+                },
+                "dir": {
+                  "type": "string",
+                  "enum": [
+                    "asc",
+                    "desc"
+                  ]
+                }
+              },
+              "required": [
+                "field"
+              ]
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/products/{id}/storageLocations",
+        "queryParams": {
+          "order": "$order",
+          "page": {
+            "number": "$page",
+            "size": "$pageSize"
+          }
+        }
+      }
+    },
+    {
+      "name": "xentral_list_warehouses",
+      "description": "List the active warehouses (Lager) with their id and designation. The ids are what xentral_list_storage_locations needs.",
       "parameters": {
         "type": "object",
         "properties": {
           "filter": {
-            "type": "string",
-            "description": "Xentral filter DSL, e.g. 'kundennummer:eq:10001' or 'email:contains:koch'."
+            "type": "array",
+            "description": "Optional, e.g. [{\"key\": \"designation\", \"op\": \"equals\", \"value\": \"Hauptlager\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "designation",
+                    "id"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "greaterThan",
+                    "lessThan",
+                    "equals",
+                    "notEquals",
+                    "in",
+                    "notIn"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
           },
           "page": {
-            "type": "number",
-            "description": "Page number."
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
           },
-          "items_per_page": {
-            "type": "number",
-            "description": "Results per page."
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 50
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/customers",
+        "path": "/api/v1/warehouses",
         "queryParams": {
           "filter": "$filter",
-          "page": "$page",
-          "items_per_page": "$items_per_page"
+          "page": {
+            "number": "$page",
+            "size": "$pageSize"
+          }
+        }
+      }
+    },
+    {
+      "name": "xentral_list_storage_locations",
+      "description": "List the storage locations (Lagerplaetze: shelves, bins, pallet spaces) of one warehouse.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouseId": {
+            "type": "string",
+            "description": "Warehouse id from xentral_list_warehouses."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Optional, e.g. [{\"key\": \"designation\", \"op\": \"startsWith\", \"value\": \"A-01\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "designation",
+                    "storageLocationId"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "notEquals",
+                    "in",
+                    "notIn",
+                    "contains",
+                    "startsWith",
+                    "endsWith"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "warehouseId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/warehouses/{warehouseId}/storageLocations",
+        "queryParams": {
+          "filter": "$filter",
+          "page": {
+            "number": "$page",
+            "size": "$pageSize"
+          }
+        }
+      }
+    },
+    {
+      "name": "xentral_list_storage_location_items",
+      "description": "What lies in one storage location: each product with its quantity, plus batch, serial number and best-before data where tracked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouseId": {
+            "type": "string",
+            "description": "Warehouse id."
+          },
+          "storageLocationId": {
+            "type": "string",
+            "description": "Storage location id from xentral_list_storage_locations."
+          }
+        },
+        "required": [
+          "warehouseId",
+          "storageLocationId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/warehouses/{warehouseId}/storageLocations/{storageLocationId}/items"
+      }
+    },
+    {
+      "name": "xentral_list_customers",
+      "description": "List customers (Kunden) with customer number, name, type, address, email and phone. Filters match exactly: Xentral's customer list has no partial-name search, so to find a customer by part of the name search their documents (xentral_list_invoices or xentral_list_sales_orders with search) and take address.id from there.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Exact-match conditions, all of which must match. Examples: [{\"key\": \"number\", \"op\": \"equals\", \"value\": \"10001\"}], [{\"key\": \"email\", \"op\": \"equals\", \"value\": \"einkauf@beispiel.de\"}], [{\"key\": \"city\", \"op\": \"equals\", \"value\": \"Freiburg\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "id",
+                    "number",
+                    "name",
+                    "customerType",
+                    "firstname",
+                    "lastname",
+                    "email",
+                    "phone",
+                    "street",
+                    "zip",
+                    "city",
+                    "contactPerson",
+                    "projectId",
+                    "salesManager",
+                    "accountManager",
+                    "isLead",
+                    "deviatingCustomerNumber"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "notEquals",
+                    "lessThan",
+                    "greaterThan",
+                    "in",
+                    "notIn"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/customers",
+        "queryParams": {
+          "filter": "$filter",
+          "page": {
+            "number": "$page",
+            "size": "$pageSize"
+          }
         }
       }
     },
     {
       "name": "xentral_get_customer",
-      "description": "Retrieve a single customer by id, including contact persons, delivery addresses, bank details, and credit limit.",
+      "description": "Get one customer by Xentral id: master data, contact details, payment and delivery terms, tax and credit settings. The id is also the address id that documents and xentral_create_sales_order use.",
       "parameters": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "The Xentral customer id."
+            "description": "Xentral customer id (not the customer number)."
           }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/customers/{id}"
+        "path": "/api/v2/customers/{id}"
+      }
+    },
+    {
+      "name": "xentral_list_customer_addresses",
+      "description": "List the addresses of one customer: the master address (type masterdata), the billing address (billingaddress) and every delivery address (deliveryaddress).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "description": "Xentral customer id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "customerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/customers/{customerId}/addresses",
+        "queryParams": {
+          "page": {
+            "number": "$page",
+            "size": "$pageSize"
+          }
+        }
+      }
+    },
+    {
+      "name": "xentral_list_suppliers",
+      "description": "List suppliers (Lieferanten) with supplier number, name, address and contact details. Filter by number, name, city, country, VAT number or tag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Conditions, all of which must match. Examples: [{\"key\": \"name\", \"op\": \"contains\", \"value\": \"Wuerth\"}], [{\"key\": \"number\", \"op\": \"equals\", \"value\": \"70001\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "search",
+                    "id",
+                    "number",
+                    "name",
+                    "email",
+                    "phone",
+                    "zip",
+                    "city",
+                    "country",
+                    "vatNumber",
+                    "taxNumber",
+                    "project",
+                    "tag",
+                    "tagName"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "notEquals",
+                    "in",
+                    "notIn",
+                    "contains",
+                    "notContains",
+                    "startsWith",
+                    "endsWith",
+                    "greaterThan",
+                    "lessThan",
+                    "lessThanOrEquals",
+                    "greaterThanOrEquals"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
+          },
+          "order": {
+            "type": "array",
+            "description": "Sort order, most important first, e.g. [{\"field\": \"name\", \"dir\": \"asc\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "addressNote",
+                    "city",
+                    "country",
+                    "department",
+                    "email",
+                    "fax",
+                    "gln",
+                    "id",
+                    "mobile",
+                    "name",
+                    "number",
+                    "project",
+                    "projectName",
+                    "subdivision",
+                    "tag",
+                    "tagName",
+                    "taxNumber",
+                    "telephone",
+                    "vatNumber",
+                    "zip"
+                  ]
+                },
+                "dir": {
+                  "type": "string",
+                  "enum": [
+                    "asc",
+                    "desc"
+                  ]
+                }
+              },
+              "required": [
+                "field"
+              ]
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/suppliers",
+        "queryParams": {
+          "filter": "$filter",
+          "order": "$order",
+          "page": {
+            "number": "$page",
+            "size": "$pageSize"
+          }
+        }
+      }
+    },
+    {
+      "name": "xentral_get_supplier",
+      "description": "Get one supplier by Xentral id: address, contact details, bank and tax data, payment terms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral supplier id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/suppliers/{id}"
       }
     },
     {
       "name": "xentral_list_sales_orders",
-      "description": "List sales orders (Auftraege). Returns order number, customer, date, total, status, and line count. Filterable by date range, customer, or status.",
+      "description": "List sales orders (Auftraege) with number, date, status, customer, totals and payment method. Search by order or customer number, customer name or a shop order number, or filter by status, date range, customer or product. Add include=lineItems for the positions.",
       "parameters": {
         "type": "object",
         "properties": {
-          "filter": {
+          "search": {
             "type": "string",
-            "description": "Xentral filter DSL. Examples: 'status:eq:abgeschlossen', 'datum:gte:2026-01-01'."
+            "description": "Free text over order number, date, customer name, email, ZIP, customer number, customer order number, external order number and id, transaction number and internal designation."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Conditions, all of which must match. status is draft, released, completed or cancelled. Examples: [{\"key\": \"status\", \"op\": \"equals\", \"value\": \"released\"}], [{\"key\": \"customerNumber\", \"op\": \"equals\", \"value\": \"10001\"}], [{\"key\": \"documentDate\", \"op\": \"greaterThanOrEquals\", \"value\": \"2026-10-01\"}]. Dates are YYYY-MM-DD.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "id",
+                    "documentNumber",
+                    "documentDate",
+                    "status",
+                    "address.id",
+                    "project.id",
+                    "documentAddress.name",
+                    "documentAddress.zipCode",
+                    "documentAddress.city",
+                    "documentAddress.country",
+                    "documentAddress.email",
+                    "lineItems.product.id",
+                    "createdAt",
+                    "updatedAt",
+                    "tags.id",
+                    "customerNumber",
+                    "customerOrderNumber",
+                    "externalOrderNumber",
+                    "externalOrderId",
+                    "transactionNumber",
+                    "totals.gross.amount",
+                    "desiredDeliveryDate",
+                    "hasInvoice",
+                    "shippingMethod.id",
+                    "financials.paymentMethod.id",
+                    "preferredWarehouse.id"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "notEquals",
+                    "in",
+                    "notIn",
+                    "isNull",
+                    "isNotNull",
+                    "contains",
+                    "notContains",
+                    "startsWith",
+                    "endsWith",
+                    "lessThan",
+                    "lessThanOrEquals",
+                    "greaterThan",
+                    "greaterThanOrEquals"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated sort fields; a leading minus sorts descending, e.g. -documentDate. Allowed: id, documentNumber, documentDate, customerNumber, documentAddress.country, project.id, createdAt, updatedAt."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related data to embed, e.g. lineItems,address. Allowed: lineItems, project, address, lineItems.product, lineItems.product.salesPrices, lineItems.product.customFields, tags, activity, customFields, lineItems.customFields, trafficLights, relatedDocuments, files."
           },
           "page": {
-            "type": "number",
-            "description": "Page number."
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
           },
-          "items_per_page": {
-            "type": "number",
-            "description": "Results per page."
+          "perPage": {
+            "type": "integer",
+            "description": "Results per page (Xentral default 15, maximum 1000).",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "pagination": {
+            "type": "string",
+            "enum": [
+              "simple",
+              "table"
+            ],
+            "description": "simple (default) is fastest; table also returns the total number of matches (meta.total) at the cost of a count query."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/sales_orders",
+        "path": "/api/v3/salesOrders",
+        "headers": {
+          "x-pagination": "$pagination"
+        },
         "queryParams": {
+          "search": "$search",
           "filter": "$filter",
+          "sort": "$sort",
+          "include": "$include",
           "page": "$page",
-          "items_per_page": "$items_per_page"
+          "perPage": "$perPage"
         }
+      }
+    },
+    {
+      "name": "xentral_get_sales_order",
+      "description": "Get one sales order by Xentral id with its line items (product, quantity, price, delivery date), addresses, totals, payment and shipping details. include=trafficLights adds the dispatch checks (payment, stock, address, credit limit) that decide whether the order can ship.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral sales order id (the id field, not the order number)."
+          },
+          "include": {
+            "type": "string",
+            "default": "lineItems",
+            "description": "Comma-separated related data to embed. Allowed: lineItems, project, address, lineItems.product, lineItems.product.salesPrices, lineItems.product.customFields, tags, activity, customFields, lineItems.customFields, trafficLights, printDetails, relatedDocuments, files."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/salesOrders/{id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "xentral_list_delivery_notes",
+      "description": "List delivery notes (Lieferscheine) with number, date, status, customer, related sales order and invoice. Filter by sales order, customer, date or status, e.g. to see what was shipped for an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free text over delivery note number, date, customer name, email, ZIP, customer number, customer order number and internal designation."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Conditions, all of which must match. status is draft, released, sent, completed or cancelled. Examples: [{\"key\": \"salesOrder.id\", \"op\": \"equals\", \"value\": \"4711\"}], [{\"key\": \"documentDate\", \"op\": \"greaterThanOrEquals\", \"value\": \"2026-10-01\"}]. Dates are YYYY-MM-DD.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "id",
+                    "documentNumber",
+                    "documentDate",
+                    "status",
+                    "address.id",
+                    "project.id",
+                    "documentAddress.name",
+                    "documentAddress.zipCode",
+                    "documentAddress.city",
+                    "documentAddress.country",
+                    "documentAddress.email",
+                    "lineItems.product.id",
+                    "createdAt",
+                    "updatedAt",
+                    "tags.id",
+                    "customerNumber",
+                    "customerOrderNumber",
+                    "salesOrder.id",
+                    "invoice.id",
+                    "hasOpenShipment",
+                    "withoutInvoice",
+                    "shippingMethod.id",
+                    "preferredWarehouse.id"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "notEquals",
+                    "in",
+                    "notIn",
+                    "isNull",
+                    "isNotNull",
+                    "contains",
+                    "notContains",
+                    "startsWith",
+                    "endsWith",
+                    "lessThan",
+                    "lessThanOrEquals",
+                    "greaterThan",
+                    "greaterThanOrEquals"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated sort fields; a leading minus sorts descending, e.g. -documentDate. Allowed: id, documentNumber, documentDate, customerNumber, documentAddress.country, project.id, createdAt, updatedAt."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related data to embed, e.g. lineItems,address. Allowed: lineItems, project, address, lineItems.product, lineItems.product.salesPrices, lineItems.product.customFields, tags, activity, customFields, lineItems.customFields, lineItems.stockMovements, relatedDocuments, files."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Results per page (Xentral default 15, maximum 1000).",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "pagination": {
+            "type": "string",
+            "enum": [
+              "simple",
+              "table"
+            ],
+            "description": "simple (default) is fastest; table also returns the total number of matches (meta.total) at the cost of a count query."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/deliveryNotes",
+        "headers": {
+          "x-pagination": "$pagination"
+        },
+        "queryParams": {
+          "search": "$search",
+          "filter": "$filter",
+          "sort": "$sort",
+          "include": "$include",
+          "page": "$page",
+          "perPage": "$perPage"
+        }
+      }
+    },
+    {
+      "name": "xentral_get_delivery_note",
+      "description": "Get one delivery note by Xentral id with its line items, delivery address and links to the sales order and invoice. include=lineItems.stockMovements shows from which storage locations the goods were taken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral delivery note id."
+          },
+          "include": {
+            "type": "string",
+            "default": "lineItems",
+            "description": "Comma-separated related data to embed. Allowed: lineItems, project, address, lineItems.product, lineItems.product.salesPrices, lineItems.product.customFields, tags, activity, customFields, lineItems.customFields, lineItems.stockMovements, relatedDocuments, files."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/deliveryNotes/{id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "xentral_list_delivery_note_shipments",
+      "description": "Shipments of one delivery note: carrier and shipping method, tracking number and link, ship date and extra packages. Use it to answer where a parcel is.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral delivery note id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/deliveryNotes/{id}/shipments"
       }
     },
     {
       "name": "xentral_list_invoices",
-      "description": "List outgoing invoices (Rechnungen). Returns invoice number, customer, date, amount, open amount, paid amount, and status.",
+      "description": "List outgoing invoices (Rechnungen) with number, date, status, payment status, customer, totals and dunning level. Filter open invoices by paymentStatus, or by customer, date range, amount or sales order. Use xentral_get_invoice_balance for the payments booked against one invoice.",
       "parameters": {
         "type": "object",
         "properties": {
-          "filter": {
+          "search": {
             "type": "string",
-            "description": "Xentral filter DSL, e.g. 'status:eq:offen' (open), 'datum:gte:2026-01-01'."
+            "description": "Free text over invoice number, date, customer name, email, ZIP, customer number, customer order number and internal designation."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Conditions, all of which must match. status is draft, released, sent, completed, cancelled or partiallyCancelled; paymentStatus is pending, paid, partiallyPaid, cancelled, partiallyCancelled, badDebt or debited. Open invoices: [{\"key\": \"paymentStatus\", \"op\": \"in\", \"value\": [\"pending\", \"partiallyPaid\"]}]. Invoices of one customer this year: [{\"key\": \"customerNumber\", \"op\": \"equals\", \"value\": \"10001\"}, {\"key\": \"documentDate\", \"op\": \"greaterThanOrEquals\", \"value\": \"2026-01-01\"}]. Dates are YYYY-MM-DD.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "id",
+                    "documentNumber",
+                    "documentDate",
+                    "status",
+                    "address.id",
+                    "project.id",
+                    "documentAddress.name",
+                    "documentAddress.zipCode",
+                    "documentAddress.city",
+                    "documentAddress.country",
+                    "documentAddress.email",
+                    "lineItems.product.id",
+                    "createdAt",
+                    "updatedAt",
+                    "tags.id",
+                    "customerNumber",
+                    "customerOrderNumber",
+                    "paymentStatus",
+                    "salesOrder.id",
+                    "totals.gross.amount",
+                    "totals.net.amount",
+                    "dunningSettings.level",
+                    "dunningSettings.blocked",
+                    "financials.paymentMethod.id"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "notEquals",
+                    "in",
+                    "notIn",
+                    "isNull",
+                    "isNotNull",
+                    "contains",
+                    "notContains",
+                    "startsWith",
+                    "endsWith",
+                    "lessThan",
+                    "lessThanOrEquals",
+                    "greaterThan",
+                    "greaterThanOrEquals"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated sort fields; a leading minus sorts descending, e.g. -documentDate. Allowed: id, documentNumber, documentDate, createdAt, updatedAt, customerNumber, documentAddress.name, documentAddress.country, project.id, totals.gross.amount, totals.gross.currency, financials.paymentMethod.id, paymentStatus."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related data to embed, e.g. lineItems,address. Allowed: address, lineItems, customFields, lineItems.customFields, lineItems.product, lineItems.product.salesPrices, lineItems.product.customFields, project, tags, activity, relatedDocuments, files."
           },
           "page": {
-            "type": "number",
-            "description": "Page number."
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
           },
-          "items_per_page": {
-            "type": "number",
-            "description": "Results per page."
+          "perPage": {
+            "type": "integer",
+            "description": "Results per page (Xentral default 15, maximum 1000).",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "pagination": {
+            "type": "string",
+            "enum": [
+              "simple",
+              "table"
+            ],
+            "description": "simple (default) is fastest; table also returns the total number of matches (meta.total) at the cost of a count query."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/invoices",
+        "path": "/api/v3/invoices",
+        "headers": {
+          "x-pagination": "$pagination"
+        },
         "queryParams": {
+          "search": "$search",
           "filter": "$filter",
+          "sort": "$sort",
+          "include": "$include",
           "page": "$page",
-          "items_per_page": "$items_per_page"
+          "perPage": "$perPage"
         }
       }
     },
     {
-      "name": "xentral_get_stock",
-      "description": "Retrieve current stock levels across all warehouses for a given article. Returns quantity on hand, reserved, available, and inbound per warehouse.",
+      "name": "xentral_get_invoice",
+      "description": "Get one invoice by Xentral id with its line items, billing address, totals, tax, payment terms, payment status and dunning settings.",
       "parameters": {
         "type": "object",
         "properties": {
-          "article_id": {
+          "id": {
             "type": "string",
-            "description": "The Xentral article id."
+            "description": "Xentral invoice id (the id field, not the invoice number)."
+          },
+          "include": {
+            "type": "string",
+            "default": "lineItems",
+            "description": "Comma-separated related data to embed. Allowed: address, lineItems, customFields, lineItems.customFields, lineItems.product, lineItems.product.salesPrices, lineItems.product.customFields, project, tags, activity, relatedDocuments, files."
           }
         },
-        "required": ["article_id"]
+        "required": [
+          "id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/stock",
+        "path": "/api/v3/invoices/{id}",
         "queryParams": {
-          "article_id": "$article_id"
+          "include": "$include"
         }
+      }
+    },
+    {
+      "name": "xentral_get_invoice_balance",
+      "description": "Payment balance of one invoice: the payments booked against it (date, amount, method) and the related documents, to tell how much is still open.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral invoice id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/invoices/{id}/balance"
+      }
+    },
+    {
+      "name": "xentral_list_credit_notes",
+      "description": "List credit notes (Gutschriften) with number, date, status, payment status, customer, totals and the invoice they refer to. Filter by customer, invoice, date or payment status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free text over credit note number, date, customer name, email, ZIP, customer number, customer order number and internal designation."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Conditions, all of which must match. paymentStatus is pending, paid, partiallyPaid, cancelled, partiallyCancelled, badDebt or debited. Example: credit notes for one invoice [{\"key\": \"invoice.id\", \"op\": \"equals\", \"value\": \"815\"}]. Dates are YYYY-MM-DD.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "id",
+                    "documentNumber",
+                    "documentDate",
+                    "status",
+                    "address.id",
+                    "project.id",
+                    "documentAddress.name",
+                    "documentAddress.zipCode",
+                    "documentAddress.city",
+                    "documentAddress.country",
+                    "documentAddress.email",
+                    "lineItems.product.id",
+                    "createdAt",
+                    "updatedAt",
+                    "tags.id",
+                    "customerNumber",
+                    "customerOrderNumber",
+                    "paymentStatus",
+                    "invoice.id",
+                    "totals.net.amount"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "notEquals",
+                    "in",
+                    "notIn",
+                    "isNull",
+                    "isNotNull",
+                    "contains",
+                    "notContains",
+                    "startsWith",
+                    "endsWith",
+                    "lessThan",
+                    "lessThanOrEquals",
+                    "greaterThan",
+                    "greaterThanOrEquals"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated sort fields; a leading minus sorts descending, e.g. -documentDate. Allowed: id, documentNumber, documentDate, customerNumber, documentAddress.country, project.id, createdAt, updatedAt."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related data to embed, e.g. lineItems,address. Allowed: address, lineItems, lineItems.customFields, customFields, lineItems.product, lineItems.product.salesPrices, lineItems.product.customFields, project, tags, activity, relatedDocuments, files."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Results per page (Xentral default 15, maximum 1000).",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "pagination": {
+            "type": "string",
+            "enum": [
+              "simple",
+              "table"
+            ],
+            "description": "simple (default) is fastest; table also returns the total number of matches (meta.total) at the cost of a count query."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/creditNotes",
+        "headers": {
+          "x-pagination": "$pagination"
+        },
+        "queryParams": {
+          "search": "$search",
+          "filter": "$filter",
+          "sort": "$sort",
+          "include": "$include",
+          "page": "$page",
+          "perPage": "$perPage"
+        }
+      }
+    },
+    {
+      "name": "xentral_get_credit_note",
+      "description": "Get one credit note by Xentral id with its line items, address, totals and the invoice it corrects.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral credit note id."
+          },
+          "include": {
+            "type": "string",
+            "default": "lineItems",
+            "description": "Comma-separated related data to embed. Allowed: lineItems, project, address, customFields, lineItems.product, lineItems.product.salesPrices, lineItems.product.customFields, tags, activity, lineItems.customFields, relatedDocuments, files."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/creditNotes/{id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "xentral_get_credit_note_balance",
+      "description": "Payment balance of one credit note: refunds or offsets booked against it and the related documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral credit note id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/creditNotes/{id}/balance"
+      }
+    },
+    {
+      "name": "xentral_list_purchase_orders",
+      "description": "List purchase orders (Bestellungen) to suppliers with number, date, status, supplier, confirmed and desired delivery dates and totals. Filter by supplier, status, product or date, e.g. to see what is still on order for a product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free text over order number, date, supplier name, email, ZIP, supplier number, supplier order and offer number, internal designation and product numbers on the lines."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Conditions, all of which must match. status is draft, released, sent, completed or cancelled. Examples: [{\"key\": \"supplierNumber\", \"op\": \"equals\", \"value\": \"70001\"}], [{\"key\": \"status\", \"op\": \"in\", \"value\": [\"released\", \"sent\"]}], [{\"key\": \"lineItems.product.id\", \"op\": \"equals\", \"value\": \"123\"}]. Dates are YYYY-MM-DD.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "id",
+                    "documentNumber",
+                    "documentDate",
+                    "status",
+                    "address.id",
+                    "project.id",
+                    "documentAddress.name",
+                    "documentAddress.zipCode",
+                    "documentAddress.city",
+                    "documentAddress.country",
+                    "lineItems.product.id",
+                    "createdAt",
+                    "updatedAt",
+                    "tags.id",
+                    "documentAddress.email",
+                    "supplierNumber",
+                    "supplierOrderNumber",
+                    "confirmedDeliveryDate",
+                    "desiredDeliveryDate"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "notEquals",
+                    "in",
+                    "notIn",
+                    "isNull",
+                    "isNotNull",
+                    "contains",
+                    "notContains",
+                    "startsWith",
+                    "endsWith",
+                    "lessThan",
+                    "lessThanOrEquals",
+                    "greaterThan",
+                    "greaterThanOrEquals"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated sort fields; a leading minus sorts descending, e.g. -documentDate. Allowed: id, documentNumber, documentDate, customerNumber, documentAddress.country, project.id, createdAt, updatedAt."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related data to embed, e.g. lineItems,address. Allowed: lineItems, project, address, lineItems.product, lineItems.product.salesPrices, lineItems.product.customFields, tags, activity, customFields, lineItems.customFields, relatedDocuments, files."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Results per page (Xentral default 15, maximum 1000).",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "pagination": {
+            "type": "string",
+            "enum": [
+              "simple",
+              "table"
+            ],
+            "description": "simple (default) is fastest; table also returns the total number of matches (meta.total) at the cost of a count query."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/purchaseOrders",
+        "headers": {
+          "x-pagination": "$pagination"
+        },
+        "queryParams": {
+          "search": "$search",
+          "filter": "$filter",
+          "sort": "$sort",
+          "include": "$include",
+          "page": "$page",
+          "perPage": "$perPage"
+        }
+      }
+    },
+    {
+      "name": "xentral_get_purchase_order",
+      "description": "Get one purchase order by Xentral id with its line items (product, supplier product number, quantity, price, delivery date), supplier address and totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral purchase order id."
+          },
+          "include": {
+            "type": "string",
+            "default": "lineItems",
+            "description": "Comma-separated related data to embed. Allowed: lineItems, project, address, lineItems.product, lineItems.product.salesPrices, lineItems.product.customFields, tags, activity, customFields, lineItems.customFields, relatedDocuments, files."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/purchaseOrders/{id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "xentral_list_liabilities",
+      "description": "List liabilities (Verbindlichkeiten, incoming supplier invoices) with supplier, amounts, due date, status and payment state. Filter by supplier, status or due date to see what has to be paid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Conditions, all of which must match. supplier takes the supplier id. Example: due before a date [{\"key\": \"dueDate\", \"op\": \"lessThan\", \"value\": \"2026-11-01\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "supplier",
+                    "status",
+                    "project",
+                    "createdAt",
+                    "dueDate"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "notEquals",
+                    "in",
+                    "notIn",
+                    "greaterThan",
+                    "lessThan"
+                  ],
+                  "description": "Operator."
+                },
+                "value": {
+                  "description": "Value to compare with. A list of strings for in and notIn. Leave out for isNull and isNotNull.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "op"
+              ]
+            }
+          },
+          "order": {
+            "type": "array",
+            "description": "Sort order, most important first, e.g. [{\"field\": \"name\", \"dir\": \"asc\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "createdAt",
+                    "documentNumber",
+                    "id",
+                    "project",
+                    "status"
+                  ]
+                },
+                "dir": {
+                  "type": "string",
+                  "enum": [
+                    "asc",
+                    "desc"
+                  ]
+                }
+              },
+              "required": [
+                "field"
+              ]
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/liabilities",
+        "queryParams": {
+          "filter": "$filter",
+          "order": "$order",
+          "page": {
+            "number": "$page",
+            "size": "$pageSize"
+          }
+        }
+      }
+    },
+    {
+      "name": "xentral_list_payment_methods",
+      "description": "List the payment methods (Zahlungsweisen) configured in Xentral with id, name and type, e.g. Rechnung, Vorkasse, PayPal, Lastschrift. The ids are what the financials.paymentMethod.id filters take.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/paymentMethods",
+        "queryParams": {
+          "page": {
+            "number": "$page",
+            "size": "$pageSize"
+          }
+        }
+      }
+    },
+    {
+      "name": "xentral_list_projects",
+      "description": "List the projects (Projekte) of the Xentral instance with id, name and short name. Projects separate shops, brands or companies; their ids are what the project filters and xentral_create_sales_order take.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/projects",
+        "queryParams": {
+          "page": {
+            "number": "$page",
+            "size": "$pageSize"
+          }
+        }
+      }
+    },
+    {
+      "name": "xentral_create_sales_order",
+      "description": "Create a sales order as a draft (status draft, no order number yet) for an existing customer. Nothing is released, reserved or shipped: the draft waits in Xentral for a person to check and release it, and can still be deleted. Prices default to the customer's and product's prices in Xentral when left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "addressId": {
+            "type": "string",
+            "description": "Xentral customer id (the id from xentral_list_customers or address.id on a document)."
+          },
+          "lineItems": {
+            "type": "array",
+            "description": "Order lines, at most 100.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "product": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Xentral product id."
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                },
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity, greater than 0."
+                },
+                "price": {
+                  "type": "object",
+                  "description": "Net unit price, only to override the price Xentral would use, e.g. {\"net\": {\"amount\": 12.5, \"currency\": \"EUR\"}}."
+                },
+                "discount": {
+                  "type": "number",
+                  "description": "Line discount in percent."
+                },
+                "deliveryDate": {
+                  "type": "string",
+                  "description": "Delivery date of the line, YYYY-MM-DD."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Line text, when it should differ from the product name."
+                }
+              },
+              "required": [
+                "product",
+                "quantity"
+              ]
+            }
+          },
+          "project": {
+            "type": "object",
+            "description": "Project of the order, e.g. {\"id\": \"1\"}. Defaults to the token user's preferred project, else the customer's.",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "documentDate": {
+            "type": "string",
+            "description": "Order date, YYYY-MM-DD. Defaults to today."
+          },
+          "customerOrderNumber": {
+            "type": "string",
+            "description": "The customer's own order number (Bestellnummer des Kunden)."
+          },
+          "externalOrderNumber": {
+            "type": "string",
+            "description": "Order number in a shop or another system."
+          },
+          "desiredDeliveryDate": {
+            "type": "string",
+            "description": "Desired delivery date, YYYY-MM-DD."
+          },
+          "internalComment": {
+            "type": "string",
+            "description": "Internal note on the order, not printed."
+          }
+        },
+        "required": [
+          "addressId",
+          "lineItems"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v3/salesOrders",
+        "bodyMapping": {
+          "address": {
+            "id": "$addressId"
+          },
+          "lineItems": "$lineItems",
+          "project": "$project",
+          "documentDate": "$documentDate",
+          "customerOrderNumber": "$customerOrderNumber",
+          "externalOrderNumber": "$externalOrderNumber",
+          "desiredDeliveryDate": "$desiredDeliveryDate",
+          "internalComment": "$internalComment"
+        }
+      }
+    },
+    {
+      "name": "xentral_delete_sales_order_draft",
+      "description": "Delete a sales order that is still a draft, e.g. one created by mistake with xentral_create_sales_order. Xentral refuses to delete released, completed or cancelled orders.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Xentral id of the draft sales order."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/v3/salesOrders/{id}"
       }
     }
   ]

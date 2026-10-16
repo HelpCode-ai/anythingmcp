@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { capToolName } from './tool-name.util';
+import { capToolName, pathForToolName } from './tool-name.util';
 
 const SwaggerParser = require('swagger-parser');
 import axios from 'axios';
@@ -25,6 +25,7 @@ export interface ParsedTool {
     path: string;
     queryParams?: Record<string, unknown>;
     bodyMapping?: Record<string, unknown>;
+    bodyEncoding?: string;
     headers?: Record<string, string>;
   };
   responseMapping?: {
@@ -560,7 +561,7 @@ export class OpenApiParser {
       );
     }
 
-    const cleanPath = path
+    const cleanPath = pathForToolName(path)
       .replace(/\{[^}]+\}/g, '')
       .replace(/[^a-zA-Z0-9]/g, '_')
       .replace(/_+/g, '_')

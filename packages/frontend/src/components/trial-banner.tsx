@@ -6,6 +6,9 @@ import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { usePricingUrl } from '@/lib/use-pricing-url';
 import { useCardCheckout } from '@/lib/use-card-checkout';
+import { useCardTrialKind } from '@/lib/use-card-trial-eligibility';
+import { useFirstSuccessOfferVisible } from '@/lib/first-success-offer-visibility';
+import { startTrialPath } from '@/lib/checkout-source';
 import {
   cardTrialDisplayEnd,
   cardTrialEligible,
@@ -16,7 +19,7 @@ import {
 export function TrialBanner() {
   const { token, user, deploymentMode } = useAuth();
   const router = useRouter();
-  const pricingUrl = usePricingUrl();
+  const pricingUrl = usePricingUrl(undefined, 'trial_banner');
   const checkout = useCardCheckout();
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
   const [plan, setPlan] = useState<string | null>(null);
@@ -41,6 +44,12 @@ export function TrialBanner() {
       .catch(() => {});
   }, [token]);
 
+  const isTrialAdmin = deploymentMode === 'cloud' && user?.role === 'ADMIN' && plan === 'trial' && status === 'active';
+  const cardTrialKind = useCardTrialKind(token, isTrialAdmin);
+  // The first-success offer on this page asks for the same thing: one call
+  // to action at a time, so the banner keeps only its countdown then.
+  const offerOnScreen = useFirstSuccessOfferVisible();
+
   // An ended trial is reported too (status 'expired'); the licence wall
   // covers that case, so the countdown banner stays out of the way.
   if (plan !== 'trial' || daysLeft === null || status !== 'active') return null;
@@ -60,7 +69,7 @@ export function TrialBanner() {
   // Only show the value clause once they've actually built something.
   const value =
     connectors && connectors > 0
-      ? ` Keep your ${connectors} connector${connectors === 1 ? '' : 's'} running —`
+      ? ` Keep your ${connectors} connector${connectors === 1 ? '' : 's'} running.`
       : '';
 
   // Cloud admins on a running trial add a card instead (the card trial ends
@@ -72,17 +81,21 @@ export function TrialBanner() {
     license: { plan, status: status ?? '', expiresAt, trialDaysLeft: daysLeft },
   });
   const chargeDate = formatTrialEnd(cardTrialDisplayEnd(expiresAt), 'short');
+  // An address that had a subscription before gets no card trial: its plan
+  // starts and is billed today, which /start-trial says before checkout.
+  const paysToday = cardTrialKind === 'pay';
 
   const addPaymentMethod = async () => {
     // With a plan picked on the pricing page, straight to Checkout;
-    // otherwise to the plan picker first.
+    // otherwise (or when it would charge today) to the plan picker first.
     const intent = readPlanIntent();
-    if (!intent) {
-      router.push('/start-trial');
+    if (!intent || paysToday) {
+      router.push(startTrialPath('trial_banner'));
       return;
     }
-    const ok = await checkout.start(intent, true);
-    if (!ok) window.location.assign(pricingUrl);
+    const outcome = await checkout.start(intent, true, 'trial_banner');
+    if (outcome === 'charges_today') router.push(startTrialPath('trial_banner'));
+    else if (outcome === 'failed') window.location.assign(pricingUrl);
   };
 
   return (
@@ -93,9 +106,8 @@ export function TrialBanner() {
         color: `var(--t-${tone}-fg)`,
       }}
     >
-      <span>{countdown}{value}</span>
-      {' '}
-      {offerCard ? (
+      <span>{countdown}{value}</span>{' '}
+      {offerOnScreen ? null : offerCard ? (
         <button
           type="button"
           onClick={addPaymentMethod}
@@ -104,9 +116,11 @@ export function TrialBanner() {
         >
           {checkout.loading
             ? 'Opening checkout…'
-            : chargeDate
-              ? `Add a payment method — no charge before ${chargeDate}`
-              : 'Add a payment method'}
+            : paysToday
+              ? 'Choose a plan'
+              : chargeDate
+                ? `Add a payment method: no charge before ${chargeDate}`
+                : 'Add a payment method'}
         </button>
       ) : (
         <a

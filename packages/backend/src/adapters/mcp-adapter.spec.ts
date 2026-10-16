@@ -91,6 +91,80 @@ describe('mergeDiscoveredMcpTools', () => {
     expect(catalogMcpToolsFor(null, [remote('list')])[0].name).toBe('list');
   });
 
+  it("matches a gateway's namespaced names to the catalog, keeping the local name and the switched-off deletes", () => {
+    // TradingView's server federates backends and lists `get_document_view`
+    // as `mcp-tv-get-document-view` (seen in TradingView's own demo video).
+    const tv = getAdapter('tradingview')!;
+    const prefix = mcpToolPrefixOf(tv.connector.config);
+    const live = tv.tools.map((t) => {
+      const method = String(t.endpointMapping.method).replace(/_/g, '-');
+      return remote(t.name.includes('watchlist') ? `mcp-watchlist-${method}` : `mcp-tv-${method}`, { annotations: undefined });
+    });
+    const merged = mergeDiscoveredMcpTools(tv.tools, [...live, remote('mcp-tv-brand-new-tool')], prefix);
+    expect(merged).toHaveLength(tv.tools.length + 1);
+    // Same local names as the snapshot installed before the sign-in: no duplicates.
+    expect(merged.slice(0, tv.tools.length).map((t) => t.name)).toEqual(tv.tools.map((t) => t.name));
+    const byName = new Map(merged.map((t) => [t.name, t]));
+    expect(byName.get('tradingview_get_document_view')!.endpointMapping.method).toBe('mcp-tv-get-document-view');
+    expect(byName.get('tradingview_get_alerts_log')!.endpointMapping.method).toBe('mcp-tv-get-alerts-log');
+    expect(byName.get('tradingview_get_alerts')!.endpointMapping.method).toBe('mcp-tv-get-alerts');
+    expect(byName.get('tradingview_list_watchlists')!.endpointMapping.method).toBe('mcp-watchlist-list-watchlists');
+    expect(merged.filter((t) => t.enabled === false).map((t) => t.name).sort()).toEqual([
+      'tradingview_delete_alert',
+      'tradingview_delete_watchlist',
+      'tradingview_remove_from_watchlist',
+    ]);
+    expect(byName.get('tradingview_delete_alert')!.annotations).toMatchObject({ destructiveHint: true });
+    // A tool the catalog does not know keeps the server's name, prefixed.
+    expect(byName.get('tradingview_mcp_tv_brand_new_tool')).toBeDefined();
+  });
+
+  it('takes the namespaced match only where it is unambiguous', () => {
+    const catalog = [
+      { name: 'x_delete_alert', description: '', parameters: {}, endpointMapping: { method: 'delete_alert', path: '/mcp' }, enabled: false },
+      { name: 'x_get_alerts', description: '', parameters: {}, endpointMapping: { method: 'get_alerts', path: '/mcp' } },
+      { name: 'x_list', description: '', parameters: {}, endpointMapping: { method: 'list', path: '/mcp' } },
+    ];
+    // A lone `bulk_` tool is not a namespace: it is not taken for delete_alert.
+    const lone = mergeDiscoveredMcpTools(catalog, [remote('bulk_delete_alert'), remote('get_alerts')], 'x_');
+    expect(lone.map((t) => [t.name, t.endpointMapping.method, t.enabled])).toEqual([
+      ['x_bulk_delete_alert', 'bulk_delete_alert', undefined],
+      ['x_get_alerts', 'get_alerts', undefined],
+    ]);
+    // An exact name wins, and a catalog tool is matched once.
+    const both = mergeDiscoveredMcpTools(
+      catalog,
+      [remote('delete_alert'), remote('gw.delete_alert'), remote('gw.get_alerts'), remote('gw__list')],
+      'x_',
+    );
+    expect(both.map((t) => [t.name, t.endpointMapping.method])).toEqual([
+      ['x_delete_alert', 'delete_alert'],
+      ['x_gw_delete_alert', 'gw.delete_alert'],
+      ['x_get_alerts', 'gw.get_alerts'],
+      ['x_list', 'gw__list'],
+    ]);
+  });
+
+  it('leaves every MCP bridge in the catalog as it was when the server lists its snapshot names', () => {
+    const bridges = listAdapters()
+      .map((a) => getAdapter(a.slug)!)
+      .filter((a) => a.connector.type === 'MCP');
+    expect(bridges.length).toBeGreaterThan(5);
+    for (const full of bridges) {
+      const a = full;
+      const prefix = mcpToolPrefixOf(full.connector.config);
+      const merged = mergeDiscoveredMcpTools(
+        full.tools,
+        full.tools.map((t) => remote(String(t.endpointMapping.method))),
+        prefix,
+      );
+      expect([a.slug, merged.map((t) => [t.name, t.endpointMapping.method, t.enabled])]).toEqual([
+        a.slug,
+        full.tools.map((t) => [t.name, t.endpointMapping.method, t.enabled === false ? false : undefined]),
+      ]);
+    }
+  });
+
   it('describes the discovered tools in one line', () => {
     expect(describeDiscoveredTools([{ name: 'x' }, { name: 'y' }])).toBe('2 tools on the server: x, y');
     expect(describeDiscoveredTools([{ name: 'a' }, { name: 'b' }, { name: 'c' }], 2)).toBe(

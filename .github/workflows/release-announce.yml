@@ -17,7 +17,7 @@ jobs:
         uses: actions/github-script@v9
         env:
           # The pinned Roadmap discussion. Update DISCUSSION_NUMBER if it changes.
-          DISCUSSION_NUMBER: "147"
+          DISCUSSION_NUMBER: "1020"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

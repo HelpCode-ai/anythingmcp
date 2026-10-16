@@ -1,6 +1,7 @@
 import * as nodemailer from 'nodemailer';
-import { EmailService } from './email.service';
+import { EmailService, systemSmtpFrom } from './email.service';
 import { verifyUnsubscribe } from './unsubscribe-token';
+import { readEmailLinkToken } from '../common/email-link-token';
 
 jest.mock('nodemailer', () => ({ createTransport: jest.fn() }));
 
@@ -59,12 +60,14 @@ describe('EmailService', () => {
     await expect(service.sendVerificationEmail('a@b.com', '123456', 'https://cloud.anythingmcp.com/v?t=1')).resolves.toBe(true);
     const mail = sent();
     expect(mail.subject).toBe('123456 is your AnythingMCP verification code');
-    expect(mail.html).toContain('123 456');
+    // Shown exactly as typed: a space between the halves was copied with them.
+    expect(mail.html).toContain('>123456<');
+    expect(mail.html).not.toContain('123 456');
     expect(mail.text).toContain('123456');
     expect(mail.headers).toBeUndefined();
     expect(mail.html).not.toContain('Unsubscribe');
-    // A live number above its floor, rounded down; the others at their floors.
-    expect(mail.html).toContain('1,200+');
+    // Downloads and tool calls at their floors; no GitHub star count.
+    expect(mail.html).not.toContain('stars on GitHub');
     expect(mail.html).toContain('200,000+');
     expect(mail.html).toContain('1M+');
   });
@@ -86,6 +89,33 @@ describe('EmailService', () => {
       const { service } = make();
       await service.sendVerificationEmail('a@b.com', '123456', 'https://cloud.anythingmcp.com/v?t=1');
       expect(lastTransportDefaults()).toBeUndefined();
+    });
+  });
+
+  describe('sender of the system SMTP', () => {
+    it('keeps what the cloud and existing installs send', () => {
+      expect(systemSmtpFrom({ SMTP_FROM: 'AnythingMCP <noreply@anythingmcp.com>' })).toBe(
+        'AnythingMCP <noreply@anythingmcp.com>',
+      );
+      expect(systemSmtpFrom({ SMTP_FROM: 'noreply@example.com' })).toBe('noreply@example.com');
+      expect(systemSmtpFrom({ SMTP_USER: 'mailer@example.com' })).toBe('AnythingMCP <mailer@example.com>');
+      expect(systemSmtpFrom({})).toBe('AnythingMCP');
+    });
+
+    it('uses SMTP_FROM_NAME, which setup.sh writes next to a bare SMTP_FROM', () => {
+      expect(systemSmtpFrom({ SMTP_FROM: 'noreply@acme.com', SMTP_FROM_NAME: 'Acme AI' })).toBe(
+        'Acme AI <noreply@acme.com>',
+      );
+      expect(systemSmtpFrom({ SMTP_USER: 'mailer@acme.com', SMTP_FROM_NAME: 'Acme AI' })).toBe(
+        'Acme AI <mailer@acme.com>',
+      );
+      // A name SMTP_FROM already carries wins.
+      expect(
+        systemSmtpFrom({ SMTP_FROM: 'Ops <ops@acme.com>', SMTP_FROM_NAME: 'Acme AI' }),
+      ).toBe('Ops <ops@acme.com>');
+      expect(systemSmtpFrom({ SMTP_FROM: 'noreply@acme.com', SMTP_FROM_NAME: 'Acme, Inc.' })).toBe(
+        '"Acme, Inc." <noreply@acme.com>',
+      );
     });
   });
 
@@ -132,6 +162,58 @@ describe('EmailService', () => {
     expect(mail.headers).toBeUndefined();
   });
 
+  describe('pricing links carry the recipient as an address token', () => {
+    const pricingLinks = (text: string) =>
+      text.split(/\s+/).filter((word) => {
+        if (!word.startsWith('https://')) return false;
+        const url = new URL(word);
+        return url.host === 'anythingmcp.com' && url.pathname === '/pricing';
+      });
+
+    afterEach(() => {
+      delete process.env.EMAIL_LINK_SECRET;
+    });
+
+    it('in the trial lifecycle and win-back emails, so the site refuses a second subscription', async () => {
+      process.env.EMAIL_LINK_SECRET = 'shared-with-the-licence-site';
+      const { service } = make();
+      await service.sendTrialLifecycleEmail('Ann@Example.com', 'Ann', 'warn1', { connectors: 1, successfulCalls: 3, daysLeft: 1 });
+      await service.sendTrialWinbackEmail('Ann@Example.com', 'Ann', {
+        kind: 'discount',
+        percentOff: 30,
+        promoCode: 'START30',
+        stage: 'first',
+        trialEndedAt: new Date('2026-10-07T09:30:00Z'),
+        successfulCalls: 3,
+      });
+      await service.sendTrialWinbackEmail('Ann@Example.com', 'Ann', { kind: 'help', trialEndedAt: new Date('2026-10-07T09:30:00Z') });
+
+      for (const [mail] of sendMail.mock.calls) {
+        const links = pricingLinks(mail.text);
+        expect(links.length).toBeGreaterThan(0);
+        for (const link of links) {
+          const token = new URL(link).hash.replace(/^#t=/, '');
+          expect(readEmailLinkToken(token)).toBe('ann@example.com');
+          // The address itself never appears in the link.
+          expect(link.toLowerCase()).not.toContain('ann@example.com');
+          // The email names itself to the checkout, ahead of the token.
+          expect(new URL(link).searchParams.get('source')).toMatch(/^email_(trial_(warn3|warn1|expired)|winback)$/);
+        }
+      }
+    });
+
+    it('not without EMAIL_LINK_SECRET: the links go out as before', async () => {
+      const { service } = make();
+      await service.sendTrialLifecycleEmail('a@b.com', 'Ada', 'expired', { connectors: 0, successfulCalls: 0, daysLeft: 0 });
+      const links = pricingLinks(sent().text);
+      expect(links).toEqual([
+        'https://anythingmcp.com/pricing?return_url=' +
+          encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate') +
+          '&source=email_trial_expired',
+      ]);
+    });
+  });
+
   it('makes no Cloud-only claims on a self-hosted instance', async () => {
     const { service } = make({ cloud: false });
     await service.sendPasswordResetEmail('a@b.com', 'https://mcp.example.com/reset?t=1');
@@ -145,6 +227,6 @@ describe('EmailService', () => {
     trustStats.get.mockRejectedValue(new Error('down'));
     trustStats.peek.mockReturnValue({ githubStars: null, dockerPulls: null, workspaces: null, toolCalls30d: null, updatedAt: null });
     await expect(service.sendExistingAccountEmail('a@b.com', 'https://cloud.anythingmcp.com/login', 'https://cloud.anythingmcp.com/forgot-password')).resolves.toBe(true);
-    expect(sent().html).toContain('1,000+');
+    expect(sent().html).toContain('200,000+');
   });
 });

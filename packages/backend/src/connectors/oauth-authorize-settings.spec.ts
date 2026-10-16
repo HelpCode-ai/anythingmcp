@@ -26,9 +26,58 @@ describe('resolveRestAuthorizeSettings', () => {
       tokenUrl: 'https://sandbox-api.datev.de/token',
       scope: 'accounting:clients:read',
       tokenAuthMethod: 'basic',
+      pkce: true,
       adopted: {},
       missingVars: [],
     });
+  });
+
+  describe('pkce', () => {
+    const own = {
+      clientId: 'cid',
+      authorizationUrl: 'https://x.example/auth',
+      tokenUrl: 'https://x.example/token',
+    };
+
+    it('is on by default, with or without a catalog adapter', () => {
+      expect(resolveRestAuthorizeSettings(own, null).pkce).toBe(true);
+      expect(resolveRestAuthorizeSettings(own, null, etsyCatalog).pkce).toBe(true);
+    });
+
+    it('is off when the row says so, as a boolean or its string form', () => {
+      expect(resolveRestAuthorizeSettings({ ...own, pkce: false }, null).pkce).toBe(false);
+      expect(resolveRestAuthorizeSettings({ ...own, pkce: 'false' }, null).pkce).toBe(false);
+    });
+
+    it("takes the catalog's value for a row that has none, and the row's over the catalog's", () => {
+      const linkedinAds = getAdapter('linkedin-ads')!.connector.authConfig!;
+      expect(linkedinAds.pkce).toBe(false);
+      expect(resolveRestAuthorizeSettings(own, null, linkedinAds).pkce).toBe(false);
+      expect(resolveRestAuthorizeSettings({ ...own, pkce: true }, null, linkedinAds).pkce).toBe(true);
+    });
+  });
+
+  it('asks for the scopes the catalog added since a connector was installed', () => {
+    const previous = getAdapter('etsy')!.previousOAuthScopes;
+    const row = {
+      clientId: 'cid',
+      clientSecret: 'sec',
+      authorizationUrl: etsyCatalog.authorizationUrl,
+      tokenUrl: etsyCatalog.tokenUrl,
+      scopes: 'listings_r shops_r transactions_r email_r',
+    };
+    const settings = resolveRestAuthorizeSettings(row, null, etsyCatalog, previous);
+    expect(settings.scope).toBe(etsyCatalog.scopes);
+    // Written back once the authorization succeeds, like every adopted value.
+    expect(settings.adopted).toEqual({ scopes: etsyCatalog.scopes });
+
+    // A hand-picked subset is not one of the adapter's earlier sets: kept.
+    const narrowed = resolveRestAuthorizeSettings({ ...row, scopes: 'listings_r' }, null, etsyCatalog, previous);
+    expect(narrowed.scope).toBe('listings_r');
+    expect(narrowed.adopted).toEqual({});
+
+    // Without a history on the adapter nothing is widened.
+    expect(resolveRestAuthorizeSettings(row, null, etsyCatalog).adopted).toEqual({});
   });
 
   it('resolves placeholders from the env vars', () => {

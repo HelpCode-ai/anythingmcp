@@ -12,7 +12,9 @@ import { cn } from '@/lib/utils';
 import { useEdition, notifyEditionChanged } from '@/lib/use-edition';
 import { EditionCard } from '@/components/edition-card';
 import { cardTrialDisplayEnd, cardTrialEligible, formatTrialEnd } from '@/lib/card-trial';
+import { useCardTrialKind } from '@/lib/use-card-trial-eligibility';
 import { describeBilling } from '@/lib/billing-summary';
+import { licensePageSource, startTrialPath } from '@/lib/checkout-source';
 
 interface LicenseStatus {
   plan: string | null;
@@ -35,7 +37,13 @@ export default function LicenseSettingsPage() {
   const [verifying, setVerifying] = useState(false);
   const [openingPortal, setOpeningPortal] = useState(false);
   const managePlan = useManagePlan();
-  const pricingUrl = usePricingUrl();
+  // Where the visitor came from (`?source=`, e.g. the offer email), passed on
+  // to the card trial and the pricing link for Stripe metadata.
+  const [source, setSource] = useState<ReturnType<typeof licensePageSource>>('license_page');
+  useEffect(() => {
+    setSource(licensePageSource(new URLSearchParams(window.location.search).get('source')));
+  }, []);
+  const pricingUrl = usePricingUrl(undefined, source);
   const { edition } = useEdition();
 
   const isCloud = deploymentMode === 'cloud';
@@ -48,6 +56,7 @@ export default function LicenseSettingsPage() {
     status.plan !== 'community';
   // Cloud admin on a running free trial: offer the card trial (/start-trial).
   const cardTrialOffer = cardTrialEligible({ isCloud, role: user?.role, license: status });
+  const cardTrialKind = useCardTrialKind(token, cardTrialOffer);
   const billingSummary = isCloud ? describeBilling(status?.billing) : null;
   const cardTrialDate = cardTrialOffer
     ? formatTrialEnd(cardTrialDisplayEnd(status?.expiresAt), 'long')
@@ -131,7 +140,7 @@ export default function LicenseSettingsPage() {
     }
   };
 
-  const handleBillingPortal = async (flow?: 'cancel') => {
+  const handleBillingPortal = async (flow?: 'cancel' | 'payment_method_update') => {
     if (!token) return;
     setError('');
     setMessage('');
@@ -316,7 +325,12 @@ export default function LicenseSettingsPage() {
               {verifying ? 'Verifying...' : 'Verify Now'}
             </Button>
             {hasBillableSubscription && (
-              <Button onClick={() => handleBillingPortal()} disabled={openingPortal}>
+              <Button
+                // A declined card is fixed on Stripe's add-a-card page, which
+                // also pays the open invoice; the portal home hides it.
+                onClick={() => handleBillingPortal(billingSummary?.paymentIssue ? 'payment_method_update' : undefined)}
+                disabled={openingPortal}
+              >
                 {openingPortal
                   ? 'Opening…'
                   : billingSummary?.paymentIssue
@@ -417,13 +431,20 @@ export default function LicenseSettingsPage() {
           <h2 className="text-sm font-semibold text-[var(--text)] mb-4">Upgrade Plan</h2>
           {cardTrialOffer ? (
             <>
-              <p className="text-sm text-[var(--text-2)] mb-4">
-                Add a payment method to keep AnythingMCP Cloud running after your trial. Nothing is
-                charged before {cardTrialDate ?? 'your trial ends'}, and you can cancel anytime.
-              </p>
+              {cardTrialKind === 'pay' ? (
+                <p className="text-sm text-[var(--text-2)] mb-4">
+                  Choose a plan to keep AnythingMCP Cloud running after your trial. This address has had
+                  a subscription before, so the plan starts and is billed when you check out.
+                </p>
+              ) : (
+                <p className="text-sm text-[var(--text-2)] mb-4">
+                  Add a payment method to keep AnythingMCP Cloud running after your trial. Nothing is
+                  charged before {cardTrialDate ?? 'your trial ends'}, and you can cancel anytime.
+                </p>
+              )}
               <div className="flex flex-wrap gap-3">
-                <Link href="/start-trial" className={cn(buttonVariants({ variant: 'primary' }))}>
-                  Add payment method
+                <Link href={startTrialPath(source)} className={cn(buttonVariants({ variant: 'primary' }))}>
+                  {cardTrialKind === 'pay' ? 'Choose a plan' : 'Add payment method'}
                 </Link>
                 <a
                   href={pricingUrl}

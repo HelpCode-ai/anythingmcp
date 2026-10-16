@@ -27,21 +27,91 @@ export interface ErrorHintInput {
   body?: unknown;
 }
 
+const MISSING_SCOPE_HINT =
+  'The connector was authorized without a permission this tool needs (the error names it). ' +
+  'Retrying will not help: ask the user to open this connector in AnythingMCP and click ' +
+  '"Authorize with Provider" again, which requests the missing permission, then retry.';
+
+const ODOO_FIELD_HINT =
+  'That field does not exist on this model in this Odoo database; field names differ between ' +
+  'Odoo versions and installed apps. Do not guess another spelling: list the model\'s fields ' +
+  'first (odoo_fields_get, or fields_get on the model) and use only the names it returns.';
+
+// Odoo 18.3 dropped `mobile` from contacts (res.partner, and res.users through
+// it); one number field is left. On 10 Oct 2026 a scheduled job asked for it 28
+// times in a day on Odoo 19, and the generic field hint did not stop it.
+const ODOO_PARTNER_MOBILE_HINT =
+  'Odoo 18.3 and later (Odoo 19 included) have no `mobile` field on contacts: every number is ' +
+  'in `phone`. Ask for `phone` instead and leave `mobile` out of fields and domains.';
+
+// Since Odoo 18 an API key expires. The "New API Key" dialog asks for a
+// Duration and preselects "1 Day", so a connector that worked yesterday answers
+// 401 "Invalid apikey" today (several workspaces in October 2026). Only an
+// administrator is offered "Persistent Key"; other users get at most what
+// their group allows (90 days for internal users by default).
+const ODOO_EXPIRED_KEY_HINT =
+  'Odoo refused the API key. Since Odoo 18 API keys expire, and the key dialog preselects a ' +
+  'duration of 1 Day, so a key that worked before has most likely expired (or was deleted). ' +
+  'Retrying will not help: tell the user to create a new key in Odoo (avatar → My Profile / ' +
+  'Preferences → Account Security → New API Key) with Duration "Persistent Key" (offered to ' +
+  'administrators) or the longest duration offered, such as 3 Months, and paste it into the ' +
+  'connector\'s ODOO_API_KEY in AnythingMCP.';
+
+const ODOO_ACCESS_DENIED_HINT =
+  'Odoo answered Access Denied: the API key, the user ID and the database name do not belong ' +
+  'together, or the key has expired (since Odoo 18 keys expire, and the key dialog preselects ' +
+  '1 Day). Retrying will not help: tell the user to check ODOO_DB and ODOO_UID in AnythingMCP ' +
+  'and, if they are right, to create a new key (My Profile / Preferences → Account Security → ' +
+  'New API Key) with Duration "Persistent Key" (administrators) or the longest duration ' +
+  'offered, and paste it into ODOO_API_KEY.';
+
+// The client_credentials token of a communication arrangement comes from the
+// tenant's own API host. A BTP token URL, a client that is not the
+// arrangement's communication user, a missing arrangement or a scope it does
+// not grant all end in a refusal that names none of them.
+const S4HANA_CLOUD_TOKEN_HINT =
+  'SAP S/4HANA Cloud refused the token request. Retrying will not help: tell the user to check, in ' +
+  'the connector settings in AnythingMCP, (1) the token URL: the Token Service URL from the ' +
+  'communication arrangement → Inbound Communication → OAuth 2.0 Details, on the tenant\'s API host ' +
+  '(https://<tenant>-api.s4hana.cloud.sap/sap/bc/sec/oauth2/token), not a BTP ' +
+  'authentication.<region>.hana.ondemand.com address; (2) that the client ID and secret are those of ' +
+  'the arrangement\'s communication user; (3) that an active communication arrangement exists for the ' +
+  'service; (4) that no scope is set, or only scopes the arrangement grants.';
+
+const S4HANA_CLOUD_ARRANGEMENT_HINT =
+  'SAP S/4HANA Cloud accepted the sign-in but refused this API: no active communication arrangement ' +
+  'covers this service for the connector\'s communication user (e.g. SAP_COM_0008 for business ' +
+  'partners, SAP_COM_0109 for sales orders). An SAP administrator has to add one; retrying will not help.';
+
+const ODOO_MODEL_HINT =
+  'That model does not exist in this Odoo database: it was renamed in newer versions or its ' +
+  'app is not installed (for example stock.production.lot is stock.lot since Odoo 16). Check ' +
+  'the model name before retrying, e.g. search ir.model by name.';
+
 const ETSY_PROPERTY_NAME_HINT =
   'Etsy needs every entry of property_values complete: property_id, property_name, ' +
   'scale_id (when the listing has one), value_ids and values. Read the listing with ' +
   'etsy_read_listing_inventory and send its property_values back unchanged, changing ' +
   'only prices, quantities or SKUs.';
 
+// About 50 failures across 10 workspaces in the ten days to 14 Oct 2026 were
+// guessed names in `properties` (customerNumber on orders and invoices,
+// openAmount, salesOrderItems, unitName, stockQuantity, validUntil), each
+// a call that would have worked with `properties` left out.
 const WECLAPP_FIELD_HINT =
-  'weclapp rejects fields it does not know. Field names are camelCase and belong to ' +
+  'weclapp rejects fields it does not know. If the unknown name is in `properties`, retry ' +
+  'the same call with `properties` left out: weclapp then returns every field, and the ' +
+  'answer is in there. Field names are camelCase and belong to ' +
   'the entity itself: line items live under `orderItems` / `salesInvoiceItems` / ' +
   '`shipmentItems` (as nested objects, not as filterable properties), the customer ' +
   'name is inside `recordAddress`, links end in `Id` (`customerId`, `articleId`, ' +
   '`warehouseId` is NOT a field of every entity). Names seen guessed wrong: the ' +
   'shipping address of an order is `deliveryAddress` (not `shippingAddress`), an ' +
   'article has `unitId` (not `unitName`), and fields of line items cannot be picked ' +
-  'with a dot (`orderItems.articleNumber`): ask for `orderItems` whole. Do not guess another spelling: ' +
+  'with a dot (`orderItems.articleNumber`): ask for `orderItems` whole. Sales orders and ' +
+  'invoices have no `customerNumber` (filter by `customerId`), an invoice has no ' +
+  '`openAmount` or `paidAmount` (`paymentStatus` and `paid` say whether it is settled), and ' +
+  'an article holds no stock quantity. Do not guess another spelling: ' +
   'fetch ONE record without `properties` and without that filter, read the field ' +
   'names it actually returns, then retry using only those.';
 
@@ -57,6 +127,18 @@ const WECLAPP_RAW_FILTER_HINT =
   '`property-operator=value` (operators -eq -ne -gt -lt -ge -le -like -ilike -in ' +
   '-notin -null -notnull), joined with `&`. `-in` needs a bracketed list: ' +
   '`id-in=[1,2]`. Do not send an SQL-like expression.';
+
+const WECLAPP_READ_ONLY_HINT =
+  'weclapp refuses to write a read-only field (the error names it, e.g. statusHistory, ' +
+  'createdDate, an amount or a number the system assigns). Do not copy a record you read ' +
+  'back into an update: send only the fields that change, with ignoreMissingProperties=true ' +
+  '(the weclapp_edit_* tools do this), and leave the named field out.';
+
+const WECLAPP_OPTIMISTIC_LOCK_HINT =
+  'The record changed after it was read, so the `version` sent with the update is stale ' +
+  '(or someone saved the record at the same moment). Read the record again, take its ' +
+  'current `version`, check the change still makes sense, then retry once. Leaving ' +
+  '`version` out skips the check but can overwrite the other change.';
 
 const NEW_COUNTRY_HINT =
   'The service refused the sign-in because it came from a new location (the ' +
@@ -144,6 +226,140 @@ const PRINTFUL_STORE_ID_HINT =
   'empty, the account has no store yet: the user must create one in Printful ' +
   '(Stores → Add store → "Manual order platform / API") first.';
 
+const FIGMA_NO_DEV_MODE_HINT =
+  'Figma answers "File not found" to dev resource calls when the user has no Dev Mode ' +
+  'access to the file, even though the file exists (a file Figma really cannot find ' +
+  'answers "Not found"). Dev Mode needs a paid Figma plan and a Full or Dev seat; a ' +
+  'Starter or locked team, or a View or Collab seat, is refused. Retrying will not help: ' +
+  'tell the user that dev resources are not available to them on this file.';
+
+// Generative AI APIs (gemini and openai adapters, and hand-built tools on the
+// same hosts). Every call is billed to the user's own key, so a retry loop
+// costs them money: these say when retrying cannot help.
+const GEMINI_KEY_HINT =
+  'Google refused the API key (API_KEY_INVALID): it is wrong, was deleted, or has extra ' +
+  'characters. Retrying will not help. Ask the user to create a key in Google AI Studio ' +
+  '(https://aistudio.google.com/apikey) and paste it into GEMINI_API_KEY.';
+
+const GEMINI_PERMISSION_HINT =
+  'Google refused the request (403). Usual causes: the key is restricted to other APIs or ' +
+  'apps (Google Cloud console, Credentials, the key, API restrictions: allow the Generative ' +
+  'Language API), the API is switched off in the key\'s project, or a file URL passed in the ' +
+  'request is not public. Retrying unchanged will not help.';
+
+const GEMINI_MODEL_HINT =
+  'That model name does not exist for this key or does not support this method. Do not guess ' +
+  'another name: list the models (gemini_list_models, or GET /v1beta/models) and use a `name` ' +
+  'it returns, without the `models/` prefix (for example gemini-3.1-flash-lite).';
+
+const GEMINI_QUOTA_HINT =
+  'Gemini quota or rate limit reached (429 RESOURCE_EXHAUSTED). The free tier limits requests ' +
+  'per minute and per day for each model, and image models have no free tier at all (limit 0). ' +
+  'Wait for the time in the RetryInfo detail before one retry, use a smaller model, or ask the ' +
+  'user to enable billing for the key\'s project in Google AI Studio. Do not retry in a loop.';
+
+const GEMINI_REGION_HINT =
+  'Gemini refused the request for this account or region (FAILED_PRECONDITION), for example ' +
+  'because the free tier is not available in the user\'s country or billing is required. ' +
+  'Retrying will not help: the user needs to enable billing for the key\'s project in Google AI Studio.';
+
+const GEMINI_SAFETY_HINT =
+  'Gemini blocked this prompt or its answer with its safety or content filters (block reason or ' +
+  'finish reason SAFETY, PROHIBITED_CONTENT, BLOCKLIST, SPII, RECITATION or IMAGE_SAFETY). ' +
+  'Retrying the same request will not help. Tell the user, and only rephrase if they want to ' +
+  'and the request is acceptable.';
+
+const OPENAI_KEY_HINT =
+  'OpenAI refused the API key (401): it is wrong, revoked, or belongs to another organization ' +
+  'or project than OPENAI_ORGANIZATION / OPENAI_PROJECT name. Retrying will not help. Ask the ' +
+  'user to create a key at https://platform.openai.com/api-keys and paste it into OPENAI_API_KEY, ' +
+  'and to clear or correct the organization and project settings.';
+
+const OPENAI_VERIFICATION_HINT =
+  'OpenAI requires a verified organization for this model or feature (the GPT image models ' +
+  'among them). Retrying will not help. The user has to verify the organization under ' +
+  'https://platform.openai.com/settings/organization/general (Verify Organization); access ' +
+  'can take a few minutes to arrive after verification.';
+
+const OPENAI_MODEL_HINT =
+  'That model does not exist or this key has no access to it. Do not guess another name: list ' +
+  'the models (openai_list_models, or GET /v1/models) and use an id it returns.';
+
+const OPENAI_QUOTA_HINT =
+  'The OpenAI account has no credit left or reached its spending limit (insufficient_quota). ' +
+  'Retrying will not help: the user has to add credit or raise the limit under ' +
+  'https://platform.openai.com/settings/organization/billing.';
+
+const OPENAI_RATE_HINT =
+  'OpenAI rate limit reached for this model (requests or tokens per minute). Wait the time ' +
+  'the error names before one retry, ask for less (fewer images, shorter output), or use a ' +
+  'smaller model. Do not retry in a loop.';
+
+const OPENAI_SAFETY_HINT =
+  'OpenAI\'s safety system refused this request or stopped the answer (moderation_blocked, ' +
+  'content_policy_violation or content_filter). Retrying the same request will not help. Tell ' +
+  'the user, and only rephrase if they want to and the request is acceptable.';
+
+// Web search APIs for agents (tavily, perplexity and serpapi adapters). Calls
+// spend the user's own credits or monthly searches, so these also say when a
+// retry cannot help.
+const TAVILY_KEY_HINT =
+  'Tavily refused the API key (401): it is wrong, revoked or missing. Retrying will not help. ' +
+  'Ask the user to copy the key (it starts with tvly-) from https://app.tavily.com and paste it ' +
+  'into TAVILY_API_KEY.';
+
+const TAVILY_CREDITS_HINT =
+  'The Tavily key or plan has used up its credits (432), or the pay-as-you-go limit is reached ' +
+  '(433). Retrying will not help: the user has to upgrade the plan or raise the limit at ' +
+  'https://app.tavily.com. tavily_get_usage shows what is left.';
+
+const TAVILY_RATE_HINT =
+  'Tavily rate limit reached (429). Wait a little before one retry, and send fewer requests at ' +
+  'once. Do not retry in a loop.';
+
+const TAVILY_BAD_REQUEST_HINT =
+  'Tavily rejected a parameter; the error names it. Fix that value instead of resending the same ' +
+  'call: a query needs at least 2 characters, dates are YYYY-MM-DD, chunks_per_source does not ' +
+  'work with search_depth ultra-fast, max_depth is at most 5, and a research model is mini, pro ' +
+  'or auto.';
+
+const PERPLEXITY_KEY_HINT =
+  'Perplexity answered 401: the API key is wrong or deleted, or the account has no API credits ' +
+  'left (Perplexity uses 401 for both). Retrying will not help. Ask the user to check Billing and ' +
+  'API Keys at https://console.perplexity.ai, top up or create a key, and paste it into ' +
+  'PERPLEXITY_API_KEY.';
+
+const PERPLEXITY_RATE_HINT =
+  'Perplexity rate limit reached (429) for the account\'s usage tier. Wait a little before one ' +
+  'retry, or use perplexity_start_research for long work instead of many quick calls. Do not ' +
+  'retry in a loop.';
+
+const PERPLEXITY_BAD_REQUEST_HINT =
+  'Perplexity rejected a parameter; the error names it. Fix that value instead of resending the ' +
+  'same call: model ids come from perplexity_list_models (provider/model), date filters are ' +
+  'MM/DD/YYYY, and search_domain_filter is either all included domains or all excluded ' +
+  '(-domain), never mixed, at most 20.';
+
+const SERPAPI_KEY_HINT =
+  'SerpApi refused the API key (401): it is wrong or was regenerated. Retrying will not help. Ask ' +
+  'the user to copy the private key from https://serpapi.com/manage-api-key and paste it into ' +
+  'SERPAPI_API_KEY.';
+
+const SERPAPI_QUOTA_HINT =
+  'SerpApi answered 429: the plan has no searches left this month, or the hourly throughput ' +
+  'limit is reached. serpapi_get_account (free) shows which. For the hourly limit wait for the ' +
+  'next hour; for the monthly one the user has to upgrade the plan. Do not retry in a loop.';
+
+const SERPAPI_BAD_REQUEST_HINT =
+  'SerpApi rejected a parameter value; the error names it (for example "Unsupported ... ' +
+  'parameter"). Use the documented values from the tool\'s parameter list; for location take an ' +
+  'exact name from serpapi_search_locations. Do not resend the same call.';
+
+const SERPAPI_FORBIDDEN_HINT =
+  'SerpApi says this account may not make the request (403), for example because it was ' +
+  'deleted or suspended. Retrying will not help: the user should check the account at ' +
+  'https://serpapi.com/dashboard.';
+
 function bodyText(body: unknown): string {
   if (body === undefined || body === null) return '';
   if (typeof body === 'string') return body;
@@ -187,6 +403,45 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     return SQL_SYNTAX_HINT;
   }
 
+  // OAuth tokens granted before an adapter gained a scope (Etsy's listings_w
+  // when its write tools arrived). Wording differs per vendor; the fix is the
+  // same: re-authorize, which now asks for the catalog's current scopes.
+  if (
+    (input.status === 401 || input.status === 403 || input.status === undefined) &&
+    /lacks scope|insufficient[_ ]scope|requires? scope|missing (the )?(required )?scopes?|scope is not granted/i.test(text)
+  ) {
+    return MISSING_SCOPE_HINT;
+  }
+
+  // Odoo answers an unknown field or model with a 500 ValueError (REST) or a
+  // JSON-RPC "Odoo Server Error", and the host is the customer's own domain.
+  if (/Invalid field '?(?:res\.(?:partner|users)\.)?mobile'? (?:on '?res\.(?:partner|users)|in leaf)/i.test(text)) {
+    return ODOO_PARTNER_MOBILE_HINT;
+  }
+  if (/Invalid field '[^']+' on '[^']+'|Invalid field [\w.]+ in leaf|Invalid field '[^']+' on model/i.test(text)) {
+    return ODOO_FIELD_HINT;
+  }
+  if (/Object [\w.]+ doesn't exist|Model not found: [\w.]+/i.test(text)) {
+    return ODOO_MODEL_HINT;
+  }
+  // JSON-2 (Odoo 19) answers 401 "Invalid apikey"; /jsonrpc answers an
+  // AccessDenied inside a 200.
+  if (/Invalid apikey/i.test(text)) {
+    return ODOO_EXPIRED_KEY_HINT;
+  }
+  if (/Odoo Server Error: Access Denied|odoo\.exceptions\.AccessDenied/i.test(text)) {
+    return ODOO_ACCESS_DENIED_HINT;
+  }
+
+  if (hostMatches(input.host, 's4hana.cloud.sap') || hostMatches(input.host, 's4hana.ondemand.com')) {
+    if (input.status === 401 || /could not obtain an access token/i.test(text)) {
+      return S4HANA_CLOUD_TOKEN_HINT;
+    }
+    if (input.status === 403) {
+      return S4HANA_CLOUD_ARRANGEMENT_HINT;
+    }
+  }
+
   if (hostMatches(input.host, 'weclapp.com')) {
     if (/unknown property|unexpected filter property/i.test(text)) {
       return WECLAPP_FIELD_HINT;
@@ -196,6 +451,12 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     }
     if (/invalid parameter value|unknown query parameter|unexpected parameter/i.test(text)) {
       return WECLAPP_RAW_FILTER_HINT;
+    }
+    if (/read_only_property|property [\w.[\]]+ is read-only/i.test(text)) {
+      return WECLAPP_READ_ONLY_HINT;
+    }
+    if (/optimistic[ _]lock/i.test(text)) {
+      return WECLAPP_OPTIMISTIC_LOCK_HINT;
     }
   }
 
@@ -233,6 +494,13 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     return LEXWARE_OVERDUE_HINT;
   }
 
+  // Figma hides a file from the dev resource API when the user lacks Dev Mode:
+  // 404 {"message": "File not found"} on a read, `errors[].error` on a write.
+  // A missing file reads {"err": "Not found"} instead.
+  if (hostMatches(input.host, 'api.figma.com') && /File not found/.test(text)) {
+    return FIGMA_NO_DEV_MODE_HINT;
+  }
+
   // TypeSafe answers a question with an unknown type (and any other field it
   // does not expect) with a bare "Invalid request.", which names nothing the
   // model could fix.
@@ -240,6 +508,76 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     return TYPESAFE_INVALID_REQUEST_HINT;
   }
 
+  if (hostMatches(input.host, 'generativelanguage.googleapis.com')) {
+    const hint = geminiHint(input.status, text);
+    if (hint) return hint;
+  }
+
+  if (hostMatches(input.host, 'api.openai.com')) {
+    const hint = openaiHint(input.status, text);
+    if (hint) return hint;
+  }
+
+  if (hostMatches(input.host, 'api.tavily.com')) {
+    const hint = tavilyHint(input.status, text);
+    if (hint) return hint;
+  }
+
+  if (hostMatches(input.host, 'api.perplexity.ai')) {
+    const hint = perplexityHint(input.status, text);
+    if (hint) return hint;
+  }
+
+  if (hostMatches(input.host, 'serpapi.com')) {
+    const hint = serpapiHint(input.status);
+    if (hint) return hint;
+  }
+
+  return undefined;
+}
+
+function tavilyHint(status: number | undefined, text: string): string | undefined {
+  if (status === 432 || status === 433 || /usage limit|pay-as-you-go limit/i.test(text)) return TAVILY_CREDITS_HINT;
+  if (status === 429) return TAVILY_RATE_HINT;
+  if (status === 401) return TAVILY_KEY_HINT;
+  if (status === 400 || status === 422) return TAVILY_BAD_REQUEST_HINT;
+  return undefined;
+}
+
+function perplexityHint(status: number | undefined, text: string): string | undefined {
+  if (status === 401 || status === 402 || /invalid_api_key|insufficient.{0,20}credit/i.test(text)) return PERPLEXITY_KEY_HINT;
+  if (status === 429) return PERPLEXITY_RATE_HINT;
+  if (status === 400 || status === 422) return PERPLEXITY_BAD_REQUEST_HINT;
+  return undefined;
+}
+
+function serpapiHint(status: number | undefined): string | undefined {
+  if (status === 401) return SERPAPI_KEY_HINT;
+  if (status === 429) return SERPAPI_QUOTA_HINT;
+  if (status === 403) return SERPAPI_FORBIDDEN_HINT;
+  if (status === 400) return SERPAPI_BAD_REQUEST_HINT;
+  return undefined;
+}
+
+function geminiHint(status: number | undefined, text: string): string | undefined {
+  if (/API_KEY_INVALID|API key not valid|API key expired/i.test(text)) return GEMINI_KEY_HINT;
+  if (/\b(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|IMAGE_PROHIBITED_CONTENT|IMAGE_RECITATION)\b/.test(text)) {
+    return GEMINI_SAFETY_HINT;
+  }
+  if (status === 429 || /RESOURCE_EXHAUSTED/.test(text)) return GEMINI_QUOTA_HINT;
+  if (status === 404 && /models\/|is not found for API version|not supported for/i.test(text)) return GEMINI_MODEL_HINT;
+  if (/User location is not supported|FAILED_PRECONDITION/i.test(text)) return GEMINI_REGION_HINT;
+  if (status === 403 || /PERMISSION_DENIED/.test(text)) return GEMINI_PERMISSION_HINT;
+  return undefined;
+}
+
+function openaiHint(status: number | undefined, text: string): string | undefined {
+  if (/moderation_blocked|content_policy_violation|safety system|content_filter/i.test(text)) return OPENAI_SAFETY_HINT;
+  if (/insufficient_quota|exceeded your current quota/i.test(text)) return OPENAI_QUOTA_HINT;
+  if (status === 429 || /rate_limit_exceeded/.test(text)) return OPENAI_RATE_HINT;
+  if (/must be verified|organization.{0,40}verif/i.test(text)) return OPENAI_VERIFICATION_HINT;
+  if (status === 401 || /invalid_api_key|Incorrect API key/i.test(text)) return OPENAI_KEY_HINT;
+  if (/model_not_found|The model `[^`]*` does not exist/i.test(text)) return OPENAI_MODEL_HINT;
   return undefined;
 }
 

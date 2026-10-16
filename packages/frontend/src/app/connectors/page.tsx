@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { connectors } from '@/lib/api';
+import { connectors, withSecretsNotice } from '@/lib/api';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AppSelect } from '@/components/ui/select';
 import { AppShell } from '@/components/app-shell';
+import { FirstSuccessOffer } from '@/components/first-success-offer';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { SetupStatusPill } from '@/components/setup-status';
@@ -128,7 +129,7 @@ export default function ConnectorsPage() {
     setMsg('Importing specification...');
     try {
       const result = await connectors.importSpec(id, token);
-      setMsg(result.message);
+      setMsg(withSecretsNotice(result.message, result));
       const updated = await connectors.list(token);
       setList(updated);
     } catch (err: any) {
@@ -168,7 +169,12 @@ export default function ConnectorsPage() {
       const result = await connectors.importAll(data, token);
       // Per-connector failures (a trial limit, an invalid row) come back in
       // `errors` with a 201, so show them rather than only the counts.
-      setMsg(result.errors?.length ? `${result.message}. ${result.errors.join('; ')}` : result.message);
+      setMsg(
+        withSecretsNotice(
+          result.errors?.length ? `${result.message}. ${result.errors.join('; ')}` : result.message,
+          result,
+        ),
+      );
       setShowImportModal(false);
       setImportJson('');
       const updated = await connectors.list(token);
@@ -260,6 +266,9 @@ export default function ConnectorsPage() {
 
   return (
     <AppShell title="Connectors" actions={headerActions}>
+      <div className="mb-4 empty:hidden">
+        <FirstSuccessOffer via="connectors" />
+      </div>
       {msg && (
         <div className="mb-4 flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
           <span>{msg}</span>

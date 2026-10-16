@@ -96,4 +96,22 @@ test.describe('MCP server Quick Connect', () => {
     await expect(modal).toContainText('US and Canada');
     await expect(modal.getByTestId('claude-directory')).toHaveCount(0);
   });
+
+  for (const mode of ['cloud', 'self-hosted'] as const) {
+    test(`MCP Inspector shows a pre-filled command, a plain link and sign-in steps (${mode})`, async ({ page }) => {
+      await openServerPage(page, mode);
+      await openClient(page, 'MCP Inspector');
+
+      const modal = page.locator('div.fixed').filter({ hasText: 'Connect to MCP Inspector' });
+
+      // The command points the Inspector at exactly the endpoint shown on the page.
+      const endpoint = (await modal.locator('code', { hasText: /\/mcp\/s1$/ }).textContent())!.trim();
+      const command = modal.locator('code', { hasText: 'npx @modelcontextprotocol/inspector' });
+      await expect(command).toHaveText(`npx @modelcontextprotocol/inspector --server-url "${endpoint}" --transport http`);
+
+      // The link opens the local Inspector with no query string, so no credentials can leak.
+      await expect(modal.getByRole('link', { name: 'Open in MCP Inspector' })).toHaveAttribute('href', 'http://localhost:6274/');
+      await expect(modal).toContainText('X-API-Key');
+    });
+  }
 });

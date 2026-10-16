@@ -1,0 +1,1087 @@
+{
+  "slug": "firebase",
+  "name": "Firebase",
+  "aliases": [
+    "Cloud Firestore",
+    "Firestore",
+    "Firebase Auth",
+    "Firebase Cloud Messaging",
+    "FCM",
+    "Remote Config"
+  ],
+  "description": "Let your AI work with Firebase: list projects and apps, browse and query Cloud Firestore, create and update documents, look up and disable Authentication users, read Remote Config, and (switched off by default) publish Remote Config or send push notifications. Signs in with your Google account.",
+  "instructions": "## Firebase\nThis connector works with **Firebase** through Google's REST APIs: the Firebase Management API (projects and apps), the **Cloud Firestore** REST API (collections, documents, queries, creating and updating documents), **Firebase Authentication** user administration through the Identity Toolkit API (look up, list, disable users), **Remote Config** (read the template and its history, publish a new one) and **Cloud Messaging** (FCM HTTP v1, send a push notification). It signs in with your Google account (OAuth), so the AI acts with that account's rights in the Firebase project.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com and select the **Google Cloud project of your Firebase project** (same project id). Creating the OAuth client there is simplest: API calls are counted against the client's project, so that project needs the APIs enabled.\n2. **APIs & Services → Library** → enable **Firebase Management API**, **Cloud Firestore API**, **Identity Toolkit API**, **Firebase Remote Config API** and **Firebase Cloud Messaging API** (only the ones you will use).\n3. **APIs & Services → OAuth consent screen**: **Internal** on Google Workspace, otherwise **External** with publishing status **In production** (in *Testing*, Google revokes the authorization after 7 days).\n4. **Credentials → Create credentials → OAuth client ID** → **Web application** → authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n5. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, install, then click **Authorize with Provider** and sign in with an account that is a member of the Firebase project.\n\n**Scope and roles**: the connector asks for `https://www.googleapis.com/auth/cloud-platform`. The narrower Firebase scopes do not cover everything here: `firebase` and `firebase.readonly` cover projects, apps and listing users but not the admin user lookup or update, `datastore` covers only Firestore, and Remote Config accepts only `cloud-platform`. What the AI can do is limited by the account's IAM roles in the project: for read-only use give it **Firebase Viewer** (or Viewer) and **Cloud Datastore Viewer**; writes need e.g. Cloud Datastore User, Firebase Authentication Admin, Firebase Remote Config Admin and Firebase Cloud Messaging Admin.\n\n**Writes need confirmation.** Before `firebase_create_document`, `firebase_update_document` or `firebase_set_user_disabled`, tell the user exactly what will change and wait for a clear yes. Changes reach the live app immediately.\n**Switched off at install**: `firebase_delete_document` (deletes permanently), `firebase_publish_remote_config` (replaces the live configuration of every app) and `firebase_send_message` (sends a real notification to real devices). Turn them on per tool only if needed.\n\n**Projects and apps**: `firebase_list_projects` gives the `projectId` every other tool needs; `firebase_get_project` shows its default resources; `firebase_list_apps` lists the project's Android, iOS and web apps.\n\n**Firestore**\n- Paths are relative to the database. A collection path has an odd number of segments (`users`, `users/abc/orders`), a document path an even number (`users/abc`). `database_id` defaults to `(default)`; pass it only for a named database.\n- Start with `firebase_list_collections` (top level, or `parent: \"documents/users/abc\"` for a document's subcollections), then `firebase_list_documents`, `firebase_get_document` or `firebase_query_documents`.\n- Values are typed: `{\"stringValue\": \"Anna\"}`, `{\"integerValue\": \"42\"}` (a string), `{\"doubleValue\": 9.5}`, `{\"booleanValue\": true}`, `{\"timestampValue\": \"2026-10-15T09:00:00Z\"}`, `{\"nullValue\": null}`, `{\"mapValue\": {\"fields\": {...}}}`, `{\"arrayValue\": {\"values\": [...]}}`, `{\"referenceValue\": \"projects/p/databases/(default)/documents/users/abc\"}`, `{\"geoPointValue\": {\"latitude\": 1, \"longitude\": 2}}`. Writes use the same format.\n- `firebase_query_documents` runs a structured query on one collection id: `where` takes `{\"fieldFilter\": {\"field\": {\"fieldPath\": \"status\"}, \"op\": \"EQUAL\", \"value\": {\"stringValue\": \"open\"}}}`; combine with `{\"compositeFilter\": {\"op\": \"AND\", \"filters\": [...]}}`. Operators: LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL, EQUAL, NOT_EQUAL, ARRAY_CONTAINS, IN, ARRAY_CONTAINS_ANY, NOT_IN. `orderBy`: `[{\"field\": {\"fieldPath\": \"createdAt\"}, \"direction\": \"DESCENDING\"}]`. A filter on one field plus ordering on another needs a composite index: the error message contains a link to create it.\n- Reads are billed per document returned (and at least one read per query). Keep `limit` and `pageSize` small (defaults 20) and use `fields` masks to keep answers small.\n- `firebase_update_document` changes only the fields listed in `update_fields` (other fields stay); without `update_fields` it replaces the whole document. It never creates a missing document (that fails with 404): use `firebase_create_document`.\n- Security rules do not apply to this connector: it acts with the IAM rights of the signed-in account, like the Admin SDK.\n\n**Authentication users**: `firebase_lookup_users` finds users by `emails`, `uids` or `phone_numbers`; `firebase_list_users` pages through all users (`nextPageToken`). Password hashes and salts are never returned. `firebase_set_user_disabled` blocks or unblocks sign-in (existing sessions end when their ID token expires, at most one hour).\n\n**Remote Config**\n- `firebase_get_remote_config` returns the current template (conditions, parameters, groups, version) and its `etag` in `_headers.etag`. `firebase_list_remote_config_versions` shows the change history.\n- `firebase_publish_remote_config` (switched off) **replaces the whole template**: send every condition, parameter and group you want to keep, not only the changed one, and pass the `etag` from the read right before. Run it once with `validate_only: true`, show the user the change and publish only after a yes. A stale etag fails with 409: read again.\n\n**Cloud Messaging**: `firebase_send_message` (switched off) sends one message to a device `token`, a `topic` or a `condition`. Use `validate_only: true` to check a message without sending. Confirm the audience and text with the user before every real send.\n\n**Not available**: Crashlytics has no documented public REST API (only an unannounced alpha used by Google's own tools), so crash data is not included. Cloud Storage files, Realtime Database, Data Connect, App Check and Analytics are also out of scope.\n\n**Common errors**\n- 401: the authorization expired or was revoked. Click **Authorize with Provider** again.\n- 403 `PERMISSION_DENIED` \"API has not been used in project\" or \"SERVICE_DISABLED\": enable that API in the Cloud project of the OAuth client. Other 403s: the account lacks the IAM role.\n- 404: wrong project id, database id or path (a document path where a collection path is expected, or the other way round).\n- 400 `FAILED_PRECONDITION` \"The query requires an index\": open the link in the message to create the index.\n- 409 on publish: the etag is stale; 429: quota, wait and retry.",
+  "region": "intl",
+  "category": "database",
+  "icon": "firebase",
+  "docsUrl": "https://firebase.google.com/docs/reference/rest",
+  "prerequisites": "A Firebase project, its Google Cloud project with the Firebase Management, Cloud Firestore, Identity Toolkit, Remote Config and Cloud Messaging APIs enabled as needed, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. About 10 minutes.",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "secret": false,
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The client secret of the same OAuth client (Credentials → your client → Client secrets).",
+      "example": "GOCSPX-...",
+      "pattern": "^\\S{10,}$",
+      "patternMessage": "Paste only the client secret, without spaces.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Firebase Management API is not enabled in the Google Cloud project of the OAuth client, or the account has no access. Enable it under APIs & Services → Library and authorize again.",
+    "rate_limited": "Google is throttling this account or project. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "firebase_list_projects",
+    "params": {
+      "pageSize": 1
+    }
+  },
+  "connector": {
+    "name": "Firebase",
+    "type": "REST",
+    "baseUrl": "https://firebase.googleapis.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/cloud-platform"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1beta1/projects?pageSize=1"
+  },
+  "tools": [
+    {
+      "name": "firebase_list_projects",
+      "description": "List the Firebase projects the signed-in account can access, with projectId, display name, project number and state. Start here: every other tool needs the projectId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageSize": {
+            "type": "integer",
+            "description": "Projects per page, default 50.",
+            "default": 50
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1beta1/projects",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "pageToken": "$pageToken"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "nextPageToken": "$.nextPageToken",
+            "projects": {
+              "$from": "$.results",
+              "$select": {
+                "projectId": "projectId",
+                "displayName": "displayName",
+                "projectNumber": "projectNumber",
+                "state": "state"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "firebase_get_project",
+      "description": "Get one Firebase project: display name, project number, state and its default resources (Hosting site, Realtime Database instance, Storage bucket, location).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1beta1/projects/{project_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "projectId": "$.projectId",
+            "displayName": "$.displayName",
+            "projectNumber": "$.projectNumber",
+            "state": "$.state",
+            "resources": "$.resources"
+          }
+        }
+      }
+    },
+    {
+      "name": "firebase_list_apps",
+      "description": "List the apps registered in a Firebase project (Android, iOS and web) with appId, display name, platform, bundle or package namespace and state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Apps per page, default 100.",
+            "default": 100
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional filter, e.g. 'platform=\"IOS\"'."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1beta1/projects/{project_id}:searchApps",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "pageToken": "$pageToken",
+          "filter": "$filter"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "nextPageToken": "$.nextPageToken",
+            "apps": {
+              "$from": "$.apps",
+              "$select": {
+                "appId": "appId",
+                "displayName": "displayName",
+                "platform": "platform",
+                "namespace": "namespace",
+                "state": "state"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "firebase_list_collections",
+      "description": "List Firestore collection ids: the top-level collections of the database, or the subcollections of one document. Free of document reads. Start here to explore a database.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "database_id": {
+            "type": "string",
+            "description": "Firestore database id. Default '(default)', the database every project starts with; pass another id only for a named database.",
+            "default": "(default)"
+          },
+          "parent": {
+            "type": "string",
+            "description": "Where to look: 'documents' (the default) for top-level collections, or 'documents/<collection>/<document id>' for the subcollections of one document.",
+            "default": "documents"
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Collection ids per page, default 100.",
+            "default": 100
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database_id}/{parent}:listCollectionIds",
+        "bodyMapping": {
+          "pageSize": "$pageSize",
+          "pageToken": "$pageToken"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "collectionIds": "$.collectionIds",
+            "nextPageToken": "$.nextPageToken"
+          },
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firebase_list_documents",
+      "description": "List the documents of a Firestore collection with their typed fields, a page at a time (default 20). Each returned document counts as one billed read. Use fields to return only some fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "database_id": {
+            "type": "string",
+            "description": "Firestore database id. Default '(default)', the database every project starts with; pass another id only for a named database.",
+            "default": "(default)"
+          },
+          "collection_path": {
+            "type": "string",
+            "description": "Collection path relative to the database: a top-level collection 'users', or a subcollection 'users/<user id>/orders'."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Documents per page, default 20, at most 100.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          },
+          "orderBy": {
+            "type": "string",
+            "description": "Order, e.g. 'createdAt desc' or 'priority desc, __name__'."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Return only these field paths, e.g. ['name', 'address.city']."
+          },
+          "showMissing": {
+            "type": "boolean",
+            "description": "Also list documents that do not exist but have subcollections."
+          }
+        },
+        "required": [
+          "project_id",
+          "collection_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database_id}/documents/{collection_path}",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "pageToken": "$pageToken",
+          "orderBy": "$orderBy",
+          "mask.fieldPaths": "$fields",
+          "showMissing": "$showMissing"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "nextPageToken": "$.nextPageToken",
+            "documents": {
+              "$from": "$.documents",
+              "$limit": 100,
+              "$select": {
+                "name": "name",
+                "fields": "fields",
+                "createTime": "createTime",
+                "updateTime": "updateTime"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "firebase_get_document",
+      "description": "Get one Firestore document with its typed fields and create and update times. One billed read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "database_id": {
+            "type": "string",
+            "description": "Firestore database id. Default '(default)', the database every project starts with; pass another id only for a named database.",
+            "default": "(default)"
+          },
+          "document_path": {
+            "type": "string",
+            "description": "Document path relative to the database: 'users/<user id>' or 'users/<user id>/orders/<order id>'."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Return only these field paths."
+          }
+        },
+        "required": [
+          "project_id",
+          "document_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database_id}/documents/{document_path}",
+        "queryParams": {
+          "mask.fieldPaths": "$fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "name": "name",
+            "fields": "fields",
+            "createTime": "createTime",
+            "updateTime": "updateTime"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "firebase_query_documents",
+      "description": "Query a Firestore collection with filters, ordering and a limit (structured query, read-only). Set all_descendants to search every collection with that id (a collection group). Each returned document counts as one billed read; keep limit small (default 20).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "database_id": {
+            "type": "string",
+            "description": "Firestore database id. Default '(default)', the database every project starts with; pass another id only for a named database.",
+            "default": "(default)"
+          },
+          "parent": {
+            "type": "string",
+            "description": "'documents' (default) to query a top-level collection or a collection group, or 'documents/<collection>/<document id>' to query a subcollection of that document.",
+            "default": "documents"
+          },
+          "collection_id": {
+            "type": "string",
+            "description": "Collection id (one segment, no slashes), e.g. 'orders'."
+          },
+          "all_descendants": {
+            "type": "boolean",
+            "description": "true = query every collection named collection_id below parent (collection group query). Default false.",
+            "default": false
+          },
+          "where": {
+            "type": "object",
+            "description": "Filter, e.g. {\"fieldFilter\": {\"field\": {\"fieldPath\": \"status\"}, \"op\": \"EQUAL\", \"value\": {\"stringValue\": \"open\"}}} or a compositeFilter with op AND/OR. For null or NaN use unaryFilter {\"op\": \"IS_NULL\"}."
+          },
+          "order_by": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Ordering, e.g. [{\"field\": {\"fieldPath\": \"createdAt\"}, \"direction\": \"DESCENDING\"}]."
+          },
+          "select": {
+            "type": "object",
+            "description": "Return only some fields: {\"fields\": [{\"fieldPath\": \"name\"}, {\"fieldPath\": \"total\"}]}."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum documents to return, default 20, at most 100.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Documents to skip (still billed as reads). Prefer narrower filters."
+          }
+        },
+        "required": [
+          "project_id",
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database_id}/{parent}:runQuery",
+        "bodyMapping": {
+          "structuredQuery": {
+            "from": [
+              {
+                "collectionId": "$collection_id",
+                "allDescendants": "$all_descendants"
+              }
+            ],
+            "where": "$where",
+            "orderBy": "$order_by",
+            "select": "$select",
+            "limit": "$limit",
+            "offset": "$offset"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{documents: [?document].document.{name: name, fields: fields, createTime: createTime, updateTime: updateTime}, readTime: [0].readTime}",
+          "maxBytes": 100000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firebase_create_document",
+      "description": "Create a Firestore document in a collection with typed fields. Confirm with the user first: the app sees it at once. Pass document_id to choose the id, otherwise Firestore generates one; an existing id fails with 409.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "database_id": {
+            "type": "string",
+            "description": "Firestore database id. Default '(default)', the database every project starts with; pass another id only for a named database.",
+            "default": "(default)"
+          },
+          "collection_path": {
+            "type": "string",
+            "description": "Collection path relative to the database: a top-level collection 'users', or a subcollection 'users/<user id>/orders'."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "Id for the new document. Leave out for an automatic id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "The document's fields in Firestore's typed format, e.g. {\"name\": {\"stringValue\": \"Anna\"}, \"age\": {\"integerValue\": \"31\"}}."
+          }
+        },
+        "required": [
+          "project_id",
+          "collection_path",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database_id}/documents/{collection_path}",
+        "queryParams": {
+          "documentId": "$document_id"
+        },
+        "bodyMapping": {
+          "fields": "$fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "name": "name",
+            "fields": "fields",
+            "createTime": "createTime",
+            "updateTime": "updateTime"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "firebase_update_document",
+      "description": "Update fields of an existing Firestore document. Confirm with the user first. With update_fields only those fields change (a listed field missing from fields is deleted); without it the whole document is replaced. It never creates a document: a missing one fails with 404 (use firebase_create_document).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "database_id": {
+            "type": "string",
+            "description": "Firestore database id. Default '(default)', the database every project starts with; pass another id only for a named database.",
+            "default": "(default)"
+          },
+          "document_path": {
+            "type": "string",
+            "description": "Document path relative to the database: 'users/<user id>' or 'users/<user id>/orders/<order id>'."
+          },
+          "fields": {
+            "type": "object",
+            "description": "New values in Firestore's typed format, e.g. {\"status\": {\"stringValue\": \"shipped\"}}."
+          },
+          "update_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Field paths to change, e.g. ['status', 'address.city']. Strongly recommended."
+          }
+        },
+        "required": [
+          "project_id",
+          "document_path",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database_id}/documents/{document_path}",
+        "queryParams": {
+          "updateMask.fieldPaths": "$update_fields",
+          "currentDocument.exists": "true"
+        },
+        "bodyMapping": {
+          "fields": "$fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "name": "name",
+            "fields": "fields",
+            "createTime": "createTime",
+            "updateTime": "updateTime"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "firebase_delete_document",
+      "enabled": false,
+      "description": "Permanently delete a Firestore document (its subcollections stay). Switched off at install. Confirm with the user first and name the exact document path; there is no undo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "database_id": {
+            "type": "string",
+            "description": "Firestore database id. Default '(default)', the database every project starts with; pass another id only for a named database.",
+            "default": "(default)"
+          },
+          "document_path": {
+            "type": "string",
+            "description": "Document path relative to the database: 'users/<user id>' or 'users/<user id>/orders/<order id>'."
+          }
+        },
+        "required": [
+          "project_id",
+          "document_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database_id}/documents/{document_path}",
+        "queryParams": {
+          "currentDocument.exists": "true"
+        }
+      }
+    },
+    {
+      "name": "firebase_lookup_users",
+      "description": "Find Firebase Authentication users by email address, uid or phone number: sign-in providers, verified email, disabled flag, creation and last sign-in times, custom claims. Password hashes are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Email addresses to look up."
+          },
+          "uids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "User ids (uid / localId) to look up."
+          },
+          "phone_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Phone numbers in E.164 format, e.g. '+4917612345678'."
+          },
+          "tenant_id": {
+            "type": "string",
+            "description": "Identity Platform tenant id, only for multi-tenant projects."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://identitytoolkit.googleapis.com/v1/projects/{project_id}/accounts:lookup",
+        "bodyMapping": {
+          "email": "$emails",
+          "localId": "$uids",
+          "phoneNumber": "$phone_numbers",
+          "tenantId": "$tenant_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "users": {
+              "$from": "$.users",
+              "$select": {
+                "uid": "localId",
+                "email": "email",
+                "emailVerified": "emailVerified",
+                "displayName": "displayName",
+                "phoneNumber": "phoneNumber",
+                "photoUrl": "photoUrl",
+                "disabled": "disabled",
+                "createdAt": "createdAt",
+                "lastLoginAt": "lastLoginAt",
+                "lastRefreshAt": "lastRefreshAt",
+                "customClaims": "customAttributes",
+                "tenantId": "tenantId",
+                "providers": "providerUserInfo[*].providerId"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firebase_list_users",
+      "description": "List the Firebase Authentication users of a project, a page at a time (default 100), with email, providers, disabled flag and sign-in times. Password hashes are never returned. Continue with nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "Users per page, default 100, at most 1000.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "nextPageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          },
+          "tenant_id": {
+            "type": "string",
+            "description": "Identity Platform tenant id, only for multi-tenant projects."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://identitytoolkit.googleapis.com/v1/projects/{project_id}/accounts:batchGet",
+        "queryParams": {
+          "maxResults": "$maxResults",
+          "nextPageToken": "$nextPageToken",
+          "tenantId": "$tenant_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "nextPageToken": "$.nextPageToken",
+            "users": {
+              "$from": "$.users",
+              "$select": {
+                "uid": "localId",
+                "email": "email",
+                "emailVerified": "emailVerified",
+                "displayName": "displayName",
+                "phoneNumber": "phoneNumber",
+                "photoUrl": "photoUrl",
+                "disabled": "disabled",
+                "createdAt": "createdAt",
+                "lastLoginAt": "lastLoginAt",
+                "lastRefreshAt": "lastRefreshAt",
+                "customClaims": "customAttributes",
+                "tenantId": "tenantId",
+                "providers": "providerUserInfo[*].providerId"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "firebase_set_user_disabled",
+      "description": "Disable or re-enable a Firebase Authentication user's sign-in. Confirm with the user first and name the account. A disabled user cannot sign in or refresh tokens; an already issued ID token stays valid until it expires (at most one hour).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "uid": {
+            "type": "string",
+            "description": "The user's uid (localId) from firebase_lookup_users."
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "true = disable the account, false = enable it again."
+          },
+          "tenant_id": {
+            "type": "string",
+            "description": "Identity Platform tenant id, only for multi-tenant projects."
+          }
+        },
+        "required": [
+          "project_id",
+          "uid",
+          "disabled"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://identitytoolkit.googleapis.com/v1/projects/{project_id}/accounts:update",
+        "bodyMapping": {
+          "localId": "$uid",
+          "disableUser": "$disabled",
+          "tenantId": "$tenant_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "uid": "$.localId",
+            "email": "$.email",
+            "displayName": "$.displayName"
+          }
+        }
+      }
+    },
+    {
+      "name": "firebase_get_remote_config",
+      "description": "Get the current Remote Config template of a project: conditions, parameters with default and conditional values, parameter groups and version, plus its etag (in _headers.etag), which publishing needs. Pass version_number to read an older version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "version_number": {
+            "type": "string",
+            "description": "Read this version instead of the current one, e.g. '42'."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://firebaseremoteconfig.googleapis.com/v1/projects/{project_id}/remoteConfig",
+        "queryParams": {
+          "versionNumber": "$version_number"
+        },
+        "exposeHeaders": [
+          "etag"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "version.updateUser.imageUrl"
+          ],
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "firebase_list_remote_config_versions",
+      "description": "List the published Remote Config versions of a project, newest first: version number, update time, who published it, how (console, REST, rollback) and the description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Versions per page, default 20.",
+            "default": 20
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          },
+          "startTime": {
+            "type": "string",
+            "description": "Only versions updated at or after this time, RFC 3339."
+          },
+          "endTime": {
+            "type": "string",
+            "description": "Only versions updated before this time, RFC 3339."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://firebaseremoteconfig.googleapis.com/v1/projects/{project_id}/remoteConfig:listVersions",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "pageToken": "$pageToken",
+          "startTime": "$startTime",
+          "endTime": "$endTime"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "nextPageToken": "$.nextPageToken",
+            "versions": {
+              "$from": "$.versions",
+              "$select": {
+                "versionNumber": "versionNumber",
+                "updateTime": "updateTime",
+                "updateUser": "updateUser.email",
+                "updateOrigin": "updateOrigin",
+                "updateType": "updateType",
+                "description": "description",
+                "rollbackSource": "rollbackSource"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "firebase_publish_remote_config",
+      "enabled": false,
+      "description": "Publish a new Remote Config template. Switched off at install. It REPLACES the whole live template for every app: send all conditions, parameters and groups to keep, with the etag from firebase_get_remote_config. Validate first with validate_only true, show the user the change and confirm with the user: publish only after an explicit yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "etag": {
+            "type": "string",
+            "description": "etag from the last firebase_get_remote_config (_headers.etag). Use '*' only to overwrite regardless of concurrent changes."
+          },
+          "conditions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Complete list of conditions, as in the current template."
+          },
+          "parameters": {
+            "type": "object",
+            "description": "Complete map of parameters, as in the current template, with your change applied."
+          },
+          "parameter_groups": {
+            "type": "object",
+            "description": "Complete map of parameter groups, if the template has any."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "true = only check the template, publish nothing. Default false."
+          }
+        },
+        "required": [
+          "project_id",
+          "etag",
+          "parameters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "https://firebaseremoteconfig.googleapis.com/v1/projects/{project_id}/remoteConfig",
+        "queryParams": {
+          "validateOnly": "$validate_only"
+        },
+        "headers": {
+          "If-Match": "$etag"
+        },
+        "bodyMapping": {
+          "conditions": "$conditions",
+          "parameters": "$parameters",
+          "parameterGroups": "$parameter_groups"
+        },
+        "exposeHeaders": [
+          "etag"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "version": "$.version"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "firebase_send_message",
+      "enabled": false,
+      "description": "Send one Firebase Cloud Messaging notification or data message to a device token, a topic or a condition. Switched off at install. It reaches real users: confirm the audience and text with the user first, and test with validate_only true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Firebase project id, e.g. 'my-app-12345' (projectId from firebase_list_projects)."
+          },
+          "token": {
+            "type": "string",
+            "description": "Registration token of one device. Use exactly one of token, topic or condition."
+          },
+          "topic": {
+            "type": "string",
+            "description": "Topic name without '/topics/', e.g. 'news'."
+          },
+          "condition": {
+            "type": "string",
+            "description": "Topic condition, e.g. \"'news' in topics && 'de' in topics\"."
+          },
+          "notification": {
+            "type": "object",
+            "description": "Visible notification: {\"title\": \"...\", \"body\": \"...\", \"image\": \"https://...\"}."
+          },
+          "data": {
+            "type": "object",
+            "description": "Custom key-value data for the app; values must be strings."
+          },
+          "android": {
+            "type": "object",
+            "description": "Android options, e.g. {\"priority\": \"HIGH\"}."
+          },
+          "apns": {
+            "type": "object",
+            "description": "Apple options (headers and payload)."
+          },
+          "webpush": {
+            "type": "object",
+            "description": "Web push options."
+          },
+          "validate_only": {
+            "type": "boolean",
+            "description": "true = validate the message without sending it."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
+        "bodyMapping": {
+          "message": {
+            "token": "$token",
+            "topic": "$topic",
+            "condition": "$condition",
+            "notification": "$notification",
+            "data": "$data",
+            "android": "$android",
+            "apns": "$apns",
+            "webpush": "$webpush"
+          },
+          "validateOnly": "$validate_only"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "name": "$.name"
+          }
+        }
+      }
+    }
+  ]
+}

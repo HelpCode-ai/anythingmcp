@@ -1,0 +1,1102 @@
+{
+  "slug": "spotify",
+  "name": "Spotify",
+  "description": "Let your AI work with your Spotify account: search music and podcasts, read your playlists, Liked Songs, top artists and recently played tracks, see what is playing, create playlists and add or remove tracks, and control playback on Premium after your confirmation. Signed in through a Spotify developer app of your own.",
+  "instructions": "## Spotify\nThis connector works with one Spotify account through the **Spotify Web API** (`https://api.spotify.com/v1`), as the user who signs in: the profile, catalog search, tracks, albums, artists, the user's playlists and their items, Liked Songs, top artists and tracks, recently played, what is playing now, devices and the queue. It can create playlists, add and remove playlist items and control playback. It signs in with **OAuth 2.0** (authorization code with PKCE) through a Spotify app of your own.\n\n**Spotify's limits for new developer apps (read this first)**\n- A new app runs in **development mode**. Since February 2026 the app owner needs an active **Spotify Premium** subscription, or the app stops working until it is renewed.\n- At most **5 Spotify users** per app, each added by name and Spotify email under **User Management**. Anyone else can sign in, but every call answers 403.\n- **Extended quota** (more users, all endpoints) is only granted to organizations: a registered business with a launched service, at least 250,000 monthly active users and availability in key Spotify markets. Individuals cannot apply. So in practice this connector is for your own account and a few people you add.\n- Not available to development-mode apps, so no tool offers them: recommendations, audio features and audio analysis, related artists, featured and category playlists, new releases, browse categories, an artist's top tracks, other users' profiles and playlists, the markets list and the \"several items at once\" endpoints. Spotify's own editorial and algorithmic playlists cannot be opened, and the items of a playlist are only readable when the user owns it or collaborates on it.\n- Search returns at most **10 results per type** per call (default 5); page with `offset`. Popularity, followers, genres, record label, available markets and the user's email, country and subscription level are no longer returned.\n\n**Setup (about 10 minutes)**\n1. Sign in at https://developer.spotify.com/dashboard with the Premium account that will own the app and click **Create app**.\n2. Enter a name and description. Under **Redirect URIs** add `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Spotify accepts only HTTPS redirect URIs, or `http://127.0.0.1:<port>/...` for a local test; `localhost` is refused. Tick **Web API**, accept the terms and **Save**.\n3. Open the app's **Settings**: copy the **Client ID** into `SPOTIFY_CLIENT_ID`, click **View client secret** and copy it into `SPOTIFY_CLIENT_SECRET`.\n4. Under **User Management** add every Spotify account that will sign in (name and the email of the Spotify account), up to 5.\n5. Install the connector, click **Authorize with Provider**, sign in to Spotify and accept.\n\n**Scopes requested**: `user-read-private`, `playlist-read-private`, `playlist-read-collaborative`, `playlist-modify-public`, `playlist-modify-private`, `user-library-read`, `user-follow-read`, `user-top-read`, `user-read-recently-played`, `user-read-playback-state`, `user-read-currently-playing`, `user-modify-playback-state`. `spotify_save_to_library` and `spotify_remove_from_library` are installed switched off; to use them add `user-library-modify` and `user-follow-modify` to the scopes in the connector's OAuth settings and authorize again.\n\n**Confirm before every change.** `spotify_create_playlist`, `spotify_add_playlist_items`, `spotify_remove_playlist_items`, `spotify_start_playback`, `spotify_pause_playback`, `spotify_skip_to_next`, `spotify_skip_to_previous` and `spotify_add_to_queue` change the user's account or what is playing: say what will happen and wait for the user's yes.\n\n**Playback control needs Premium** on the signed-in account and an open Spotify app on some device. Without an active device Spotify answers 404 `NO_ACTIVE_DEVICE`: open Spotify on a device, or pass a `device_id` from `spotify_list_devices`. A free account gets 403 `PREMIUM_REQUIRED`. Reading what plays (`spotify_get_playback_state`, `spotify_get_currently_playing`, `spotify_get_queue`) works on free accounts; an empty answer means nothing is playing.\n\n**Ids and URIs**: ids are 22 characters (e.g. `4iV5W9uYEdYUVa79Axb7Rh`); URIs add the type (`spotify:track:4iV5W9uYEdYUVa79Axb7Rh`). A shared link `https://open.spotify.com/track/<id>` carries the id. Playlist and library write tools take URIs, read tools take ids.\n\n**Tools**: `spotify_get_me`, `spotify_search`, `spotify_get_track`, `spotify_get_album`, `spotify_get_artist`, `spotify_get_artist_albums`, `spotify_get_playlist`, `spotify_get_playlist_items`, `spotify_list_my_playlists`, `spotify_get_top_items`, `spotify_get_recently_played`, `spotify_get_playback_state`, `spotify_get_currently_playing`, `spotify_list_devices`, `spotify_get_queue`, `spotify_list_saved_tracks`, `spotify_check_library` (read); `spotify_create_playlist`, `spotify_add_playlist_items`, `spotify_remove_playlist_items`, `spotify_start_playback`, `spotify_pause_playback`, `spotify_skip_to_next`, `spotify_skip_to_previous`, `spotify_add_to_queue` (changes, confirm first); `spotify_save_to_library`, `spotify_remove_from_library` (switched off).\n\n**Paging**: list tools return `total` and `next`; call again with a higher `offset` while `next` is set. `spotify_get_recently_played` pages with `before` = `cursors.before`.\n\n**Sign-in lifetime**: access tokens last one hour and are renewed automatically with the refresh token. After changing scopes, click **Authorize with Provider** again.\n\n**Errors**\n- 401 \"The access token expired\" or \"Invalid access token\": click **Authorize with Provider** again.\n- 403 with a user who is not in User Management, or when the app owner's Premium lapsed: add the user, or renew Premium.\n- 403 on a playlist's items: the user neither owns nor collaborates on it.\n- 403 `PREMIUM_REQUIRED`, 404 `NO_ACTIVE_DEVICE`: see playback above.\n- 429 `QUOTA_EXCEEDED` or Too many requests: development-mode quotas are counted per developer account; wait and try again later.\n\n**Out of scope**: playing audio itself (the API only controls Spotify apps), downloading or previewing audio, podcasts and audiobook chapters beyond search, playlist cover images, and every endpoint Spotify reserves for extended quota.",
+  "region": "intl",
+  "category": "social",
+  "icon": "spotify",
+  "docsUrl": "https://developer.spotify.com/documentation/web-api",
+  "requiredEnvVars": [
+    "SPOTIFY_CLIENT_ID",
+    "SPOTIFY_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://developer.spotify.com/dashboard",
+  "envVarMeta": {
+    "SPOTIFY_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Spotify Developer Dashboard → your app → Settings → Basic Information: Client ID.",
+      "link": "https://developer.spotify.com/dashboard",
+      "example": "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+      "pattern": "^[0-9a-f]{32}$",
+      "patternMessage": "The Client ID is 32 characters, digits and the letters a to f."
+    },
+    "SPOTIFY_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page: click View client secret and copy it.",
+      "link": "https://developer.spotify.com/dashboard",
+      "pattern": "^[0-9a-f]{32}$",
+      "patternMessage": "The Client Secret is 32 characters, digits and the letters a to f."
+    }
+  },
+  "verifyHints": {
+    "401": "Spotify refused the access token. Click Authorize with Provider again; if the client secret was rotated, update SPOTIFY_CLIENT_SECRET first.",
+    "403": "Spotify refused this account. In development mode only users added under User Management in the Spotify Developer Dashboard (at most 5) can use the app, and the app owner needs an active Spotify Premium subscription.",
+    "rate_limited": "Spotify is rate limiting this app (development-mode quotas are counted per developer account). Wait a little and try again."
+  },
+  "probe": {
+    "tool": "spotify_get_me"
+  },
+  "prerequisites": "A Spotify Premium account that owns a Spotify developer app (development mode, at most 5 users added under User Management) with the redirect URI below. About 10 minutes.",
+  "connector": {
+    "name": "Spotify Web API",
+    "type": "REST",
+    "baseUrl": "https://api.spotify.com/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{SPOTIFY_CLIENT_ID}}",
+      "clientSecret": "{{SPOTIFY_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.spotify.com/authorize",
+      "tokenUrl": "https://accounts.spotify.com/api/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "user-read-private playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-library-read user-follow-read user-top-read user-read-recently-played user-read-playback-state user-read-currently-playing user-modify-playback-state"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me"
+  },
+  "tools": [
+    {
+      "name": "spotify_get_me",
+      "description": "Read the signed-in Spotify account: user id, account_id, display name, profile link and Spotify URI. Apps in development mode no longer receive email, country or subscription level. A cheap check that the sign-in works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "account_id": "$.account_id",
+            "display_name": "$.display_name",
+            "uri": "$.uri",
+            "url": "$.external_urls.spotify",
+            "product": "$.product",
+            "country": "$.country"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "spotify_search",
+      "description": "Search the Spotify catalog for tracks, artists, albums, playlists, shows, episodes or audiobooks. Returns per type: total, next and the items with id, name, uri and key details. Spotify returns at most 10 results per type per call for apps in development mode (default 5); page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search text. Field filters narrow it: artist:, album:, track:, year: (e.g. 1990-1999), genre:, isrc:, upc:, tag:new. Example: \"track:Doxy artist:Miles Davis\"."
+          },
+          "type": {
+            "type": "string",
+            "description": "Comma-separated result types: album, artist, playlist, track, show, episode, audiobook (default track).",
+            "default": "track"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per type, 1 to 10 (default 5).",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 5
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first result, 0 to 1000, for paging.",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "market": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. DE). Leave empty to use the signed-in user's country."
+          },
+          "include_external": {
+            "type": "string",
+            "description": "Set to audio to mark externally hosted audio (some podcasts) as playable.",
+            "enum": [
+              "audio"
+            ]
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q",
+          "type": "$type",
+          "limit": "$limit",
+          "offset": "$offset",
+          "market": "$market",
+          "include_external": "$include_external"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{tracks: tracks && {total: tracks.total, next: tracks.next, items: tracks.items[].{id: id, name: name, uri: uri, artists: artists[].name, album: album.name, release_date: album.release_date, duration_ms: duration_ms, explicit: explicit, url: external_urls.spotify}}, artists: artists && {total: artists.total, next: artists.next, items: artists.items[].{id: id, name: name, uri: uri, genres: genres, url: external_urls.spotify}}, albums: albums && {total: albums.total, next: albums.next, items: albums.items[].{id: id, name: name, uri: uri, album_type: album_type, release_date: release_date, total_tracks: total_tracks, artists: artists[].name, url: external_urls.spotify}}, playlists: playlists && {total: playlists.total, next: playlists.next, items: playlists.items[].{id: id, name: name, uri: uri, owner: owner.display_name, items_total: (items || tracks).total, url: external_urls.spotify}}, shows: shows && {total: shows.total, next: shows.next, items: shows.items[].{id: id, name: name, uri: uri, total_episodes: total_episodes, url: external_urls.spotify}}, episodes: episodes && {total: episodes.total, next: episodes.next, items: episodes.items[].{id: id, name: name, uri: uri, release_date: release_date, duration_ms: duration_ms, url: external_urls.spotify}}, audiobooks: audiobooks && {total: audiobooks.total, next: audiobooks.next, items: audiobooks.items[].{id: id, name: name, uri: uri, authors: authors[].name, url: external_urls.spotify}}}",
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_track",
+      "description": "Read one track by its Spotify id: name, artists, album, release date, duration, explicit flag, track and disc number, playability, ISRC (external_ids) and link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "track_id": {
+            "type": "string",
+            "description": "Spotify track id, e.g. 11dFghVXANMlKmJXsNCbNl (the part after spotify:track:)."
+          },
+          "market": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. DE). Leave empty to use the signed-in user's country."
+          }
+        },
+        "required": [
+          "track_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracks/{track_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "market": "$market"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: id, name: name, uri: uri, artists: artists[].{id: id, name: name}, album: album && {id: album.id, name: album.name, album_type: album.album_type, release_date: album.release_date}, duration_ms: duration_ms, explicit: explicit, track_number: track_number, disc_number: disc_number, is_playable: is_playable, external_ids: external_ids, popularity: popularity, url: external_urls.spotify}",
+          "maxBytes": 10000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_album",
+      "description": "Read one album by its Spotify id: name, type, artists, release date, total tracks, copyrights, link, and its first tracks (up to 50; total and next tell whether more exist).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "album_id": {
+            "type": "string",
+            "description": "Spotify album id, e.g. 4aawyAB9vmqN3uQ7FjRGTy."
+          },
+          "market": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. DE). Leave empty to use the signed-in user's country."
+          }
+        },
+        "required": [
+          "album_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/albums/{album_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "market": "$market"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: id, name: name, uri: uri, album_type: album_type, release_date: release_date, total_tracks: total_tracks, artists: artists[].{id: id, name: name}, label: label, copyrights: copyrights[].text, url: external_urls.spotify, tracks: tracks && {total: tracks.total, next: tracks.next, items: tracks.items[].{id: id, name: name, uri: uri, track_number: track_number, duration_ms: duration_ms, artists: artists[].name}}}",
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_artist",
+      "description": "Read one artist by Spotify id: name, uri, link and image. Genres, followers and popularity are only returned to apps with extended quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "artist_id": {
+            "type": "string",
+            "description": "Spotify artist id, e.g. 0TnOYISbd1XYRBk9myaseg."
+          }
+        },
+        "required": [
+          "artist_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/artists/{artist_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: id, name: name, uri: uri, url: external_urls.spotify, image: images[0].url, genres: genres, followers: followers.total, popularity: popularity}",
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_artist_albums",
+      "description": "List an artist's albums, singles and compilations: id, name, type, release date, track count and link. At most 10 per page for apps in development mode (default 5); page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "artist_id": {
+            "type": "string",
+            "description": "Spotify artist id."
+          },
+          "include_groups": {
+            "type": "string",
+            "description": "Comma-separated filter: album, single, appears_on, compilation. Leave empty for all."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 10 (default 5).",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 5
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first item to return, for paging (default 0).",
+            "minimum": 0
+          },
+          "market": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. DE). Leave empty to use the signed-in user's country."
+          }
+        },
+        "required": [
+          "artist_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/artists/{artist_id}/albums",
+        "encodePathParams": true,
+        "queryParams": {
+          "include_groups": "$include_groups",
+          "limit": "$limit",
+          "offset": "$offset",
+          "market": "$market"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{total: total, next: next, items: items[].{id: id, name: name, uri: uri, album_type: album_type, album_group: album_group, release_date: release_date, total_tracks: total_tracks, url: external_urls.spotify}}",
+          "maxBytes": 15000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_playlist",
+      "description": "Read a playlist's details: name, description, owner, public and collaborative flags, snapshot_id, number of items and link. Use spotify_get_playlist_items for the tracks. Apps in development mode can read the items only of playlists the user owns or collaborates on, and cannot open Spotify's own editorial or algorithmic playlists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "playlist_id": {
+            "type": "string",
+            "description": "Spotify playlist id, e.g. 3cEYpjA9oz9GiPac4AsH4n."
+          },
+          "market": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. DE). Leave empty to use the signed-in user's country."
+          }
+        },
+        "required": [
+          "playlist_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/playlists/{playlist_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "market": "$market"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: id, name: name, description: description, owner: owner && {id: owner.id, display_name: owner.display_name}, public: public, collaborative: collaborative, snapshot_id: snapshot_id, items_total: (items || tracks).total, uri: uri, url: external_urls.spotify}",
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_playlist_items",
+      "description": "List the tracks and episodes of a playlist the user owns or collaborates on: when and by whom each was added, type, id, name, uri, artists, album or show, duration. Returns total and next; page with offset. Other people's playlists answer 403 for apps in development mode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "playlist_id": {
+            "type": "string",
+            "description": "Spotify playlist id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 20).",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first item to return, for paging (default 0).",
+            "minimum": 0
+          },
+          "market": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. DE). Leave empty to use the signed-in user's country."
+          },
+          "additional_types": {
+            "type": "string",
+            "description": "Item types the client accepts besides tracks (default track,episode).",
+            "default": "track,episode"
+          }
+        },
+        "required": [
+          "playlist_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/playlists/{playlist_id}/items",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "market": "$market",
+          "additional_types": "$additional_types"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{total: total, offset: offset, next: next, items: items[].{added_at: added_at, added_by: added_by.id, is_local: is_local, item: (item || track).{type: type, id: id, name: name, uri: uri, artists: artists[].name, album: album.name, show: show.name, duration_ms: duration_ms, url: external_urls.spotify}}}",
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "spotify_list_my_playlists",
+      "description": "List the playlists the signed-in user owns or follows: id, name, owner, public and collaborative flags, number of items, snapshot_id and link. Returns total and next; page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 20).",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first playlist, for paging (max 100000).",
+            "minimum": 0,
+            "maximum": 100000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/playlists",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{total: total, offset: offset, next: next, items: items[].{id: id, name: name, owner: owner.display_name, owner_id: owner.id, public: public, collaborative: collaborative, items_total: (items || tracks).total, snapshot_id: snapshot_id, uri: uri, url: external_urls.spotify}}",
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_top_items",
+      "description": "List the signed-in user's most played artists or tracks over about 4 weeks (short_term), 6 months (medium_term, default) or about a year (long_term).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "artists or tracks.",
+            "enum": [
+              "artists",
+              "tracks"
+            ]
+          },
+          "time_range": {
+            "type": "string",
+            "description": "short_term, medium_term (default) or long_term.",
+            "enum": [
+              "short_term",
+              "medium_term",
+              "long_term"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 20).",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first item to return, for paging (default 0).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/top/{type}",
+        "queryParams": {
+          "time_range": "$time_range",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{total: total, offset: offset, next: next, items: items[].{id: id, name: name, uri: uri, artists: artists[].name, album: album.name, genres: genres, url: external_urls.spotify}}",
+          "maxBytes": 25000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_recently_played",
+      "description": "List the tracks the signed-in user played most recently (up to 50; podcast episodes are not included): when, track, artists, album and the playlist or album it was played from. Page back with before = cursors.before.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 20).",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "before": {
+            "type": "integer",
+            "description": "Unix time in milliseconds: return plays before this moment. Do not combine with after."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Unix time in milliseconds: return plays after this moment. Do not combine with before."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/player/recently-played",
+        "queryParams": {
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{next: next, cursors: cursors, items: items[].{played_at: played_at, context: context.uri, track: track.{id: id, name: name, uri: uri, artists: artists[].name, album: album.name, release_date: album.release_date, duration_ms: duration_ms, explicit: explicit, url: external_urls.spotify}}}",
+          "maxBytes": 25000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_playback_state",
+      "description": "Read what is playing right now and where: playing or paused, progress, shuffle and repeat state, the device (name, type, volume) and the current track or episode. Returns an empty answer when nothing is playing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. DE). Leave empty to use the signed-in user's country."
+          },
+          "additional_types": {
+            "type": "string",
+            "description": "Item types the client accepts besides tracks (default track,episode).",
+            "default": "track,episode"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/player",
+        "queryParams": {
+          "market": "$market",
+          "additional_types": "$additional_types"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{is_playing: is_playing, progress_ms: progress_ms, shuffle_state: shuffle_state, repeat_state: repeat_state, currently_playing_type: currently_playing_type, device: device && {id: device.id, name: device.name, type: device.type, volume_percent: device.volume_percent, is_active: device.is_active}, context: context.uri, item: item && item.{type: type, id: id, name: name, uri: uri, artists: artists[].name, album: album.name, show: show.name, duration_ms: duration_ms, url: external_urls.spotify}}",
+          "maxBytes": 8000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_currently_playing",
+      "description": "Read the track or episode currently playing on the user's account: playing or paused, progress, the item and the context it plays from. Returns an empty answer when nothing is playing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. DE). Leave empty to use the signed-in user's country."
+          },
+          "additional_types": {
+            "type": "string",
+            "description": "Item types the client accepts besides tracks (default track,episode).",
+            "default": "track,episode"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/player/currently-playing",
+        "queryParams": {
+          "market": "$market",
+          "additional_types": "$additional_types"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{is_playing: is_playing, progress_ms: progress_ms, currently_playing_type: currently_playing_type, context: context.uri, item: item && item.{type: type, id: id, name: name, uri: uri, artists: artists[].name, album: album.name, show: show.name, duration_ms: duration_ms, url: external_urls.spotify}}",
+          "maxBytes": 6000
+        }
+      }
+    },
+    {
+      "name": "spotify_list_devices",
+      "description": "List the user's available Spotify Connect devices (phone, computer, speaker): id, name, type, whether active, volume. Use a device id to start playback on a specific device.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/player/devices"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{devices: devices[].{id: id, name: name, type: type, is_active: is_active, is_private_session: is_private_session, is_restricted: is_restricted, volume_percent: volume_percent}}",
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "spotify_get_queue",
+      "description": "Read the user's playback queue: the item playing now and the items queued after it (name, uri, artists or show).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/player/queue"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{currently_playing: currently_playing && currently_playing.{type: type, id: id, name: name, uri: uri, artists: artists[].name, album: album.name, show: show.name, duration_ms: duration_ms, url: external_urls.spotify}, queue: queue[].{type: type, id: id, name: name, uri: uri, artists: artists[].name, album: album.name, show: show.name, duration_ms: duration_ms, url: external_urls.spotify}}",
+          "maxBytes": 15000
+        }
+      }
+    },
+    {
+      "name": "spotify_list_saved_tracks",
+      "description": "List the songs saved in the user's library (Liked Songs), newest first: when saved, track, artists, album, duration. Returns total and next; page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 20).",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first item to return, for paging (default 0).",
+            "minimum": 0
+          },
+          "market": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. DE). Leave empty to use the signed-in user's country."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/tracks",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "market": "$market"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{total: total, offset: offset, next: next, items: items[].{added_at: added_at, track: track.{id: id, name: name, uri: uri, artists: artists[].name, album: album.name, release_date: album.release_date, duration_ms: duration_ms, explicit: explicit, url: external_urls.spotify}}}",
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "spotify_check_library",
+      "description": "Check whether tracks, albums, episodes, shows, audiobooks, artists, users or playlists are saved or followed by the user. Returns one true or false per URI, in the same order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uris": {
+            "type": "string",
+            "description": "Comma-separated Spotify URIs, at most 40, e.g. spotify:track:7a3LWj5xSFhFRYmztS8wgK,spotify:album:4aawyAB9vmqN3uQ7FjRGTy."
+          }
+        },
+        "required": [
+          "uris"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/library/contains",
+        "queryParams": {
+          "uris": "$uris"
+        }
+      }
+    },
+    {
+      "name": "spotify_create_playlist",
+      "description": "Create a new, empty playlist in the signed-in user's account. Before calling, tell the user exactly what will change and wait for their yes. Playlists are public unless public is false. Returns the new playlist id, uri and link; add tracks with spotify_add_playlist_items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the new playlist."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description shown in Spotify."
+          },
+          "public": {
+            "type": "boolean",
+            "description": "true (Spotify's default) shows it on the profile; false keeps it private."
+          },
+          "collaborative": {
+            "type": "boolean",
+            "description": "true lets others edit it; needs public false."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/playlists",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "public": "$public",
+          "collaborative": "$collaborative"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "public": "$.public",
+            "collaborative": "$.collaborative",
+            "snapshot_id": "$.snapshot_id",
+            "uri": "$.uri",
+            "url": "$.external_urls.spotify"
+          },
+          "maxBytes": 5000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "spotify_add_playlist_items",
+      "description": "Add tracks or episodes to a playlist the user owns or collaborates on (up to 100 per call). Before calling, tell the user exactly what will change and wait for their yes. Returns the playlist's new snapshot_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "playlist_id": {
+            "type": "string",
+            "description": "Spotify playlist id."
+          },
+          "uris": {
+            "type": "array",
+            "description": "Spotify URIs to add, e.g. [\"spotify:track:4iV5W9uYEdYUVa79Axb7Rh\", \"spotify:episode:512ojhOuo1ktJprKbVcKyQ\"]. At most 100.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          },
+          "position": {
+            "type": "integer",
+            "description": "Zero-based position to insert at; leave empty to append.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "playlist_id",
+          "uris"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/playlists/{playlist_id}/items",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "uris": "$uris",
+          "position": "$position"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "snapshot_id": "$.snapshot_id"
+          },
+          "maxBytes": 2000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "spotify_remove_playlist_items",
+      "description": "Remove tracks or episodes from a playlist the user owns or collaborates on (every occurrence of each URI, up to 100 per call). Before calling, tell the user exactly what will change and wait for their yes. Returns the playlist's new snapshot_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "playlist_id": {
+            "type": "string",
+            "description": "Spotify playlist id."
+          },
+          "items": {
+            "type": "array",
+            "description": "Items to remove, each as {\"uri\": \"spotify:track:...\"}. At most 100.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uri": {
+                  "type": "string",
+                  "description": "Spotify URI of the track or episode."
+                }
+              },
+              "required": [
+                "uri"
+              ]
+            },
+            "maxItems": 100,
+            "minItems": 1
+          },
+          "snapshot_id": {
+            "type": "string",
+            "description": "Optional snapshot_id the change applies to, from spotify_get_playlist."
+          }
+        },
+        "required": [
+          "playlist_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/playlists/{playlist_id}/items",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "items": "$items",
+          "snapshot_id": "$snapshot_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "snapshot_id": "$.snapshot_id"
+          },
+          "maxBytes": 2000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "spotify_start_playback",
+      "description": "Start or resume playback: without arguments it resumes; context_uri plays an album, artist or playlist; uris plays specific tracks. Needs Spotify Premium on the signed-in account and an active Spotify app (phone, desktop, speaker); otherwise Spotify answers 403 PREMIUM_REQUIRED or 404 NO_ACTIVE_DEVICE. Before calling, tell the user exactly what will change and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Optional Spotify Connect device id from spotify_list_devices. Leave empty for the user's active device."
+          },
+          "context_uri": {
+            "type": "string",
+            "description": "Spotify URI of an album, artist or playlist to play, e.g. spotify:album:5ht7ItJgpBH7W6vJ5BqpPr."
+          },
+          "uris": {
+            "type": "array",
+            "description": "Track URIs to play instead of a context.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "offset": {
+            "type": "object",
+            "description": "Where to start in an album or playlist: {\"position\": 5} (zero-based) or {\"uri\": \"spotify:track:...\"}.",
+            "properties": {
+              "position": {
+                "type": "integer",
+                "description": "Zero-based position in the context."
+              },
+              "uri": {
+                "type": "string",
+                "description": "URI of the track to start at."
+              }
+            }
+          },
+          "position_ms": {
+            "type": "integer",
+            "description": "Start position in milliseconds within the first track.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/me/player/play",
+        "queryParams": {
+          "device_id": "$device_id"
+        },
+        "bodyMapping": {
+          "context_uri": "$context_uri",
+          "uris": "$uris",
+          "offset": "$offset",
+          "position_ms": "$position_ms"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "spotify_pause_playback",
+      "description": "Pause playback on the user's active device (or the given device). Needs Spotify Premium on the signed-in account and an active Spotify app (phone, desktop, speaker); otherwise Spotify answers 403 PREMIUM_REQUIRED or 404 NO_ACTIVE_DEVICE. Before calling, tell the user exactly what will change and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Optional Spotify Connect device id from spotify_list_devices. Leave empty for the user's active device."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/me/player/pause",
+        "queryParams": {
+          "device_id": "$device_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "spotify_skip_to_next",
+      "description": "Skip to the next item in the user's queue. Needs Spotify Premium on the signed-in account and an active Spotify app (phone, desktop, speaker); otherwise Spotify answers 403 PREMIUM_REQUIRED or 404 NO_ACTIVE_DEVICE. Before calling, tell the user exactly what will change and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Optional Spotify Connect device id from spotify_list_devices. Leave empty for the user's active device."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/player/next",
+        "queryParams": {
+          "device_id": "$device_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "spotify_skip_to_previous",
+      "description": "Go back to the previous item in the user's queue. Needs Spotify Premium on the signed-in account and an active Spotify app (phone, desktop, speaker); otherwise Spotify answers 403 PREMIUM_REQUIRED or 404 NO_ACTIVE_DEVICE. Before calling, tell the user exactly what will change and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Optional Spotify Connect device id from spotify_list_devices. Leave empty for the user's active device."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/player/previous",
+        "queryParams": {
+          "device_id": "$device_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "spotify_add_to_queue",
+      "description": "Add a track or episode to the end of the user's playback queue. Needs Spotify Premium on the signed-in account and an active Spotify app (phone, desktop, speaker); otherwise Spotify answers 403 PREMIUM_REQUIRED or 404 NO_ACTIVE_DEVICE. Before calling, tell the user exactly what will change and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uri": {
+            "type": "string",
+            "description": "Spotify URI of a track or episode, e.g. spotify:track:4iV5W9uYEdYUVa79Axb7Rh."
+          },
+          "device_id": {
+            "type": "string",
+            "description": "Optional Spotify Connect device id from spotify_list_devices. Leave empty for the user's active device."
+          }
+        },
+        "required": [
+          "uri"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/player/queue",
+        "queryParams": {
+          "uri": "$uri",
+          "device_id": "$device_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "spotify_save_to_library",
+      "description": "Save items to the user's library or follow them: tracks, albums, episodes, shows and audiobooks are saved; users and playlists are followed (up to 40 URIs). Before calling, tell the user exactly what will change and wait for their yes. Installed switched off; needs the extra scopes user-library-modify and user-follow-modify.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uris": {
+            "type": "string",
+            "description": "Comma-separated Spotify URIs, at most 40, e.g. spotify:track:7a3LWj5xSFhFRYmztS8wgK,spotify:playlist:3cEYpjA9oz9GiPac4AsH4n."
+          }
+        },
+        "required": [
+          "uris"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/me/library",
+        "queryParams": {
+          "uris": "$uris"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "spotify_remove_from_library",
+      "description": "Remove items from the user's library or unfollow them (up to 40 URIs): tracks, albums, episodes, shows, audiobooks, users and playlists. Before calling, tell the user exactly what will change and wait for their yes. Installed switched off; needs the extra scopes user-library-modify and user-follow-modify.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uris": {
+            "type": "string",
+            "description": "Comma-separated Spotify URIs, at most 40."
+          }
+        },
+        "required": [
+          "uris"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/me/library",
+        "queryParams": {
+          "uris": "$uris"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

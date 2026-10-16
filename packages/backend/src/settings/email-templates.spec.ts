@@ -129,15 +129,16 @@ describe('trust band', () => {
 
   it('shows the numbers, never below their floors', () => {
     const html = verify.render(cloud, { name: 'A', other: 'B' }).html;
-    expect(html).toContain('1,000+');
     expect(html).toContain('200,000+');
     expect(html).toContain('1M+');
     expect(html).toContain('3,800+');
+    expect(html).toContain('workspaces on AnythingMCP Cloud');
+    expect(html).not.toContain('stars on GitHub');
   });
 
   it('shows the floors without live numbers, and no workspace count', () => {
     const html = verify.render(noStats, { name: 'A', other: 'B' }).html;
-    expect(html).toContain('stars on GitHub');
+    expect(html).not.toContain('stars on GitHub');
     expect(html).toContain('200,000+');
     expect(html).not.toContain('workspaces on');
     expect(html).not.toMatch(/\b0\+/);
@@ -182,7 +183,8 @@ describe('trial win-back', () => {
     }
     expect(email.text).toContain(
       'https://anythingmcp.com/pricing?promo=STARTER599&return_url=' +
-        encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate'),
+        encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate') +
+        '&source=email_winback',
     );
     expect(email.marketing).toBe(true);
   });
@@ -190,6 +192,48 @@ describe('trial win-back', () => {
   it('uses no em dashes in the win-back copy', () => {
     for (const id of ['winback-discount-first', 'winback-discount-first-month', 'winback-discount-final', 'winback-help']) {
       const email = render(id);
+      expect(`${email.subject}\n${email.text}`).not.toContain('—');
+      // The card trial ends with the free trial: no length is promised.
+      expect(`${email.subject}\n${email.text}`).not.toMatch(/7-day|seven days/i);
+    }
+  });
+});
+
+describe('card-trial offer after the first success', () => {
+  const render = (id: string, other = 'My Shopify store') =>
+    EMAIL_SAMPLES.find((s) => s.id === id)!.render(cloud, { name: 'Anna', other });
+
+  it('leads with the connection that works and what to ask next', () => {
+    const email = render('card-trial-offer');
+    expect(email.subject).toBe('Your My Shopify store connection works');
+    for (const part of [email.html, email.text]) {
+      expect(part).toContain('first successful call to My Shopify store');
+      expect(part).toContain('Get one product with its variants and stock.');
+      expect(part).toContain('Search customers by name, email or tag.');
+    }
+  });
+
+  it('dates the end of the trial and links to the card trial with its source', () => {
+    const email = render('card-trial-offer');
+    for (const part of [email.html, email.text]) expect(part).toContain('18 October');
+    expect(email.text).toContain('Start your trial: https://cloud.anythingmcp.com/start-trial?source=first_success_email');
+    expect(email.html).toContain('href="https://cloud.anythingmcp.com/start-trial?source=first_success_email"');
+    expect(email.marketing).toBe(true);
+  });
+
+  it('links to the plans when the card trial can no longer start, and copes without a connector', () => {
+    const email = render('card-trial-offer-plans');
+    expect(email.subject).toBe('Your first connection works');
+    expect(email.text).toContain('Choose a plan: https://cloud.anythingmcp.com/settings/license?source=first_success_email');
+    expect(email.text).toContain('Ask your AI what it can do with your app');
+  });
+
+  it('talks value only: no card, charge, price or trial-pressure words, and no em dashes', () => {
+    for (const id of ['card-trial-offer', 'card-trial-offer-plans']) {
+      const email = render(id);
+      // The text part carries the same copy as the HTML, without its markup.
+      const all = `${email.subject}\n${email.text}`;
+      expect(all).not.toMatch(/\bcard\b|charg|payment|billed|invoice|€|\$\d|price|cancel/i);
       expect(`${email.subject}\n${email.text}`).not.toContain('—');
     }
   });

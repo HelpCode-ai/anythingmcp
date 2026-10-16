@@ -9,6 +9,8 @@ import {
   type PlanSelection,
 } from '@/lib/card-trial';
 import { buildEnterpriseContactUrl } from '@/lib/marketing';
+import { useAuth } from '@/lib/auth-context';
+import { formatLocal, useLocalPricing } from '@/lib/local-currency';
 import { cn } from '@/lib/utils';
 
 /** Monthly / yearly switch. Yearly is ten months' price for twelve. */
@@ -71,6 +73,17 @@ export function PlanPicker({
   compact?: boolean;
   disabled?: boolean;
 }) {
+  const { deploymentMode } = useAuth();
+  // Outside the euro area Stripe charges in the visitor's currency: lead with
+  // that estimate and keep the exact euro price under it, as the pricing page
+  // does. Outside the EU no VAT is charged.
+  const pricing = useLocalPricing(deploymentMode === 'cloud');
+  const per = value.period === 'yearly' ? 'year' : 'month';
+  const footer = pricing?.currency
+    ? `Prices in EUR, paid in ${pricing.currency} at checkout${pricing.vat === false ? '' : ', VAT included'}.`
+    : pricing?.vat === false
+      ? 'Prices in EUR.'
+      : 'Prices in EUR, VAT included.';
   return (
     <div className="space-y-4">
       <div className="flex justify-center">
@@ -88,6 +101,7 @@ export function PlanPicker({
       >
         {CLOUD_PLANS.map((plan) => {
           const selected = value.plan === plan.id;
+          const local = formatLocal(value.period === 'yearly' ? plan.yearly : plan.monthly, pricing);
           return (
             <button
               key={plan.id}
@@ -129,12 +143,18 @@ export function PlanPicker({
               </div>
               <div className={cn(compact ? 'text-right flex-shrink-0' : 'mt-3')}>
                 <div className="text-sm font-semibold text-[var(--text)] whitespace-nowrap">
-                  {formatPlanPrice(plan, value.period)}
+                  {local ? `≈ ${local}/${per}` : formatPlanPrice(plan, value.period)}
                 </div>
-                {value.period === 'yearly' && (
+                {local ? (
                   <div className="text-[11px] text-[var(--text-3)] whitespace-nowrap">
-                    ≈ {formatEur(yearlyPerMonth(plan))}/month
+                    {formatPlanPrice(plan, value.period)} exactly
                   </div>
+                ) : (
+                  value.period === 'yearly' && (
+                    <div className="text-[11px] text-[var(--text-3)] whitespace-nowrap">
+                      ≈ {formatEur(yearlyPerMonth(plan))}/month
+                    </div>
+                  )
                 )}
               </div>
             </button>
@@ -142,7 +162,7 @@ export function PlanPicker({
         })}
       </div>
       <p className="text-center text-[11px] text-[var(--text-3)]">
-        Prices in EUR, VAT included. More users, single sign-on or SCIM?{' '}
+        {footer} More users, single sign-on or SCIM?{' '}
         <a
           href={buildEnterpriseContactUrl()}
           target="_blank"

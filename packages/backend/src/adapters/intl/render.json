@@ -1,0 +1,1518 @@
+{
+  "slug": "render",
+  "name": "Render",
+  "aliases": [
+    "Render.com"
+  ],
+  "description": "Let your AI check and operate your Render services: services, deploys, logs, metrics, events, jobs, custom domains and Postgres and Key Value instances, and deploy, roll back, restart, suspend or resume services after you confirm.",
+  "instructions": "## Render\nThis connector works with Render through the **Render API** (`https://api.render.com/v1`): workspaces and projects, services, deploys, one-off jobs, logs, metrics, events, custom domains, the names of environment variables, and Render Postgres and Key Value instances. It can deploy, roll back, cancel deploys, restart, suspend and resume services and run one-off jobs after you confirm.\n\n**Setup (about 2 minutes)**\n1. In the Render Dashboard open **Account Settings > API Keys** (https://dashboard.render.com/u/settings#api-keys) and click **Create API Key**.\n2. Name it, copy it (it starts with rnd_) and paste it into `RENDER_API_KEY`. It is sent as `Authorization: Bearer <key>` to api.render.com only.\n3. Check the setup with `render_get_current_user`, then `render_list_workspaces`.\n\nA Render API key has your full rights in every workspace you belong to; there are no read-only keys. Share the MCP server only with people allowed to deploy, and switch off the write tools for a read-only setup.\n\n**How to work**\n1. `render_list_workspaces` gives the workspace id (ownerId), needed for logs. `render_list_projects` shows how services are grouped.\n2. `render_list_services` gives service ids (srv-..., crn-... for cron jobs); `render_get_service` the details.\n3. Deploys: `render_list_deploys`, `render_get_deploy`, and `render_list_events` for what happened to a service.\n4. Logs: `render_list_logs` with owner_id and the service id as resource; filter with type build for build output, level error, text or HTTP status_code. When hasMore is true, page with nextStartTime and nextEndTime.\n5. Performance: `render_get_metrics` (cpu, memory, http-requests, http-latency, bandwidth, instance-count, disk-usage, active-connections).\n6. Data stores: `render_list_postgres`, `render_get_postgres`, `render_list_key_value`, `render_get_key_value`. Connection strings and passwords are never fetched.\n7. Domains and jobs: `render_list_custom_domains`, `render_list_jobs`, `render_get_job`.\n\n**Writes always need the user's confirmation**: `render_trigger_deploy` (new version goes live when the build succeeds), `render_rollback_deploy` (an earlier version goes live; auto deploys stay on, so the next push can undo it), `render_cancel_deploy`, `render_restart_service` (brief interruption), `render_suspend_service` (the service stops serving traffic), `render_resume_service` and `render_create_job` (runs a command against your live environment, for example a migration). Say exactly what will happen and call only after the user agrees.\n\n**Secrets**: `render_list_env_var_keys` returns names only. `render_get_env_var_value` is installed switched off because it returns a value in plain text; turn it on only if the AI really needs one. Nothing here can delete services, databases, domains or variables.\n\n**Times** are ISO 8601 in UTC, e.g. 2026-10-15T08:00:00Z. Logs and metrics default to the last hour.\n\n**Pagination**: list answers carry a `cursor` on every item; call again with cursor set to the last item's cursor until fewer items than limit come back.\n\n**Errors**: 401 means the API key is wrong or revoked. 403 means the key's user may not do this in that workspace. 404 means a wrong id, or a resource in a workspace the key cannot reach. 429 means the rate limit is reached; wait and retry.\n\n**Out of scope here**: creating, updating or deleting services, databases, environment groups, domains and environment variables, scaling, blueprints and webhooks.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "render",
+  "docsUrl": "https://api-docs.render.com/reference/introduction",
+  "prerequisites": "A Render account with access to the workspace, and an API key from Account Settings > API Keys. About 2 minutes.",
+  "requiredEnvVars": [
+    "RENDER_API_KEY"
+  ],
+  "appRegistrationUrl": "https://dashboard.render.com/u/settings#api-keys",
+  "envVarMeta": {
+    "RENDER_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Render Dashboard, Account Settings, API Keys, Create API Key. Paste only the key, without Bearer.",
+      "link": "https://dashboard.render.com/u/settings#api-keys",
+      "example": "rnd_...",
+      "pattern": "^rnd_[A-Za-z0-9]{16,}$",
+      "patternMessage": "Paste the API key as Render shows it: it starts with rnd_, without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Render refused the API key: it is wrong or was revoked. Create a new one under Account Settings, API Keys.",
+    "403": "The key works but its user may not do this in that workspace.",
+    "rate_limited": "Render is rate limiting this key. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "render_get_current_user"
+  },
+  "connector": {
+    "name": "Render API",
+    "type": "REST",
+    "baseUrl": "https://api.render.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{RENDER_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users"
+  },
+  "tools": [
+    {
+      "name": "render_get_current_user",
+      "description": "Get the Render user the API key belongs to: id, name and email. A quick check that the key works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "email": "$.email"
+          }
+        }
+      }
+    },
+    {
+      "name": "render_list_workspaces",
+      "description": "List the workspaces (owners) the API key can reach: id, name, email, type (user or team) and whether two-factor authentication is on. The id is the ownerId other tools ask for. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only workspaces with this name."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the last item in the previous answer, for the next page. Omit for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/owners",
+        "queryParams": {
+          "name": "$name",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "workspaces": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "owner.id",
+                "name": "owner.name",
+                "email": "owner.email",
+                "type": "owner.type",
+                "two_factor_auth_enabled": "owner.twoFactorAuthEnabled",
+                "cursor": "cursor"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "render_list_projects",
+      "description": "List projects, which group services and databases into environments: id, name, workspace and environment ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "description": "Workspace id (starts with tea- or usr-), from render_list_workspaces."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the last item in the previous answer, for the next page. Omit for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "ownerId": "$owner_id",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "projects": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "project.id",
+                "name": "project.name",
+                "owner": "project.owner.name",
+                "environment_ids": "project.environmentIds",
+                "created_at": "project.createdAt",
+                "cursor": "cursor"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "render_list_services",
+      "description": "List services: id, name, type (web_service, private_service, background_worker, static_site, cron_job), repository and branch, URL, region, plan, runtime, suspended state and dashboard link. Filter by name, type, workspace, region or suspended state. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only services with this exact name; several comma-separated."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only these types, comma-separated: web_service, private_service, background_worker, static_site, cron_job."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Only these workspaces (ids, comma-separated), from render_list_workspaces."
+          },
+          "environment_id": {
+            "type": "string",
+            "description": "Only services in these environments (ids, comma-separated)."
+          },
+          "region": {
+            "type": "string",
+            "description": "Only these regions, comma-separated: frankfurt, oregon, ohio, singapore, virginia."
+          },
+          "suspended": {
+            "type": "string",
+            "description": "suspended or not_suspended.",
+            "enum": [
+              "suspended",
+              "not_suspended"
+            ]
+          },
+          "include_previews": {
+            "type": "boolean",
+            "description": "Also list preview environments' services."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the last item in the previous answer, for the next page. Omit for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services",
+        "queryParams": {
+          "name": "$name",
+          "type": "$type",
+          "ownerId": "$owner_id",
+          "environmentId": "$environment_id",
+          "region": "$region",
+          "suspended": "$suspended",
+          "includePreviews": "$include_previews",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "services": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "service.id",
+                "name": "service.name",
+                "type": "service.type",
+                "slug": "service.slug",
+                "owner_id": "service.ownerId",
+                "environment_id": "service.environmentId",
+                "repo": "service.repo",
+                "branch": "service.branch",
+                "image_path": "service.imagePath",
+                "root_dir": "service.rootDir",
+                "auto_deploy": "service.autoDeploy",
+                "suspended": "service.suspended",
+                "suspenders": "service.suspenders",
+                "url": "service.serviceDetails.url",
+                "region": "service.serviceDetails.region",
+                "plan": "service.serviceDetails.plan",
+                "runtime": "service.serviceDetails.runtime",
+                "dashboard_url": "service.dashboardUrl",
+                "created_at": "service.createdAt",
+                "updated_at": "service.updatedAt",
+                "cursor": "cursor"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "render_get_service",
+      "description": "Get one service: type, repository, branch, auto deploy, URL, region, plan, runtime, instances, health check path, build and start commands, disk and suspended state. Environment variable values are not part of it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/{service_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "type": "$.type",
+            "slug": "$.slug",
+            "owner_id": "$.ownerId",
+            "environment_id": "$.environmentId",
+            "repo": "$.repo",
+            "branch": "$.branch",
+            "image_path": "$.imagePath",
+            "root_dir": "$.rootDir",
+            "auto_deploy": "$.autoDeploy",
+            "suspended": "$.suspended",
+            "suspenders": "$.suspenders",
+            "url": "$.serviceDetails.url",
+            "region": "$.serviceDetails.region",
+            "plan": "$.serviceDetails.plan",
+            "runtime": "$.serviceDetails.runtime",
+            "dashboard_url": "$.dashboardUrl",
+            "created_at": "$.createdAt",
+            "updated_at": "$.updatedAt",
+            "num_instances": "$.serviceDetails.numInstances",
+            "health_check_path": "$.serviceDetails.healthCheckPath",
+            "build_command": "$.serviceDetails.buildCommand",
+            "publish_path": "$.serviceDetails.publishPath",
+            "env_specific_details": "$.serviceDetails.envSpecificDetails",
+            "schedule": "$.serviceDetails.schedule",
+            "last_successful_run_at": "$.serviceDetails.lastSuccessfulRunAt",
+            "disk": "$.serviceDetails.disk",
+            "autoscaling": "$.serviceDetails.autoscaling",
+            "maintenance_mode": "$.serviceDetails.maintenanceMode",
+            "pull_request_previews": "$.serviceDetails.pullRequestPreviewsEnabled",
+            "build_filter": "$.buildFilter",
+            "notify_on_fail": "$.notifyOnFail"
+          }
+        }
+      }
+    },
+    {
+      "name": "render_list_deploys",
+      "description": "List a service's deploys, newest first: id, status (live, build_in_progress, build_failed, update_failed, canceled, deactivated ...), trigger, commit, image and times. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "created",
+                "queued",
+                "build_in_progress",
+                "update_in_progress",
+                "live",
+                "deactivated",
+                "build_failed",
+                "update_failed",
+                "canceled",
+                "pre_deploy_in_progress",
+                "pre_deploy_failed"
+              ]
+            },
+            "description": "Only deploys in these statuses, e.g. [\"build_failed\", \"update_failed\"]."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only deploys created after this time, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the last item in the previous answer, for the next page. Omit for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/{service_id}/deploys",
+        "encodePathParams": true,
+        "queryParams": {
+          "status": "$status",
+          "createdAfter": "$created_after",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deploys": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "deploy.id",
+                "status": "deploy.status",
+                "trigger": "deploy.trigger",
+                "commit_id": "deploy.commit.id",
+                "commit_message": "deploy.commit.message",
+                "image": "deploy.image.ref",
+                "created_at": "deploy.createdAt",
+                "started_at": "deploy.startedAt",
+                "finished_at": "deploy.finishedAt",
+                "updated_at": "deploy.updatedAt",
+                "cursor": "cursor"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "render_get_deploy",
+      "description": "Get one deploy: status, trigger, commit id and message, image and start and finish time. For the build output use render_list_logs with type build. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "deploy_id": {
+            "type": "string",
+            "description": "Deploy id (starts with dep-), from render_list_deploys."
+          }
+        },
+        "required": [
+          "service_id",
+          "deploy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/{service_id}/deploys/{deploy_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "trigger": "$.trigger",
+            "commit_id": "$.commit.id",
+            "commit_message": "$.commit.message",
+            "image": "$.image.ref",
+            "created_at": "$.createdAt",
+            "started_at": "$.startedAt",
+            "finished_at": "$.finishedAt",
+            "updated_at": "$.updatedAt"
+          }
+        }
+      }
+    },
+    {
+      "name": "render_trigger_deploy",
+      "description": "Start a new deploy of a service: the latest commit of its branch by default, a specific commit, or an image. The new version goes live when the build succeeds and running instances are replaced. Tell the user the service and what will be deployed and call only after they confirm. Returns the new deploy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "clear_cache": {
+            "type": "string",
+            "description": "clear to empty the build cache first; do_not_clear (default).",
+            "enum": [
+              "clear",
+              "do_not_clear"
+            ]
+          },
+          "commit_id": {
+            "type": "string",
+            "description": "Git commit SHA to deploy instead of the branch's latest. Not for cron jobs."
+          },
+          "image_url": {
+            "type": "string",
+            "description": "For image-backed services: the image to deploy; host, repository and name must match the configured image."
+          },
+          "deploy_mode": {
+            "type": "string",
+            "description": "build_and_deploy (default) or deploy_only to redeploy the last successful build without rebuilding.",
+            "enum": [
+              "deploy_only",
+              "build_and_deploy"
+            ]
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/services/{service_id}/deploys",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "clearCache": "$clear_cache",
+          "commitId": "$commit_id",
+          "imageUrl": "$image_url",
+          "deployMode": "$deploy_mode"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "trigger": "$.trigger",
+            "commit_id": "$.commit.id",
+            "commit_message": "$.commit.message",
+            "image": "$.image.ref",
+            "created_at": "$.createdAt",
+            "started_at": "$.startedAt",
+            "finished_at": "$.finishedAt",
+            "updated_at": "$.updatedAt"
+          }
+        }
+      }
+    },
+    {
+      "name": "render_cancel_deploy",
+      "description": "Cancel a deploy that is still building or updating; the service keeps running its current version. Tell the user which deploy and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "deploy_id": {
+            "type": "string",
+            "description": "Deploy id (starts with dep-), from render_list_deploys."
+          }
+        },
+        "required": [
+          "service_id",
+          "deploy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/services/{service_id}/deploys/{deploy_id}/cancel",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "trigger": "$.trigger",
+            "commit_id": "$.commit.id",
+            "commit_message": "$.commit.message",
+            "image": "$.image.ref",
+            "created_at": "$.createdAt",
+            "started_at": "$.startedAt",
+            "finished_at": "$.finishedAt",
+            "updated_at": "$.updatedAt"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "render_rollback_deploy",
+      "description": "Roll a service back to an earlier deploy: Render deploys that version again and it goes live. Auto deploys stay on, so the next push to the branch can bring the rolled-back change back. Show the target deploy with render_get_deploy, tell the user and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "deploy_id": {
+            "type": "string",
+            "description": "Earlier deploy id to roll back to, from render_list_deploys."
+          }
+        },
+        "required": [
+          "service_id",
+          "deploy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/services/{service_id}/rollback",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "deployId": "$deploy_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "trigger": "$.trigger",
+            "commit_id": "$.commit.id",
+            "commit_message": "$.commit.message",
+            "image": "$.image.ref",
+            "created_at": "$.createdAt",
+            "started_at": "$.startedAt",
+            "finished_at": "$.finishedAt",
+            "updated_at": "$.updatedAt"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "render_restart_service",
+      "description": "Restart all running instances of a service without a new deploy; requests may fail for a moment while instances restart. Not for cron jobs. Tell the user and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/services/{service_id}/restart",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "render_suspend_service",
+      "description": "Suspend a service: it stops running and stops serving traffic (and billing for compute) until resumed. Tell the user the service and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/services/{service_id}/suspend",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "render_resume_service",
+      "description": "Resume a suspended service: Render starts it again and it serves traffic and is billed. Tell the user and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/services/{service_id}/resume",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "render_list_env_var_keys",
+      "description": "List the names of a service's environment variables. Values are left out because they are usually secrets. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the last item in the previous answer, for the next page. Omit for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/{service_id}/env-vars",
+        "encodePathParams": true,
+        "queryParams": {
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "env_vars": {
+              "$from": "$[*]",
+              "$select": {
+                "key": "envVar.key",
+                "cursor": "cursor"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "render_get_env_var_value",
+      "description": "Read the value of ONE environment variable of a service in plain text. Values are usually secrets (database URLs, API keys), and this exposes them to the AI and its logs. Installed switched off. Call only when the user explicitly asks for that variable's value.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "key": {
+            "type": "string",
+            "description": "Variable name from render_list_env_var_keys, e.g. NODE_ENV."
+          }
+        },
+        "required": [
+          "service_id",
+          "key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/{service_id}/env-vars/{key}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "key": "$.key",
+            "value": "$.value"
+          }
+        }
+      }
+    },
+    {
+      "name": "render_list_custom_domains",
+      "description": "List a service's custom domains: id, name, type (apex or subdomain), verification status, redirect target and creation time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the last item in the previous answer, for the next page. Omit for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/{service_id}/custom-domains",
+        "encodePathParams": true,
+        "queryParams": {
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "custom_domains": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "customDomain.id",
+                "name": "customDomain.name",
+                "domain_type": "customDomain.domainType",
+                "verification_status": "customDomain.verificationStatus",
+                "redirect_for_name": "customDomain.redirectForName",
+                "public_suffix": "customDomain.publicSuffix",
+                "created_at": "customDomain.createdAt",
+                "cursor": "cursor"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "render_list_jobs",
+      "description": "List one-off jobs run on a service: id, start command, plan, status (pending, running, succeeded, failed, canceled) and times. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only jobs in this status.",
+            "enum": [
+              "pending",
+              "running",
+              "succeeded",
+              "failed",
+              "canceled"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the last item in the previous answer, for the next page. Omit for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/{service_id}/jobs",
+        "encodePathParams": true,
+        "queryParams": {
+          "status": "$status",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "jobs": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "job.id",
+                "service_id": "job.serviceId",
+                "start_command": "job.startCommand",
+                "plan_id": "job.planId",
+                "status": "job.status",
+                "created_at": "job.createdAt",
+                "started_at": "job.startedAt",
+                "finished_at": "job.finishedAt",
+                "cursor": "cursor"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "render_get_job",
+      "description": "Get one job: start command, plan, status and times. Its output is in render_list_logs with the job id as resource. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "Job id (starts with job-), from render_list_jobs."
+          }
+        },
+        "required": [
+          "service_id",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/{service_id}/jobs/{job_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "service_id": "$.serviceId",
+            "start_command": "$.startCommand",
+            "plan_id": "$.planId",
+            "status": "$.status",
+            "created_at": "$.createdAt",
+            "started_at": "$.startedAt",
+            "finished_at": "$.finishedAt"
+          }
+        }
+      }
+    },
+    {
+      "name": "render_create_job",
+      "description": "Run a one-off job: a command executed once in a new instance built from the service's latest successful build, with its environment, for example a database migration. It can change data and is billed per second. Tell the user the exact command and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "start_command": {
+            "type": "string",
+            "description": "Command to run, e.g. npm run migrate."
+          },
+          "plan_id": {
+            "type": "string",
+            "description": "Optional instance plan id; default is the service's plan."
+          }
+        },
+        "required": [
+          "service_id",
+          "start_command"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/services/{service_id}/jobs",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "startCommand": "$start_command",
+          "planId": "$plan_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "service_id": "$.serviceId",
+            "start_command": "$.startCommand",
+            "plan_id": "$.planId",
+            "status": "$.status",
+            "created_at": "$.createdAt",
+            "started_at": "$.startedAt",
+            "finished_at": "$.finishedAt"
+          }
+        }
+      }
+    },
+    {
+      "name": "render_list_logs",
+      "description": "Read logs of services, jobs, cron jobs, Postgres or Key Value instances in a time range (default the last hour), newest first by default: timestamp, message and labels (level, type, instance, HTTP method, path, status). Filter by text, level, type (app, request, build) and more. When hasMore is true, call again with start_time and end_time set to nextStartTime and nextEndTime. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "description": "Workspace id (starts with tea- or usr-), from render_list_workspaces."
+          },
+          "resource": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Resource ids to read, e.g. [\"srv-abc123\"]: services, jobs, cron jobs, Postgres or Key Value ids, all in the same region and workspace."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start of the range, ISO 8601, e.g. 2026-10-15T08:00:00Z. Default one hour ago."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End of the range, ISO 8601. Default now."
+          },
+          "direction": {
+            "type": "string",
+            "description": "backward (newest first, default) or forward.",
+            "enum": [
+              "backward",
+              "forward"
+            ],
+            "default": "backward"
+          },
+          "text": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only lines containing this text; wildcards and regular expressions work."
+          },
+          "level": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these levels, e.g. [\"error\"]."
+          },
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these log types: app, request or build."
+          },
+          "status_code": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Request logs: only these HTTP status codes, e.g. [\"5*\"]."
+          },
+          "method": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Request logs: only these HTTP methods."
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Request logs: only these paths."
+          },
+          "instance": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these instance ids."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Lines per page (default 50, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        },
+        "required": [
+          "owner_id",
+          "resource"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/logs",
+        "queryParams": {
+          "ownerId": "$owner_id",
+          "resource": "$resource",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "direction": "$direction",
+          "text": "$text",
+          "level": "$level",
+          "type": "$type",
+          "statusCode": "$status_code",
+          "method": "$method",
+          "path": "$path",
+          "instance": "$instance",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "logs": {
+              "$from": "$.logs[*]",
+              "$select": {
+                "timestamp": "timestamp",
+                "message": "message",
+                "labels": "labels"
+              }
+            },
+            "hasMore": "$.hasMore",
+            "nextStartTime": "$.nextStartTime",
+            "nextEndTime": "$.nextEndTime"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "render_get_metrics",
+      "description": "Read a metric as time series for a service, Postgres or Key Value instance over a time range (default the last hour): CPU, memory, HTTP request count, HTTP latency, bandwidth, instance count, disk usage or active connections. Each series has labels, unit and timestamped values. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string",
+            "description": "Which metric.",
+            "enum": [
+              "cpu",
+              "memory",
+              "http-requests",
+              "http-latency",
+              "bandwidth",
+              "instance-count",
+              "disk-usage",
+              "active-connections"
+            ]
+          },
+          "resource": {
+            "type": "string",
+            "description": "Service, Postgres or Key Value id, e.g. srv-abc123. HTTP metrics and bandwidth take a service id; active-connections a Postgres or Key Value id."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start, ISO 8601. Default one hour ago."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End, ISO 8601. Default now."
+          },
+          "resolution_seconds": {
+            "type": "integer",
+            "description": "Seconds per data point, e.g. 60 or 300."
+          },
+          "aggregate_by": {
+            "type": "string",
+            "description": "http-requests only: split by statusCode or host.",
+            "enum": [
+              "statusCode",
+              "host"
+            ]
+          },
+          "aggregation_method": {
+            "type": "string",
+            "description": "cpu only: AVG, MAX or MIN across instances.",
+            "enum": [
+              "AVG",
+              "MAX",
+              "MIN"
+            ]
+          },
+          "quantile": {
+            "type": "number",
+            "description": "http-latency only: quantile, e.g. 0.95."
+          },
+          "host": {
+            "type": "string",
+            "description": "http-requests and http-latency only: request host to filter to."
+          },
+          "path": {
+            "type": "string",
+            "description": "http-requests and http-latency only: request path to filter to."
+          }
+        },
+        "required": [
+          "metric",
+          "resource"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metrics/{metric}",
+        "queryParams": {
+          "resource": "$resource",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "resolutionSeconds": "$resolution_seconds",
+          "aggregateBy": "$aggregate_by",
+          "aggregationMethod": "$aggregation_method",
+          "quantile": "$quantile",
+          "host": "$host",
+          "path": "$path"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "series": {
+              "$from": "$[*]",
+              "$select": {
+                "labels": "labels",
+                "unit": "unit",
+                "values": "values"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "render_list_events",
+      "description": "List a service's recent events: deploys started and ended, builds, restarts, suspensions, autoscaling, server failures and more, each with time, type and details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (starts with srv- or crn-), from render_list_services."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only events of this type, e.g. deploy_ended, server_failed or build_ended."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start, ISO 8601."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End, ISO 8601."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the last item in the previous answer, for the next page. Omit for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/{service_id}/events",
+        "encodePathParams": true,
+        "queryParams": {
+          "type": "$type",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "events": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "event.id",
+                "timestamp": "event.timestamp",
+                "type": "event.type",
+                "details": "event.details",
+                "cursor": "cursor"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "render_list_postgres",
+      "description": "List Render Postgres databases: id, name, status, plan, region, version, database name and user, disk size, high availability, read replicas and dashboard link. Connection strings and passwords are never returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only databases with this name; several comma-separated."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Only these workspaces (ids, comma-separated)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the last item in the previous answer, for the next page. Omit for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/postgres",
+        "queryParams": {
+          "name": "$name",
+          "ownerId": "$owner_id",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "databases": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "postgres.id",
+                "name": "postgres.name",
+                "status": "postgres.status",
+                "plan": "postgres.plan",
+                "region": "postgres.region",
+                "version": "postgres.version",
+                "database_name": "postgres.databaseName",
+                "database_user": "postgres.databaseUser",
+                "disk_size_gb": "postgres.diskSizeGB",
+                "high_availability": "postgres.highAvailabilityEnabled",
+                "role": "postgres.role",
+                "read_replicas": "postgres.readReplicas",
+                "suspended": "postgres.suspended",
+                "environment_id": "postgres.environmentId",
+                "owner": "postgres.owner.name",
+                "dashboard_url": "postgres.dashboardUrl",
+                "created_at": "postgres.createdAt",
+                "expires_at": "postgres.expiresAt",
+                "cursor": "cursor"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "render_get_postgres",
+      "description": "Get one Render Postgres database: status, plan, region, version, database name and user, disk, high availability, replicas, pending maintenance and expiry. Connection strings and passwords are never returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postgres_id": {
+            "type": "string",
+            "description": "Postgres id (starts with dpg-), from render_list_postgres."
+          }
+        },
+        "required": [
+          "postgres_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/postgres/{postgres_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "status": "$.status",
+            "plan": "$.plan",
+            "region": "$.region",
+            "version": "$.version",
+            "database_name": "$.databaseName",
+            "database_user": "$.databaseUser",
+            "disk_size_gb": "$.diskSizeGB",
+            "high_availability": "$.highAvailabilityEnabled",
+            "role": "$.role",
+            "read_replicas": "$.readReplicas",
+            "suspended": "$.suspended",
+            "environment_id": "$.environmentId",
+            "owner": "$.owner.name",
+            "dashboard_url": "$.dashboardUrl",
+            "created_at": "$.createdAt",
+            "expires_at": "$.expiresAt",
+            "maintenance": "$.maintenance",
+            "ip_allow_list": "$.ipAllowList"
+          }
+        }
+      }
+    },
+    {
+      "name": "render_list_key_value",
+      "description": "List Render Key Value (Redis-compatible) instances: id, name, status, plan, region, version, eviction and persistence options and dashboard link. Connection strings are never returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only instances with this name; several comma-separated."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Only these workspaces (ids, comma-separated)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the last item in the previous answer, for the next page. Omit for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/key-value",
+        "queryParams": {
+          "name": "$name",
+          "ownerId": "$owner_id",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "instances": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "keyValue.id",
+                "name": "keyValue.name",
+                "status": "keyValue.status",
+                "plan": "keyValue.plan",
+                "region": "keyValue.region",
+                "version": "keyValue.version",
+                "options": "keyValue.options",
+                "environment_id": "keyValue.environmentId",
+                "owner": "keyValue.owner.name",
+                "dashboard_url": "keyValue.dashboardUrl",
+                "created_at": "keyValue.createdAt",
+                "cursor": "cursor"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "render_get_key_value",
+      "description": "Get one Render Key Value instance: status, plan, region, version, options, IP allow list and pending maintenance. Connection strings are never returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key_value_id": {
+            "type": "string",
+            "description": "Key Value id (starts with red-), from render_list_key_value."
+          }
+        },
+        "required": [
+          "key_value_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/key-value/{key_value_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "status": "$.status",
+            "plan": "$.plan",
+            "region": "$.region",
+            "version": "$.version",
+            "options": "$.options",
+            "environment_id": "$.environmentId",
+            "owner": "$.owner.name",
+            "dashboard_url": "$.dashboardUrl",
+            "created_at": "$.createdAt",
+            "maintenance": "$.maintenance",
+            "ip_allow_list": "$.ipAllowList"
+          }
+        }
+      }
+    }
+  ]
+}

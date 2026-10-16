@@ -10,6 +10,7 @@ import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
+import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
   LoginTokenAuthConfig,
@@ -345,6 +346,9 @@ export class RestEngine {
           );
         } else {
           const mapped = this.mapParams(bodyMapping, bodyParams);
+          // `{ "__json": … }`: the field goes out as the JSON text of its
+          // resolved value (Baselinker's `parameters` form field).
+          stringifyJsonMarkers(mapped, bodyMapping);
           const encoding = endpointMapping.bodyEncoding || 'json';
           // Only fields whose marker is written in the tool's own bodyMapping
           // may fetch a file. A `$param` resolves to whatever the caller sent,
@@ -481,13 +485,13 @@ export class RestEngine {
       const response = await this.requestWithRetry(axiosConfig, outbound);
       return withMeta(response);
     } catch (error) {
-      // OAuth2 auto-refresh: retry once on 401
+      // OAuth2 auto-refresh: retry once on 401 (a refresh token, or a grant
+      // that asks for a new token by itself, such as Datto's password grant)
       if (
         error instanceof AxiosError &&
         error.response?.status === 401 &&
         config.authType === 'OAUTH2' &&
-        config.authConfig?.refreshToken &&
-        config.authConfig?.tokenUrl
+        canRenewToken(config.authConfig)
       ) {
         this.logger.debug('OAuth2: access token expired, attempting refresh...');
         const newToken = await this.oauth2TokenService.renewAfterRejection(
@@ -1054,6 +1058,18 @@ function encodeQueryComponent(value: string): string {
  * than axios's bracketed `columns[]=a`. Scalars are encoded exactly as axios
  * would encode them; null and undefined are dropped rather than sent as the
  * strings "null"/"undefined".
+ *
+ * An object, or an object inside an array, is written in the PHP bracket form
+ * that OpenAPI calls `style: deepObject`: `page: { number: 1 }` becomes
+ * `page[number]=1`, and `filter: [{ key: 'status', op: 'in', value: ['a',
+ * 'b'] }]` becomes `filter[0][key]=status&filter[0][op]=in&
+ * filter[0][value][0]=a&filter[0][value][1]=b`. Xentral (and most PHP and
+ * Laravel APIs) take filters and pages only in that shape and answer anything
+ * else with "filter must be an array". Before this an object went out as the
+ * text "[object Object]", so no working request depends on the old output.
+ * Byte for byte what axios itself sends for such a value: brackets are
+ * percent-encoded like the rest of a key, and PHP decodes the name before it
+ * reads the brackets.
  */
 export function serializeRepeatedParams(
   params: Record<string, unknown>,
@@ -1065,9 +1081,26 @@ export function serializeRepeatedParams(
       `${encodeQueryComponent(key)}=${encodeQueryComponent(String(value))}`,
     );
   };
+  // Every level below the top one is indexed: `k[0]`, `k[name]`.
+  const pushNested = (key: string, value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => pushNested(`${key}[${i}]`, v));
+    } else if (value !== null && typeof value === 'object') {
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        pushNested(`${key}[${k}]`, v);
+      }
+    } else {
+      push(key, value);
+    }
+  };
+  const isNested = (v: unknown) => v !== null && typeof v === 'object';
   for (const [key, value] of Object.entries(params ?? {})) {
     if (Array.isArray(value)) {
-      for (const v of value) push(key, v);
+      // A list of scalars keeps the repeated form (`k=a&k=b`); a member that
+      // is itself an object or list is written with its index.
+      value.forEach((v, i) => (isNested(v) ? pushNested(`${key}[${i}]`, v) : push(key, v)));
+    } else if (isNested(value)) {
+      pushNested(key, value);
     } else {
       push(key, value);
     }
@@ -1184,6 +1217,39 @@ function configuredFileKeys(bodyMapping: Record<string, unknown>): Set<string> {
       .filter(([, template]) => isFileMarker(template))
       .map(([key]) => key),
   );
+}
+
+/** A `{ __json: <template> }` wrapper in a bodyMapping entry. */
+function isJsonMarker(value: unknown): value is { __json?: unknown } {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    '__json' in (value as Record<string, unknown>)
+  );
+}
+
+/**
+ * Replace every top-level field the tool's own bodyMapping wraps in
+ * `{ "__json": … }` with the JSON text of its resolved value. Some APIs take
+ * a method's arguments as one JSON-encoded form field (Baselinker's
+ * `method=getOrders&parameters={"order_id":1}`), which the form encoders
+ * would otherwise spell as `parameters[order_id]=1`. Optional arguments the
+ * caller left out are dropped before encoding, and a marker whose value
+ * resolved to nothing sends `{}`. Only markers written in the mapping count:
+ * a caller-supplied `{ "__json": … }` argument stays an ordinary object.
+ */
+function stringifyJsonMarkers(
+  mapped: Record<string, unknown>,
+  bodyMapping: Record<string, unknown>,
+): void {
+  if (Array.isArray(bodyMapping) || Array.isArray(mapped)) return;
+  for (const [key, template] of Object.entries(bodyMapping)) {
+    if (!isJsonMarker(template)) continue;
+    const resolved = mapped[key];
+    const inner = isJsonMarker(resolved) ? resolved.__json : undefined;
+    mapped[key] = JSON.stringify(inner ?? {});
+  }
 }
 
 interface FetchedFile {

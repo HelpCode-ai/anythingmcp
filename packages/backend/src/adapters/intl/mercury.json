@@ -1,0 +1,1459 @@
+{
+  "slug": "mercury",
+  "name": "Mercury",
+  "description": "Let your AI read your Mercury business banking: accounts and balances, transactions, cards, statements, recipients, Treasury, credit and users. Works with a Read Only API token and cannot send money. Card freeze and transaction note actions are optional and off by default.",
+  "instructions": "## Mercury\nThis connector reads your Mercury organization through the official **Mercury API** (`https://api.mercury.com/api/v1`): organization, bank accounts and balances, transactions, cards, statements, recipients, Treasury, credit accounts, users, custom categories and payment requests awaiting approval. Three small actions are included and installed switched off: freeze a card, unfreeze a card and set a transaction's note or category.\n\n**It cannot send money, by design.** There is no tool for payments, transfers, internal transfers, payment requests, recipients, invoices or cards to be created, not even a switched-off one. Mercury's own send-money endpoints are not used at all.\n\n**Setup (about 3 minutes)**\n1. Sign in to https://app.mercury.com, click your organization at the top left, then **Settings**, then **Tokens** (https://app.mercury.com/settings/tokens). You need a user allowed to create API tokens; ask an admin otherwise.\n2. Click **Create an API Token** and choose **Read Only**. A Read Only token can read all data, cannot move money and needs no IP allow-list.\n3. Copy the token into `MERCURY_API_TOKEN`. It looks like `secret-token:mercury_production_...`; paste the whole value including `secret-token:`. Mercury shows it only once.\n4. Install and run `mercury_get_organization`.\n\n**Read-only by default.** With a Read Only token every write is refused by Mercury. The switched-off tools `mercury_freeze_card`, `mercury_unfreeze_card` and `mercury_update_transaction` need a Custom token with the matching write scopes, and Mercury requires an IP allow-list for any write scope: on AnythingMCP Cloud, ask support for the current outgoing IP address first. Never give this connector a Read and Write token: it can send money without approval. Mercury downgrades tokens that do not use their write permission for 45 days and deletes tokens unused for 45 days.\n\n**Financial data is sensitive.** Balances, transactions, statements, recipients and employees are confidential company data. Share this MCP server only with people allowed to see them, read only what the user asks for and do not copy it elsewhere. Account numbers, routing numbers, IBANs and card numbers are removed from every answer; statements and transaction attachments carry download links instead.\n\n**Writes: confirm first.** Before `mercury_freeze_card`, `mercury_unfreeze_card` or `mercury_update_transaction`, show the user what will change and wait for a clear yes.\n\n**How to work**\n1. Start with `mercury_get_organization` and `mercury_list_accounts` (account ids and balances); `mercury_get_account` for one account.\n2. Transactions: `mercury_list_account_transactions` for one account (last 30 days unless you pass start), `mercury_list_transactions` across accounts with filters, `mercury_get_transaction` for one with attachments. Use `mercury_list_categories` for category ids.\n3. Cards: `mercury_list_cards`, `mercury_get_card`, `mercury_list_account_cards`; actions `mercury_freeze_card`, `mercury_unfreeze_card`.\n4. Statements: `mercury_list_account_statements`.\n5. Payees and approvals: `mercury_list_recipients`, `mercury_get_recipient`, `mercury_list_payment_approval_requests` (read only).\n6. Treasury and credit: `mercury_list_treasury_accounts`, `mercury_list_treasury_transactions`, `mercury_list_treasury_statements`, `mercury_list_credit_accounts`.\n7. People: `mercury_list_users`.\n8. Notes and categories: `mercury_update_transaction`.\n\n**Amounts** are decimal numbers in dollars, negative for money going out. A card transaction's `merchant.amount` is in the smallest unit of the merchant currency.\n\n**Paging**: most lists answer with `page.nextPage`; pass it as `start_after` for the next page. `mercury_list_account_transactions` pages with `offset` and reports `total`. Treasury transactions page with `cursor`.\n\n**Sandbox**: create a sandbox at https://sandbox.mercury.com/signup, make a token there and change the connector's base URL to `https://api-sandbox.mercury.com/api/v1`. Production tokens do not work in the sandbox.\n\n**Common errors**\n- 401 noTokenInDB: the token is wrong, deleted (unused for 45 days) or from the other environment.\n- 403: the token's type or scopes do not allow this call, or a write came from an IP address that is not on the token's allow-list.\n- 404: the id does not exist.\n\n**Out of scope**: sending money, payment requests, transfers, recipients, invoices and customers, creating or cancelling cards, changing spend limits, webhooks, SAFEs and uploading attachments.",
+  "region": "intl",
+  "category": "banking",
+  "icon": "mercury",
+  "docsUrl": "https://docs.mercury.com/reference",
+  "prerequisites": "A Mercury account with permission to create API tokens, to create a Read Only token under Settings, Tokens in the Mercury app. About 3 minutes.",
+  "appRegistrationUrl": "https://app.mercury.com/settings/tokens",
+  "requiredEnvVars": [
+    "MERCURY_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "MERCURY_API_TOKEN": {
+      "label": "API token (Read Only)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Mercury app, Settings, Tokens, Create an API Token, type Read Only. Paste the whole value including secret-token:. Mercury shows it once.",
+      "link": "https://app.mercury.com/settings/tokens",
+      "example": "secret-token:mercury_production_...",
+      "pattern": "^secret-token:\\S+$",
+      "patternMessage": "Paste the whole token. It starts with secret-token: and has no spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Mercury does not know this token (noTokenInDB): it is wrong, deleted after 45 days without use, or a sandbox token used against production. Create a Read Only token under Settings, Tokens.",
+    "403": "The token's type or scopes do not allow this call, or a write came from an IP address that is not on the token's allow-list.",
+    "404": "Mercury does not know this id.",
+    "429": "Mercury is rate limiting this token. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "mercury_get_organization"
+  },
+  "connector": {
+    "name": "Mercury API",
+    "type": "REST",
+    "baseUrl": "https://api.mercury.com/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MERCURY_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/organization"
+  },
+  "tools": [
+    {
+      "name": "mercury_get_organization",
+      "description": "Read your Mercury organization: id, legal business name, DBAs, EIN, kind (business or personal) and plan. Cheap; use it first to check the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organization"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.organization.id",
+            "legalBusinessName": "$.organization.legalBusinessName",
+            "dbas": "$.organization.dbas",
+            "ein": "$.organization.ein",
+            "kind": "$.organization.kind",
+            "subscriptionTier": "$.organization.subscriptionTier",
+            "billingCadence": "$.organization.billingCadence"
+          }
+        }
+      }
+    },
+    {
+      "name": "mercury_list_accounts",
+      "description": "List the Mercury bank accounts (checking and savings) with id, name, nickname, kind, status, available and current balance. Account and routing numbers are removed on purpose; read them in the Mercury app. Amounts are decimal numbers in dollars (negative for money going out). Call this first: most tools need an account id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (Mercury default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order: asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_after": {
+            "type": "string",
+            "description": "Cursor for the next page: page.nextPage of the previous answer (an id). Leave it out for the first page; page.nextPage is missing on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "limit": "$limit",
+          "order": "$order",
+          "start_after": "$start_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "accounts[*].accountNumber",
+            "accounts[*].routingNumber"
+          ],
+          "select": {
+            "accounts": {
+              "$from": "$.accounts[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "nickname": "nickname",
+                "kind": "kind",
+                "type": "type",
+                "status": "status",
+                "availableBalance": "availableBalance",
+                "currentBalance": "currentBalance",
+                "legalBusinessName": "legalBusinessName",
+                "canReceiveTransactions": "canReceiveTransactions",
+                "createdAt": "createdAt",
+                "dashboardLink": "dashboardLink"
+              }
+            },
+            "page": "$.page"
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "mercury_get_account",
+      "description": "Read one Mercury account by id: name, kind, status, available and current balance. Account and routing numbers are removed on purpose. Amounts are decimal numbers in dollars (negative for money going out).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "description": "Account id from mercury_list_accounts."
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/{accountId}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "accountNumber",
+            "routingNumber"
+          ],
+          "select": {
+            "id": "id",
+            "name": "name",
+            "nickname": "nickname",
+            "kind": "kind",
+            "type": "type",
+            "status": "status",
+            "availableBalance": "availableBalance",
+            "currentBalance": "currentBalance",
+            "legalBusinessName": "legalBusinessName",
+            "canReceiveTransactions": "canReceiveTransactions",
+            "createdAt": "createdAt",
+            "dashboardLink": "dashboardLink"
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "mercury_list_account_transactions",
+      "description": "List the transactions of one Mercury account, newest first by default: amount, status, kind, created and posted dates, counterparty, description, note, category, merchant and card. Without start Mercury returns the last 30 days. Filter by dates (createdAt), status, search text or category. Paged with offset; total says how many match. Amounts are decimal numbers in dollars (negative for money going out). Counterparty bank details are removed. Financial data: share only what the user asked for.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "description": "Account id from mercury_list_accounts."
+          },
+          "start": {
+            "type": "string",
+            "description": "Earliest createdAt date, YYYY-MM-DD or ISO 8601. Default: 30 days ago."
+          },
+          "end": {
+            "type": "string",
+            "description": "Latest createdAt date, YYYY-MM-DD or ISO 8601. Default: today."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only transactions in this status.",
+            "enum": [
+              "pending",
+              "sent",
+              "cancelled",
+              "failed",
+              "reversed",
+              "blocked"
+            ]
+          },
+          "search": {
+            "type": "string",
+            "description": "Search in descriptions, notes, memos and counterparty names."
+          },
+          "mercuryCategory": {
+            "type": "string",
+            "description": "Mercury's merchant type, e.g. Software or Restaurants."
+          },
+          "categoryId": {
+            "type": "string",
+            "description": "Custom category id from mercury_list_categories."
+          },
+          "order": {
+            "type": "string",
+            "description": "desc (newest first, the default) or asc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of results to skip, for the next page.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/{accountId}/transactions",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "status": "$status",
+          "search": "$search",
+          "mercuryCategory": "$mercuryCategory",
+          "categoryId": "$categoryId",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "transactions[*].details"
+          ],
+          "select": {
+            "total": "$.total",
+            "transactions": {
+              "$from": "$.transactions[*]",
+              "$select": {
+                "id": "id",
+                "accountId": "accountId",
+                "amount": "amount",
+                "status": "status",
+                "kind": "kind",
+                "createdAt": "createdAt",
+                "postedAt": "postedAt",
+                "counterpartyId": "counterpartyId",
+                "counterpartyName": "counterpartyName",
+                "counterpartyNickname": "counterpartyNickname",
+                "bankDescription": "bankDescription",
+                "note": "note",
+                "externalMemo": "externalMemo",
+                "mercuryCategory": "mercuryCategory",
+                "category": "categoryData.name",
+                "categoryId": "categoryData.id",
+                "merchant": "merchant",
+                "cardId": "cardId",
+                "checkNumber": "checkNumber",
+                "failedAt": "failedAt",
+                "reasonForFailure": "reasonForFailure",
+                "estimatedDeliveryDate": "estimatedDeliveryDate",
+                "requestId": "requestId",
+                "dashboardLink": "dashboardLink"
+              }
+            }
+          },
+          "maxBytes": 100000,
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "mercury_list_transactions",
+      "description": "List transactions across all Mercury accounts, oldest first by default: amount, status, kind, dates, counterparty, description, note, category, merchant and card. Filter by account, card, status, created or posted dates, search text or category. Paged with start_after = page.nextPage. Amounts are decimal numbers in dollars (negative for money going out). Counterparty bank details are removed. Financial data: share only what the user asked for.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "array",
+            "description": "Only these accounts (ids from mercury_list_accounts).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cardId": {
+            "type": "array",
+            "description": "Only these cards (ids from mercury_list_cards).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "array",
+            "description": "Only these statuses.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "sent",
+                "cancelled",
+                "failed",
+                "reversed",
+                "blocked"
+              ]
+            }
+          },
+          "start": {
+            "type": "string",
+            "description": "Earliest createdAt date, YYYY-MM-DD or ISO 8601."
+          },
+          "end": {
+            "type": "string",
+            "description": "Latest createdAt date, YYYY-MM-DD or ISO 8601."
+          },
+          "postedStart": {
+            "type": "string",
+            "description": "Earliest postedAt date, YYYY-MM-DD or ISO 8601."
+          },
+          "postedEnd": {
+            "type": "string",
+            "description": "Latest postedAt date, YYYY-MM-DD or ISO 8601."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search in descriptions, notes, memos and counterparty names."
+          },
+          "mercuryCategory": {
+            "type": "string",
+            "description": "Mercury's merchant type, e.g. Software."
+          },
+          "categoryId": {
+            "type": "string",
+            "description": "Custom category id from mercury_list_categories."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order: asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_after": {
+            "type": "string",
+            "description": "Cursor for the next page: page.nextPage of the previous answer (an id). Leave it out for the first page; page.nextPage is missing on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions",
+        "queryParams": {
+          "accountId": "$accountId",
+          "cardId": "$cardId",
+          "status": "$status",
+          "start": "$start",
+          "end": "$end",
+          "postedStart": "$postedStart",
+          "postedEnd": "$postedEnd",
+          "search": "$search",
+          "mercuryCategory": "$mercuryCategory",
+          "categoryId": "$categoryId",
+          "limit": "$limit",
+          "order": "$order",
+          "start_after": "$start_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "transactions[*].details"
+          ],
+          "select": {
+            "transactions": {
+              "$from": "$.transactions[*]",
+              "$select": {
+                "id": "id",
+                "accountId": "accountId",
+                "amount": "amount",
+                "status": "status",
+                "kind": "kind",
+                "createdAt": "createdAt",
+                "postedAt": "postedAt",
+                "counterpartyId": "counterpartyId",
+                "counterpartyName": "counterpartyName",
+                "counterpartyNickname": "counterpartyNickname",
+                "bankDescription": "bankDescription",
+                "note": "note",
+                "externalMemo": "externalMemo",
+                "mercuryCategory": "mercuryCategory",
+                "category": "categoryData.name",
+                "categoryId": "categoryData.id",
+                "merchant": "merchant",
+                "cardId": "cardId",
+                "checkNumber": "checkNumber",
+                "failedAt": "failedAt",
+                "reasonForFailure": "reasonForFailure",
+                "estimatedDeliveryDate": "estimatedDeliveryDate",
+                "requestId": "requestId",
+                "dashboardLink": "dashboardLink"
+              }
+            },
+            "page": "$.page"
+          },
+          "maxBytes": 100000,
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "mercury_get_transaction",
+      "description": "Read one Mercury transaction by id with amount, status, dates, counterparty, note, category, merchant, card, attachments (receipts, check images; links are temporary), exchange details and GL allocations. Counterparty bank details are removed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transactionId": {
+            "type": "string",
+            "description": "Transaction id from a transaction list."
+          }
+        },
+        "required": [
+          "transactionId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transaction/{transactionId}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "details"
+          ],
+          "select": {
+            "id": "id",
+            "accountId": "accountId",
+            "amount": "amount",
+            "status": "status",
+            "kind": "kind",
+            "createdAt": "createdAt",
+            "postedAt": "postedAt",
+            "counterpartyId": "counterpartyId",
+            "counterpartyName": "counterpartyName",
+            "counterpartyNickname": "counterpartyNickname",
+            "bankDescription": "bankDescription",
+            "note": "note",
+            "externalMemo": "externalMemo",
+            "mercuryCategory": "mercuryCategory",
+            "category": "categoryData.name",
+            "categoryId": "categoryData.id",
+            "merchant": "merchant",
+            "cardId": "cardId",
+            "checkNumber": "checkNumber",
+            "failedAt": "failedAt",
+            "reasonForFailure": "reasonForFailure",
+            "estimatedDeliveryDate": "estimatedDeliveryDate",
+            "requestId": "requestId",
+            "dashboardLink": "dashboardLink",
+            "attachments": {
+              "$from": "attachments[*]",
+              "$select": {
+                "fileName": "fileName",
+                "attachmentType": "attachmentType",
+                "url": "url"
+              }
+            },
+            "currencyExchangeInfo": "currencyExchangeInfo",
+            "generalLedgerCodeName": "generalLedgerCodeName",
+            "glAllocations": "glAllocations",
+            "compliantWithReceiptPolicy": "compliantWithReceiptPolicy",
+            "hasGeneratedReceipt": "hasGeneratedReceipt",
+            "relatedTransactions": "relatedTransactions",
+            "trackingNumber": "trackingNumber"
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "mercury_list_cards",
+      "description": "List Mercury debit and credit cards with id, account, nickname, name on card, last four digits, status, virtual or physical, cardholder user id and spend limits or budgets. Never returns the card number or CVC. Filter by account, status, type, kind or cardholder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "array",
+            "description": "Only cards of these accounts.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "array",
+            "description": "Only these statuses.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "active",
+                "frozen",
+                "cancelled",
+                "inactive",
+                "expired",
+                "suspended"
+              ]
+            }
+          },
+          "type": {
+            "type": "array",
+            "description": "virtual or physical.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "virtual",
+                "physical"
+              ]
+            }
+          },
+          "kind": {
+            "type": "array",
+            "description": "debit or credit.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "debit",
+                "credit"
+              ]
+            }
+          },
+          "userId": {
+            "type": "string",
+            "description": "Only cards of this cardholder (id from mercury_list_users)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (Mercury default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order: asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_after": {
+            "type": "string",
+            "description": "Cursor for the next page: page.nextPage of the previous answer (an id). Leave it out for the first page; page.nextPage is missing on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cards",
+        "queryParams": {
+          "accountId": "$accountId",
+          "status": "$status",
+          "type": "$type",
+          "kind": "$kind",
+          "userId": "$userId",
+          "limit": "$limit",
+          "order": "$order",
+          "start_after": "$start_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "cards[*].expiration"
+          ],
+          "select": {
+            "cards": {
+              "$from": "$.cards[*]",
+              "$select": {
+                "id": "id",
+                "accountId": "accountId",
+                "nickname": "nickname",
+                "nameOnCard": "nameOnCard",
+                "lastFour": "lastFour",
+                "status": "status",
+                "type": "type",
+                "kind": "kind",
+                "userId": "userId",
+                "spendLimitType": "spendLimitType",
+                "spendLimit": "spendLimit",
+                "budgets": "budgets",
+                "categoryLocks": "categoryLocks",
+                "merchantLock": "merchantLock",
+                "isAgentCard": "isAgentCard",
+                "physicalCardStatus": "physicalCardStatus",
+                "createdAt": "createdAt",
+                "updatedAt": "updatedAt"
+              }
+            },
+            "page": "$.page"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "mercury_get_card",
+      "description": "Read one Mercury card by id: account, nickname, name on card, last four digits, status, type, kind, cardholder, spend limit, budgets and locks. Never returns the card number or CVC.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cardId": {
+            "type": "string",
+            "description": "Card id from mercury_list_cards or a transaction."
+          }
+        },
+        "required": [
+          "cardId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cards/{cardId}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "expiration"
+          ],
+          "select": {
+            "id": "id",
+            "accountId": "accountId",
+            "nickname": "nickname",
+            "nameOnCard": "nameOnCard",
+            "lastFour": "lastFour",
+            "status": "status",
+            "type": "type",
+            "kind": "kind",
+            "userId": "userId",
+            "spendLimitType": "spendLimitType",
+            "spendLimit": "spendLimit",
+            "budgets": "budgets",
+            "categoryLocks": "categoryLocks",
+            "merchantLock": "merchantLock",
+            "isAgentCard": "isAgentCard",
+            "physicalCardStatus": "physicalCardStatus",
+            "createdAt": "createdAt",
+            "updatedAt": "updatedAt"
+          }
+        }
+      }
+    },
+    {
+      "name": "mercury_list_account_cards",
+      "description": "List the cards linked to one Mercury account: card id, name on card, last four digits, network, status, type, cardholder and spend limit. Mercury marks this endpoint as the older view; mercury_list_cards has more detail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "description": "Account id from mercury_list_accounts."
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/{accountId}/cards"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "cards": {
+              "$from": "$.cards[*]",
+              "$select": {
+                "cardId": "cardId",
+                "nameOnCard": "nameOnCard",
+                "lastFourDigits": "lastFourDigits",
+                "network": "network",
+                "status": "status",
+                "type": "type",
+                "userId": "userId",
+                "spendLimit": "spendLimit",
+                "physicalCardStatus": "physicalCardStatus",
+                "createdAt": "createdAt"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "mercury_list_account_statements",
+      "description": "List the monthly statements of one Mercury account: statement id, period start and end, ending balance and a download link for the PDF. Account and routing numbers and the statement's transaction list are left out. Filter by date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "description": "Account id from mercury_list_accounts."
+          },
+          "start": {
+            "type": "string",
+            "description": "Earliest statement date, YYYY-MM-DD."
+          },
+          "end": {
+            "type": "string",
+            "description": "Latest statement date, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (Mercury default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order: asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_after": {
+            "type": "string",
+            "description": "Cursor for the next page: page.nextPage of the previous answer (an id). Leave it out for the first page; page.nextPage is missing on the last page."
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/{accountId}/statements",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "limit": "$limit",
+          "order": "$order",
+          "start_after": "$start_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "statements[*].accountNumber",
+            "statements[*].routingNumber",
+            "statements[*].transactions",
+            "statements[*].ein"
+          ],
+          "select": {
+            "statements": {
+              "$from": "$.statements[*]",
+              "$select": {
+                "id": "id",
+                "startDate": "startDate",
+                "endDate": "endDate",
+                "endingBalance": "endingBalance",
+                "companyLegalName": "companyLegalName",
+                "downloadUrl": "downloadUrl"
+              }
+            },
+            "page": "$.page"
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "mercury_list_recipients",
+      "description": "List the payment recipients saved in Mercury with id, name, nickname, status, business flag, emails, default payment method (ach, check, domesticWire, internationalWire, realTimePayment), bank name and date last paid. Account numbers, IBANs and routing numbers are removed on purpose. Read only: this connector cannot pay a recipient.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (Mercury default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order: asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_after": {
+            "type": "string",
+            "description": "Cursor for the next page: page.nextPage of the previous answer (an id). Leave it out for the first page; page.nextPage is missing on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recipients",
+        "queryParams": {
+          "limit": "$limit",
+          "order": "$order",
+          "start_after": "$start_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "recipients[*].electronicRoutingInfo.accountNumber",
+            "recipients[*].domesticWireRoutingInfo.accountNumber",
+            "recipients[*].realTimePaymentRoutingInfo.accountNumber",
+            "recipients[*].internationalWireRoutingInfo"
+          ],
+          "select": {
+            "recipients": {
+              "$from": "$.recipients[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "nickname": "nickname",
+                "status": "status",
+                "isBusiness": "isBusiness",
+                "emails": "emails",
+                "contactEmail": "contactEmail",
+                "defaultPaymentMethod": "defaultPaymentMethod",
+                "dateLastPaid": "dateLastPaid",
+                "bankName": "electronicRoutingInfo.bankName"
+              }
+            },
+            "total": "$.total",
+            "page": "$.page"
+          },
+          "maxBytes": 80000,
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "mercury_get_recipient",
+      "description": "Read one Mercury recipient by id: name, status, emails, default payment method, bank name and date last paid. Bank account details are removed on purpose.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recipientId": {
+            "type": "string",
+            "description": "Recipient id from mercury_list_recipients or a transaction's counterpartyId."
+          }
+        },
+        "required": [
+          "recipientId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recipient/{recipientId}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "electronicRoutingInfo.accountNumber",
+            "domesticWireRoutingInfo.accountNumber",
+            "realTimePaymentRoutingInfo.accountNumber",
+            "internationalWireRoutingInfo"
+          ],
+          "select": {
+            "id": "id",
+            "name": "name",
+            "nickname": "nickname",
+            "status": "status",
+            "isBusiness": "isBusiness",
+            "emails": "emails",
+            "contactEmail": "contactEmail",
+            "defaultPaymentMethod": "defaultPaymentMethod",
+            "dateLastPaid": "dateLastPaid",
+            "bankName": "electronicRoutingInfo.bankName"
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "mercury_list_treasury_accounts",
+      "description": "List Mercury Treasury accounts with id, status, available and current balance and the monthly net returns (dividends minus fees). Amounts are decimal numbers in dollars (negative for money going out).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (Mercury default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order: asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_after": {
+            "type": "string",
+            "description": "Cursor for the next page: page.nextPage of the previous answer (an id). Leave it out for the first page; page.nextPage is missing on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/treasury",
+        "queryParams": {
+          "limit": "$limit",
+          "order": "$order",
+          "start_after": "$start_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "accounts": {
+              "$from": "$.accounts[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "createdAt": "createdAt",
+                "availableBalance": "availableBalance",
+                "currentBalance": "currentBalance",
+                "netReturns": {
+                  "$from": "netReturns[*]",
+                  "$select": {
+                    "month": "month",
+                    "netAmount": "netAmount",
+                    "status": "status"
+                  }
+                }
+              }
+            },
+            "page": "$.page"
+          }
+        }
+      }
+    },
+    {
+      "name": "mercury_list_treasury_transactions",
+      "description": "List the transactions of one Mercury Treasury account: type (deposits, withdrawals, dividends, fees, interest), description, amount, balance after, day and security. Next page: pass cursor from the previous answer. Amounts are decimal numbers in dollars (negative for money going out).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "treasuryId": {
+            "type": "string",
+            "description": "Treasury account id from mercury_list_treasury_accounts."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order: asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "cursor": {
+            "type": "integer",
+            "description": "cursor from the previous answer, for the next page."
+          }
+        },
+        "required": [
+          "treasuryId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/treasury/{treasuryId}/transactions",
+        "queryParams": {
+          "limit": "$limit",
+          "order": "$order",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "cursor": "$.cursor",
+            "transactions": {
+              "$from": "$.transactions[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "description": "description",
+                "amount": "amount",
+                "balance": "balance",
+                "canonicalDay": "canonicalDay",
+                "security": "security",
+                "additionalDetails": "additionalDetails"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "mercury_list_treasury_statements",
+      "description": "List the statements and tax documents of one Mercury Treasury account: id, document type (MonthlyStatement, TradeConfirmation, 1099 and others), description, period and a download link. Filter by document type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "treasuryId": {
+            "type": "string",
+            "description": "Treasury account id from mercury_list_treasury_accounts."
+          },
+          "documentType": {
+            "type": "string",
+            "description": "Only this document type.",
+            "enum": [
+              "MonthlyStatement",
+              "TradeConfirmation",
+              "1099",
+              "1099R",
+              "1042S",
+              "5498",
+              "5498ESA",
+              "1099Q",
+              "FMV",
+              "SDIRA"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (Mercury default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order: asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_after": {
+            "type": "string",
+            "description": "Cursor for the next page: page.nextPage of the previous answer (an id). Leave it out for the first page; page.nextPage is missing on the last page."
+          }
+        },
+        "required": [
+          "treasuryId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/treasury/{treasuryId}/statements",
+        "queryParams": {
+          "documentType": "$documentType",
+          "limit": "$limit",
+          "order": "$order",
+          "start_after": "$start_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "statements": {
+              "$from": "$.statements[*]",
+              "$select": {
+                "id": "id",
+                "documentType": "documentType",
+                "description": "description",
+                "periodStart": "periodStart",
+                "periodEnd": "periodEnd",
+                "creationDate": "creationDate",
+                "downloadUrl": "downloadUrl"
+              }
+            },
+            "page": "$.page"
+          }
+        }
+      }
+    },
+    {
+      "name": "mercury_list_credit_accounts",
+      "description": "List Mercury credit (IO card) accounts with id, status, available and current balance. Amounts are decimal numbers in dollars (negative for money going out).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credit"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "accounts": {
+              "$from": "$.accounts[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "createdAt": "createdAt",
+                "availableBalance": "availableBalance",
+                "currentBalance": "currentBalance"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "mercury_list_users",
+      "description": "List the people with access to the Mercury organization: user id, first and last name, email and role (administrator, bookkeeper, customUser, cardOnlyUser, employee). Personal data: show only what the user asked for.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (Mercury default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order: asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_after": {
+            "type": "string",
+            "description": "Cursor for the next page: page.nextPage of the previous answer (an id). Leave it out for the first page; page.nextPage is missing on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "limit": "$limit",
+          "order": "$order",
+          "start_after": "$start_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "users": {
+              "$from": "$.users[*]",
+              "$select": {
+                "userId": "userId",
+                "firstName": "firstName",
+                "lastName": "lastName",
+                "email": "email",
+                "organizationRole": "organizationRole"
+              }
+            },
+            "page": "$.page"
+          }
+        }
+      }
+    },
+    {
+      "name": "mercury_list_categories",
+      "description": "List the custom expense categories of the organization (id and name, and whether each applies to card spend, reimbursements or other transactions). Use the id with mercury_list_transactions or mercury_update_transaction.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (Mercury default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order: asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_after": {
+            "type": "string",
+            "description": "Cursor for the next page: page.nextPage of the previous answer (an id). Leave it out for the first page; page.nextPage is missing on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "limit": "$limit",
+          "order": "$order",
+          "start_after": "$start_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "categories": {
+              "$from": "$.categories[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "visibleForCardSpend": "visibleForCardSpend",
+                "visibleForReimbursements": "visibleForReimbursements",
+                "visibleForOther": "visibleForOther"
+              }
+            },
+            "page": "$.page"
+          }
+        }
+      }
+    },
+    {
+      "name": "mercury_list_payment_approval_requests",
+      "description": "List payment requests waiting for, or past, approval in Mercury: request id, account, recipient, amount, payment method, status (pendingApproval, approved, rejected, cancelled), memo, scheduled date and requester. Read only: it shows requests made elsewhere; this connector cannot create, approve or cancel them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "description": "Only requests from this account."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only requests in this status.",
+            "enum": [
+              "pendingApproval",
+              "approved",
+              "rejected",
+              "cancelled"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, 1 to 1000 (Mercury default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "start_after": {
+            "type": "string",
+            "description": "Cursor for the next page: page.nextPage of the previous answer (an id). Leave it out for the first page; page.nextPage is missing on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/request-send-money",
+        "queryParams": {
+          "accountId": "$accountId",
+          "status": "$status",
+          "limit": "$limit",
+          "start_after": "$start_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "requests": {
+              "$from": "$.requests[*]",
+              "$select": {
+                "requestId": "requestId",
+                "accountId": "accountId",
+                "recipientId": "recipientId",
+                "amount": "amount",
+                "paymentMethod": "paymentMethod",
+                "status": "status",
+                "memo": "memo",
+                "scheduledSendDate": "scheduledSendDate",
+                "createdAt": "createdAt",
+                "requestedByUserId": "requestedByUserId",
+                "numberOfApproversRequired": "numberOfApproversRequired"
+              }
+            },
+            "page": "$.page"
+          }
+        }
+      }
+    },
+    {
+      "name": "mercury_freeze_card",
+      "description": "Freeze a Mercury card so it cannot be used, for example when it is lost. The card must be active; reversible with mercury_unfreeze_card. Confirm the card (nickname and last four digits) with the user before calling. Installed switched off; needs a token allowed to manage cards.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cardId": {
+            "type": "string",
+            "description": "Card id from mercury_list_cards."
+          }
+        },
+        "required": [
+          "cardId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cards/{cardId}/freeze"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "nickname": "$.nickname",
+            "lastFour": "$.lastFour",
+            "status": "$.status",
+            "type": "$.type"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mercury_unfreeze_card",
+      "description": "Unfreeze a frozen Mercury card so it can be used again. Only when the user explicitly asks; confirm the card (nickname and last four digits) before calling. Installed switched off; needs a token allowed to manage cards.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cardId": {
+            "type": "string",
+            "description": "Card id from mercury_list_cards."
+          }
+        },
+        "required": [
+          "cardId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cards/{cardId}/unfreeze"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "nickname": "$.nickname",
+            "lastFour": "$.lastFour",
+            "status": "$.status",
+            "type": "$.type"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mercury_update_transaction",
+      "description": "Set or clear the note and the custom category of a Mercury transaction. Leave a field out to keep it; send an empty note to clear it. Changes apply immediately and overwrite the old values. Show the user the transaction and the change and confirm before calling. Installed switched off; needs a token allowed to update transactions.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transactionId": {
+            "type": "string",
+            "description": "Transaction id from a transaction list."
+          },
+          "note": {
+            "type": "string",
+            "description": "New note text; an empty string clears the note."
+          },
+          "categoryId": {
+            "type": "string",
+            "description": "Custom category id from mercury_list_categories."
+          }
+        },
+        "required": [
+          "transactionId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/transaction/{transactionId}",
+        "bodyMapping": {
+          "note": "$note",
+          "categoryId": "$categoryId"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "details"
+          ],
+          "select": {
+            "id": "$.id",
+            "note": "$.note",
+            "category": "$.categoryData.name",
+            "categoryId": "$.categoryData.id",
+            "amount": "$.amount",
+            "counterpartyName": "$.counterpartyName"
+          },
+          "fallbackToRaw": false
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { license } from '@/lib/api';
+import { license, productEvents } from '@/lib/api';
 import { LogoIcon } from '@/components/logo-icon';
 import { PlanPicker } from '@/components/plan-picker';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,8 @@ import {
   DEFAULT_SELECTION,
   cardTrialDisplayEnd,
   cardTrialEligible,
+  formatEur,
+  formatPlanPrice,
   formatTrialEnd,
   planById,
   readAuthorizationReturn,
@@ -22,6 +24,9 @@ import {
   type PlanSelection,
 } from '@/lib/card-trial';
 import { useCardCheckout } from '@/lib/use-card-checkout';
+import { formatLocal, useLocalPricing } from '@/lib/local-currency';
+import { fetchCardTrialKind } from '@/lib/use-card-trial-eligibility';
+import { parseCheckoutSource, type CheckoutSource } from '@/lib/checkout-source';
 
 /**
  * Cloud only: the card-trial offer shown once after sign-up (see
@@ -30,17 +35,35 @@ import { useCardCheckout } from '@/lib/use-card-checkout';
  * no-card trial the user already has stays one small link away, in the
  * corner, on purpose.
  *
+ * An address that had a subscription before gets no trial from the licence
+ * site: Checkout charges it today. The page asks first
+ * (/api/license/card-trial-eligibility) and then says so plainly, with the
+ * plan's price, instead of "€0 today". If the site still refuses the trial at
+ * checkout, the page switches to the same wording before sending anyone on.
+ *
  * Anyone it does not apply to (self-hosted, non-admins, no live trial) is
  * sent to the dashboard.
+ *
+ * `?source=` names the entry point that led here (lib/checkout-source.ts). It
+ * goes with the checkout into Stripe metadata, and with the page's two
+ * product events: start_trial_viewed (once per load) and
+ * start_trial_checkout_started (the button), so each entry point's clicks,
+ * emails included, can be read against the checkouts it produced.
  */
 export default function StartTrialPage() {
   const { token, user, isLoading, deploymentMode, deploymentModeLoaded } = useAuth();
+  const localPricing = useLocalPricing(deploymentMode === 'cloud');
   const router = useRouter();
   const checkout = useCardCheckout();
   const [trialEnd, setTrialEnd] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [selection, setSelection] = useState<PlanSelection>(DEFAULT_SELECTION);
   const [promo, setPromo] = useState<string | null>(null);
+  // 'pay': this address had a subscription, so the plan starts and is billed today.
+  const [kind, setKind] = useState<'trial' | 'pay'>('trial');
+  // Which entry point sent the user here (?source=…), for Stripe and the events.
+  const [source, setSource] = useState<CheckoutSource>('start_trial');
+  const viewReported = useRef(false);
   // Set when the user came from "Connect" in an AI client: every way out of
   // this page goes back to that authorization.
   const [authorizationReturn, setAuthorizationReturn] = useState<string | null>(null);
@@ -58,7 +81,8 @@ export default function StartTrialPage() {
   useEffect(() => {
     if (isLoading || !deploymentModeLoaded) return;
     if (!token || !user) {
-      router.replace('/login?redirect=/start-trial');
+      // Keep ?source= through the sign-in (the offer email links here).
+      router.replace(`/login?redirect=${encodeURIComponent(`/start-trial${window.location.search}`)}`);
       return;
     }
     if (deploymentMode !== 'cloud' || user.role !== 'ADMIN') {
@@ -66,19 +90,25 @@ export default function StartTrialPage() {
       return;
     }
     let live = true;
-    license
-      .getStatus(token)
-      .then((lic) => {
+    Promise.all([license.getStatus(token), fetchCardTrialKind(token)])
+      .then(([lic, trialKind]) => {
         if (!live) return;
-        if (!cardTrialEligible({ isCloud: true, role: user.role, license: lic })) {
+        if (!cardTrialEligible({ isCloud: true, role: user.role, license: lic }) || trialKind === 'none') {
           leave('/');
           return;
         }
+        setKind(trialKind);
         setAuthorizationReturn(readAuthorizationReturn());
         setTrialEnd(cardTrialDisplayEnd(lic.expiresAt));
         setSelection(readPlanIntent() ?? DEFAULT_SELECTION);
         setPromo(readPromoCode());
+        const from = parseCheckoutSource(new URLSearchParams(window.location.search).get('source')) ?? 'start_trial';
+        setSource(from);
         setReady(true);
+        if (!viewReported.current) {
+          viewReported.current = true;
+          productEvents.track('start_trial_viewed', token, { source: from, kind: trialKind });
+        }
       })
       .catch(() => {
         if (live) leave('/');
@@ -88,10 +118,19 @@ export default function StartTrialPage() {
     };
   }, [isLoading, deploymentModeLoaded, deploymentMode, token, user, router, leave]);
 
+  // The licence site refused the trial at checkout: say so before sending anyone on.
+  const paysToday = kind === 'pay' || !!checkout.chargesTodayUrl;
+
   const handleStart = async () => {
     if (!user) return;
-    const ok = await checkout.start(selection, true);
-    if (ok) writeCardTrialPrompt(user.id, 'checkout');
+    if (checkout.chargesTodayUrl) {
+      writeCardTrialPrompt(user.id, 'checkout');
+      window.location.assign(checkout.chargesTodayUrl);
+      return;
+    }
+    if (token) productEvents.track('start_trial_checkout_started', token, { source, kind: paysToday ? 'pay' : 'trial' });
+    const outcome = await checkout.start(selection, !paysToday, source);
+    if (outcome === 'redirected') writeCardTrialPrompt(user.id, 'checkout');
   };
 
   const handleSkip = () => {
@@ -111,6 +150,20 @@ export default function StartTrialPage() {
 
   const endLong = formatTrialEnd(trialEnd, 'long');
   const plan = planById(selection.plan);
+  // Outside the euro area Stripe charges in the visitor's currency: say
+  // roughly how much, next to the exact euro price.
+  const euros = selection.period === 'yearly' ? plan.yearly : plan.monthly;
+  const local = formatLocal(euros, localPricing);
+  const exactPrice = formatPlanPrice(plan, selection.period);
+  const price = local ? `≈ ${local}/${selection.period === 'yearly' ? 'year' : 'month'} (${exactPrice})` : exactPrice;
+  const dueToday = local ? `≈ ${local} (${formatEur(euros)})` : formatEur(euros);
+  const startLabel = checkout.loading
+    ? 'Opening checkout…'
+    : checkout.error
+      ? 'Try again'
+      : paysToday
+        ? 'Continue to checkout'
+        : 'Start free trial with card';
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
@@ -136,19 +189,29 @@ export default function StartTrialPage() {
       <main className="max-w-3xl mx-auto px-6 py-10 sm:py-14">
         <div className="text-center mb-8">
           <p className="text-xs uppercase tracking-[0.18em] text-[var(--brand)] font-mono mb-3">
-            7-day free trial
+            {paysToday ? 'Choose your plan' : endLong ? `Free until ${endLong}` : 'Free trial'}
           </p>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
-            Your 7-day free trial
+            {paysToday ? 'Keep your workspace running' : 'Your free trial'}
           </h1>
-          <p className="text-[var(--text-2)] max-w-xl mx-auto">
-            Every feature, free for 7 days. Add a card now and your plan simply carries on after the
-            trial, with nothing charged before{' '}
-            {endLong ? <strong className="text-[var(--text)]">{endLong}</strong> : 'the trial ends'}. Or
-            try it without payment details — the no-card trial has a{' '}
-            <strong className="text-[var(--text)]">lower connector limit</strong>, and you can add a card
-            any time to unlock your full plan.
-          </p>
+          {paysToday ? (
+            <p className="text-[var(--text-2)] max-w-xl mx-auto">
+              This email address has had an AnythingMCP subscription before, so a new free trial is
+              not available with a card. <strong className="text-[var(--text)]">Your plan starts today
+              and is billed today.</strong> Your workspace, connectors and settings stay exactly as they
+              are{endLong ? <>, and your current trial keeps running until{' '}
+              <strong className="text-[var(--text)]">{endLong}</strong> if you decide later</> : ''}.
+            </p>
+          ) : (
+            <p className="text-[var(--text-2)] max-w-xl mx-auto">
+              Every feature, free until{' '}
+              {endLong ? <strong className="text-[var(--text)]">{endLong}</strong> : 'your trial ends'}. Add
+              a card now and your plan simply carries on after the trial, with nothing charged before
+              then. Or keep trying without payment details: the no-card trial has a{' '}
+              <strong className="text-[var(--text)]">lower connector limit</strong>, and you can add a card
+              any time to unlock your full plan.
+            </p>
+          )}
           {authorizationReturn && (
             <p className="mt-3 text-sm text-[var(--text-2)] max-w-xl mx-auto">
               Either way, you go straight back to finish connecting your AI client.
@@ -157,16 +220,25 @@ export default function StartTrialPage() {
         </div>
 
         <Card className="p-5 sm:p-6">
-          <PlanPicker value={selection} onChange={setSelection} disabled={checkout.loading} />
+          <PlanPicker
+            value={selection}
+            onChange={setSelection}
+            disabled={checkout.loading || !!checkout.chargesTodayUrl}
+          />
 
           <div className="mt-6 flex flex-col items-center gap-3">
+            {checkout.chargesTodayUrl && (
+              <p role="status" className="text-sm text-[var(--text)] text-center max-w-md">
+                This address already had a subscription, so the checkout will charge {dueToday} today.
+              </p>
+            )}
             <Button
               size="lg"
               className="w-full sm:w-auto sm:min-w-[260px]"
               onClick={handleStart}
               disabled={checkout.loading}
             >
-              {checkout.loading ? 'Opening checkout…' : checkout.error ? 'Try again' : 'Start free trial with card'}
+              {startLabel}
             </Button>
             {promo && (
               <p className="text-xs font-medium text-[var(--ok)] text-center">
@@ -179,18 +251,27 @@ export default function StartTrialPage() {
               </p>
             )}
             <p className="text-xs text-[var(--text-3)] text-center max-w-md">
-              €0 today. {plan.name}, billed {selection.period === 'yearly' ? 'yearly' : 'monthly'} from{' '}
-              {endLong ?? 'the end of your trial'}. Secure checkout by Stripe. Cancel before then and
-              you pay nothing.
+              {paysToday ? (
+                <>
+                  {plan.name}, {price}, billed today and then {selection.period === 'yearly' ? 'every year' : 'every month'}.
+                  Secure checkout by Stripe. Cancel anytime from the billing portal.
+                </>
+              ) : (
+                <>
+                  €0 today. {plan.name}, billed {selection.period === 'yearly' ? 'yearly' : 'monthly'} from{' '}
+                  {endLong ?? 'the end of your trial'}. Secure checkout by Stripe. Cancel before then and
+                  you pay nothing.
+                </>
+              )}
             </p>
             <p className="text-xs text-[var(--text-2)] text-center">
-              Not ready to add a card?{' '}
+              {paysToday ? 'Not ready yet?' : 'Not ready to add a card?'}{' '}
               <button
                 type="button"
                 onClick={handleSkip}
                 className="font-medium text-[var(--brand)] underline-offset-2 hover:underline"
               >
-                Try free without payment details
+                {paysToday ? 'Keep using the free trial' : 'Try free without payment details'}
               </button>
             </p>
           </div>

@@ -4,21 +4,21 @@ Which channel brings AnythingMCP Cloud sign-ups, and which of them verify and pa
 
 ## How it is recorded
 
-1. **anythingmcp.com** notes, per visitor, the first and the last *touch*: UTM tags, Google Ads' `gad_source` / `gad_campaignid`, `paid` (a gclid, gbraid or wbraid was on the URL), the referrer's host and the landing path. The click id itself travels only with `ad_consent: "granted"` (the visitor allowed marketing cookies). Kept in memory for the visit, and in localStorage for 30 days only once the visitor has allowed analytics in the cookie banner.
+1. **anythingmcp.com** notes, per visitor, the first and the last *touch*: UTM tags, Google Ads' `gad_source` / `gad_campaignid`, `paid` (a gclid, gbraid or wbraid was on the URL), the referrer's host and the landing path. A click id itself (Google's, or `oppref`, the click reference OpenAI appends to a ChatGPT Ads landing URL) travels only with `ad_consent: "granted"` (the visitor allowed marketing cookies). Kept in memory for the visit, and in localStorage for 30 days only once the visitor has allowed analytics in the cookie banner.
 2. When the visitor clicks through to `cloud.anythingmcp.com`, the link gets `amcp_src=<base64url JSON first touch>` and, if different, `amcp_lt=<last touch>`.
 3. **The cloud sign-up page** reads those, or, for a visitor who came straight to the cloud app, builds its own touch from its URL and the referrer's host (`captured_on: "cloud"`). For its own touch, a click id is kept only if the cloud's cookie banner has the *marketing* category accepted; if that banner says no, click ids handed over by the site are dropped too. It sends them with `POST /api/auth/register` as `attribution: { first_touch, last_touch }`.
-4. **The backend** sanitizes them again and, for a **newly created account only**, writes a `signup_attributed` row to `product_events` (`user_id`, `organization_id` = the workspace created at sign-up). A click id (`gclid`, `gbraid`, `wbraid`: `[A-Za-z0-9_-]`, at most 150 characters) is stored only on a touch with `ad_consent: "granted"` and dropped otherwise. An address that already has an account records nothing, and the answer to the sign-up is the same either way.
+4. **The backend** sanitizes them again and, for a **newly created account only**, writes a `signup_attributed` row to `product_events` (`user_id`, `organization_id` = the workspace created at sign-up). A click id (`gclid`, `gbraid`, `wbraid`: `[A-Za-z0-9_-]`, at most 150 characters; `oppref`: opaque printable ASCII without spaces, quotes or `@`, at most 500 characters) is stored only on a touch with `ad_consent: "granted"` and dropped otherwise. An address that already has an account records nothing, and the answer to the sign-up is the same either way.
 
 ## Purchases as Google Ads offline conversions
 
-`GET /api/auth/attribution/click-ids` (signed in, cloud only; `{}` on self-hosted) returns the caller's own click id from their `signup_attributed` row, e.g. `{ "gclid": "…", "ad_consent": "granted", "captured_at": "…" }`: one id (last touch before first; gclid before gbraid before wbraid), and only if it was stored with consent. The cloud app appends it to its links to the pricing page (`?return_url=…&gclid=…`); the pricing page puts it into the Stripe checkout metadata and the site's Stripe webhook uploads the purchase to Google Ads.
+`GET /api/auth/attribution/click-ids` (signed in, cloud only; `{}` on self-hosted) returns the caller's own click ids from their `signup_attributed` row, e.g. `{ "gclid": "…", "oppref": "…", "ad_consent": "granted", "captured_at": "…" }`: at most one Google id (last touch before first; gclid before gbraid before wbraid) and the most recent `oppref`, and only if stored with consent. The cloud app appends them to its links to the pricing page (`?return_url=…&gclid=…&oppref=…`); the pricing page puts them into the Stripe checkout metadata and the site's Stripe webhook reports the purchase to Google Ads and, for an `oppref`, to ChatGPT Ads.
 
-## Activations as Google Ads offline conversions
+## Activations as ad conversions
 
 A sign-up is cheap; a workspace that runs a tool is what the campaigns should buy. When a Cloud workspace's tool call succeeds and is stored in `tool_invocations`, the backend (`packages/backend/src/audit/ads-activation.service.ts`, in the background, never delaying the call) checks once per workspace:
 
 1. no `ads_activation_reported` event exists yet for the workspace;
-2. its `signup_attributed` row carries a click id stored with `ad_consent: "granted"` (the same selection as above: last touch before first, gclid before gbraid before wbraid).
+2. its `signup_attributed` row carries a click id stored with `ad_consent: "granted"` (the same selection as above: last touch before first, gclid before gbraid before wbraid; and/or an `oppref`).
 
 If both hold, it sends `POST https://anythingmcp.com/api/ads/activation` with the service token (`x-amcp-service-token`):
 
@@ -32,7 +32,7 @@ If both hold, it sends `POST https://anythingmcp.com/api/ads/activation` with th
 }
 ```
 
-One click id only (`gclid`, `gbraid` or `wbraid`); `email` only with consent granted, and left out if that account was deleted. The site queues the upload to Google Ads and is idempotent per `organizationId`. A 2xx, or a 4xx other than 401/429 (a refusal for good), records `ads_activation_reported` (`metadata.kind` = which click id, `metadata.status` = the site's answer), so a restart never reports twice. 401, 429, 5xx and network errors are retried three times with backoff; if all fail nothing is recorded, and the next successful call after a ten-minute pause (or after a restart) tries again. Workspaces without a consented click id are only remembered in memory, so the check runs at most once per workspace and process. Neither the email nor the click id is ever logged.
+At most one Google click id (`gclid`, `gbraid` or `wbraid`) plus `oppref` when the sign-up came from ChatGPT Ads; the site reports to Google Ads for the former and to ChatGPT Ads for the latter. `email` only with consent granted, and left out if that account was deleted. The site queues the reports and is idempotent per `organizationId`. A 2xx, or a 4xx other than 401/429 (a refusal for good), records `ads_activation_reported` (`metadata.kind` = which click id, `gclid+oppref` for both, `metadata.status` = the site's answer), so a restart never reports twice. 401, 429, 5xx and network errors are retried three times with backoff; if all fail nothing is recorded, and the next successful call after a ten-minute pause (or after a restart) tries again. Workspaces without a consented click id are only remembered in memory, so the check runs at most once per workspace and process. Neither the email nor the click id is ever logged.
 
 Inert on self-hosted (`DEPLOYMENT_MODE` other than `cloud`) and when `LICENSE_SERVICE_TOKEN` is unset (one warning at the first success).
 
@@ -45,6 +45,23 @@ WHERE event = 'ads_activation_reported'
 GROUP BY 1, 2
 ORDER BY 3 DESC;
 ```
+
+## Verified sign-ups for ChatGPT Ads
+
+Google Ads counts a verified sign-up from the browser (the `sign_up_verified` GTM event). ChatGPT Ads gets it server-side instead: when a user verifies their address (code or link), `packages/backend/src/audit/ads-signup.service.ts` checks, in the background, that no `ads_signup_reported` event exists for the user and that their `signup_attributed` row carries an `oppref` stored with `ad_consent: "granted"`. If so it sends `POST https://anythingmcp.com/api/ads/signup` with the service token:
+
+```json
+{
+  "userId": "…",
+  "organizationId": "…",
+  "verifiedAt": "<now>",
+  "oppref": "…",
+  "adConsent": "granted",
+  "email": "<the address that signed up>"
+}
+```
+
+The site sends it to OpenAI's Conversions API as `registration_completed` and is idempotent per `userId`. A 2xx, or a refusal for good, records `ads_signup_reported` (`metadata.kind = 'oppref'`, `metadata.status`). Retries as for activations; a report that fails every attempt is not tried again. Same inert conditions as above.
 
 ## Stored metadata
 
@@ -67,7 +84,7 @@ Stored metadata (the channel is derived on the server, see `packages/backend/src
 }
 ```
 
-Channels: `google_ads`, `paid_other`, `ai_assistant`, `github`, `organic_google`, `organic_search`, `social`, `email`, `website` (came from anythingmcp.com but without its touch, e.g. scripts blocked), `referral`, `direct`.
+Channels: `google_ads`, `chatgpt_ads` (`utm_source=chatgpt_ads`, the tag on our ChatGPT Ads URLs, or an `oppref`; organic ChatGPT links say `utm_source=chatgpt.com` and stay `ai_assistant`), `paid_other`, `ai_assistant`, `github`, `organic_google`, `organic_search`, `social`, `email`, `website` (came from anythingmcp.com but without its touch, e.g. scripts blocked), `referral`, `direct`.
 
 ## Reports
 

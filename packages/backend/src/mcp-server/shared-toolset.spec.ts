@@ -487,6 +487,16 @@ describe('ChatGPT tool set', () => {
     expect(JSON.stringify(listA)).toBe(JSON.stringify((await b.client.listTools()).tools));
   });
 
+  it('keeps its server instructions to cross-tool rules within 512 characters', async () => {
+    const { client } = await connectGpt([]);
+    const text = client.getInstructions()!;
+    expect(text).toBe(sharedToolsetInstructions('chatgpt'));
+    expect(text).not.toBe(SHARED_TOOLSET_INSTRUCTIONS);
+    expect(text.length).toBeLessThanOrEqual(512);
+    // No walk-through of the tool list: that is what the descriptions are for.
+    expect(text).not.toMatch(/anythingmcp_(search_tools|describe_tool|run_read_tool|run_read_steps)/);
+  });
+
   it('sets readOnlyHint, destructiveHint and openWorldHint on every tool', async () => {
     const { client } = await connectGpt([]);
     for (const t of (await client.listTools()).tools) {

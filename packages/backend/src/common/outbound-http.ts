@@ -80,12 +80,25 @@ export interface OutboundRequestOptions {
    * another origin that would send the body again (307/308) is refused.
    */
   credentialsInBody?: boolean;
+  /**
+   * Ignore the env/DB SSRF allowlists for this call and every redirect hop
+   * (see {@link VetHostOptions} in `ssrf.util.ts`). Use this when the target
+   * is a URL a workspace admin supplies for something other than a
+   * connector — an alert webhook, for instance — so it never inherits trust
+   * an admin granted a connector for an unrelated reason.
+   */
+  skipAllowlists?: boolean;
 }
 
 let sharedAgents: { httpAgent: http.Agent; httpsAgent: https.Agent } | null = null;
+let sharedStrictAgents: { httpAgent: http.Agent; httpsAgent: https.Agent } | null = null;
 
-function guardedAgents() {
+function guardedAgents(options?: OutboundRequestOptions) {
   // The lookup reads process.env on every call, so one pair serves all.
+  if (options?.skipAllowlists) {
+    sharedStrictAgents ??= createSsrfGuardedAgents(process.env, { skipAllowlists: true });
+    return sharedStrictAgents;
+  }
   sharedAgents ??= createSsrfGuardedAgents();
   return sharedAgents;
 }
@@ -100,7 +113,7 @@ let sharedAdapter: AxiosAdapter | null = null;
 export function outboundAxiosOptions(
   options?: OutboundRequestOptions,
 ): Pick<AxiosRequestConfig, 'httpAgent' | 'httpsAgent' | 'adapter'> {
-  const { httpAgent, httpsAgent } = guardedAgents();
+  const { httpAgent, httpsAgent } = guardedAgents(options);
   const adapter = options
     ? createOutboundAdapter(options)
     : (sharedAdapter ??= createOutboundAdapter({}));
@@ -143,7 +156,7 @@ function createOutboundAdapter(options: OutboundRequestOptions): AxiosAdapter {
     };
 
     for (let redirects = 0; ; redirects++) {
-      await assertSafeOutboundUrl(url);
+      await assertSafeOutboundUrl(url, process.env, { skipAllowlists: options.skipAllowlists });
       if (deadline) {
         const left = deadline - Date.now();
         if (left <= 0) {

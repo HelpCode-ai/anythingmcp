@@ -446,6 +446,31 @@ describe('AdaptersService.verifyCredentials', () => {
     expect(out).toMatchObject({ ok: false, kind: 'auth_failed', status: 401 });
   });
 
+  it('shows the start of the provider answer when the error message lacks it', async () => {
+    // 10 Oct 2026: a ShipStation user saw only "Request failed with status
+    // code 500", without ShipStation's reason or the request id its support asks for.
+    const err: any = new Error('Request failed with status code 500');
+    err.response = {
+      status: 500,
+      data: { request_id: 'req-123', errors: [{ message: 'An internal error occurred.', error_code: 'unspecified' }] },
+    };
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out: any = await service.verifyCredentials('shipstation', 'org1', { SHIPSTATION_API_KEY: 'k'.repeat(32) });
+    expect(out).toMatchObject({ ok: false, status: 500 });
+    expect(out.message).toContain('ShipStation accepted the key');
+    expect(out.message).toContain('req-123');
+    expect(out.message).toContain('An internal error occurred.');
+  });
+
+  it('does not repeat a body the error message already carries', async () => {
+    const err: any = new Error('401 Unauthorized: invalid token');
+    err.status = 401;
+    err.response = { status: 401, data: 'invalid token' };
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out: any = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: 'bad' });
+    expect(out.message.match(/invalid token/g)).toHaveLength(1);
+  });
+
   it('names what is still empty without calling the API', async () => {
     const execute = jest.fn();
     const { service } = build(execute);
@@ -623,7 +648,7 @@ describe('AdaptersService unlisted adapters', () => {
   }
 
   // Did not match the vendor's API and could not be verified (Oct 2026 audit).
-  const unlisted = ['teamsystem', 'sage-100', 'elo', 'cas-genesisworld', 'haufe-x360', 'zucchetti', 'payone'];
+  const unlisted = ['teamsystem', 'sage-100', 'elo', 'cas-genesisworld', 'zucchetti', 'payone'];
 
   it('are neither listed nor installable, on the cloud or on self-host', () => {
     for (const mode of ['cloud', undefined]) {
@@ -702,5 +727,130 @@ describe('AdaptersService popular connectors', () => {
     const items = await svc.popularConnectors('org1');
     expect(items[0].slug).toBe('telegram-bot');
     expect(items.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('sap-s4hana-cloud: token URL and refused client credentials', () => {
+  const adapter = require('./intl/sap-s4hana-cloud.json');
+
+  it('gives one token URL everywhere: the tenant API host, as OAuth 2.0 Details shows it', () => {
+    // The BTP address appears only as the one not to use.
+    const notToUse = /Do not use a BTP URL such as `[^`]+`/;
+    expect(adapter.instructions).toMatch(notToUse);
+    const tokenUrls = [adapter.instructions.replace(notToUse, ''), adapter.envVarMeta.S4_TOKEN_URL.example]
+      .join('\n')
+      .match(/https:\/\/[^\s`"]+\/oauth2?\/token/g);
+    expect(tokenUrls?.length).toBeGreaterThanOrEqual(2);
+    for (const url of tokenUrls!) {
+      expect(url).toMatch(/^https:\/\/my\d+-api\.s4hana\.cloud\.sap\/sap\/bc\/sec\/oauth2\/token$/);
+    }
+    expect(adapter.instructions).toMatch(/https:\/\/my300000-api\.s4hana\.cloud\.sap`/);
+  });
+
+  it('lists the four causes when the token request is refused', async () => {
+    const err: any = new Error(
+      'OAuth2 client_credentials: could not obtain an access token from my123456-api.s4hana.cloud.sap (HTTP 401: invalid_client).',
+    );
+    err.status = 401;
+    const service = new AdaptersService(
+      { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: jest.fn().mockRejectedValue(err) } as any,
+    );
+    const out: any = await service.verifyCredentials('sap-s4hana-cloud', 'org1', {
+      S4_BASE_URL: 'https://my123456-api.s4hana.cloud.sap',
+      S4_TOKEN_URL: 'https://my123456-api.s4hana.cloud.sap/sap/bc/sec/oauth2/token',
+      S4_CLIENT_ID: 'COMM_USER',
+      S4_CLIENT_SECRET: 'secret',
+    });
+    expect(out).toMatchObject({ ok: false, status: 401 });
+    expect(out.message).toMatch(/\(1\) the token URL/);
+    expect(out.message).toMatch(/\(2\) the client ID and secret are those of the communication user/);
+    expect(out.message).toMatch(/\(3\) a communication arrangement exists/);
+    expect(out.message).toMatch(/\(4\) no scope is set/);
+    expect(out.message).toContain('invalid_client');
+  });
+});
+
+describe('AdaptersService.verifyCredentials: Odoo JSON-2 answering 404', () => {
+  // Two stuck users in October 2026 were on Odoo 19 with a wrong database
+  // name: the old hint ("older than 19, or the database name is wrong")
+  // offered the JSON-RPC connector, and they failed there too.
+  const creds = { ODOO_URL: 'https://binikit.odoo.com', ODOO_DB: 'binikit', ODOO_API_KEY: 'k' };
+
+  function build() {
+    const err: any = new Error('404 NOT FOUND: Request failed with status code 404');
+    err.status = 404;
+    return new AdaptersService(
+      { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: jest.fn().mockRejectedValue(err) } as any,
+    );
+  }
+
+  /** Answers Odoo's routes: `version` for /jsonrpc, `databases` for /web/database/list. */
+  function odooAnswers(opts: { version?: unknown[]; serie?: string; databases?: string[]; typo?: boolean }) {
+    outbound.mockReset();
+    outbound.mockImplementation(async (config: any) => {
+      if (opts.typo) {
+        return {
+          status: 404,
+          data: '<html><body><script>window.location = `https://www.odoo.com/typo?domain=binikit.odoo.com&autodbname=binikit`;</script></body></html>',
+        } as any;
+      }
+      if (config.url.endsWith('/jsonrpc')) {
+        return { status: 200, data: { result: { server_version_info: opts.version, server_serie: opts.serie } } } as any;
+      }
+      if (config.url.endsWith('/web/database/list')) {
+        return { status: 200, data: { result: opts.databases ?? [] } } as any;
+      }
+      throw new Error(`unexpected ${config.url}`);
+    });
+  }
+
+  afterEach(() => outbound.mockReset());
+
+  it('offers the JSON-RPC connector only when Odoo says it is older than 19', async () => {
+    odooAnswers({ version: [17, 0, 0, 'final', 0, ''], serie: '17.0' });
+    const out: any = await build().verifyCredentials('odoo', 'org1', creds);
+    expect(out).toMatchObject({ ok: false, suggest: 'odoo-jsonrpc' });
+    expect(out.message).toMatch(/version 17\.0, older than 19/);
+    expect(outbound).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://binikit.odoo.com/jsonrpc',
+        data: expect.objectContaining({ params: { service: 'common', method: 'version', args: [] } }),
+      }),
+    );
+  });
+
+  it('on Odoo 19 says the database name is wrong and names the right one, at the root of the address', async () => {
+    odooAnswers({ version: ['saas~19', 3, 0, 'final', 0, 'e'], serie: 'saas~19.3', databases: ['binikit-main-12245208'] });
+    const out: any = await build().verifyCredentials('odoo', 'org1', creds);
+    expect(out.ok).toBe(false);
+    expect(out.suggest).toBeUndefined();
+    expect(out.message).toMatch(/version saas~19\.3 and has the JSON-2 API, so the database name "binikit" is wrong/);
+    expect(out.message).toContain('"binikit-main-12245208"');
+    const urls = outbound.mock.calls.map(([c]: any) => c.url);
+    expect(urls).toContain('https://binikit.odoo.com/web/database/list');
+    expect(urls.some((u: string) => u.includes('/json/2/'))).toBe(false);
+  });
+
+  it("says the address is not an Odoo database on Odoo Online's typo page", async () => {
+    odooAnswers({ typo: true });
+    const out: any = await build().verifyCredentials('odoo', 'org1', creds);
+    expect(out.ok).toBe(false);
+    expect(out.suggest).toBeUndefined();
+    expect(out.message).toMatch(/This address is not an Odoo database/);
+    expect(out.message).toMatch(/Check the address you open Odoo at/);
+  });
+
+  it('keeps the old hint and suggestion when Odoo does not tell its version', async () => {
+    outbound.mockReset();
+    outbound.mockRejectedValue(new Error('ECONNREFUSED'));
+    const out: any = await build().verifyCredentials('odoo', 'org1', creds);
+    expect(out).toMatchObject({ ok: false, suggest: 'odoo-jsonrpc' });
+    expect(out.message).toMatch(/older than 19, or the database name is wrong/);
   });
 });

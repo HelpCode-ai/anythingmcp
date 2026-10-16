@@ -76,9 +76,11 @@ export const ProductEvents = {
   /**
    * A search of the connector catalog: metadata.query, metadata.results (how
    * many connectors matched), metadata.via (where: 'store', 'welcome', or
-   * 'mcp' when the model searched from a chat) and, from a chat,
-   * metadata.missing (the words no connector mentions). Answers: which apps people
-   * look for that we have no connector for (results = 0), and which we have
+   * 'mcp' when the model searched from a chat), metadata.missing (the words no
+   * connector matches) and, when there are results, metadata.match: 'direct',
+   * or 'fuzzy' (found only with a typo forgiven, "telgram") or 'partial'
+   * (only some of the words matched). Answers: which apps people look for that
+   * we have no connector for (results = 0, or missing set), and which we have
    * but they did not take (read against catalog_search_picked).
    */
   CATALOG_SEARCH: 'catalog_search',
@@ -87,12 +89,66 @@ export const ProductEvents = {
   /**
    * Cloud: the workspace's first successful tool call was handed to the
    * licence site, to be uploaded to Google Ads as an activation conversion
-   * against the sign-up's click id (see ads-activation.service.ts). Once per
-   * workspace; metadata.kind = which click id (gclid, gbraid, wbraid),
+   * against the sign-up's click id (see ads-activation.service.ts), and to
+   * ChatGPT Ads when the sign-up carried an `oppref`. Once per workspace;
+   * metadata.kind = which click id (gclid, gbraid, wbraid, oppref; two
+   * joined by "+" when the sign-up carried both),
    * metadata.status = the site's HTTP answer (2xx queued, 4xx refused for
    * good). Server-only. Its presence is what stops a second report.
    */
   ADS_ACTIVATION_REPORTED: 'ads_activation_reported',
+  /**
+   * Cloud: a user who signed up from a ChatGPT Ads click (an `oppref` stored
+   * with ad consent) verified their email address, and the licence site was
+   * told, to report the verified sign-up to ChatGPT Ads (see
+   * ads-signup.service.ts). Once per user; metadata.kind = 'oppref',
+   * metadata.status = the site's HTTP answer. Server-only.
+   */
+  ADS_SIGNUP_REPORTED: 'ads_signup_reported',
+  /**
+   * Cloud: a workspace on the no-card trial made its first successful tool
+   * call and is offered the card trial in the app and by email (see
+   * card-trial-offer.ts). Once per workspace; metadata.connectorId,
+   * adapterSlug and toolName = the call that did it. Server-only.
+   */
+  CARD_TRIAL_OFFER_ELIGIBLE: 'card_trial_offer_eligible',
+  /**
+   * The in-app offer, as an admin saw it (at most once a day per user and
+   * browser), clicked its button, or dismissed it. metadata.via = the page:
+   * 'dashboard', 'connectors' or 'connect'. Read against the eligible event.
+   */
+  CARD_TRIAL_OFFER_SHOWN: 'card_trial_offer_shown',
+  CARD_TRIAL_OFFER_CLICKED: 'card_trial_offer_clicked',
+  CARD_TRIAL_OFFER_DISMISSED: 'card_trial_offer_dismissed',
+  /**
+   * The offer email went out to the workspace's admins. metadata.connectorId,
+   * metadata.kind = 'trial' (linked to the card trial) or 'plan' (under 48 h
+   * of trial left, linked to the plans). Server-only.
+   */
+  CARD_TRIAL_OFFER_EMAILED: 'card_trial_offer_emailed',
+  /**
+   * The card-trial page (/start-trial) was opened, once per page load.
+   * metadata.source = the entry point that led there (CHECKOUT_SOURCES in
+   * license-checkout.ts, e.g. 'first_success_banner', 'first_success_email',
+   * 'trial_banner'), metadata.kind = 'trial' (card trial on offer) or 'pay'
+   * (the address had a subscription, the plan is billed today). Answers how
+   * many clicks on each entry point, emails included, reach the page.
+   */
+  START_TRIAL_VIEWED: 'start_trial_viewed',
+  /**
+   * Its checkout button was pressed: metadata.source and metadata.kind as
+   * above. Read against start_trial_viewed (who leaves without trying) and
+   * checkout_link_created (who reaches Stripe).
+   */
+  START_TRIAL_CHECKOUT_STARTED: 'start_trial_checkout_started',
+  /**
+   * The app minted a Stripe Checkout link (POST /api/license/checkout-link).
+   * metadata.via = the entry point it came from (CHECKOUT_SOURCES, 'app' when
+   * the page did not say), metadata.kind = 'trial' (card trial) or 'pay'.
+   * Server-only. Answers how many clicks reach Checkout; Stripe says how many
+   * finish (metadata.checkout_source, the same value).
+   */
+  CHECKOUT_LINK_CREATED: 'checkout_link_created',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -107,13 +163,20 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
   ProductEvents.ADS_ACTIVATION_REPORTED,
+  ProductEvents.ADS_SIGNUP_REPORTED,
+  ProductEvents.CARD_TRIAL_OFFER_ELIGIBLE,
+  ProductEvents.CARD_TRIAL_OFFER_EMAILED,
+  ProductEvents.CHECKOUT_LINK_CREATED,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
 );
 const MAX_METADATA_BYTES = 1024;
-/** Two touches of up to fifteen capped fields each, three of them click ids of up to 150 chars. */
-const MAX_ATTRIBUTION_BYTES = 5120;
+/**
+ * Two touches of up to sixteen capped fields each: three Google click ids of
+ * up to 150 chars and an `oppref` of up to 500.
+ */
+const MAX_ATTRIBUTION_BYTES = 6144;
 
 @Injectable()
 export class ProductEventService {
@@ -152,8 +215,8 @@ export class ProductEventService {
   }
 
   /**
-   * The Google Ads click id this user signed up through, if they granted ad
-   * consent: read from their own `signup_attributed` event only, keyed by the
+   * The ad click ids this user signed up through (one Google id, an
+   * `oppref`, or both), if they granted ad consent: read from their own `signup_attributed` event only, keyed by the
    * user id alone. Null when there is none.
    */
   async clickIdForUser(userId: string | null | undefined): Promise<AttributionClickId | null> {
@@ -198,16 +261,19 @@ export class ProductEventService {
  */
 // `kind`: what a setup involved or why its check failed ('credentials',
 // 'auth'); `via`: where a connector was set up ('mcp' when from the chat).
-// `query`, `results`, `missing`: a catalog search (see sanitizeSearchQuery);
-// `missing` = the query's words no connector mentions.
+// `query`, `results`, `missing`, `match`: a catalog search (see
+// sanitizeSearchQuery); `missing` = the query's words no connector matches,
+// `match` = how the results matched (see CATALOG_SEARCH).
 // `status`, `toolName`, `error`: why a setup check or sign-in failed (the
 // provider's message, passed through scrubProviderMessage by the server);
 // `verified`: whether a completed setup made a successful call.
 const METADATA_KEYS = [
-  'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing',
+  'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered',
 ] as const;
 const MAX_QUERY_LENGTH = 100;
+/** The values of `match` (see catalog-search.ts). */
+const SEARCH_MATCH_KINDS = new Set(['direct', 'fuzzy', 'partial']);
 
 function boundMetadata(
   metadata: Record<string, unknown> | null | undefined,
@@ -215,7 +281,12 @@ function boundMetadata(
   if (!metadata || typeof metadata !== 'object') return null;
   const entries: Array<[string, string | number | boolean]> = [];
   for (const key of METADATA_KEYS) {
-    const v = key === 'query' || key === 'missing' ? sanitizeSearchQuery(metadata[key]) : metadata[key];
+    const v =
+      key === 'query' || key === 'missing'
+        ? sanitizeSearchQuery(metadata[key])
+        : key === 'match'
+          ? (SEARCH_MATCH_KINDS.has(metadata[key] as string) ? metadata[key] : null)
+          : metadata[key];
     if (typeof v === 'string') entries.push([key, v.slice(0, 200)]);
     else if (typeof v === 'number' || typeof v === 'boolean') entries.push([key, v]);
   }

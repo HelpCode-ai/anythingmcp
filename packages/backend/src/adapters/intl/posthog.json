@@ -1,0 +1,1329 @@
+{
+  "slug": "posthog",
+  "name": "PostHog",
+  "description": "Let your AI answer product analytics questions from PostHog: run read-only SQL (HogQL) over events and persons, compute trends, funnels and retention, read saved insights and dashboards, look up persons, cohorts, annotations and experiments, and manage insights and feature flags. PostHog Cloud (US or EU) or self-hosted, with a personal API key.",
+  "instructions": "## PostHog\nThis connector works with PostHog's private REST API on the app host (`https://us.posthog.com`, `https://eu.posthog.com` or your self-hosted address), signed in with a **personal API key** as the user who created it: the AI sees and changes what that user can. It covers the current user, organizations and projects, read-only SQL queries (HogQL) and insight queries (trends, funnels, retention), persons, saved insights (read, create, change), dashboards, feature flags (read, create, change), cohorts, annotations and experiments.\n\n**Setup (about 3 minutes)**\n1. In PostHog open **Settings** -> **User** -> **Personal API keys** (US Cloud: https://us.posthog.com/settings/user-api-keys, EU Cloud: https://eu.posthog.com/settings/user-api-keys) and click **+ Create a personal API key**.\n2. Give it a label (for example \"AnythingMCP\") and choose the **organization and project access**: all, one organization, or specific projects. A key limited to specific projects cannot list organizations or projects (PostHog only allows such keys on project endpoints); `posthog_get_current_user` still works and names the current project.\n3. Pick the scopes. For every tool here: `user:read`, `organization:read`, `project:read`, `query:read`, `person:read`, `insight:read`, `insight:write`, `dashboard:read`, `feature_flag:read`, `feature_flag:write`, `cohort:read`, `annotation:read`, `annotation:write` and `experiment:read`.\n4. Copy the key right away (it starts with `phx_`; PostHog shows it only once) and paste it into `POSTHOG_PERSONAL_API_KEY`.\n5. Set `POSTHOG_HOST` to the address you open PostHog at: `https://us.posthog.com` for US Cloud, `https://eu.posthog.com` for EU Cloud, or your own address for a self-hosted instance (no trailing slash, no path). The ingestion hosts `us.i.posthog.com` and `eu.i.posthog.com` only take events and are refused here. A key works only on the cloud region where it was created.\n\n**Read-only setup**: create the key with only the `:read` scopes above and switch off `posthog_create_insight`, `posthog_update_insight`, `posthog_create_feature_flag`, `posthog_update_feature_flag` and `posthog_create_annotation`. `posthog_delete_insight`, `posthog_delete_feature_flag` and `posthog_delete_annotation` are installed switched off. Queries never change data.\n\n**Project ids**: every project tool takes `project_id`, the number in the PostHog URL (`/project/12345/...`) and under **Settings** -> **Project** -> **General**. Call `posthog_get_current_user` first: it returns the current project and the projects of the current organization; `posthog_list_projects` lists the projects of any organization from `posthog_list_organizations`. `@current` is accepted as `project_id` and `organization_id`, but it means the project or organization the user last opened in the PostHog app, which can change under you, and a key scoped to other projects gets 403 for it. Prefer the number.\n\n**Queries**\n- `posthog_run_hogql_query` runs one HogQL statement (PostHog's SQL, ClickHouse-based) through the query endpoint. HogQL only accepts SELECT, so the tool cannot change data even though it is a POST.\n- Main tables: `events` (`event`, `timestamp`, `distinct_id`, `person_id`, `properties`), `persons` (`id`, `created_at`, `properties`), `person_distinct_ids`, `sessions` and `groups`. Read properties with dot notation (`properties.$browser`, `properties.$current_url`, `person.properties.email`) or brackets for odd names (`properties['$feature/new-checkout']`).\n- Always filter on time, e.g. `WHERE timestamp >= now() - INTERVAL 7 DAY`; unfiltered scans of `events` are slow and eat the read budget. Date literals are read in the project's timezone, not UTC: write `toDateTime('2026-10-01 00:00:00', 'UTC')` for an exact instant.\n- Without a `LIMIT` PostHog returns 100 rows; with one, up to 50,000. `OFFSET` is refused with 400 for API keys: page by `timestamp` (events) or `id` (persons) instead, e.g. `WHERE timestamp < '<last timestamp seen>' ORDER BY timestamp DESC LIMIT 500`. Answers over 200 KB are cut and marked `_truncated`.\n- Put user-supplied text in `values` and refer to it as `{name}` in the query instead of pasting it into the SQL.\n- `posthog_run_insight_query` runs PostHog's own insight calculations: `TrendsQuery`, `FunnelsQuery`, `RetentionQuery`, `StickinessQuery`, `LifecycleQuery` and `PathsQuery`. Use it for funnels and retention, which are hard to write in SQL. Conversion and retention percentages are not in the answer: compute them from the `count` values.\n- The query endpoint is meant for ad hoc analysis, not exports: PostHog may throttle or refuse queries that page through large tables. For bulk data use PostHog's batch exports.\n\n**Insights and dashboards**: `posthog_list_insights` returns metadata only by default; `posthog_get_insight` adds the last cached result (refresh `force_cache`, the default, never calculates; `blocking` recalculates when the cache is stale). An insight's `query` is usually `{\"kind\": \"InsightVizNode\", \"source\": {\"kind\": \"TrendsQuery\", ...}}`, or `{\"kind\": \"DataVisualizationNode\", \"source\": {\"kind\": \"HogQLQuery\", \"query\": \"...\"}}` for a SQL insight. `posthog_get_dashboard` returns the dashboard with its tiles and their insights, cut at 200 KB.\n\n**Feature flags**: flags decide what live users see. Before `posthog_create_feature_flag`, `posthog_update_feature_flag` or `posthog_delete_feature_flag`, show the user the flag key, `active` and the rollout and wait for an explicit yes. Targeting lives in `filters.groups`, a list of release conditions each with `properties` and `rollout_percentage` (0 to 100); a new flag is safest with `active` false or a rollout of 0. Pass the flag's `version` from your last read when changing it: flags on PostHog's newer configuration require it, and a stale version is refused with 409 instead of overwriting someone else's change.\n\n**Deleting**: PostHog never hard-deletes insights, flags or annotations through the API; the delete tools set `deleted` to true and the item can be restored in the PostHog app.\n\n**Pagination**: list tools take `limit` and `offset` and return `count` (when PostHog computes it), `next` and `previous` (full URLs; raise `offset` by `limit` to follow `next`, which is null on the last page) and `results`. An empty project answers with an empty `results` list.\n\n**Rate limits** (per organization, shared by every key and user): 480 requests per minute and 4,800 per hour for ordinary reads and writes; 240 per minute and 1,200 per hour for analytics endpoints such as persons and insight calculations; the query endpoint allows 240 per minute and 2,400 per hour, at most 3 queries running at once per project, and draws on an hourly read budget per project (smaller on the free plan). Over a limit PostHog answers 429; an exhausted read budget says `api_queries_budget_exceeded` with Retry-After, while cached results keep working.\n\n**Errors**: 401 (\"Personal API key found in request Authorization header is invalid.\") means the key is wrong, deleted, or from the other cloud region (check `POSTHOG_HOST`). 403 \"API key missing required scope 'x'\" names the scope to add (scopes can be changed on the key later); other 403s mean the key is limited to other projects or organizations, or the organization does not allow personal API keys for members. 404 \"Project not found.\" is a wrong `project_id` or one the user cannot see. 400 names the invalid field; for HogQL it carries the parser error. 409 on a flag is a stale `version`.\n\n**Out of scope here**: capturing events or setting person properties (that is the public ingestion API), deleting persons, the deprecated raw events list endpoint (use `posthog_run_hogql_query` on `events` instead), session replays, surveys, creating or editing dashboards, cohorts and experiments, actions and the data warehouse setup, batch exports, and organization, member and billing administration.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "posthog",
+  "docsUrl": "https://posthog.com/docs/api",
+  "requiredEnvVars": [
+    "POSTHOG_HOST",
+    "POSTHOG_PERSONAL_API_KEY"
+  ],
+  "envVarMeta": {
+    "POSTHOG_HOST": {
+      "label": "PostHog address",
+      "kind": "address",
+      "help": "https://us.posthog.com for US Cloud (the older https://app.posthog.com works too), https://eu.posthog.com for EU Cloud, or your self-hosted PostHog address as you open it in the browser. Without a trailing slash or path. Not the ingestion host (us.i.posthog.com or eu.i.posthog.com), which only receives events.",
+      "example": "https://us.posthog.com",
+      "pattern": "^https://(?:(?:us|eu|app)\\.posthog\\.com|(?![^/]*posthog\\.com(?:[.:]|$))[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+(?::\\d{1,5})?)$",
+      "patternMessage": "Use https://us.posthog.com, https://eu.posthog.com or your self-hosted address (https://...), without a trailing slash or path, and not the ingestion host us.i.posthog.com or eu.i.posthog.com."
+    },
+    "POSTHOG_PERSONAL_API_KEY": {
+      "label": "Personal API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "PostHog -> Settings -> User -> Personal API keys -> + Create a personal API key. Choose the organization or projects it may reach and the scopes (the read scopes are enough for a read-only setup). PostHog shows the key only once.",
+      "link": "https://us.posthog.com/settings/user-api-keys",
+      "pattern": "^phx_[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste the personal API key as PostHog shows it, starting with phx_, without the word Bearer. A project token (phc_) does not work here."
+    }
+  },
+  "verifyHints": {
+    "401": "PostHog refused the key: it is wrong or was deleted, or it belongs to the other cloud region. A US key only works with https://us.posthog.com and an EU key with https://eu.posthog.com.",
+    "403": "The key may not do this: PostHog names the missing scope (add it to the key under Settings -> User -> Personal API keys), or the key is limited to other projects or organizations, or the organization does not allow personal API keys.",
+    "404": "PostHog found nothing at this address. Check POSTHOG_HOST (https://us.posthog.com, https://eu.posthog.com or your self-hosted address, without a path) and the project id.",
+    "rate_limited": "PostHog is rate limiting the organization (480 requests per minute for ordinary calls, 240 for analytics and queries, plus an hourly query read budget). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "posthog_get_current_user"
+  },
+  "prerequisites": "A PostHog account on US Cloud, EU Cloud (the free plan works) or a self-hosted instance, and a personal API key created under Settings -> User -> Personal API keys. About 3 minutes.",
+  "connector": {
+    "name": "PostHog API",
+    "type": "REST",
+    "baseUrl": "{{POSTHOG_HOST}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{POSTHOG_PERSONAL_API_KEY}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/users/@me/"
+  },
+  "tools": [
+    {
+      "name": "posthog_get_current_user",
+      "description": "Get the user the personal API key belongs to: uuid, email and name, the current project (id, name, project_id, timezone), the current organization with the id and name of each of its projects, and every organization the user belongs to. Start here to find project ids; works with every key, also one limited to specific projects.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/users/@me/"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{uuid: uuid, email: email, first_name: first_name, last_name: last_name, current_project: team && {id: team.id, name: team.name, project_id: team.project_id, organization: team.organization, timezone: team.timezone}, current_organization: organization && {id: organization.id, name: organization.name, slug: organization.slug, membership_level: organization.membership_level, projects: organization.teams[].{id: id, name: name, project_id: project_id, timezone: timezone}}, organizations: organizations[].{id: id, name: name, slug: slug, membership_level: membership_level}}"
+        }
+      }
+    },
+    {
+      "name": "posthog_list_organizations",
+      "description": "List the organizations the user belongs to: id (a UUID), name, slug, membership_level, and each organization's projects. Pages with limit and offset; the answer has count, next (null on the last page) and results. A key limited to specific projects gets 403 here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Organizations per page (PostHog's default is 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many organizations to skip, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/organizations/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "posthog_list_projects",
+      "description": "List the projects of an organization: id (the project_id every other tool takes), name, project_id, timezone, tags, is_demo and ingested_event (false until the project received its first event). Pages with limit and offset; the answer has count, next (null on the last page) and results. A key limited to specific projects gets 403 here; use posthog_get_current_user instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "default": "@current",
+            "description": "Organization id (UUID) from posthog_list_organizations or posthog_get_current_user. Default @current, the organization the user last opened in PostHog."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against project names."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Projects per page (PostHog's default is 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many projects to skip, for the next page."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/organizations/{organization_id}/projects/",
+        "encodePathParams": true,
+        "queryParams": {
+          "search": "$search",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "posthog_get_project",
+      "description": "Get one project's settings: name, timezone, week_start_day, base_currency, app_urls, test account filters, group types, whether events arrived, session recording and autocapture settings and the primary dashboard. Project secrets are left out of the answer on purpose.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "default": "@current",
+            "description": "Organization id (UUID) the project belongs to. Default @current, the organization the user last opened in PostHog."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects (also in the PostHog URL /project/<id>/)."
+          }
+        },
+        "required": [
+          "organization_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/organizations/{organization_id}/projects/{project_id}/",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: id, uuid: uuid, project_id: project_id, organization: organization, name: name, product_description: product_description, tags: tags, created_at: created_at, updated_at: updated_at, timezone: timezone, week_start_day: week_start_day, base_currency: base_currency, is_demo: is_demo, ingested_event: ingested_event, completed_snippet_onboarding: completed_snippet_onboarding, app_urls: app_urls, recording_domains: recording_domains, test_account_filters: test_account_filters, test_account_filters_default_checked: test_account_filters_default_checked, path_cleaning_filters: path_cleaning_filters, has_group_types: has_group_types, group_types: group_types, person_display_name_properties: person_display_name_properties, anonymize_ips: anonymize_ips, autocapture_opt_out: autocapture_opt_out, autocapture_exceptions_opt_in: autocapture_exceptions_opt_in, session_recording_opt_in: session_recording_opt_in, session_recording_sample_rate: session_recording_sample_rate, heatmaps_opt_in: heatmaps_opt_in, surveys_opt_in: surveys_opt_in, primary_dashboard: primary_dashboard, access_control: access_control, effective_membership_level: effective_membership_level, user_access_level: user_access_level}",
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "posthog_run_hogql_query",
+      "description": "Run one read-only HogQL (PostHog SQL) SELECT over events, persons, sessions, groups or warehouse tables and return columns, results (rows as arrays), types and the hogql that ran. Read-only although it is a POST: HogQL only accepts SELECT. Filter on timestamp, add a LIMIT (100 rows without one, at most 50,000); OFFSET is refused, page by timestamp instead. Answers over 200 KB are cut.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "query": {
+            "type": "string",
+            "description": "One HogQL SELECT, e.g. SELECT properties.$browser AS browser, count() AS events FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 7 DAY GROUP BY browser ORDER BY events DESC LIMIT 20."
+          },
+          "values": {
+            "type": "object",
+            "description": "Values for {name} placeholders in the query, e.g. {\"event_name\": \"signed_up\"} with WHERE event = {event_name}. Keeps user text out of the SQL."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "default": "AnythingMCP HogQL query",
+            "description": "Short label for the query, shown in PostHog's query log (up to 128 characters)."
+          }
+        },
+        "required": [
+          "project_id",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/projects/{project_id}/query/",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": {
+            "kind": "HogQLQuery",
+            "query": "$query",
+            "values": "$values"
+          },
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "clickhouse",
+            "timings",
+            "modifiers",
+            "explain"
+          ],
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "posthog_run_insight_query",
+      "description": "Run one of PostHog's insight calculations without saving it: TrendsQuery, FunnelsQuery, RetentionQuery, StickinessQuery, LifecycleQuery or PathsQuery. Read-only although it is a POST. Returns results (per series, step or cohort, with count values), plus resolved_date_range and whether the answer is_cached. Compute conversion and retention rates from the counts. Answers over 200 KB are cut.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "query": {
+            "type": "object",
+            "description": "The query with its kind, e.g. {\"kind\": \"TrendsQuery\", \"series\": [{\"kind\": \"EventsNode\", \"event\": \"$pageview\", \"math\": \"dau\"}], \"interval\": \"day\", \"dateRange\": {\"date_from\": \"-30d\"}} or {\"kind\": \"FunnelsQuery\", \"series\": [{\"kind\": \"EventsNode\", \"event\": \"signed_up\"}, {\"kind\": \"EventsNode\", \"event\": \"subscription_started\"}], \"dateRange\": {\"date_from\": \"-30d\"}, \"funnelsFilter\": {\"funnelWindowInterval\": 14, \"funnelWindowIntervalUnit\": \"day\"}}."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "default": "AnythingMCP insight query",
+            "description": "Short label for the query, shown in PostHog's query log (up to 128 characters)."
+          }
+        },
+        "required": [
+          "project_id",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/projects/{project_id}/query/",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": "$query",
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "clickhouse",
+            "timings",
+            "modifiers",
+            "explain"
+          ],
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "posthog_list_persons",
+      "description": "List or search persons (identified users and anonymous visitors): id, uuid, name, distinct_ids, properties, created_at and last_seen_at. search matches email, name, person id or distinct id. Pages with limit and offset; the answer has next (null on the last page) and results, which is empty when nothing matches. Counts as an analytics call for rate limits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against email, name, person id and distinct id; partial values match."
+          },
+          "distinct_id": {
+            "type": "string",
+            "description": "Only the person with this distinct id (exact)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only persons with this email property (exact)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Persons per page (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many persons to skip, for the next page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/persons/",
+        "encodePathParams": true,
+        "queryParams": {
+          "search": "$search",
+          "distinct_id": "$distinct_id",
+          "email": "$email",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "posthog_get_person",
+      "description": "Get one person by numeric id or UUID: name, distinct_ids, all person properties (email, initial UTM and referrer, geo), created_at and last_seen_at. For the person's events, query the events table with posthog_run_hogql_query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "person_id": {
+            "type": "string",
+            "description": "The person's numeric id or UUID, from posthog_list_persons."
+          }
+        },
+        "required": [
+          "project_id",
+          "person_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/persons/{person_id}/",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "posthog_list_insights",
+      "description": "List saved insights (charts): id, short_id, name, description, query, tags, favorited, dashboard_tiles, created_by and last_modified_at. Metadata only by default (basic=true), without results. Pages with limit and offset; the answer has count, next (null on the last page) and results, empty in a new project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against name, description and tags."
+          },
+          "insight": {
+            "type": "string",
+            "enum": [
+              "TRENDS",
+              "FUNNELS",
+              "RETENTION",
+              "PATHS",
+              "STICKINESS",
+              "LIFECYCLE",
+              "SQL",
+              "JSON",
+              "JOURNEYS",
+              "BI"
+            ],
+            "description": "Only insights of this type, e.g. TRENDS, FUNNELS, RETENTION or SQL."
+          },
+          "saved": {
+            "type": "boolean",
+            "description": "true for insights that are saved or on a dashboard only, false for unsaved ones only."
+          },
+          "basic": {
+            "type": "boolean",
+            "default": true,
+            "description": "Return metadata only, without results (default true, much smaller and faster)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "-last_modified_at",
+              "last_modified_at",
+              "-last_viewed_at",
+              "last_viewed_at"
+            ],
+            "description": "Sort order, e.g. -last_modified_at for the most recently changed first."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 25,
+            "description": "Insights per page (default 25)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many insights to skip, for the next page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/insights/",
+        "encodePathParams": true,
+        "queryParams": {
+          "search": "$search",
+          "insight": "$insight",
+          "saved": "$saved",
+          "basic": "$basic",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "posthog_get_insight",
+      "description": "Get one insight by numeric id or 8-character short_id: name, description, query, result, columns, last_refresh, is_cached, the hogql it ran and the dashboards it is on. By default only the cached result comes back (refresh force_cache, which may be null); refresh blocking recalculates when the cache is stale. Answers over 200 KB are cut.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "insight_id": {
+            "type": "string",
+            "description": "Numeric id or 8-character short_id (from the insight's URL /insights/<short_id>)."
+          },
+          "refresh": {
+            "type": "string",
+            "enum": [
+              "force_cache",
+              "blocking",
+              "force_blocking"
+            ],
+            "description": "force_cache (PostHog's default) returns cached results only; blocking recalculates if the cache is stale; force_blocking always recalculates."
+          }
+        },
+        "required": [
+          "project_id",
+          "insight_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/insights/{insight_id}/",
+        "encodePathParams": true,
+        "queryParams": {
+          "refresh": "$refresh"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "posthog_create_insight",
+      "description": "Save a new insight (chart) in the project from a query: a product analytics chart or a SQL insight. Returns the insight with its id and short_id; open it at <POSTHOG_HOST>/project/<project_id>/insights/<short_id>. Run the query with posthog_run_insight_query or posthog_run_hogql_query first to check it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 400,
+            "description": "Insight name, e.g. Weekly signups."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 400,
+            "description": "Optional description."
+          },
+          "query": {
+            "type": "object",
+            "description": "What the chart shows. Product analytics: {\"kind\": \"InsightVizNode\", \"source\": {\"kind\": \"TrendsQuery\", \"series\": [{\"kind\": \"EventsNode\", \"event\": \"signed_up\"}], \"interval\": \"week\", \"dateRange\": {\"date_from\": \"-90d\"}}}. SQL: {\"kind\": \"DataVisualizationNode\", \"source\": {\"kind\": \"HogQLQuery\", \"query\": \"SELECT ...\"}}."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional tags."
+          }
+        },
+        "required": [
+          "project_id",
+          "name",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/projects/{project_id}/insights/",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "query": "$query",
+          "tags": "$tags"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "posthog_update_insight",
+      "description": "Change a saved insight: name, description, query, tags or favorited. Only the fields you pass change, but a new query replaces the old one for everyone who views the chart and the dashboards it is on: confirm with the user first. Returns the updated insight.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "insight_id": {
+            "type": "string",
+            "description": "Numeric id or 8-character short_id of the insight."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 400,
+            "description": "New name."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 400,
+            "description": "New description."
+          },
+          "query": {
+            "type": "object",
+            "description": "New query, the same shape as in posthog_create_insight; replaces the whole query."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "New tags; replaces the existing list."
+          },
+          "favorited": {
+            "type": "boolean",
+            "description": "true to star the insight, false to unstar it."
+          }
+        },
+        "required": [
+          "project_id",
+          "insight_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/projects/{project_id}/insights/{insight_id}/",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "query": "$query",
+          "tags": "$tags",
+          "favorited": "$favorited"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "posthog_delete_insight",
+      "enabled": false,
+      "description": "Delete a saved insight (PostHog marks it deleted; it disappears from every dashboard and can be restored in the app). Confirm the insight's name with the user first. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "insight_id": {
+            "type": "string",
+            "description": "Numeric id or 8-character short_id of the insight."
+          }
+        },
+        "required": [
+          "project_id",
+          "insight_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/projects/{project_id}/insights/{insight_id}/",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "deleted": true
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: id, short_id: short_id, name: name, deleted: deleted}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "posthog_list_dashboards",
+      "description": "List dashboards: id, name, description, pinned, tags, created_by, created_at and last_viewed_at. Pages with limit and offset; the answer has count, next (null on the last page) and results, empty in a new project. Use posthog_get_dashboard for the tiles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against name, description and tags."
+          },
+          "pinned": {
+            "type": "boolean",
+            "description": "true for pinned dashboards only."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Dashboards per page (PostHog's default is 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many dashboards to skip, for the next page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/dashboards/",
+        "encodePathParams": true,
+        "queryParams": {
+          "search": "$search",
+          "pinned": "$pinned",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "posthog_get_dashboard",
+      "description": "Get one dashboard with its filters and tiles: each tile carries its insight (id, short_id, name, query and the last cached result) or a text card. Large dashboards are cut at 200 KB; then read single insights with posthog_get_insight.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "dashboard_id": {
+            "type": "integer",
+            "description": "Dashboard id, from posthog_list_dashboards or the dashboard's URL."
+          }
+        },
+        "required": [
+          "project_id",
+          "dashboard_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/dashboards/{dashboard_id}/",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "posthog_list_feature_flags",
+      "description": "List feature flags: id, key, name (the description), active, filters (release conditions with rollout_percentage, variants, payloads), status (ACTIVE, STALE...), version, tags, last_called_at and created_by. Archived flags are left out. Pages with limit and offset; the answer has count, next (null on the last page) and results, empty in a new project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against flag key and name."
+          },
+          "key": {
+            "type": "string",
+            "description": "Only the flag with exactly this key (case-insensitive)."
+          },
+          "active": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "STALE"
+            ],
+            "description": "true for enabled flags, false for disabled ones, STALE for enabled flags not evaluated in 30 days."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "boolean",
+              "multivariant",
+              "experiment",
+              "remote_config"
+            ],
+            "description": "Only flags of this type."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Flags per page (PostHog's default is 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many flags to skip, for the next page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/feature_flags/",
+        "encodePathParams": true,
+        "queryParams": {
+          "search": "$search",
+          "key": "$key",
+          "active": "$active",
+          "type": "$type",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "posthog_get_feature_flag",
+      "description": "Get one feature flag by id: key, name, active, filters (release condition groups with properties and rollout_percentage, multivariate variants, payloads), version (needed to change it), status, experiments that use it, tags and last_called_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "flag_id": {
+            "type": "integer",
+            "description": "Numeric flag id, from posthog_list_feature_flags (search by key there)."
+          }
+        },
+        "required": [
+          "project_id",
+          "flag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/feature_flags/{flag_id}/",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "posthog_create_feature_flag",
+      "description": "Create a feature flag. An active flag with a rollout above 0 changes what live users see as soon as their SDK refreshes: show the user the key, active and the rollout and confirm with them first. Safest is active false or rollout_percentage 0. Returns the flag with its id and version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "key": {
+            "type": "string",
+            "maxLength": 400,
+            "description": "Flag key the code checks, e.g. new-checkout; unique in the project."
+          },
+          "name": {
+            "type": "string",
+            "description": "Description of the flag (PostHog stores it in the field name)."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Targeting, e.g. {\"groups\": [{\"properties\": [], \"rollout_percentage\": 0}]}. A property condition: {\"key\": \"email\", \"type\": \"person\", \"operator\": \"icontains\", \"value\": \"@acme.com\"}. Variants: \"multivariate\": {\"variants\": [{\"key\": \"control\", \"rollout_percentage\": 50}, {\"key\": \"test\", \"rollout_percentage\": 50}]}."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Whether the flag is served at all. Pass false to create it switched off."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional tags."
+          }
+        },
+        "required": [
+          "project_id",
+          "key",
+          "filters",
+          "active"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/projects/{project_id}/feature_flags/",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "key": "$key",
+          "name": "$name",
+          "filters": "$filters",
+          "active": "$active",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "posthog_update_feature_flag",
+      "description": "Change a feature flag: switch it on or off, change its rollout or targeting, rename its description, archive it or retag it. This changes what live users see right away: show the user the change and confirm with them first. Send the version from your last read; a stale version is refused with 409. Returns the updated flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "flag_id": {
+            "type": "integer",
+            "description": "Numeric flag id, from posthog_list_feature_flags."
+          },
+          "version": {
+            "type": "integer",
+            "description": "The flag's version from posthog_get_feature_flag. Required for flags on PostHog's newer configuration; a mismatch means someone changed the flag since and is refused with 409."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true to serve the flag, false to switch it off for everyone."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Complete new targeting (replaces the old one), e.g. {\"groups\": [{\"properties\": [], \"rollout_percentage\": 25}]}. Start from the filters of posthog_get_feature_flag and change only what the user asked."
+          },
+          "name": {
+            "type": "string",
+            "description": "New description of the flag."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true to archive the flag (it must be inactive), false to unarchive it."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "New tags; replaces the existing list."
+          }
+        },
+        "required": [
+          "project_id",
+          "flag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/projects/{project_id}/feature_flags/{flag_id}/",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "version": "$version",
+          "active": "$active",
+          "filters": "$filters",
+          "name": "$name",
+          "archived": "$archived",
+          "tags": "$tags"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "posthog_delete_feature_flag",
+      "enabled": false,
+      "description": "Delete a feature flag (PostHog marks it deleted and switches it off; code that checks the key then gets false). Confirm the flag key with the user first. Send the version from your last read. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "flag_id": {
+            "type": "integer",
+            "description": "Numeric flag id, from posthog_list_feature_flags."
+          },
+          "version": {
+            "type": "integer",
+            "description": "The flag's version from posthog_get_feature_flag; required for flags on PostHog's newer configuration."
+          }
+        },
+        "required": [
+          "project_id",
+          "flag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/projects/{project_id}/feature_flags/{flag_id}/",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "deleted": true,
+          "version": "$version"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: id, key: key, active: active, deleted: deleted, version: version}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "posthog_list_cohorts",
+      "description": "List cohorts (saved groups of persons): id, name, description, count (persons in it), is_static, is_calculating, filters and created_at. Pages with limit and offset; the answer has count, next (null on the last page) and results, empty in a new project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against cohort names."
+          },
+          "basic": {
+            "type": "boolean",
+            "default": true,
+            "description": "Leave out query, groups and error details (default true, smaller)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Cohorts per page (PostHog's default is 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many cohorts to skip, for the next page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/cohorts/",
+        "encodePathParams": true,
+        "queryParams": {
+          "search": "$search",
+          "basic": "$basic",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "posthog_get_cohort",
+      "description": "Get one cohort by id: name, description, its definition (filters or query), count of persons, whether it is static or behavioral, last_calculation and any calculation error.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "cohort_id": {
+            "type": "integer",
+            "description": "Cohort id, from posthog_list_cohorts."
+          }
+        },
+        "required": [
+          "project_id",
+          "cohort_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/cohorts/{cohort_id}/",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "posthog_list_annotations",
+      "description": "List annotations (notes on charts such as releases or incidents): id, content, date_marker, scope, the insight or dashboard they belong to, created_by and created_at. Pages with limit and offset; the answer has count, next (null on the last page) and results, empty when there are none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against the annotation content."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Annotations per page (PostHog's default is 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many annotations to skip, for the next page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/annotations/",
+        "encodePathParams": true,
+        "queryParams": {
+          "search": "$search",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "posthog_get_annotation",
+      "description": "Get one annotation by id: content, date_marker, scope (project, organization, dashboard or insight), emoji, the insight or dashboard it is attached to, created_by and created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "annotation_id": {
+            "type": "integer",
+            "description": "Annotation id, from posthog_list_annotations."
+          }
+        },
+        "required": [
+          "project_id",
+          "annotation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/annotations/{annotation_id}/",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "posthog_create_annotation",
+      "description": "Add an annotation, a note shown on charts at a point in time, e.g. a release, a campaign start or an incident. Visible to the whole project (or organization) by default. Returns the annotation with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 8192,
+            "description": "The note, e.g. Released checkout v2."
+          },
+          "date_marker": {
+            "type": "string",
+            "description": "When it happened, ISO 8601 with a timezone, e.g. 2026-10-11T09:30:00Z."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "project",
+              "organization",
+              "dashboard",
+              "dashboard_item"
+            ],
+            "default": "project",
+            "description": "Where it shows: project (default), organization, dashboard (set dashboard_id) or dashboard_item for one insight (set dashboard_item)."
+          },
+          "dashboard_id": {
+            "type": "integer",
+            "description": "Dashboard id, for scope dashboard."
+          },
+          "dashboard_item": {
+            "type": "integer",
+            "description": "Numeric insight id, for scope dashboard_item."
+          }
+        },
+        "required": [
+          "project_id",
+          "content",
+          "date_marker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/projects/{project_id}/annotations/",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "content": "$content",
+          "date_marker": "$date_marker",
+          "scope": "$scope",
+          "dashboard_id": "$dashboard_id",
+          "dashboard_item": "$dashboard_item"
+        }
+      }
+    },
+    {
+      "name": "posthog_delete_annotation",
+      "enabled": false,
+      "description": "Delete an annotation (PostHog marks it deleted; it disappears from every chart and can be restored). Confirm the annotation with the user first. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "annotation_id": {
+            "type": "integer",
+            "description": "Annotation id, from posthog_list_annotations."
+          }
+        },
+        "required": [
+          "project_id",
+          "annotation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/projects/{project_id}/annotations/{annotation_id}/",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "deleted": true
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "posthog_list_experiments",
+      "description": "List A/B test experiments: id, name, description, status, start_date, end_date, feature_flag_key, type, conclusion, archived and created_by. Archived experiments are left out unless archived is true. Pages with limit and offset; the answer has count, next (null on the last page) and results, empty in a new project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against the experiment name and its feature flag key."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "draft",
+              "running",
+              "paused",
+              "stopped",
+              "complete"
+            ],
+            "description": "Only experiments in this state, e.g. running."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true for archived experiments only."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Experiments per page (PostHog's default is 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many experiments to skip, for the next page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/experiments/",
+        "encodePathParams": true,
+        "queryParams": {
+          "search": "$search",
+          "status": "$status",
+          "archived": "$archived",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "posthog_get_experiment",
+      "description": "Get one experiment by id: status, start and end dates, its feature flag and variants, metrics, parameters, exposure cohort, conclusion and conclusion_comment. Metric results are not included; compare variants with posthog_run_hogql_query on the $feature/<flag key> event property.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, the number from posthog_get_current_user or posthog_list_projects."
+          },
+          "experiment_id": {
+            "type": "integer",
+            "description": "Experiment id, from posthog_list_experiments."
+          }
+        },
+        "required": [
+          "project_id",
+          "experiment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects/{project_id}/experiments/{experiment_id}/",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    }
+  ]
+}

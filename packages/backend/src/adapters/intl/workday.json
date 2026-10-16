@@ -1,0 +1,998 @@
+{
+  "slug": "workday",
+  "name": "Workday",
+  "aliases": [
+    "Workday HCM",
+    "Workday HR"
+  ],
+  "description": "Give your AI read access to Workday HCM through your own API client: search workers and their staffing, direct reports, supervisory organizations and members, job profiles and positions, time off balances, time off entries, leaves of absence and job postings. Read-only.",
+  "instructions": "## Workday\nThis connector reads your Workday tenant through the **Workday REST API** (`https://<host>/ccx/api/<service>/<version>/<tenant>/...`): workers and their staffing, direct reports, supervisory organizations and their members, organizations by type, job profiles, jobs (positions), time off balances, time off entries, leaves of absence, and job postings. 16 tools, all read-only.\n\n**HR data is sensitive personal data.** Look people up only for a legitimate work reason, show absence and leave data only to the worker, their manager or HR, and never copy it beyond the person who asked. Workday enforces the integration user's security groups on every call, so the connector only sees what that user may see. Compensation, pay slips, home addresses, national IDs and other personal details are not part of this connector.\n\n**Setup (a Workday administrator, about 15 minutes)**\n1. Create an **Integration System User** (task *Create Integration System User*) and put it in an integration security group (task *Create Security Group*, type *Integration System Security Group (Unconstrained)*, or constrained to the organizations you want to expose). Grant the group *Get* (View) access on the domains this connector reads, for example *Worker Data: Public Worker Reports*, *Reports: Organization*, *View: Supervisory Organization*, *Job Profile: View*, *Worker Position: View*, *Worker Data: Time Off (Time Off Balances)*, *Worker Data: Time Off (Time Off)*, *Worker Data: Leave of Absence* and *Job Postings: External*, then run *Activate Pending Security Policy Changes*. Leave out the domains whose tools you do not want to use.\n2. Run **Register API Client for Integrations**: give it a name, tick **Non-Expiring Refresh Tokens**, and add the scopes (functional areas) **Staffing**, **Organizations and Roles**, **Jobs & Positions**, **Time Off and Leave** and **Recruiting** (only those you need). Copy the **Client ID** and **Client Secret**: the secret is shown only once.\n3. Run **Manage Refresh Tokens for Integrations**, pick the Integration System User as the Workday account, then choose **Generate New Refresh Token** for the API client and copy the refresh token.\n4. Run **View API Clients**: the **Token Endpoint** reads `https://<host>/ccx/oauth2/<tenant>/token`. Put `<host>` (for example `wd2-impl-services1.workday.com` or `wd5-services1.myworkday.com`, without `https://`) into `WORKDAY_HOST` and `<tenant>` into `WORKDAY_TENANT`.\n5. Paste the client ID, client secret and refresh token into `WORKDAY_CLIENT_ID`, `WORKDAY_CLIENT_SECRET` and `WORKDAY_REFRESH_TOKEN`. AnythingMCP exchanges the refresh token for a short-lived access token at the token endpoint (client ID and secret as HTTP Basic) and renews it by itself; no browser sign-in is needed.\n\n**IDs**: every tool takes the 32-character Workday ID returned as `id`, and most also accept a reference such as `Employee_ID=21001`, `Organization_Reference_ID=SUP_ORG_100` or `Job_Profile_ID=SOFTWARE_ENGINEER`. `workday_get_time_off_balances` needs the Workday ID itself.\n\n**Workflow**\n- People: `workday_search_workers` (by name, worker ID or email), then `workday_get_worker` for the full staffing record and `workday_list_direct_reports` for a manager's team.\n- Org structure: `workday_list_supervisory_organizations`, `workday_get_supervisory_organization`, `workday_list_organization_members`; other hierarchies with `workday_list_organization_types` and then `workday_list_organizations` with a type id.\n- Jobs: `workday_list_job_profiles`, `workday_get_job_profile`, `workday_list_jobs`.\n- Absence: `workday_get_time_off_balances`, `workday_list_time_off_entries` (requests and their status), `workday_list_leaves_of_absence`.\n- Recruiting: `workday_list_job_postings` (filter by job requisition) and `workday_get_job_posting`. Workday's REST API has no listing of job requisitions themselves; postings carry the open jobs.\n\n**Paging**: lists return `total` and up to `limit` rows (at most 100). Ask for the next page with `offset` = previous offset + limit while it is below `total`.\n\n**Common errors**\n- `OAuth2: could not renew the access token` or `invalid_grant`: the refresh token was revoked or belongs to another API client; generate a new one with *Manage Refresh Tokens for Integrations*. `invalid_client`: wrong client ID or secret.\n- 401: the access token was refused; check that the host and tenant match the token endpoint.\n- 403 or an empty list: the integration user's security group lacks the domain, or the API client lacks the scope (functional area) for this service.\n- 404: the ID does not exist or the tenant name is wrong. 503 `Service unavailable` usually means the tenant name does not exist on that host.\n\n**Out of scope here**: every write (hiring, job changes, time off requests and corrections, contact changes), compensation, payroll and pay slips, benefits, performance and talent data, candidate and prospect records, and Workday Query Language reports.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "workday",
+  "docsUrl": "https://community.workday.com/sites/default/files/file-hosting/restapi/index.html",
+  "prerequisites": "A Workday administrator: an Integration System User with read access to the HR domains you need, an API client from Register API Client for Integrations (non-expiring refresh tokens, scopes Staffing, Organizations and Roles, Jobs & Positions, Time Off and Leave, Recruiting) and a refresh token from Manage Refresh Tokens for Integrations. About 15 minutes.",
+  "requiredEnvVars": [
+    "WORKDAY_HOST",
+    "WORKDAY_TENANT",
+    "WORKDAY_CLIENT_ID",
+    "WORKDAY_CLIENT_SECRET",
+    "WORKDAY_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "WORKDAY_HOST": {
+      "label": "Workday API host",
+      "kind": "address",
+      "secret": false,
+      "help": "The host of the Token Endpoint shown by the View API Clients task, without https:// and without a path.",
+      "example": "wd2-impl-services1.workday.com",
+      "pattern": "^[a-z0-9-]+(\\.[a-z0-9-]+)+$",
+      "patternMessage": "Only the host name, for example wd5-services1.myworkday.com, without https:// or /ccx/..."
+    },
+    "WORKDAY_TENANT": {
+      "label": "Tenant name",
+      "kind": "setting",
+      "secret": false,
+      "help": "The tenant in the Token Endpoint https://<host>/ccx/oauth2/<tenant>/token (View API Clients), also the last part of your Workday sign-in URL.",
+      "example": "acme_preview",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "patternMessage": "Only the tenant name, letters, digits, _ or -, without slashes."
+    },
+    "WORKDAY_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "secret": false,
+      "help": "Register API Client for Integrations (or View API Clients): Client ID of the API client.",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the client ID without spaces."
+    },
+    "WORKDAY_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the API client is registered. If it is lost, generate a new secret on the API client.",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the client secret without spaces."
+    },
+    "WORKDAY_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Manage Refresh Tokens for Integrations: choose the Integration System User, then Generate New Refresh Token for this API client.",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the refresh token without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Workday did not accept the request. Check that WORKDAY_HOST and WORKDAY_TENANT match the Token Endpoint shown by View API Clients.",
+    "401": "Workday refused the credentials: the client ID or secret is wrong, or the refresh token was revoked or belongs to another API client. Generate a new refresh token with Manage Refresh Tokens for Integrations.",
+    "403": "Workday accepted the token but the integration user may not read workers. Add the Staffing scope to the API client and give the user's security group access to Worker Data: Public Worker Reports.",
+    "404": "Workday does not know this address. Check WORKDAY_HOST and WORKDAY_TENANT against the Token Endpoint shown by View API Clients.",
+    "503": "Workday answered Service unavailable, which usually means the tenant name does not exist on this host. Check WORKDAY_TENANT."
+  },
+  "probe": {
+    "tool": "workday_search_workers",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Workday",
+    "type": "REST",
+    "baseUrl": "https://{{WORKDAY_HOST}}/ccx/api",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "refresh_token",
+      "tokenUrl": "https://{{WORKDAY_HOST}}/ccx/oauth2/{{WORKDAY_TENANT}}/token",
+      "clientId": "{{WORKDAY_CLIENT_ID}}",
+      "clientSecret": "{{WORKDAY_CLIENT_SECRET}}",
+      "refreshToken": "{{WORKDAY_REFRESH_TOKEN}}",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "workday_search_workers",
+      "description": "Find workers (employees and contingent workers) in Workday by name, worker ID or work email, or page through everyone the integration user may see. Returns total and per worker: Workday id (use it in the other tools), name, employee or contingent worker ID, worker type, business title, job profile, supervisory organization, location, and the public work email and phone. Terminated workers only with include_terminated. Personal HR data: only look people up for a legitimate work reason. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Name or worker ID, case-insensitive. Several words separated by spaces match any of them."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only the worker with this work email."
+          },
+          "include_terminated": {
+            "type": "boolean",
+            "description": "Also return terminated workers. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staffing/v7/{{WORKDAY_TENANT}}/workers",
+        "queryParams": {
+          "search": "$search",
+          "email": "$email",
+          "includeTerminatedWorkers": "$include_terminated",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "descriptor",
+                "workerId": "workerId",
+                "workerType": "workerType.descriptor",
+                "businessTitle": "primaryJob.businessTitle",
+                "jobProfile": "primaryJob.jobProfile.descriptor",
+                "supervisoryOrganization": "primaryJob.supervisoryOrganization.descriptor",
+                "supervisoryOrganizationId": "primaryJob.supervisoryOrganization.id",
+                "location": "primaryJob.location.descriptor",
+                "workEmail": "person.email",
+                "workPhone": "person.phone"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_get_worker",
+      "description": "Get one worker's current staffing record: name, worker ID, worker type, primary job (business title, job profile, supervisory organization, location, job type) and any additional jobs, plus the public work email and phone. No compensation, no home address, no personal identifiers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "description": "The worker: the 32-character Workday ID (id from workday_search_workers) or a reference such as Employee_ID=21001 or Contingent_Worker_ID=C-100."
+          }
+        },
+        "required": [
+          "worker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staffing/v7/{{WORKDAY_TENANT}}/workers/{worker_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "id",
+            "name": "descriptor",
+            "workerId": "workerId",
+            "workerType": "workerType.descriptor",
+            "businessTitle": "primaryJob.businessTitle",
+            "jobProfile": "primaryJob.jobProfile.descriptor",
+            "supervisoryOrganization": "primaryJob.supervisoryOrganization.descriptor",
+            "supervisoryOrganizationId": "primaryJob.supervisoryOrganization.id",
+            "location": "primaryJob.location.descriptor",
+            "workEmail": "person.email",
+            "workPhone": "person.phone",
+            "primaryJobId": "primaryJob.id",
+            "jobType": "primaryJob.jobType.descriptor",
+            "additionalJobs": {
+              "$from": "$.additionalJobs[*]",
+              "$select": {
+                "id": "id",
+                "position": "descriptor",
+                "businessTitle": "businessTitle",
+                "jobProfile": "jobProfile.descriptor",
+                "jobType": "jobType.descriptor",
+                "supervisoryOrganization": "supervisoryOrganization.descriptor",
+                "location": "location.descriptor"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "workday_list_direct_reports",
+      "description": "List the direct reports of a manager: Workday id, name, business title, whether they manage people themselves, supervisory organization, work email and work phone. Walk an org chart by calling it again for each report who is a manager. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "description": "The manager: the Workday ID or a reference such as Employee_ID=21001."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        },
+        "required": [
+          "worker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/common/v1/{{WORKDAY_TENANT}}/workers/{worker_id}/directReports",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "descriptor",
+                "businessTitle": "businessTitle",
+                "isManager": "isManager",
+                "supervisoryOrganization": "primarySupervisoryOrganization.descriptor",
+                "workEmail": "primaryWorkEmail",
+                "workPhone": "primaryWorkPhone"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_list_supervisory_organizations",
+      "description": "List supervisory organizations (the teams of the reporting hierarchy): Workday id, name, organization code, whether it is inactive, and its managers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_inactive": {
+            "type": "boolean",
+            "description": "Also return inactive organizations. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staffing/v7/{{WORKDAY_TENANT}}/supervisoryOrganizations",
+        "queryParams": {
+          "includeInactive": "$include_inactive",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "code": "code",
+                "inactive": "inactive",
+                "managers": {
+                  "$from": "managers[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "descriptor"
+                  }
+                }
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_get_supervisory_organization",
+      "description": "Get one supervisory organization: name, code, whether it is inactive and its managers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Workday ID from workday_list_supervisory_organizations, or a reference such as Organization_Reference_ID=SUP_ORG_100."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staffing/v7/{{WORKDAY_TENANT}}/supervisoryOrganizations/{organization_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "code": "$.code",
+            "inactive": "$.inactive",
+            "managers": {
+              "$from": "$.managers[*]",
+              "$select": {
+                "id": "id",
+                "name": "descriptor"
+              }
+            }
+          },
+          "maxBytes": 10000
+        }
+      }
+    },
+    {
+      "name": "workday_list_organization_members",
+      "description": "List the positions in one supervisory organization and who fills them: position id, business title, worker name and Workday id, job profile, job type and location. Vacant positions have no worker. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Workday ID from workday_list_supervisory_organizations, or a reference such as Organization_Reference_ID=SUP_ORG_100."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staffing/v7/{{WORKDAY_TENANT}}/supervisoryOrganizations/{organization_id}/members",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "position": "descriptor",
+                "businessTitle": "businessTitle",
+                "worker": "worker.descriptor",
+                "workerId": "worker.id",
+                "jobProfile": "jobProfile.descriptor",
+                "jobType": "jobType.descriptor",
+                "supervisoryOrganization": "supervisoryOrganization.descriptor",
+                "location": "location.descriptor"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_list_organization_types",
+      "description": "List the organization types configured in the tenant (for example Company, Cost Center, Region, Supervisory) with their Workday ids. Use an id as organization_type in workday_list_organizations. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/common/v1/{{WORKDAY_TENANT}}/organizationTypes",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "descriptor"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_list_organizations",
+      "description": "List the organizations of one type, for example all cost centers or all companies: Workday id and name. Get the type's id from workday_list_organization_types first. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_type": {
+            "type": "string",
+            "description": "Workday ID of the organization type, from workday_list_organization_types. Required by Workday."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        },
+        "required": [
+          "organization_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/common/v1/{{WORKDAY_TENANT}}/organizations",
+        "queryParams": {
+          "organizationType": "$organization_type",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "descriptor"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_list_job_profiles",
+      "description": "List job profiles (the generic job definitions positions are based on): Workday id, name and whether it is inactive. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_inactive": {
+            "type": "boolean",
+            "description": "Also return inactive job profiles. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staffing/v7/{{WORKDAY_TENANT}}/jobProfiles",
+        "queryParams": {
+          "includeInactive": "$include_inactive",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "inactive": "inactive"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_get_job_profile",
+      "description": "Get one job profile: name, default job title, summary and job description, job level, management level, job category, job families, whether it is public or critical, and the countries it is restricted to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_profile_id": {
+            "type": "string",
+            "description": "Workday ID from workday_list_job_profiles, or a reference such as Job_Profile_ID=SOFTWARE_ENGINEER."
+          }
+        },
+        "required": [
+          "job_profile_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staffing/v7/{{WORKDAY_TENANT}}/jobProfiles/{job_profile_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "defaultJobTitle": "$.defaultJobTitle",
+            "inactive": "$.inactive",
+            "summary": "$.summary",
+            "jobDescription": "$.jobDescription",
+            "jobLevel": "$.jobLevel.descriptor",
+            "managementLevel": "$.managementLevel.descriptor",
+            "jobCategory": "$.jobCategory.descriptor",
+            "jobFamilies": {
+              "$from": "$.jobFamilies[*]",
+              "$select": {
+                "id": "id",
+                "name": "descriptor"
+              }
+            },
+            "public": "$.public",
+            "criticalJob": "$.criticalJob",
+            "restrictedToCountries": "$.restrictedToCountries[*].descriptor"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "workday_list_jobs",
+      "description": "List jobs (filled positions) across the tenant: position id, business title, the worker who fills it, job profile, job type, supervisory organization and location. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staffing/v7/{{WORKDAY_TENANT}}/jobs",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "position": "descriptor",
+                "businessTitle": "businessTitle",
+                "worker": "worker.descriptor",
+                "workerId": "worker.id",
+                "jobProfile": "jobProfile.descriptor",
+                "jobType": "jobType.descriptor",
+                "supervisoryOrganization": "supervisoryOrganization.descriptor",
+                "location": "location.descriptor"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_get_time_off_balances",
+      "description": "Get a worker's absence balances: per time off plan, absence table or leave type the balance (quantity) and its unit (hours or days), as of today or a given date. Absence data is sensitive personal data: only for the worker themselves, their manager or HR. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "description": "The 32-character Workday ID of the worker (id from workday_search_workers). Required."
+          },
+          "effective_date": {
+            "type": "string",
+            "description": "Balances as of this date, YYYY-MM-DD. Default today."
+          },
+          "category": {
+            "type": "string",
+            "description": "Only this time off plan, leave type or absence table, by Workday ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        },
+        "required": [
+          "worker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absenceManagement/v5/{{WORKDAY_TENANT}}/balances",
+        "queryParams": {
+          "worker": "$worker_id",
+          "effective": "$effective_date",
+          "category": "$category",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "plan": "absencePlan.descriptor",
+                "planId": "absencePlan.id",
+                "category": "category.descriptor",
+                "quantity": "quantity",
+                "unit": "unit.descriptor",
+                "effectiveDate": "effectiveDate",
+                "dateOfFirstAbsence": "dateOfFirstAbsence",
+                "position": "position.descriptor"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_list_time_off_entries",
+      "description": "List a worker's time off entries (requested and taken days or hours) in a date range: date, time off type, quantity and unit, status (Approved, Submitted, Not Submitted, Sent Back, Canceled), reason, comment and the ids of the entry and of its time off request. Absence data is sensitive personal data: only for the worker themselves, their manager or HR. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "description": "The worker: the 32-character Workday ID (id from workday_search_workers) or a reference such as Employee_ID=21001 or Contingent_Worker_ID=C-100."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Start of the range, YYYY-MM-DD."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the range, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        },
+        "required": [
+          "worker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absenceManagement/v5/{{WORKDAY_TENANT}}/workers/{worker_id}/timeOffDetails",
+        "queryParams": {
+          "fromDate": "$from_date",
+          "toDate": "$to_date",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "date": "date",
+                "timeOffType": "timeOffType.descriptor",
+                "quantity": "quantity",
+                "unit": "unit.descriptor",
+                "status": "status.descriptor",
+                "reason": "reason.descriptor",
+                "comment": "comment",
+                "timeOffEntryId": "timeOffEntryId",
+                "timeOffRequestId": "timeOffEventId.id",
+                "position": "position.descriptor"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_list_leaves_of_absence",
+      "description": "List a worker's leaves of absence: leave type, status, first day of leave, last day of work, estimated and actual last day of leave, and reason. Leave comments and additional fields are left out because they can hold health or family details. Highly sensitive: only for the worker themselves, their manager or HR, and never share it beyond them. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "description": "The worker: the 32-character Workday ID (id from workday_search_workers) or a reference such as Employee_ID=21001 or Contingent_Worker_ID=C-100."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Start of the range, YYYY-MM-DD."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the range, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        },
+        "required": [
+          "worker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absenceManagement/v5/{{WORKDAY_TENANT}}/workers/{worker_id}/leavesOfAbsence",
+        "queryParams": {
+          "fromDate": "$from_date",
+          "toDate": "$to_date",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "leaveType": "leaveType.descriptor",
+                "status": "status.descriptor",
+                "businessProcessStepStatus": "businessProcessStepStatus",
+                "firstDayOfLeave": "firstDayOfLeave",
+                "lastDayOfWork": "lastDayOfWork",
+                "estimatedLastDayOfLeave": "estimatedLastDayOfLeave",
+                "actualLastDayOfLeave": "actualLastDayOfLeave",
+                "reason": "reason.descriptor"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_list_job_postings",
+      "description": "List job postings (open jobs posted from job requisitions): Workday id, title, job site, start and end date, primary location, time type, job type, remote type, categories and the external URL. Filter by job requisition to see where one requisition is posted. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_requisition": {
+            "type": "string",
+            "description": "Only postings of this job requisition, by Workday ID or a reference such as Job_Requisition_ID=R-100."
+          },
+          "job_site": {
+            "type": "string",
+            "description": "Only postings on this job posting site, by Workday ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first row. Next page: offset + limit, while it is below total."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recruiting/v4/{{WORKDAY_TENANT}}/jobPostings",
+        "queryParams": {
+          "jobRequisition": "$job_requisition",
+          "jobSite": "$job_site",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "jobSite": "jobSite.descriptor",
+                "startDate": "startDate",
+                "endDate": "endDate",
+                "primaryLocation": "primaryLocation.descriptor",
+                "timeType": "timeType.descriptor",
+                "jobType": "jobType.descriptor",
+                "remoteType": "remoteType.name",
+                "company": "company.descriptor",
+                "categories": "categories[*].descriptor",
+                "url": "url"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "workday_get_job_posting",
+      "description": "Get one job posting with its full job description, plus title, job site, dates, locations, time type, job type, remote type and the external URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_posting_id": {
+            "type": "string",
+            "description": "Workday ID from workday_list_job_postings."
+          }
+        },
+        "required": [
+          "job_posting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recruiting/v4/{{WORKDAY_TENANT}}/jobPostings/{job_posting_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "title": "$.title",
+            "jobSite": "$.jobSite.descriptor",
+            "startDate": "$.startDate",
+            "endDate": "$.endDate",
+            "primaryLocation": "$.primaryLocation.descriptor",
+            "additionalLocations": "$.additionalLocations[*].descriptor",
+            "timeType": "$.timeType.descriptor",
+            "jobType": "$.jobType.descriptor",
+            "remoteType": "$.remoteType.name",
+            "company": "$.company.descriptor",
+            "categories": "$.categories[*].descriptor",
+            "url": "$.url",
+            "jobDescription": "$.jobDescription"
+          },
+          "maxBytes": 30000
+        }
+      }
+    }
+  ]
+}

@@ -1,4 +1,12 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
@@ -10,6 +18,7 @@ import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
+import { openEnvVarsStrict, sealEnvVars } from '../common/crypto/env-vars-at-rest';
 import { getRequiredSecret } from '../common/secrets.util';
 import { describeInvalidHeaderNames, invalidConnectorHeaderNames } from '../common/http-header-name.util';
 import {
@@ -218,6 +227,52 @@ export class ConnectorsService {
     return updated;
   }
 
+  /**
+   * Adds variables to a connector, keeping the ones it has. Used when a
+   * secret typed into a URL, header or tool is moved into a variable; the
+   * column is encrypted at rest (env-vars-at-rest.ts).
+   */
+  async addEnvVars(id: string, vars: Record<string, string>): Promise<void> {
+    if (Object.keys(vars).length === 0) return;
+    // The caller has already written `{{NAME}}` into the tool it is about to
+    // store, and the value exists nowhere else: losing it to a concurrent
+    // save (two tools created in parallel, an edit of the variables) would
+    // lose the secret. So the row is replaced only if it is unchanged since it
+    // was read, a variable holding another value is never overwritten, and
+    // variables that cannot be decrypted are never replaced by an empty set.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      // Raw on purpose: what is stored, before the at-rest extension.
+      const rows = await this.prisma.$queryRaw<Array<{ env_vars: unknown }>>`
+        SELECT env_vars FROM connectors WHERE id = ${id}`;
+      if (rows.length === 0) throw new NotFoundException(`Connector ${id} not found`);
+      const stored = rows[0].env_vars;
+      const current = openEnvVarsStrict(stored);
+      if (current === null) {
+        throw new InternalServerErrorException(
+          "The connector's variables cannot be read (check ENCRYPTION_KEY). Nothing was saved.",
+        );
+      }
+      for (const [name, value] of Object.entries(vars)) {
+        if (Object.prototype.hasOwnProperty.call(current, name) && current[name] !== value) {
+          throw new ConflictException(
+            `The variable ${name} of this connector was changed at the same time. Nothing was saved; try again.`,
+          );
+        }
+      }
+      const next = JSON.stringify(sealEnvVars({ ...current, ...vars }));
+      const updated =
+        stored === null || stored === undefined
+          ? await this.prisma.$executeRaw`
+              UPDATE connectors SET env_vars = ${next}::jsonb, updated_at = now()
+              WHERE id = ${id} AND (env_vars IS NULL OR env_vars = 'null'::jsonb)`
+          : await this.prisma.$executeRaw`
+              UPDATE connectors SET env_vars = ${next}::jsonb, updated_at = now()
+              WHERE id = ${id} AND env_vars = ${JSON.stringify(stored)}::jsonb`;
+      if (updated === 1) return;
+    }
+    throw new ConflictException('The connector was changed at the same time. Nothing was saved; try again.');
+  }
+
   async remove(id: string): Promise<void> {
     await this.findById(id);
     await this.prisma.connector.delete({ where: { id } });
@@ -314,10 +369,10 @@ export class ConnectorsService {
         case 'GRAPHQL':
           await this.graphqlEngine.execute(
             {
-              baseUrl: connector.baseUrl,
+              baseUrl,
               authType: connector.authType,
               authConfig,
-              headers: connector.headers as Record<string, string>,
+              headers,
               connectorId: connector.id,
             },
             { method: 'query', path: '{ __typename }' },
@@ -357,10 +412,10 @@ export class ConnectorsService {
           return await this.testSoapConnection(connector.specUrl || undefined, baseUrl);
         case 'MCP': {
           const tools = await this.mcpClientEngine.listTools({
-            baseUrl: connector.baseUrl,
+            baseUrl,
             authType: connector.authType,
             authConfig,
-            headers: connector.headers as Record<string, string>,
+            headers,
             connectorId: connector.id,
             mcpPath: mcpPathOf(connector.config),
           });
@@ -642,6 +697,13 @@ export class ConnectorsService {
      * the env vars, in the same order as a real MCP call.
      */
     parameters?: unknown,
+    /**
+     * `useProxy`: the tool asked for the outbound proxy (mcp_tools.use_proxy),
+     * as an MCP call honours it. Without this the setup check and "Run Test"
+     * went direct and failed for vendors that refuse our servers' address
+     * (Uzum Market, 12 Oct 2026) while real calls would have worked.
+     */
+    options: { useProxy?: boolean } = {},
   ): Promise<unknown> {
     // Inject env vars as parameter defaults
     const envVars = connector.envVars as Record<string, string> | undefined;
@@ -724,6 +786,9 @@ export class ConnectorsService {
       specUrl: connector.specUrl ?? undefined,
       connectorId: connector.id,
       errorWhen: connectorErrorWhen(connector.config),
+      ...(options.useProxy && process.env.CONNECTOR_PROXY_URL
+        ? { proxyUrl: process.env.CONNECTOR_PROXY_URL }
+        : {}),
     };
 
     if (

@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
-import { McpEndpointController } from './mcp-endpoint.controller';
-import { CHATGPT_EXTRA_TOOL_NAMES, SHARED_TOOL_NAMES } from './shared-toolset';
+import { McpEndpointController, isListenRequest } from './mcp-endpoint.controller';
+import { CHATGPT_EXTRA_TOOL_NAMES, SHARED_TOOL_NAMES, sharedToolsetInstructions } from './shared-toolset';
 import type { RegisteredTool } from './tool-registry';
 
 /**
@@ -138,6 +138,43 @@ describe('shared /mcp in fixed mode', () => {
 
   const orgB = { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt', email: 'b@x.io' };
 
+  it('answers subscriptions/listen without resolving the caller\'s tools', async () => {
+    const getAllTools = jest.fn(() => ALL);
+    const { controller } = build();
+    (controller as any).toolRegistry = { getAllTools, countByName: () => 1 };
+    const grants = (controller as any).grants;
+    let built: McpServer | undefined;
+    (controller as any).serveStateless = jest.fn(
+      async (_req: unknown, _res: unknown, _body: unknown, factory: () => McpServer) => {
+        built = factory();
+      },
+    );
+    const req: any = {
+      user: orgB,
+      body: { jsonrpc: '2.0', id: 1, method: 'subscriptions/listen', params: {} },
+      headers: { host: 'x' },
+    };
+    await controller.handleGlobalPost(req, {} as any);
+    expect(getAllTools).not.toHaveBeenCalled();
+    expect(grants.resolve).not.toHaveBeenCalled();
+    expect(grants.clientRedirectUris).not.toHaveBeenCalled();
+    expect(built!.server.getCapabilities()).toEqual({ tools: { listChanged: true } });
+  });
+
+  it('recognises only a single subscriptions/listen message as a listen', () => {
+    expect(isListenRequest({ jsonrpc: '2.0', id: 1, method: 'subscriptions/listen' })).toBe(true);
+    for (const body of [
+      { method: 'tools/list' },
+      [{ method: 'subscriptions/listen' }],
+      'subscriptions/listen',
+      null,
+      undefined,
+      {},
+    ]) {
+      expect(isListenRequest(body)).toBe(false);
+    }
+  });
+
   it('lists only the fixed tool set', async () => {
     const client = await build().connect(orgB);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
@@ -157,7 +194,7 @@ describe('shared /mcp in fixed mode', () => {
     const client = await build().connect({ ...orgB, azp: 'client-chatgpt' });
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(names).toEqual([...SHARED_TOOL_NAMES, ...CHATGPT_EXTRA_TOOL_NAMES].sort());
-    expect(client.getInstructions()).toMatch(/anythingmcp_run_read_steps/);
+    expect(client.getInstructions()).toBe(sharedToolsetInstructions('chatgpt'));
   });
 
   it('falls back to the reviewed set for an unknown client or an API key', async () => {

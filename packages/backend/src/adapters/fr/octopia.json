@@ -1,0 +1,1385 @@
+{
+  "slug": "octopia",
+  "name": "Cdiscount (Octopia)",
+  "description": "Sell on Cdiscount and the Octopia marketplace network from an AI agent: orders with acceptance, shipment and cancellation, offers with prices and stock, the seller's products, customer discussions, fulfilment returns and payouts. Octopia Seller API v2 with OAuth 2.0 client credentials.",
+  "aliases": [
+    "cdiscount",
+    "Cdiscount Marketplace",
+    "Octopia Seller API"
+  ],
+  "region": "fr",
+  "category": "e-commerce",
+  "icon": "cdiscount",
+  "docsUrl": "https://developer.octopia-io.net/",
+  "unlisted": true,
+  "instructions": "## Cdiscount (Octopia) Seller API\nThis connector uses the **Octopia Seller API v2** (`https://api.octopia-io.net/seller/v2`), the REST API behind the Cdiscount marketplace and the other sales channels of the Octopia network. It covers orders (acceptance, shipment, cancellation), offers (price, stock, delivery modes), the seller's products, customer discussions, Octopia Fulfilment returns and payouts.\n\n**Setup (about 10 minutes)**\n1. Open the **API Credentials** page of the Octopia developer portal: https://developer.octopia-io.net/user-guides/api-credentials/\n2. Choose **I'm developing myself or with a development partner**, then **I need a new clientId**. Note the **clientId** and the **clientSecret** (keep the secret safe).\n3. On the same page, choose **Link my SellerAccount and my clientId** and sign in with your seller account. Without this step the token works but every call is refused. The page confirms your **SellerId**.\n4. Paste them into `OCTOPIA_CLIENT_ID`, `OCTOPIA_CLIENT_SECRET` and `OCTOPIA_SELLER_ID`, install, and run `octopia_get_seller`.\n\nThe old Cdiscount marketplace logins (the login and password of the SOAP API or of older plugins) do not work here: the REST API only accepts a clientId and clientSecret.\n\n**Authentication**: AnythingMCP exchanges the client id and secret for a token with the OAuth 2.0 client-credentials grant at `https://auth.octopia-io.net/auth/realms/maas/protocol/openid-connect/token` (credentials in the form body, as Octopia documents), caches the token for its 2 hours and sends it as `Authorization: Bearer`. Every call also carries the `SellerId` header. Octopia allows 500 token requests an hour.\n\n**Sales channels**: Cdiscount is `CDISFR`. Offers, offer packages and some filters are per sales channel; the offer tools default to CDISFR.\n\n**Order workflow**: a new order waits in `WaitingAcceptance`. `octopia_set_order_approval` accepts or refuses it; an accepted order moves to `InPreparation`, where the seller ships it. `octopia_ship_order` confirms the shipment with one entry per parcel (tracking number, carrier from `octopia_list_carriers`, the `orderLineId`s it contains); the lines become `Shipped`, later `Delivered`. Only lines with supply mode `Seller` are shipped this way; `Fulfillment` orders are shipped by Octopia. To cancel and refund, read the allowed codes with `octopia_list_cancellation_reasons` and call `octopia_cancel_order`; follow it with `octopia_list_cancellation_requests`. For the daily to-do list use `octopia_list_orders` with `status=WaitingAcceptance` or `status=InPreparation` and a date range.\n\n**Changing prices and stock** takes three calls, because Octopia applies offer changes in packages:\n1. `octopia_create_offer_package` with `packageType=Update` (or `Upsert` to create or fully replace offers). The package id comes back in `_headers.content-location` as `offer-packages/<packageId>`.\n2. `octopia_add_offer_requests` with up to 100 offers per call, e.g. `{\"sellerExternalReference\": \"SKU1\", \"price\": {\"price\": 49.99}, \"quantity\": 20}`. In an Update package only the fields you send change, but a list (taxes, delivery modes) replaces the whole existing list, and changing `deliveryModes` needs `preparationTime`.\n3. `octopia_submit_offer_package`. Then poll `octopia_get_offer_package` until it is `Integrated` or `Rejected` and check each SKU with `octopia_get_offer_package_results`.\nRead the offers first with `octopia_list_offers` (filter `sellerExternalReferences`). Stock is shared by every sales channel where the same product and condition is offered. Deleting offers uses a Delete package (`octopia_create_offer_delete_package`), which is installed switched off.\n\n**Writes: confirm first.** `octopia_set_order_approval`, `octopia_ship_order`, `octopia_cancel_order`, `octopia_create_offer_package`, `octopia_add_offer_requests`, `octopia_submit_offer_package`, `octopia_reply_discussion` and `octopia_set_discussion_open` act on the live marketplace. Before each call, show the user what will change (order and lines, tracking numbers, SKUs with old and new price or stock, the message text) and wait for a yes. Refusing or cancelling an order cannot be undone.\n\n**Discussions**: `octopia_list_discussions` with `processStatus=ToTreat` lists what waits for an answer (a search covers at most 6 months). `octopia_get_discussion` reads the thread, `octopia_reply_discussion` answers the customer (`Customer`) or the channel's customer service (`GrcOperator`), `octopia_set_discussion_open` closes it.\n\n**Returns**: `octopia_list_returns` covers returns handled by Octopia Fulfilment. Returns of orders you ship yourself are handled through discussions and cancellations.\n\n**Pagination**: orders, discussions, payments and operations use `pageIndex` and `pageSize`. Offers, offer packages, products and returns use a cursor: when the response has `_pagination`, take the `Cursor` (or `cursor`) value from `_pagination.nextUrl` and pass it as `cursor`; no `_pagination` means the last page.\n\n**Errors**: 401 means the token was refused (wrong client id or secret); 403 usually means the clientId is not linked to the seller account, or that a quota is reached; 409 means the order or package is not in a state that allows the change.",
+  "prerequisites": "A Cdiscount (Octopia) seller account, and REST API credentials (clientId and clientSecret) created on the Octopia developer portal and linked to that seller account. About 10 minutes.",
+  "requiredEnvVars": [
+    "OCTOPIA_CLIENT_ID",
+    "OCTOPIA_CLIENT_SECRET",
+    "OCTOPIA_SELLER_ID"
+  ],
+  "envVarMeta": {
+    "OCTOPIA_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Octopia developer portal, API Credentials page: I'm developing myself > I need a new clientId. Then link it to your seller account on the same page.",
+      "link": "https://developer.octopia-io.net/user-guides/api-credentials/",
+      "example": "my-shop-api",
+      "pattern": "^\\S{3,200}$",
+      "patternMessage": "Paste the clientId alone, without spaces or quotes."
+    },
+    "OCTOPIA_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown together with the clientId on the API Credentials page. Not the password of your seller account or of the old SOAP API.",
+      "link": "https://developer.octopia-io.net/user-guides/api-credentials/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the client secret alone, without spaces or quotes."
+    },
+    "OCTOPIA_SELLER_ID": {
+      "label": "Seller ID",
+      "kind": "setting",
+      "help": "Your Octopia seller account number. The API Credentials page confirms it when you link the clientId to your account; it is sent as the SellerId header on every call.",
+      "link": "https://developer.octopia-io.net/user-guides/api-credentials/",
+      "example": "98979",
+      "pattern": "^[0-9]{1,20}$",
+      "patternMessage": "The seller id is a number."
+    }
+  },
+  "verifyHints": {
+    "400": "Octopia refused the token request or the call. Check that OCTOPIA_CLIENT_ID and OCTOPIA_CLIENT_SECRET are the REST API credentials from the developer portal, not a seller portal or SOAP login.",
+    "401": "Octopia refused the credentials. Check OCTOPIA_CLIENT_ID and OCTOPIA_CLIENT_SECRET on the developer portal's API Credentials page, and create a new secret if needed.",
+    "403": "The token works, but this clientId is not allowed to act for OCTOPIA_SELLER_ID. Link the clientId to your seller account on the API Credentials page (Link my SellerAccount and my clientId) and check the seller id. A 403 can also mean a quota was reached; wait and verify again.",
+    "404": "Octopia found no seller with this id. Check OCTOPIA_SELLER_ID.",
+    "rate_limited": "Octopia is rate limiting these credentials. Wait a few minutes before trying again."
+  },
+  "probe": {
+    "tool": "octopia_get_seller"
+  },
+  "connector": {
+    "name": "Cdiscount (Octopia) Seller API",
+    "type": "REST",
+    "baseUrl": "https://api.octopia-io.net/seller/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{OCTOPIA_CLIENT_ID}}",
+      "clientSecret": "{{OCTOPIA_CLIENT_SECRET}}",
+      "tokenUrl": "https://auth.octopia-io.net/auth/realms/maas/protocol/openid-connect/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "SellerId": "{{OCTOPIA_SELLER_ID}}"
+    },
+    "healthcheckPath": "/sellers"
+  },
+  "tools": [
+    {
+      "name": "octopia_get_seller",
+      "description": "Read the seller account behind OCTOPIA_SELLER_ID: seller id, shop name and URL, SIRET, contact e-mails, account state (Activated, Deactivated, PutOnNotice) and sub-state (ActiveSeller, Holidays, BannedSeller). The cheapest check that the credentials and the seller id belong together.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers"
+      }
+    },
+    {
+      "name": "octopia_get_seller_indicators",
+      "description": "Read the seller's performance indicators as Octopia computes them for the sales channels (for example acceptance, shipping and cancellation rates and their thresholds). Use it to explain a warning about the account's quality.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/indicators"
+      }
+    },
+    {
+      "name": "octopia_list_carriers",
+      "description": "List the carriers Octopia retrieves tracking from reliably, with their names and codes. Use a name from this list as carrierName in octopia_ship_order so the parcel can be tracked.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carriers"
+      }
+    },
+    {
+      "name": "octopia_list_orders",
+      "description": "Search orders with their lines, customer, prices and status. Filter by status (WaitingAcceptance for orders to accept, InPreparation for orders to ship), by creation, update or shipping date, by sales channel or supply mode. Always give a date range for routine checks. Pages with pageIndex/pageSize (max 100). The shipping address appears only once a line is InPreparation or later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "One status or several separated by commas: Processing, WaitingAcceptance, Accepted, Refused, InPreparation, Shipped, Delivered, Cancelled, Rejected. Example: WaitingAcceptance or Accepted,InPreparation."
+          },
+          "reference": {
+            "type": "string",
+            "description": "The order reference shown to the customer and in the seller portal."
+          },
+          "salesChannelId": {
+            "type": "string",
+            "description": "Only orders of this sales channel, e.g. CDISFR for Cdiscount."
+          },
+          "supplyMode": {
+            "type": "string",
+            "description": "Seller for orders you ship yourself, Fulfillment for orders shipped by Octopia Fulfilment.",
+            "enum": [
+              "Seller",
+              "Fulfillment"
+            ]
+          },
+          "shippingCountry": {
+            "type": "string",
+            "description": "Two-letter shipping country code, e.g. FR."
+          },
+          "businessOrder": {
+            "type": "boolean",
+            "description": "true for orders placed by business customers only, false for consumers only."
+          },
+          "createdAtMin": {
+            "type": "string",
+            "description": "Created at or after this date-time, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "createdAtMax": {
+            "type": "string",
+            "description": "Created at or before this date-time, ISO 8601."
+          },
+          "updatedAtMin": {
+            "type": "string",
+            "description": "Updated at or after this date-time, ISO 8601. Best filter for polling changes."
+          },
+          "updatedAtMax": {
+            "type": "string",
+            "description": "Updated at or before this date-time, ISO 8601."
+          },
+          "shippedAtMin": {
+            "type": "string",
+            "description": "Shipped at or after this date-time, ISO 8601."
+          },
+          "shippedAtMax": {
+            "type": "string",
+            "description": "Shipped at or before this date-time, ISO 8601."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort ascending by this field: createdAt, updatedAt or shippedAtMax.",
+            "enum": [
+              "createdAt",
+              "updatedAt",
+              "shippedAtMax"
+            ]
+          },
+          "desc": {
+            "type": "string",
+            "description": "Sort descending by this field: createdAt, updatedAt or shippedAtMax. Use desc=createdAt for the newest orders first.",
+            "enum": [
+              "createdAt",
+              "updatedAt",
+              "shippedAtMax"
+            ]
+          },
+          "pageIndex": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "status": "$status",
+          "reference": "$reference",
+          "salesChannelId": "$salesChannelId",
+          "supplyMode": "$supplyMode",
+          "shippingCountry": "$shippingCountry",
+          "businessOrder": "$businessOrder",
+          "createdAtMin": "$createdAtMin",
+          "createdAtMax": "$createdAtMax",
+          "updatedAtMin": "$updatedAtMin",
+          "updatedAtMax": "$updatedAtMax",
+          "shippedAtMin": "$shippedAtMin",
+          "shippedAtMax": "$shippedAtMax",
+          "sort": "$sort",
+          "desc": "$desc",
+          "pageIndex": "$pageIndex",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "octopia_get_order",
+      "description": "Read one order in full: status and status history, sales channel, customer and billing address, every line (orderLineId, offer and seller reference, quantity, prices, delivery mode and dates, shipping address, parcels) and totals. Read it before accepting, shipping or cancelling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "description": "The Octopia order id (orderId from octopia_list_orders), e.g. SELLZZ210525142759UT8E."
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{orderId}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "octopia_set_order_approval",
+      "description": "Accept or refuse an order that is WaitingAcceptance. Accepted orders move on to preparation; a refused order is cancelled for the customer and cannot be taken back. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "description": "The Octopia order id."
+          },
+          "approval_status": {
+            "type": "string",
+            "description": "Accepted to take the order, Refused to decline it.",
+            "enum": [
+              "Accepted",
+              "Refused"
+            ]
+          }
+        },
+        "required": [
+          "orderId",
+          "approval_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{orderId}/approval-status",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "approval_status": "$approval_status"
+        }
+      }
+    },
+    {
+      "name": "octopia_ship_order",
+      "description": "Confirm the shipment of an order or of some of its lines, with one entry per parcel: tracking number, carrier name and the order lines it contains. Only for lines that are InPreparation with supply mode Seller. The customer is notified and the lines move to Shipped. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "description": "The Octopia order id."
+          },
+          "parcels": {
+            "type": "array",
+            "description": "One object per parcel.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "parcelNumber": {
+                  "type": "string",
+                  "description": "Tracking number of the parcel at the carrier."
+                },
+                "carrierName": {
+                  "type": "string",
+                  "description": "Carrier name, preferably as listed by octopia_list_carriers."
+                },
+                "trackingUrl": {
+                  "type": "string",
+                  "description": "Public tracking URL of the parcel, if the carrier has one."
+                },
+                "orderLineIds": {
+                  "type": "array",
+                  "description": "The orderLineId values (from octopia_get_order) of the lines in this parcel. List them whenever the order is split over several parcels or only some lines ship now.",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "parcelNumber",
+                "carrierName"
+              ]
+            }
+          }
+        },
+        "required": [
+          "orderId",
+          "parcels"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{orderId}/shipments",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__raw": "$parcels"
+        }
+      }
+    },
+    {
+      "name": "octopia_list_cancellation_reasons",
+      "description": "List the reasons a seller may give when cancelling an order, for an order status. Use a returned code as reason in octopia_cancel_order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderStatus": {
+            "type": "string",
+            "description": "Status of the order to cancel; the allowed reasons depend on it.",
+            "enum": [
+              "Accepted",
+              "InPreparation",
+              "Shipped",
+              "Delivered"
+            ]
+          },
+          "salesChannel": {
+            "type": "string",
+            "description": "Sales channel id, e.g. CDISFR."
+          },
+          "userType": {
+            "type": "string",
+            "description": "Who cancels. Seller by default.",
+            "enum": [
+              "Seller",
+              "Customer",
+              "SalesChannel",
+              "CustomerCareService"
+            ],
+            "default": "Seller"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cancellation-reasons",
+        "queryParams": {
+          "orderStatus": "$orderStatus",
+          "salesChannel": "$salesChannel",
+          "userType": "$userType"
+        }
+      }
+    },
+    {
+      "name": "octopia_list_cancellation_requests",
+      "description": "List the full and partial cancellation requests of an order, or read one request, with its status (InProgress, Blocked, Done), reason and errors. Give orderSellerId or cancellationRequestId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderSellerId": {
+            "type": "string",
+            "description": "The Octopia order id."
+          },
+          "cancellationRequestId": {
+            "type": "string",
+            "description": "One cancellation request id."
+          },
+          "lineId": {
+            "type": "string",
+            "description": "Only requests for this order line."
+          },
+          "offerId": {
+            "type": "string",
+            "description": "Only requests for this offer."
+          },
+          "salesChannel": {
+            "type": "string",
+            "description": "Sales channel id, e.g. CDISFR."
+          },
+          "pageIndex": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Requests per page.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order-cancellation-requests",
+        "queryParams": {
+          "orderSellerId": "$orderSellerId",
+          "cancellationRequestId": "$cancellationRequestId",
+          "lineId": "$lineId",
+          "offerId": "$offerId",
+          "salesChannel": "$salesChannel",
+          "pageIndex": "$pageIndex",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "octopia_cancel_order",
+      "description": "Cancel a whole order and refund the customer (a full cancellation request). Not possible when a line is already cancelled. Once Octopia accepts the request the order becomes Cancelled and the refund starts; this cannot be undone. Take the reason from octopia_list_cancellation_reasons for the order's status. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderSellerId": {
+            "type": "string",
+            "description": "The Octopia order id to cancel."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Cancellation reason code from octopia_list_cancellation_reasons."
+          },
+          "shippingCostRefund": {
+            "type": "boolean",
+            "description": "Also refund the shipping costs. Octopia's default is true."
+          }
+        },
+        "required": [
+          "orderSellerId",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order-cancellation-requests",
+        "bodyMapping": {
+          "orderSellerId": "$orderSellerId",
+          "reason": "$reason",
+          "shippingCostRefund": "$shippingCostRefund"
+        }
+      }
+    },
+    {
+      "name": "octopia_list_offers",
+      "description": "List the seller's offers on one sales channel: offer id, seller reference (SKU), product GTIN, condition, price and strike-through price, stock, delivery modes, preparation time and state. Filter by seller references, GTINs, offer ids or states, or by last update. Up to 1000 per page; when the response carries _pagination.nextUrl, pass the Cursor value found in it as cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "salesChannelId": {
+            "type": "string",
+            "description": "Sales channel of the offers. CDISFR is Cdiscount.",
+            "default": "CDISFR"
+          },
+          "sellerExternalReferences": {
+            "type": "string",
+            "description": "Seller references (SKUs), separated by commas."
+          },
+          "gtins": {
+            "type": "string",
+            "description": "Product GTIN/EAN codes, separated by commas."
+          },
+          "offerIds": {
+            "type": "string",
+            "description": "Octopia offer ids, separated by commas."
+          },
+          "offerStates": {
+            "type": "string",
+            "description": "Offer states, separated by commas."
+          },
+          "updatedAtMin": {
+            "type": "string",
+            "description": "Only offers updated at or after this date-time, RFC 3339 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Only return these fields or nodes, separated by commas, e.g. price,stock. The basic identifiers are always returned."
+          },
+          "expand": {
+            "type": "string",
+            "description": "salesChannelFeedback adds what the sales channel reports back (on Cdiscount: best offer and listing quality). Ignored when fields is set.",
+            "enum": [
+              "salesChannelFeedback"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Offers per page, up to 1000.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The Cursor value from the previous page's _pagination.nextUrl."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers",
+        "queryParams": {
+          "salesChannelId": "$salesChannelId",
+          "sellerExternalReferences": "$sellerExternalReferences",
+          "gtins": "$gtins",
+          "offerIds": "$offerIds",
+          "offerStates": "$offerStates",
+          "updatedAtMin": "$updatedAtMin",
+          "fields": "$fields",
+          "expand": "$expand",
+          "limit": "$limit",
+          "Cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "octopia_list_offer_packages",
+      "description": "List offer packages (the batches that create, update or delete offers) with their type and state: WaitingForCompletion (open for offer requests), Ready, IntegrationPending, Integrated or Rejected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "Only packages in this state.",
+            "enum": [
+              "WaitingForCompletion",
+              "Ready",
+              "IntegrationPending",
+              "Integrated",
+              "Rejected"
+            ]
+          },
+          "salesChannelId": {
+            "type": "string",
+            "description": "Only packages for this sales channel, e.g. CDISFR."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Packages per page.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The Cursor value from the previous page's _pagination.nextUrl."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offer-packages",
+        "queryParams": {
+          "state": "$state",
+          "salesChannelId": "$salesChannelId",
+          "limit": "$limit",
+          "Cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "octopia_get_offer_package",
+      "description": "Read one offer package: its type, sales channel, state and, when it was rejected, the reason. Poll it after octopia_submit_offer_package until it is Integrated or Rejected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "string",
+            "description": "The package id returned by octopia_create_offer_package."
+          }
+        },
+        "required": [
+          "packageId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offer-packages/{packageId}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "octopia_get_offer_package_results",
+      "description": "Read the result of every offer request in an integrated package: Integrated, Rejected (with the reason) or Duplicated. Check it after a price or stock change to confirm each SKU was applied.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "string",
+            "description": "The package id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The Cursor value from the previous page's _pagination.nextUrl."
+          }
+        },
+        "required": [
+          "packageId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offer-packages/{packageId}/offer-requests-results",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "Cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "octopia_create_offer_package",
+      "description": "Step 1 of changing offers: open an offer package for one sales channel. Update changes only the fields you send (price, stock, delivery modes) of existing offers; Upsert creates offers or replaces them completely and needs every mandatory field. The new package id is in _headers.content-location (offer-packages/<packageId>). Then add requests with octopia_add_offer_requests and send it with octopia_submit_offer_package. An open package expires after a few hours. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageType": {
+            "type": "string",
+            "description": "Update for partial changes to existing offers, Upsert to create or fully replace offers.",
+            "enum": [
+              "Update",
+              "Upsert"
+            ]
+          },
+          "salesChannelId": {
+            "type": "string",
+            "description": "Sales channel the package targets. CDISFR is Cdiscount.",
+            "default": "CDISFR"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the result messages: fr-FR, en-US or es-ES.",
+            "enum": [
+              "fr-FR",
+              "en-US",
+              "es-ES"
+            ],
+            "default": "en-US"
+          }
+        },
+        "required": [
+          "packageType"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offer-packages",
+        "headers": {
+          "SalesChannelId": "$salesChannelId",
+          "Accept-Language": "$language"
+        },
+        "bodyMapping": {
+          "packageType": "$packageType"
+        },
+        "exposeHeaders": [
+          "content-location"
+        ]
+      }
+    },
+    {
+      "name": "octopia_add_offer_requests",
+      "description": "Step 2 of changing offers: add up to 100 offer requests to an open package (call again for more, up to 50,000 per package). In an Update package send sellerExternalReference plus only what changes, e.g. {\"sellerExternalReference\": \"SKU1\", \"price\": {\"price\": 49.99}, \"quantity\": 20}. Only a format check happens here; the real check runs after octopia_submit_offer_package. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "string",
+            "description": "The id of a package in state WaitingForCompletion."
+          },
+          "offers": {
+            "type": "array",
+            "description": "1 to 100 offer requests.",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sellerExternalReference": {
+                  "type": "string",
+                  "description": "The seller reference (SKU) of the offer. Required in every request."
+                },
+                "product": {
+                  "type": "object",
+                  "description": "Upsert only: the product of the offer.",
+                  "properties": {
+                    "gtin": {
+                      "type": "string",
+                      "description": "GTIN/EAN of the product."
+                    },
+                    "reference": {
+                      "type": "string",
+                      "description": "Octopia product reference, if known."
+                    }
+                  }
+                },
+                "condition": {
+                  "type": "string",
+                  "description": "Upsert only: condition of the item.",
+                  "enum": [
+                    "New",
+                    "UsedLikeNew",
+                    "UsedVeryGoodState",
+                    "UsedAverageState",
+                    "RefurbishedLikeNew",
+                    "RefurbishedVeryGoodState",
+                    "RefurbishedCorrectState"
+                  ]
+                },
+                "price": {
+                  "type": "object",
+                  "description": "Price in the sales channel currency, taxes included.",
+                  "properties": {
+                    "price": {
+                      "type": "number",
+                      "description": "Selling price, taxes included."
+                    },
+                    "originPrice": {
+                      "type": "number",
+                      "description": "Strike-through price."
+                    },
+                    "taxes": {
+                      "type": "array",
+                      "description": "Every tax of the offer, e.g. [{\"code\": \"VAT\", \"value\": 20}, {\"code\": \"EcoTax\", \"value\": 1}]. In an Update the whole list must be sent.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "description": "Tax code, e.g. VAT, EcoTax, DeaTax, EcoPart."
+                          },
+                          "value": {
+                            "type": "number",
+                            "description": "Rate or amount."
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Stock available. Stock is shared by every sales channel where an offer exists for the same product and condition."
+                },
+                "preparationTime": {
+                  "type": "integer",
+                  "description": "Days needed to prepare the item before it leaves. Required whenever deliveryModes is sent."
+                },
+                "deliveryModes": {
+                  "type": "array",
+                  "description": "Every delivery mode of the offer (the whole list replaces the existing one).",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "description": "Delivery mode code, e.g. THD (tracked), NTHD (not tracked, Cdiscount), EHD (express), SHD (signed)."
+                      },
+                      "cost": {
+                        "type": "number",
+                        "description": "Shipping cost for the first unit."
+                      },
+                      "additionalCost": {
+                        "type": "number",
+                        "description": "Shipping cost for each additional unit."
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "cost"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sellerExternalReference"
+              ]
+            }
+          }
+        },
+        "required": [
+          "packageId",
+          "offers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offer-packages/{packageId}/offer-requests",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__raw": "$offers"
+        }
+      }
+    },
+    {
+      "name": "octopia_submit_offer_package",
+      "description": "Step 3 of changing offers: mark an open package Ready so Octopia applies it. No requests can be added afterwards. Follow it with octopia_get_offer_package and octopia_get_offer_package_results. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "string",
+            "description": "The id of the package to submit."
+          }
+        },
+        "required": [
+          "packageId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/offer-packages/{packageId}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "state": "Ready"
+        }
+      }
+    },
+    {
+      "name": "octopia_create_offer_delete_package",
+      "description": "Open a Delete package for one sales channel: every seller reference later added with octopia_add_offer_requests is removed from that channel's catalog and unpublished. The package id is in _headers.content-location. Installed switched off because it removes listings. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "salesChannelId": {
+            "type": "string",
+            "description": "Sales channel to delete offers from. CDISFR is Cdiscount.",
+            "default": "CDISFR"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the result messages.",
+            "enum": [
+              "fr-FR",
+              "en-US",
+              "es-ES"
+            ],
+            "default": "en-US"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offer-packages",
+        "headers": {
+          "SalesChannelId": "$salesChannelId",
+          "Accept-Language": "$language"
+        },
+        "bodyMapping": {
+          "packageType": "Delete"
+        },
+        "exposeHeaders": [
+          "content-location"
+        ]
+      }
+    },
+    {
+      "name": "octopia_list_products",
+      "description": "List the products the seller created or enriched in the Octopia catalog, newest updates first: reference, GTIN, label, brand, category, and whether the seller may still edit or enrich them. Filter by up to 10 GTINs or by category. Pages by cursor: pass the cursor value from _pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gtin": {
+            "type": "string",
+            "description": "Up to 10 GTIN/EAN codes, separated by commas."
+          },
+          "categoryReference": {
+            "type": "string",
+            "description": "Category references, separated by commas."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Only these fields, separated by commas, e.g. label,description."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, up to 100.",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor value from the previous page's _pagination."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the product data, e.g. fr-FR (default), en-US or es-ES."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "headers": {
+          "Accept-Language": "$language"
+        },
+        "queryParams": {
+          "gtin": "$gtin",
+          "categoryReference": "$categoryReference",
+          "fields": "$fields",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "octopia_list_discussions",
+      "description": "Search customer and operator discussions about orders or offers, newest activity first, with whether they are open and still to be treated. Filter by order, open state, process status, typology or update dates (at most 6 months apart). includeMessages adds the first or last message of each.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderSellerId": {
+            "type": "string",
+            "description": "Only discussions about this order (the Octopia order id)."
+          },
+          "discussionId": {
+            "type": "string",
+            "description": "One or more discussion ids, separated by commas."
+          },
+          "isOpen": {
+            "type": "boolean",
+            "description": "true for open discussions only, false for closed ones."
+          },
+          "processStatus": {
+            "type": "string",
+            "description": "ToTreat for discussions waiting for the seller, Treated for answered ones.",
+            "enum": [
+              "ToTreat",
+              "Treated"
+            ]
+          },
+          "typologyCode": {
+            "type": "string",
+            "description": "Order for discussions about an order (the default), Offer for questions about an offer.",
+            "enum": [
+              "Order",
+              "Offer"
+            ]
+          },
+          "subTypologyCode": {
+            "type": "string",
+            "description": "Sub-typology code of the discussion."
+          },
+          "salesChannel": {
+            "type": "string",
+            "description": "Sales channel id, e.g. CDISFR."
+          },
+          "updatedAtMin": {
+            "type": "string",
+            "description": "Updated at or after this date, ISO 8601."
+          },
+          "updatedAtMax": {
+            "type": "string",
+            "description": "Updated at or before this date, ISO 8601."
+          },
+          "includeMessages": {
+            "type": "string",
+            "description": "Add the first or the last message of each discussion.",
+            "enum": [
+              "FirstMessage",
+              "LastMessage"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "desc:updatedAt",
+              "asc:updatedAt",
+              "desc:createdAt",
+              "asc:createdAt"
+            ]
+          },
+          "pageIndex": {
+            "type": "integer",
+            "description": "Page number, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Discussions per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/discussions",
+        "queryParams": {
+          "orderSellerId": "$orderSellerId",
+          "discussionId": "$discussionId",
+          "isOpen": "$isOpen",
+          "processStatus": "$processStatus",
+          "typologyCode": "$typologyCode",
+          "subTypologyCode": "$subTypologyCode",
+          "salesChannel": "$salesChannel",
+          "updatedAtMin": "$updatedAtMin",
+          "updatedAtMax": "$updatedAtMax",
+          "includeMessages": "$includeMessages",
+          "sort": "$sort",
+          "pageIndex": "$pageIndex",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "octopia_get_discussion",
+      "description": "Read one discussion with all its messages, senders, receivers and attachment names, and the order or offer it is about.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "discussionId": {
+            "type": "string",
+            "description": "The discussion id."
+          }
+        },
+        "required": [
+          "discussionId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/discussions/{discussionId}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "octopia_reply_discussion",
+      "description": "Send a message in an open discussion, to the customer or to the sales channel's customer service. The message is delivered at once and cannot be taken back: show the user the text and the recipient and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "discussionId": {
+            "type": "string",
+            "description": "The discussion id."
+          },
+          "salesChannel": {
+            "type": "string",
+            "description": "Sales channel of the discussion, as returned with it (e.g. CDISFR)."
+          },
+          "receiverType": {
+            "type": "string",
+            "description": "Customer for the buyer, GrcOperator for the sales channel's customer service.",
+            "enum": [
+              "Customer",
+              "GrcOperator"
+            ]
+          },
+          "body": {
+            "type": "string",
+            "description": "The message, 12 to 1500 characters.",
+            "minLength": 12,
+            "maxLength": 1500
+          }
+        },
+        "required": [
+          "discussionId",
+          "salesChannel",
+          "receiverType",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "bodyTemplate": "{\"discussionId\": \"${discussionId}\", \"salesChannel\": \"${salesChannel}\", \"body\": \"${body}\", \"receivers\": [{\"userType\": \"${receiverType}\"}]}"
+      }
+    },
+    {
+      "name": "octopia_set_discussion_open",
+      "description": "Close a discussion once it is handled, or reopen it. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "discussionId": {
+            "type": "string",
+            "description": "The discussion id."
+          },
+          "isOpen": {
+            "type": "boolean",
+            "description": "false to close the discussion, true to reopen it."
+          }
+        },
+        "required": [
+          "discussionId",
+          "isOpen"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/discussions/{discussionId}",
+        "encodePathParams": true,
+        "bodyTemplate": "[{\"opt\": \"replace\", \"path\": \"/isOpen\", \"value\": \"${isOpen}\"}]"
+      }
+    },
+    {
+      "name": "octopia_list_returns",
+      "description": "List returns handled by Octopia Fulfilment (parcels coming back to the Octopia warehouse): status, type (Customer or Carrier), reason, the order and the returned items. Filter by order, dates, status, type or reason. Pages by cursor (pass the cursor value from _pagination).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderSellerId": {
+            "type": "string",
+            "description": "Only returns of this order."
+          },
+          "createdAtMin": {
+            "type": "string",
+            "description": "Created at or after this date-time, ISO 8601."
+          },
+          "createdAtMax": {
+            "type": "string",
+            "description": "Created at or before this date-time, ISO 8601."
+          },
+          "updatedAtMin": {
+            "type": "string",
+            "description": "Updated at or after this date-time, ISO 8601."
+          },
+          "updatedAtMax": {
+            "type": "string",
+            "description": "Updated at or before this date-time, ISO 8601."
+          },
+          "status": {
+            "type": "array",
+            "description": "Return statuses to include.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Created",
+                "Accepted",
+                "Pending",
+                "Completed"
+              ]
+            }
+          },
+          "types": {
+            "type": "array",
+            "description": "Return types to include.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Carrier",
+                "Customer"
+              ]
+            }
+          },
+          "reasons": {
+            "type": "array",
+            "description": "Customer return reasons to include.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ReferenceError",
+                "Damaged",
+                "Retraction",
+                "MultipleDelivery",
+                "MissingItem",
+                "UnpackingDefect",
+                "Undeliverable",
+                "CustomerRefusal",
+                "TransportDamage",
+                "NotRetrieved"
+              ]
+            }
+          },
+          "orderBy": {
+            "type": "string",
+            "description": "Sort by creation date.",
+            "enum": [
+              "Asc",
+              "Desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Returns per page: 1, 10, 20, 50 or 100.",
+            "enum": [
+              1,
+              10,
+              20,
+              50,
+              100
+            ],
+            "default": 20
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor value from the previous page's _pagination."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/returns",
+        "queryParams": {
+          "orderSellerId": "$orderSellerId",
+          "createdAtMin": "$createdAtMin",
+          "createdAtMax": "$createdAtMax",
+          "updatedAtMin": "$updatedAtMin",
+          "updatedAtMax": "$updatedAtMax",
+          "status": "$status",
+          "types": "$types",
+          "reasons": "$reasons",
+          "orderBy": "$orderBy",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "octopia_list_payments",
+      "description": "List the seller's payouts grouped by date, sales channel and payment state, from the last paid one to the estimated upcoming ones. Filter by payment date range (both bounds together) and by state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paidAtMin": {
+            "type": "string",
+            "description": "Paid at or after this date, ISO 8601. Needs paidAtMax."
+          },
+          "paidAtMax": {
+            "type": "string",
+            "description": "Paid at or before this date, ISO 8601. Needs paidAtMin."
+          },
+          "paymentStates": {
+            "type": "string",
+            "description": "States separated by commas: NotPayable, Estimated, Paid, Blocked, InProcess."
+          },
+          "salesChannelId": {
+            "type": "string",
+            "description": "Only this sales channel, e.g. CDISFR."
+          },
+          "pageIndex": {
+            "type": "integer",
+            "description": "Page number, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Payments per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "paidAtMin": "$paidAtMin",
+          "paidAtMax": "$paidAtMax",
+          "paymentStates": "$paymentStates",
+          "salesChannelId": "$salesChannelId",
+          "pageIndex": "$pageIndex",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "octopia_list_operations",
+      "description": "List the financial operations behind payouts: sales, commissions, refunds, subscriptions, fulfilment fees and more, with gross amounts (VAT included) and payment state. Needs an order reference, an invoice id, or a full date range (paidAtMin and paidAtMax, or changedAtMin and changedAtMax).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderReference": {
+            "type": "string",
+            "description": "The order reference shown to the customer."
+          },
+          "invoiceId": {
+            "type": "integer",
+            "description": "Octopia invoice id."
+          },
+          "paidAtMin": {
+            "type": "string",
+            "description": "Paid at or after this date, ISO 8601. Needs paidAtMax."
+          },
+          "paidAtMax": {
+            "type": "string",
+            "description": "Paid at or before this date, ISO 8601. Needs paidAtMin."
+          },
+          "changedAtMin": {
+            "type": "string",
+            "description": "Changed at or after this date, ISO 8601. Needs changedAtMax."
+          },
+          "changedAtMax": {
+            "type": "string",
+            "description": "Changed at or before this date, ISO 8601. Needs changedAtMin."
+          },
+          "eventTypes": {
+            "type": "string",
+            "description": "Operation types separated by commas, e.g. Sale,Commission,Refund. Others: CommissionRestitution, Subscription, CdiscountServices, LogisticFee, SecurityDeposit, FfmOrdersReturns, FfmStorage, FfmShippingCost, SplittedPaymentFees, TradeMarketingFees, AgecLawFees."
+          },
+          "states": {
+            "type": "string",
+            "description": "Payment states separated by commas: NotPayable, Estimated, Paid, Blocked, InProcess."
+          },
+          "salesChannelId": {
+            "type": "string",
+            "description": "Only this sales channel, e.g. CDISFR."
+          },
+          "pageIndex": {
+            "type": "integer",
+            "description": "Page number, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Operations per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/operations",
+        "queryParams": {
+          "orderReference": "$orderReference",
+          "invoiceId": "$invoiceId",
+          "paidAtMin": "$paidAtMin",
+          "paidAtMax": "$paidAtMax",
+          "changedAtMin": "$changedAtMin",
+          "changedAtMax": "$changedAtMax",
+          "eventTypes": "$eventTypes",
+          "states": "$states",
+          "salesChannelId": "$salesChannelId",
+          "pageIndex": "$pageIndex",
+          "pageSize": "$pageSize"
+        }
+      }
+    }
+  ]
+}

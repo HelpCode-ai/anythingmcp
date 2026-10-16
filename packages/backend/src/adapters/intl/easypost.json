@@ -1,0 +1,1175 @@
+{
+  "slug": "easypost",
+  "name": "EasyPost",
+  "description": "Let your AI ship with EasyPost: verify addresses, compare live rates from your carriers, buy, convert, insure and refund labels, track parcels, prepare customs declarations and create scan forms. Test keys are free.",
+  "instructions": "## EasyPost\nThis connector works with one EasyPost account through the **EasyPost API v2** (`https://api.easypost.com/v2`): addresses with verification, parcels, shipments with live rates from your carriers, buying and refunding labels, label formats, insurance, tracking, customs declarations, batches and scan forms.\n\n**Setup (about 3 minutes)**\n1. Sign up at https://app.easypost.com/signup (free). EasyPost asks you to set up the wallet and a ship-from address before it shows keys, and a new account may first have to fill in a short security check with its business details; the keys appear once EasyPost has accepted it.\n2. Open https://app.easypost.com/account/settings?tab=api-keys. Copy the **Test** key (free, labels are void) or the **Production** key (buys real labels).\n3. Paste it into `EASYPOST_API_KEY` and install. `easypost_list_addresses` checks the key.\n\n**Test or production**: the key decides, and every object carries `mode`. With a test key labels cost nothing and are void, trackers only accept the test codes `EZ1000000001` (pre_transit) to `EZ4000000004` (delivered), `EZ5000000005` (return_to_sender), `EZ6000000006` (failure) and `EZ7000000007` (unknown). Carrier accounts can only be listed with a production key.\n\n**Buying costs money: confirm first.** With a production key `easypost_buy_shipment` and `easypost_insure_shipment` charge the EasyPost wallet at once. State carrier, service, price and both addresses and wait for the user's yes. `easypost_refund_shipment` voids the label (it must not be used afterwards); the refund takes days to weeks.\n\n**Typical flow**\n1. `easypost_create_shipment` with `to_address`, `from_address` and `parcel` (each `{\"id\": \"...\"}` of a saved object, or the full object) returns `rates[]` with `id`, `carrier`, `service`, `rate` and `delivery_days`.\n2. Pick a rate with the user, then `easypost_buy_shipment` with the shipment id and the rate id. The answer has `postage_label.label_url` (PNG; `easypost_convert_label` gives PDF or ZPL), `tracking_code` and `tracker.public_url`.\n3. Follow the parcel with `easypost_get_tracker` (the tracker comes with the bought shipment) or start tracking any code with `easypost_create_tracker`.\n\n**Addresses**: send `verify` true to `easypost_create_address` to check an address (a failed check still saves it, with `verifications.delivery.success` false and suggestions), or use `easypost_create_and_verify_address` to save only verified addresses. Saved addresses cannot be changed; create a new one. `easypost_verify_address` returns the checked address, which may have its own id: ship to the id in that answer.\n\n**Units**: weight in **ounces** and dimensions in **inches** (1 kg = 35.27 oz, 1 cm = 0.394 in). Money as decimal strings in USD unless a currency is given. Countries are ISO 2 codes.\n\n**International**: create customs items (`easypost_create_customs_item`), then `easypost_create_customs_info` with their ids, `contents_type` and `customs_signer` with `customs_certify` true, and pass its id as `customs_info` when creating the shipment.\n\n**Lists** return the newest first with `has_more`; for the next page pass the last id as `before_id`. Shipments, trackers and scan forms cover the last month unless `start_datetime` is set, and shipment lists show only bought shipments unless `purchased` is false. A list on a fresh account may come back without its array.\n\n**Common errors** (`error.code`)\n- 401 `UNAUTHORIZED` or 403 `APIKEY.INACTIVE`: missing, wrong or disabled key.\n- 403 `MODE.UNAUTHORIZED`: the call needs a production key (carrier accounts).\n- 402 `PAYMENT_REQUIRED`: the wallet has no funds.\n- 422 `ADDRESS.VERIFY.FAILURE`, `SHIPMENT.POSTAGE.FAILURE`, `SHIPMENT.CUSTOMS_INFO.REQUIRED`: `error.errors[]` names the problem.\n- 429: rate limited (lists allow about 5 a second); wait and retry.\n\n**Out of scope here**: pickups, orders, returns, webhooks, users and API keys, reports and connecting carrier accounts.",
+  "region": "intl",
+  "category": "logistics",
+  "icon": "easypost",
+  "docsUrl": "https://docs.easypost.com/docs/",
+  "requiredEnvVars": [
+    "EASYPOST_API_KEY"
+  ],
+  "appRegistrationUrl": "https://app.easypost.com/account/settings?tab=api-keys",
+  "envVarMeta": {
+    "EASYPOST_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "EasyPost dashboard → Account settings → API keys: the Test key (free) or the Production key.",
+      "link": "https://app.easypost.com/account/settings?tab=api-keys",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the key as shown, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "EasyPost refused the key. Copy the Test or Production key again from Account settings → API keys.",
+    "403": "EasyPost refused the key (APIKEY.INACTIVE) or the call needs a production key (MODE.UNAUTHORIZED). Check that the key is active.",
+    "rate_limited": "EasyPost is rate limiting this account. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "easypost_list_addresses",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "prerequisites": "An EasyPost account (free) with its wallet, ship-from address and, where EasyPost asks for it, the business security check done, and the Test or Production API key from the dashboard. The test key costs nothing. About 3 minutes.",
+  "connector": {
+    "name": "EasyPost API",
+    "type": "REST",
+    "baseUrl": "https://api.easypost.com/v2",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{EASYPOST_API_KEY}}",
+      "password": ""
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/addresses?page_size=1"
+  },
+  "tools": [
+    {
+      "name": "easypost_create_address",
+      "description": "Save an address. Addresses cannot be changed once created. With verify true, EasyPost also checks it and the answer has verifications.delivery.success with errors and suggestions; a failed check still saves the address. Leave verify out entirely to skip the check (EasyPost verifies even when it is sent as false).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name of the person."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "street1": {
+            "type": "string",
+            "description": "Street and house number."
+          },
+          "street2": {
+            "type": "string",
+            "description": "Second address line (apartment, suite, floor)."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or province code, e.g. CA (required for US and Canadian addresses)."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO 3166 two-letter country code, e.g. US or DE (default US)."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number (many carriers require it)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "residential": {
+            "type": "boolean",
+            "description": "true for a private home, false for a business."
+          },
+          "federal_tax_id": {
+            "type": "string",
+            "description": "Federal tax id (EIN, VAT or EORI number) for customs."
+          },
+          "state_tax_id": {
+            "type": "string",
+            "description": "State tax id."
+          },
+          "verify": {
+            "type": "boolean",
+            "description": "true to verify deliverability (US) or the address format (other countries). Leave out to skip."
+          },
+          "verify_strict": {
+            "type": "boolean",
+            "description": "true to refuse the address with ADDRESS.VERIFY.FAILURE when the check fails. Leave out to skip."
+          },
+          "verify_carrier": {
+            "type": "string",
+            "description": "Verify with this carrier instead of EasyPost's default; needs verify or verify_strict true.",
+            "enum": [
+              "ups",
+              "fedex"
+            ]
+          }
+        },
+        "required": [
+          "street1",
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addresses",
+        "bodyMapping": {
+          "address": {
+            "name": "$name",
+            "company": "$company",
+            "street1": "$street1",
+            "street2": "$street2",
+            "city": "$city",
+            "state": "$state",
+            "zip": "$zip",
+            "country": "$country",
+            "phone": "$phone",
+            "email": "$email",
+            "residential": "$residential",
+            "federal_tax_id": "$federal_tax_id",
+            "state_tax_id": "$state_tax_id"
+          },
+          "verify": "$verify",
+          "verify_strict": "$verify_strict",
+          "verify_carrier": "$verify_carrier"
+        }
+      }
+    },
+    {
+      "name": "easypost_create_and_verify_address",
+      "description": "Save an address only if it passes verification, and return it corrected (for example with ZIP+4). An address that cannot be verified fails with ADDRESS.VERIFY.FAILURE, naming the problem; nothing is saved then.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name of the person."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "street1": {
+            "type": "string",
+            "description": "Street and house number."
+          },
+          "street2": {
+            "type": "string",
+            "description": "Second address line (apartment, suite, floor)."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or province code, e.g. CA (required for US and Canadian addresses)."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO 3166 two-letter country code, e.g. US or DE (default US)."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number (many carriers require it)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "residential": {
+            "type": "boolean",
+            "description": "true for a private home, false for a business."
+          },
+          "federal_tax_id": {
+            "type": "string",
+            "description": "Federal tax id (EIN, VAT or EORI number) for customs."
+          },
+          "state_tax_id": {
+            "type": "string",
+            "description": "State tax id."
+          }
+        },
+        "required": [
+          "street1",
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addresses/create_and_verify",
+        "bodyMapping": {
+          "address": {
+            "name": "$name",
+            "company": "$company",
+            "street1": "$street1",
+            "street2": "$street2",
+            "city": "$city",
+            "state": "$state",
+            "zip": "$zip",
+            "country": "$country",
+            "phone": "$phone",
+            "email": "$email",
+            "residential": "$residential",
+            "federal_tax_id": "$federal_tax_id",
+            "state_tax_id": "$state_tax_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "easypost_verify_address",
+      "description": "Verify a saved address. The answer wraps the checked address in \"address\" with verifications (delivery.success, errors with suggestions, and latitude, longitude and time zone in details). The checked address may come back with its own id: ship to the id in this answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address_id": {
+            "type": "string",
+            "description": "The address id, e.g. adr_..."
+          }
+        },
+        "required": [
+          "address_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addresses/{address_id}/verify",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "easypost_get_address",
+      "description": "Read a saved address by id, with its fields, mode (test or production) and any verification results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address_id": {
+            "type": "string",
+            "description": "The address id, e.g. adr_..."
+          }
+        },
+        "required": [
+          "address_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addresses/{address_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "easypost_list_addresses",
+      "description": "List saved addresses, newest first. The answer has addresses[] and has_more; for the next page pass the last id as before_id. An account that never saved one may answer without addresses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20).",
+            "default": 20
+          },
+          "before_id": {
+            "type": "string",
+            "description": "Id of the last item of the previous page, to get the next (older) page."
+          },
+          "after_id": {
+            "type": "string",
+            "description": "Id of an item, to get the items newer than it. Do not combine with before_id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addresses",
+        "queryParams": {
+          "page_size": "$page_size",
+          "before_id": "$before_id",
+          "after_id": "$after_id"
+        }
+      }
+    },
+    {
+      "name": "easypost_create_parcel",
+      "description": "Save a parcel: weight in ounces (always required) and length, width and height in inches (all three or none), or a carrier's predefined_package such as FlatRateEnvelope. 1 kg is 35.27 oz, 1 cm is 0.394 in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "length": {
+            "type": "number",
+            "description": "Length in inches, one decimal."
+          },
+          "width": {
+            "type": "number",
+            "description": "Width in inches, one decimal."
+          },
+          "height": {
+            "type": "number",
+            "description": "Height in inches, one decimal."
+          },
+          "weight": {
+            "type": "number",
+            "description": "Weight in ounces, one decimal."
+          },
+          "predefined_package": {
+            "type": "string",
+            "description": "A carrier package name instead of dimensions, e.g. FlatRateEnvelope or SmallFlatRateBox (USPS)."
+          }
+        },
+        "required": [
+          "weight"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/parcels",
+        "bodyMapping": {
+          "parcel": {
+            "length": "$length",
+            "width": "$width",
+            "height": "$height",
+            "weight": "$weight",
+            "predefined_package": "$predefined_package"
+          }
+        }
+      }
+    },
+    {
+      "name": "easypost_get_parcel",
+      "description": "Read a saved parcel by id: dimensions in inches, weight in ounces and predefined package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcel_id": {
+            "type": "string",
+            "description": "The parcel id, e.g. prcl_..."
+          }
+        },
+        "required": [
+          "parcel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parcels/{parcel_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "easypost_create_shipment",
+      "description": "Create a shipment and get live rates from the account's carriers. Nothing is bought yet. Returns the shipment with id and rates[] (id, carrier, service, rate, currency, delivery_days, est_delivery_days) and messages[] for carriers that did not answer. International shipments need customs_info. Buy a rate with easypost_buy_shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to_address": {
+            "type": "object",
+            "description": "Either {\"id\": \"adr_...\"} for a saved one or the full object as for easypost_create_address."
+          },
+          "from_address": {
+            "type": "object",
+            "description": "Either {\"id\": \"adr_...\"} for a saved one or the full object as for easypost_create_address."
+          },
+          "parcel": {
+            "type": "object",
+            "description": "Either {\"id\": \"prcl_...\"} for a saved one or the full object as for easypost_create_parcel."
+          },
+          "return_address": {
+            "type": "object",
+            "description": "Return address, if different from from_address. Either {\"id\": \"adr_...\"} for a saved one or the full object as for easypost_create_address."
+          },
+          "customs_info": {
+            "type": "object",
+            "description": "Either {\"id\": \"cstinfo_...\"} for a saved one or the full object as for easypost_create_customs_info."
+          },
+          "options": {
+            "type": "object",
+            "description": "Shipment options, e.g. {\"label_format\": \"PDF\", \"label_size\": \"4x6\", \"label_date\": \"2026-10-13\", \"invoice_number\": \"123\", \"delivery_confirmation\": \"SIGNATURE\"}."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Your own reference, e.g. an order number."
+          },
+          "carrier_accounts": {
+            "type": "array",
+            "description": "Only rate these carrier account ids (ca_...); default all accounts of the user.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "to_address",
+          "from_address",
+          "parcel"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments",
+        "bodyMapping": {
+          "shipment": {
+            "to_address": "$to_address",
+            "from_address": "$from_address",
+            "parcel": "$parcel",
+            "return_address": "$return_address",
+            "customs_info": "$customs_info",
+            "options": "$options",
+            "reference": "$reference",
+            "carrier_accounts": "$carrier_accounts"
+          }
+        }
+      }
+    },
+    {
+      "name": "easypost_get_shipment",
+      "description": "Read a shipment by id: addresses, parcel, rates, selected_rate, postage_label (label_url once bought), tracking_code, tracker, refund_status and fees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "The shipment id, e.g. shp_..."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "easypost_list_shipments",
+      "description": "List shipments, newest first, by default only bought ones from the last month. Pass purchased false for shipments without a label, and start_datetime for older ones. The answer has shipments[] and has_more; for the next page pass the last id as before_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchased": {
+            "type": "boolean",
+            "description": "true (default) for bought shipments only, false for unbought ones only."
+          },
+          "include_children": {
+            "type": "boolean",
+            "description": "true to include child user shipments."
+          },
+          "start_datetime": {
+            "type": "string",
+            "description": "Only items created at or after this time, ISO 8601. EasyPost defaults to one month back."
+          },
+          "end_datetime": {
+            "type": "string",
+            "description": "Only items created before this time, ISO 8601. Default: the end of today."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20).",
+            "default": 20
+          },
+          "before_id": {
+            "type": "string",
+            "description": "Id of the last item of the previous page, to get the next (older) page."
+          },
+          "after_id": {
+            "type": "string",
+            "description": "Id of an item, to get the items newer than it. Do not combine with before_id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments",
+        "queryParams": {
+          "purchased": "$purchased",
+          "include_children": "$include_children",
+          "start_datetime": "$start_datetime",
+          "end_datetime": "$end_datetime",
+          "page_size": "$page_size",
+          "before_id": "$before_id",
+          "after_id": "$after_id"
+        }
+      }
+    },
+    {
+      "name": "easypost_buy_shipment",
+      "description": "Buy the label for a rate of a shipment. With a production key this charges the rate (and any insurance) to the EasyPost wallet at once, so first state carrier, service, price and both addresses and wait for the user's yes. With a test key it is free. Returns the shipment with postage_label.label_url (PNG; convert with easypost_convert_label), tracking_code and tracker.public_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "The shipment id, e.g. shp_..."
+          },
+          "rate_id": {
+            "type": "string",
+            "description": "The id of the chosen rate from the shipment's rates[], e.g. rate_..."
+          },
+          "insurance": {
+            "type": "string",
+            "description": "Insured value in USD as a string, e.g. \"249.99\" (costs 1 percent, at least 1 USD)."
+          }
+        },
+        "required": [
+          "shipment_id",
+          "rate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments/{shipment_id}/buy",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "rate": {
+            "id": "$rate_id"
+          },
+          "insurance": "$insurance"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "easypost_refund_shipment",
+      "description": "Ask for a refund of an unused label. The label must no longer be used once requested. refund_status becomes submitted and later refunded or rejected. USPS labels qualify within 30 days and take at least 15 days; UPS and FedEx within 90 days. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "The shipment id, e.g. shp_..."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments/{shipment_id}/refund",
+        "encodePathParams": true,
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "easypost_rerate_shipment",
+      "description": "Get fresh rates for an unbought shipment, for example after a day has passed or carrier accounts changed. Returns rates[] with new ids; nothing is bought.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "The shipment id, e.g. shp_..."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments/{shipment_id}/rerate",
+        "encodePathParams": true,
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "easypost_get_smartrates",
+      "description": "Get delivery time estimates for the rates of a US domestic shipment: for each rate the days it takes at different percentiles (time_in_transit.percentile_50 to percentile_99), based on past deliveries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "The shipment id, e.g. shp_..."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}/smartrate",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "easypost_convert_label",
+      "description": "Get the label of a bought shipment in another format. Returns the shipment with postage_label.label_pdf_url or label_zpl_url filled in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "The shipment id, e.g. shp_..."
+          },
+          "file_format": {
+            "type": "string",
+            "description": "The format wanted.",
+            "enum": [
+              "PDF",
+              "ZPL",
+              "EPL2"
+            ]
+          }
+        },
+        "required": [
+          "shipment_id",
+          "file_format"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}/label",
+        "encodePathParams": true,
+        "queryParams": {
+          "file_format": "$file_format"
+        }
+      }
+    },
+    {
+      "name": "easypost_insure_shipment",
+      "description": "Insure a bought shipment that was not insured when bought. Costs 1 percent of the amount, at least 1 USD, charged at once with a production key; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "The shipment id, e.g. shp_..."
+          },
+          "amount": {
+            "type": "string",
+            "description": "Insured value in USD as a string, e.g. \"200\"."
+          }
+        },
+        "required": [
+          "shipment_id",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments/{shipment_id}/insure",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "amount": "$amount"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "easypost_create_tracker",
+      "description": "Start tracking a parcel by its tracking code, also for labels bought elsewhere. Returns the tracker with status (pre_transit, in_transit, out_for_delivery, delivered, return_to_sender, failure, unknown), est_delivery_date, tracking_details[] and public_url. The same code and carrier within three months returns the existing tracker instead of a new one. Test keys accept only the codes EZ1000000001 to EZ7000000007.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_code": {
+            "type": "string",
+            "description": "The tracking number."
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Carrier name as EasyPost spells it, e.g. USPS, UPS, FedEx, DHLExpress. Optional; detected when left out."
+          }
+        },
+        "required": [
+          "tracking_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/trackers",
+        "bodyMapping": {
+          "tracker": {
+            "tracking_code": "$tracking_code",
+            "carrier": "$carrier"
+          }
+        }
+      }
+    },
+    {
+      "name": "easypost_get_tracker",
+      "description": "Read a tracker by id: current status and status_detail, est_delivery_date, signed_by, weight, carrier_detail and the full tracking_details history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracker_id": {
+            "type": "string",
+            "description": "The tracker id, e.g. trk_..."
+          }
+        },
+        "required": [
+          "tracker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/trackers/{tracker_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "easypost_list_trackers",
+      "description": "List trackers, newest first, from the last month unless start_datetime says otherwise. Filter by tracking code or carrier. The answer has trackers[] and has_more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_code": {
+            "type": "string",
+            "description": "Only the tracker of this tracking number."
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Only trackers of this carrier, e.g. USPS."
+          },
+          "start_datetime": {
+            "type": "string",
+            "description": "Only items created at or after this time, ISO 8601. EasyPost defaults to one month back."
+          },
+          "end_datetime": {
+            "type": "string",
+            "description": "Only items created before this time, ISO 8601. Default: the end of today."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20).",
+            "default": 20
+          },
+          "before_id": {
+            "type": "string",
+            "description": "Id of the last item of the previous page, to get the next (older) page."
+          },
+          "after_id": {
+            "type": "string",
+            "description": "Id of an item, to get the items newer than it. Do not combine with before_id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/trackers",
+        "queryParams": {
+          "tracking_codes[]": "$tracking_code",
+          "carrier": "$carrier",
+          "start_datetime": "$start_datetime",
+          "end_datetime": "$end_datetime",
+          "page_size": "$page_size",
+          "before_id": "$before_id",
+          "after_id": "$after_id"
+        }
+      }
+    },
+    {
+      "name": "easypost_list_carrier_accounts",
+      "description": "List the carrier accounts connected to EasyPost (id ca_..., type such as UspsAccount or UpsAccount, description, readable name). Needs a production key: a test key is refused with MODE.UNAUTHORIZED. The answer is a plain array.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carrier_accounts"
+      }
+    },
+    {
+      "name": "easypost_get_carrier_account",
+      "description": "Read one carrier account by id: type, description, reference and its settings (credentials are not shown). Needs a production key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_account_id": {
+            "type": "string",
+            "description": "The carrier account id, e.g. ca_..."
+          }
+        },
+        "required": [
+          "carrier_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carrier_accounts/{carrier_account_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "easypost_create_customs_item",
+      "description": "Save one line of a customs declaration: description, quantity, total value in USD, total weight in ounces, HS tariff number and origin country. Use its id in easypost_create_customs_info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "What the goods are, e.g. Cotton T-shirt."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Number of pieces."
+          },
+          "value": {
+            "type": "number",
+            "description": "Total value of this line in USD (or currency)."
+          },
+          "weight": {
+            "type": "number",
+            "description": "Total weight of this line in ounces."
+          },
+          "hs_tariff_number": {
+            "type": "string",
+            "description": "Harmonized System tariff number, e.g. 610910."
+          },
+          "origin_country": {
+            "type": "string",
+            "description": "Country of manufacture, ISO 2 code, e.g. US."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency of value, e.g. USD or EUR."
+          },
+          "code": {
+            "type": "string",
+            "description": "Your SKU or product code."
+          }
+        },
+        "required": [
+          "description",
+          "quantity",
+          "value",
+          "weight"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customs_items",
+        "bodyMapping": {
+          "customs_item": {
+            "description": "$description",
+            "quantity": "$quantity",
+            "value": "$value",
+            "weight": "$weight",
+            "hs_tariff_number": "$hs_tariff_number",
+            "origin_country": "$origin_country",
+            "currency": "$currency",
+            "code": "$code"
+          }
+        }
+      }
+    },
+    {
+      "name": "easypost_get_customs_item",
+      "description": "Read a saved customs item by id: description, quantity, value, weight, tariff number and origin country.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customs_item_id": {
+            "type": "string",
+            "description": "The customs item id, e.g. cstitem_..."
+          }
+        },
+        "required": [
+          "customs_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customs_items/{customs_item_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "easypost_create_customs_info",
+      "description": "Save a customs declaration for an international shipment and pass its id as customs_info to easypost_create_shipment. contents_explanation is needed for contents_type other, customs_signer when customs_certify is true, restriction_comments when restriction_type is not none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customs_items": {
+            "type": "array",
+            "description": "The lines: [{\"id\": \"cstitem_...\"}] or full item objects.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "contents_type": {
+            "type": "string",
+            "description": "What is shipped.",
+            "enum": [
+              "documents",
+              "gift",
+              "merchandise",
+              "returned_goods",
+              "sample",
+              "dangerous_goods",
+              "humanitarian_donation",
+              "other"
+            ]
+          },
+          "contents_explanation": {
+            "type": "string",
+            "description": "Explanation when contents_type is other."
+          },
+          "customs_certify": {
+            "type": "boolean",
+            "description": "true to certify the information electronically."
+          },
+          "customs_signer": {
+            "type": "string",
+            "description": "Name of the person certifying."
+          },
+          "non_delivery_option": {
+            "type": "string",
+            "description": "What to do if it cannot be delivered (default return).",
+            "enum": [
+              "return",
+              "abandon"
+            ]
+          },
+          "restriction_type": {
+            "type": "string",
+            "description": "Restriction on the contents (default none).",
+            "enum": [
+              "none",
+              "other",
+              "quarantine",
+              "sanitary_phytosanitary_inspection"
+            ]
+          },
+          "restriction_comments": {
+            "type": "string",
+            "description": "Explanation when restriction_type is not none."
+          },
+          "eel_pfc": {
+            "type": "string",
+            "description": "US export code, e.g. NOEEI 30.37(a) for goods under 2500 USD per tariff number."
+          }
+        },
+        "required": [
+          "customs_items",
+          "contents_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customs_infos",
+        "bodyMapping": {
+          "customs_info": {
+            "customs_items": "$customs_items",
+            "contents_type": "$contents_type",
+            "contents_explanation": "$contents_explanation",
+            "customs_certify": "$customs_certify",
+            "customs_signer": "$customs_signer",
+            "non_delivery_option": "$non_delivery_option",
+            "restriction_type": "$restriction_type",
+            "restriction_comments": "$restriction_comments",
+            "eel_pfc": "$eel_pfc"
+          }
+        }
+      }
+    },
+    {
+      "name": "easypost_get_customs_info",
+      "description": "Read a saved customs declaration by id, with its items, contents type, signer and options.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customs_info_id": {
+            "type": "string",
+            "description": "The customs info id, e.g. cstinfo_..."
+          }
+        },
+        "required": [
+          "customs_info_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customs_infos/{customs_info_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "easypost_list_batches",
+      "description": "List batches (groups of shipments bought and printed together), newest first, with state (creating, created, purchasing, purchased, label_generating, label_generated or a failed state), num_shipments, label_url and scan_form. The answer has batches[] and has_more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 10).",
+            "default": 10
+          },
+          "before_id": {
+            "type": "string",
+            "description": "Id of the last batch of the previous page."
+          },
+          "after_id": {
+            "type": "string",
+            "description": "Id of a batch, to get the newer ones."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/batches",
+        "queryParams": {
+          "page_size": "$page_size",
+          "before_id": "$before_id",
+          "after_id": "$after_id"
+        }
+      }
+    },
+    {
+      "name": "easypost_get_batch",
+      "description": "Read a batch by id: state, shipments with their batch_status and messages, label_url once labels are generated, and scan_form.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "description": "The batch id, e.g. batch_..."
+          }
+        },
+        "required": [
+          "batch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/batches/{batch_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "easypost_create_scan_form",
+      "description": "Create a scan form (manifest) for bought shipments, so the carrier scans one sheet instead of every parcel at pickup. All shipments must come from the same carrier account and origin address and be bought the same day. Returns the scan form with status and form_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipments": {
+            "type": "array",
+            "description": "The shipments to include, e.g. [{\"id\": \"shp_...\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "shipments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/scan_forms",
+        "bodyMapping": {
+          "shipments": "$shipments"
+        }
+      }
+    },
+    {
+      "name": "easypost_list_scan_forms",
+      "description": "List scan forms, newest first, with status, tracking_codes, form_url and the address. The answer has scan_forms[] and has_more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_datetime": {
+            "type": "string",
+            "description": "Only items created at or after this time, ISO 8601. EasyPost defaults to one month back."
+          },
+          "end_datetime": {
+            "type": "string",
+            "description": "Only items created before this time, ISO 8601. Default: the end of today."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20).",
+            "default": 20
+          },
+          "before_id": {
+            "type": "string",
+            "description": "Id of the last item of the previous page, to get the next (older) page."
+          },
+          "after_id": {
+            "type": "string",
+            "description": "Id of an item, to get the items newer than it. Do not combine with before_id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scan_forms",
+        "queryParams": {
+          "start_datetime": "$start_datetime",
+          "end_datetime": "$end_datetime",
+          "page_size": "$page_size",
+          "before_id": "$before_id",
+          "after_id": "$after_id"
+        }
+      }
+    },
+    {
+      "name": "easypost_get_scan_form",
+      "description": "Read a scan form by id: status, the tracking codes on it, form_url (PDF) and batch_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scan_form_id": {
+            "type": "string",
+            "description": "The scan form id, e.g. sf_..."
+          }
+        },
+        "required": [
+          "scan_form_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scan_forms/{scan_form_id}",
+        "encodePathParams": true
+      }
+    }
+  ]
+}

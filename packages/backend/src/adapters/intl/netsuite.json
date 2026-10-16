@@ -1,0 +1,691 @@
+{
+  "slug": "netsuite",
+  "name": "Oracle NetSuite",
+  "description": "Let your AI work with Oracle NetSuite: run read-only SuiteQL queries over customers, vendors, items, transactions and the general ledger, read customers, vendors, employees, items, sales orders, invoices, purchase orders, bills and journal entries with their lines, look up record types and fields, and create customers and sales orders. NetSuite OAuth 2.0 sign-in, production or sandbox account.",
+  "instructions": "## Oracle NetSuite\nThis connector works with one NetSuite account through **SuiteTalk REST Web Services** (`https://<account>.suitetalk.api.netsuite.com/services/rest`): SuiteQL queries (`/query/v1/suiteql`), the record API (`/record/v1`) for reading records with their sublists and for creating customers and sales orders, and the metadata catalog that describes every record type and its fields. It runs as the NetSuite user and role chosen at sign-in, with that role's permissions.\n\n**Setup (one-time, about 20 minutes, as an administrator)**\n1. **Enable features**: Setup → Company → Enable Features. On the **SuiteCloud** subtab tick **REST Web Services** and, under Manage Authentication, **OAuth 2.0**. On the **Analytics** subtab tick **SuiteAnalytics Workbook**, which SuiteQL reads from. Save.\n2. **Role**: Setup → Users/Roles → Manage Roles → New (or customize an existing role). On Permissions → Setup add **REST Web Services** (Full) and **Log in using OAuth 2.0 Access Tokens** (Full). Add View on the lists and transactions the AI may read (Lists: Customers, Vendors, Items, Employees, Accounts; Transactions: Sales Order, Invoice, Purchase Order, Bills, Make Journal Entry, Find Transaction) and Create where it may write (Customers, Sales Order). Give the role to the user who will authorize the connector. Use a dedicated role rather than Administrator, so the AI sees only what it needs.\n3. **Integration record**: Setup → Integration → Manage Integrations → New. Give it a name, State **Enabled**, untick **Token-Based Authentication** and **TBA: Authorization Flow**. Under **OAuth 2.0** tick **Authorization Code Grant**, leave **Public Client** unticked, set the **Redirect URI** to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud (or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself) and tick the scope **REST Web Services**. Save: the **Client ID** and **Client Secret** are shown once, at the bottom of the page. Paste them into `NETSUITE_CLIENT_ID` and `NETSUITE_CLIENT_SECRET`.\n4. **Account ID**: Setup → Company → Company Information → Account ID (for example `1234567`, or `1234567_SB1` for a sandbox). `NETSUITE_ACCOUNT_ID` takes it the way it appears in your NetSuite web address: lowercase, with a hyphen instead of the underscore, e.g. `1234567` or `1234567-sb1` (from `https://1234567-sb1.app.netsuite.com`). An integration record created in production is copied to a sandbox only by a sandbox refresh; for a sandbox, create the record in the sandbox itself.\n5. Install, click **Authorize with Provider**, sign in to NetSuite and pick the role from step 2 on the consent page. AnythingMCP signs the request with PKCE (which NetSuite requires for new integrations from release 2027.1) and exchanges the code with HTTP Basic client authentication.\n6. Run `netsuite_list_record_types` to check the connection, then a first query such as `SELECT id, companyname FROM customer` with `netsuite_suiteql_query`.\n\n**Tokens**: access tokens last 60 minutes and are renewed automatically. NetSuite keeps the refresh token of an integration like this one valid for **seven days** and does not replace it when it is used, so the connector has to be authorized again (**Authorize with Provider**) at least once a week. Disabling the integration record, the role or the user ends access at once.\n\n**SuiteQL** (`netsuite_suiteql_query`) is the main tool: one read-only SQL query over the NetSuite analytics schema. Tips:\n- Tables: `customer`, `vendor`, `employee`, `contact`, `item`, `account`, `subsidiary`, `department`, `classification`, `location`, `currency`, `accountingperiod`, `transaction` (header) with `transactionline` (lines, `transactionline.transaction = transaction.id`) and `transactionaccountingline` (posting amounts per account).\n- `transaction.type` codes: `SalesOrd`, `CustInvc`, `CustPymt`, `CustCred`, `Estimate`, `PurchOrd`, `VendBill`, `VendPymt`, `Journal`, `ItemShip`, `ItemRcpt`. On `transactionline`, `mainline = 'F'` keeps the item lines and drops the header line.\n- `BUILTIN.DF(field)` returns the display text of a list or record field, e.g. `BUILTIN.DF(entity)` for the customer name, `BUILTIN.DF(status)`. Dates: `trandate >= TO_DATE('2026-01-01', 'YYYY-MM-DD')`. Booleans are `'T'` and `'F'`.\n- Column names come back in lowercase. Custom fields keep their script ids (`custentity_...`, `custbody_...`, `custcol_...`).\n- Paging: `limit` (1 to 1000, default 100) and `offset`; keep `offset` a multiple of `limit` and add an `ORDER BY` on a unique column so pages neither repeat nor skip rows. `hasMore` and `totalResults` tell whether there is more. A query returns at most 100,000 rows in total; aggregate with `GROUP BY` instead of paging through large sets.\n- Rows the role may not see are left out silently, so an empty answer can mean a missing permission.\n\n**Record API**: `netsuite_get_record` reads any record type by internal id (`eid:<external id>` works too); the dedicated tools read customers, vendors, employees, items, sales orders, invoices, purchase orders, vendor bills and journal entries. Transactions are returned with their lines (`item.items[]`, `expense.items[]`, `line.items[]`) expanded. Record type names are camelCase (`salesOrder`, `vendorBill`, `inventoryItem`); `netsuite_list_record_types` lists them and `netsuite_describe_record_type` returns every field of one, including custom fields. `netsuite_list_records` lists internal ids only, filtered with the record API's own `q` syntax.\n\n**Writes: confirm first.**\n- `netsuite_create_customer` creates a customer. In a OneWorld account pass `subsidiary` as `{\"id\": \"<subsidiary id>\"}`. The answer has no body: the new record's address, with its internal id at the end, is in the `location` header.\n- `netsuite_create_sales_order` (installed switched off) creates a sales order for an existing customer, by default in status Pending Approval (`A`).\n- `netsuite_update_record` (installed switched off) changes fields of any record. Changes to posted transactions affect the books.\n\n**Common errors**\n- 400 or 401 with `INVALID_LOGIN` (\"Invalid login attempt\"): the token expired and could not be renewed (the weekly refresh limit), or the integration, role or user was disabled. Authorize again.\n- 403 or `INSUFFICIENT_PERMISSION`: the role lacks a permission (REST Web Services, Log in using OAuth 2.0 Access Tokens, or the record's own permission).\n- 400 `INVALID_PARAMETER` or a SuiteQL syntax error: check the query, the field names (`netsuite_describe_record_type`) and the paging.\n- 429 or `CONCURRENCY_LIMIT_EXCEEDED`: the account's limit on parallel web service requests is reached; wait and retry one call at a time.\n- An unknown host: `NETSUITE_ACCOUNT_ID` is not in the web address form (lowercase, hyphen).\n\n**Not supported**: Token-Based Authentication (TBA, OAuth 1.0a): NetSuite stops accepting new TBA integrations with release 2027.1, and this connector uses OAuth 2.0 only. Also out of scope: deleting records, saved searches and reports, RESTlets, file cabinet, and the SOAP API.",
+  "region": "intl",
+  "category": "erp",
+  "icon": "netsuite",
+  "docsUrl": "https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/chapter_1540391670.html",
+  "requiredEnvVars": [
+    "NETSUITE_ACCOUNT_ID",
+    "NETSUITE_CLIENT_ID",
+    "NETSUITE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://system.netsuite.com/app/common/integration/integrapplist.nl",
+  "envVarMeta": {
+    "NETSUITE_ACCOUNT_ID": {
+      "label": "Account ID (as in the web address)",
+      "kind": "address",
+      "help": "Setup → Company → Company Information → Account ID, written as in your NetSuite web address: lowercase, with a hyphen instead of the underscore. 1234567_SB1 becomes 1234567-sb1.",
+      "example": "1234567-sb1",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)?$",
+      "patternMessage": "Use the account ID in lowercase with a hyphen instead of the underscore, e.g. 1234567 or 1234567-sb1, without https:// or a domain."
+    },
+    "NETSUITE_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Setup → Integration → Manage Integrations → your integration record: Client ID, shown once when the record is saved.",
+      "pattern": "^[0-9a-f]{64}$",
+      "patternMessage": "The Client ID is 64 hexadecimal characters, without spaces."
+    },
+    "NETSUITE_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same place: Client Secret, shown once when the record is saved. If it is lost, edit the record and choose Reset Credentials.",
+      "pattern": "^[0-9a-f]{64}$",
+      "patternMessage": "The Client Secret is 64 hexadecimal characters, without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "NetSuite rejected the request. With INVALID_LOGIN it refused the access token (NetSuite answers a refused token with 400 or 401): click Authorize with Provider again. Otherwise check the SuiteQL query, the q filter, and that offset is a multiple of limit.",
+    "401": "NetSuite refused the token (INVALID_LOGIN). The refresh token of a NetSuite integration lasts seven days: click Authorize with Provider again. Also check that the integration record, the role and the user are enabled.",
+    "403": "The role chosen at sign-in lacks a permission: REST Web Services and Log in using OAuth 2.0 Access Tokens (Setup), plus View on the records you read.",
+    "404": "NetSuite found no record with this type and internal id. Record types are camelCase (salesOrder, vendorBill); netsuite_list_record_types lists them.",
+    "rate_limited": "The account's concurrency limit for web services is reached. Wait a few seconds and run one call at a time.",
+    "unreachable": "No NetSuite account answers at this address. Write NETSUITE_ACCOUNT_ID as in your NetSuite web address: lowercase, with a hyphen instead of the underscore (1234567-sb1)."
+  },
+  "probe": {
+    "tool": "netsuite_list_record_types"
+  },
+  "prerequisites": "A NetSuite account (production or sandbox) where an administrator can enable REST Web Services, OAuth 2.0 and SuiteAnalytics Workbook, create a role and an integration record with the redirect URI below. The connector is authorized again every seven days. About 20 minutes.",
+  "connector": {
+    "name": "NetSuite SuiteTalk REST Web Services",
+    "type": "REST",
+    "baseUrl": "https://{{NETSUITE_ACCOUNT_ID}}.suitetalk.api.netsuite.com/services/rest",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{NETSUITE_CLIENT_ID}}",
+      "clientSecret": "{{NETSUITE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://{{NETSUITE_ACCOUNT_ID}}.app.netsuite.com/app/login/oauth2/authorize.nl",
+      "tokenUrl": "https://{{NETSUITE_ACCOUNT_ID}}.suitetalk.api.netsuite.com/services/rest/auth/oauth2/v1/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "rest_webservices"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/record/v1/metadata-catalog?select=customer"
+  },
+  "tools": [
+    {
+      "name": "netsuite_suiteql_query",
+      "description": "Run one read-only SuiteQL query (NetSuite's SQL over the analytics schema), e.g. \"SELECT id, companyname, email FROM customer WHERE isinactive = 'F' ORDER BY id\" or \"SELECT BUILTIN.DF(entity) AS customer, SUM(foreigntotal) AS total FROM transaction WHERE type = 'CustInvc' AND trandate >= TO_DATE('2026-01-01', 'YYYY-MM-DD') GROUP BY BUILTIN.DF(entity)\". Returns items[] (lowercase column names), count, hasMore, offset and totalResults. Up to 1000 rows per call and 100,000 per query; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The SELECT statement. Tables: customer, vendor, employee, contact, item, account, subsidiary, department, classification, location, currency, accountingperiod, transaction, transactionline, transactionaccountingline. Use BUILTIN.DF(field) for display names, TO_DATE('YYYY-MM-DD', 'YYYY-MM-DD') for dates, 'T'/'F' for booleans, and ORDER BY a unique column when paging."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per call, 1 to 1000 (default 100).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, a multiple of limit (default 0). The next page is offset + limit while hasMore is true.",
+            "default": 0,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/query/v1/suiteql",
+        "headers": {
+          "Prefer": "transient",
+          "Content-Type": "application/json"
+        },
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        },
+        "bodyMapping": {
+          "q": "$query"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "netsuite_list_record_types",
+      "description": "List the record types the REST record API offers in this account (standard and custom, e.g. customer, salesOrder, inventoryItem, customrecord_...), each with a link to its metadata. A cheap call to check that the connection works.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "select": {
+            "type": "string",
+            "description": "Only these record types, comma separated, e.g. customer,salesOrder."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/metadata-catalog",
+        "queryParams": {
+          "select": "$select"
+        }
+      }
+    },
+    {
+      "name": "netsuite_describe_record_type",
+      "description": "Describe one record type as JSON Schema: every field with its type, title and whether it is read-only, the sublists and their line fields, and the account's custom fields (custentity_, custbody_, custcol_). Large answer; use it to find field names before netsuite_create_customer, netsuite_update_record or a record read with fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "record_type": {
+            "type": "string",
+            "description": "The record type in camelCase, e.g. customer, salesOrder, invoice, vendorBill, inventoryItem."
+          }
+        },
+        "required": [
+          "record_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/metadata-catalog/{record_type}",
+        "encodePathParams": true,
+        "headers": {
+          "Accept": "application/schema+json"
+        }
+      }
+    },
+    {
+      "name": "netsuite_list_records",
+      "description": "List the internal ids of one record type, optionally filtered with the record API's q syntax (field, operator, value), e.g. q = email START_WITH \"anna\", companyName CONTAIN \"Acme\", dateCreated ON_OR_AFTER \"1/1/2026\", or two conditions joined by AND. Returns items[] with id and links only, plus count, hasMore, offset and totalResults; read details with netsuite_get_record, or use netsuite_suiteql_query to get fields in one call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "record_type": {
+            "type": "string",
+            "description": "The record type in camelCase, e.g. customer, salesOrder, invoice."
+          },
+          "q": {
+            "type": "string",
+            "description": "Filter, e.g. email START_WITH \"anna\". Operators include IS, IS_NOT, CONTAIN, START_WITH, EMPTY, EQUAL, GREATER, LESS, ON, BEFORE, AFTER, ON_OR_AFTER, ANY_OF."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Ids per call, 1 to 1000 (default 100).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Ids to skip, a multiple of limit (default 0).",
+            "default": 0,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "record_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/{record_type}",
+        "encodePathParams": true,
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "netsuite_get_record",
+      "description": "Read any record by type and internal id (or eid:<external id>), e.g. contact, account, subsidiary, location, estimate, creditMemo, customerPayment, itemFulfillment, or a custom record (customrecord_...). Sublists come as links unless expand_sub_resources is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "record_type": {
+            "type": "string",
+            "description": "The record type in camelCase, from netsuite_list_record_types."
+          },
+          "id": {
+            "type": "string",
+            "description": "The internal id, e.g. \"1234\", or eid: followed by the external id."
+          },
+          "expand_sub_resources": {
+            "type": "boolean",
+            "description": "true to include sublists (lines, addresses, contacts) and subrecords in full (default false).",
+            "default": false
+          },
+          "fields": {
+            "type": "string",
+            "description": "Only these fields, comma separated, e.g. companyName,email,balance."
+          }
+        },
+        "required": [
+          "record_type",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/{record_type}/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "expandSubResources": "$expand_sub_resources",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "netsuite_get_customer",
+      "description": "Read one customer by internal id (or eid:<external id>): entityId, companyName or person name, email, phone, subsidiary, currency, terms, creditLimit, balance, overdueBalance, salesRep, category, isInactive and custom fields. Addresses and contacts with expand_sub_resources.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The customer's internal id, e.g. from SELECT id, companyname FROM customer."
+          },
+          "expand_sub_resources": {
+            "type": "boolean",
+            "description": "true to include the address book, contacts and other sublists in full (default false).",
+            "default": false
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/customer/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "expandSubResources": "$expand_sub_resources"
+        }
+      }
+    },
+    {
+      "name": "netsuite_get_vendor",
+      "description": "Read one vendor by internal id (or eid:<external id>): entityId, companyName, email, phone, subsidiary, currency, terms, balance, category, isInactive and custom fields. Addresses and contacts with expand_sub_resources.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The vendor's internal id, e.g. from SELECT id, companyname FROM vendor."
+          },
+          "expand_sub_resources": {
+            "type": "boolean",
+            "description": "true to include the address book and other sublists in full (default false).",
+            "default": false
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/vendor/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "expandSubResources": "$expand_sub_resources"
+        }
+      }
+    },
+    {
+      "name": "netsuite_get_employee",
+      "description": "Read one employee by internal id: entityId, name, email, title, department, location, subsidiary, supervisor, hireDate, isInactive and the fields the role may see (salary fields need extra permissions).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The employee's internal id, e.g. from SELECT id, firstname, lastname FROM employee."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/employee/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "netsuite_get_item",
+      "description": "Read one item by its record type and internal id: itemId, displayName, description, prices, cost, units, quantities on hand where tracked, accounts and custom fields. The record type follows the item's kind: find it with SELECT id, itemid, itemtype, subtype FROM item (InvtPart → inventoryItem, Assembly → assemblyItem, Kit → kitItem, NonInvtPart with subtype Sale/Purchase/Resale → nonInventorySaleItem/nonInventoryPurchaseItem/nonInventoryResaleItem, Service → serviceSaleItem/servicePurchaseItem/serviceResaleItem, OthCharge → otherChargeSaleItem and so on, Discount → discountItem).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_type": {
+            "type": "string",
+            "description": "The item record type in camelCase, e.g. inventoryItem, nonInventorySaleItem, serviceSaleItem, assemblyItem, kitItem, discountItem."
+          },
+          "id": {
+            "type": "string",
+            "description": "The item's internal id."
+          },
+          "expand_sub_resources": {
+            "type": "boolean",
+            "description": "true to include price levels, locations, vendors and other sublists in full (default false).",
+            "default": false
+          }
+        },
+        "required": [
+          "item_type",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/{item_type}/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "expandSubResources": "$expand_sub_resources"
+        }
+      }
+    },
+    {
+      "name": "netsuite_get_sales_order",
+      "description": "Read one sales order by internal id: tranId, entity (customer), tranDate, status, orderStatus, currency, subtotal, total, shipping address and, with its lines expanded by default, item.items[] (item, quantity, rate, amount, quantityFulfilled, quantityBilled).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The sales order's internal id, e.g. from SELECT id, tranid FROM transaction WHERE type = 'SalesOrd'. Not the document number (tranId)."
+          },
+          "expand_lines": {
+            "type": "boolean",
+            "description": "Include the lines and other sublists in full (default true).",
+            "default": true
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/salesOrder/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "expandSubResources": "$expand_lines"
+        }
+      }
+    },
+    {
+      "name": "netsuite_get_invoice",
+      "description": "Read one customer invoice by internal id: tranId, entity, tranDate, dueDate, status, currency, subtotal, taxTotal, total, amountRemaining, createdFrom (the sales order) and, expanded by default, item.items[] (item, quantity, rate, amount).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The invoice's internal id, e.g. from SELECT id, tranid FROM transaction WHERE type = 'CustInvc'."
+          },
+          "expand_lines": {
+            "type": "boolean",
+            "description": "Include the lines and other sublists in full (default true).",
+            "default": true
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/invoice/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "expandSubResources": "$expand_lines"
+        }
+      }
+    },
+    {
+      "name": "netsuite_get_purchase_order",
+      "description": "Read one purchase order by internal id: tranId, entity (vendor), tranDate, status, currency, total, dueDate and, expanded by default, item.items[] (item, quantity, rate, amount, quantityReceived, quantityBilled) and expense.items[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The purchase order's internal id, e.g. from SELECT id, tranid FROM transaction WHERE type = 'PurchOrd'."
+          },
+          "expand_lines": {
+            "type": "boolean",
+            "description": "Include the lines and other sublists in full (default true).",
+            "default": true
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/purchaseOrder/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "expandSubResources": "$expand_lines"
+        }
+      }
+    },
+    {
+      "name": "netsuite_get_vendor_bill",
+      "description": "Read one vendor bill by internal id: tranId, entity (vendor), tranDate, dueDate, status, currency, total, approvalStatus and, expanded by default, item.items[] and expense.items[] (account, amount, memo, department, class).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The bill's internal id, e.g. from SELECT id, tranid FROM transaction WHERE type = 'VendBill'."
+          },
+          "expand_lines": {
+            "type": "boolean",
+            "description": "Include the lines and other sublists in full (default true).",
+            "default": true
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/vendorBill/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "expandSubResources": "$expand_lines"
+        }
+      }
+    },
+    {
+      "name": "netsuite_get_journal_entry",
+      "description": "Read one journal entry by internal id: tranId, tranDate, postingPeriod, subsidiary, currency, approved, memo and, expanded by default, line.items[] (account, debit, credit, memo, entity, department, class, location).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The journal entry's internal id, e.g. from SELECT id, tranid FROM transaction WHERE type = 'Journal'."
+          },
+          "expand_lines": {
+            "type": "boolean",
+            "description": "Include the lines in full (default true).",
+            "default": true
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/v1/journalEntry/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "expandSubResources": "$expand_lines"
+        }
+      }
+    },
+    {
+      "name": "netsuite_create_customer",
+      "description": "Create a customer, a company (company_name) or a person (is_person true with first_name and last_name). In a OneWorld account pass subsidiary. NetSuite answers 204 without a body; the location header holds the new record's URL, whose last part is the internal id. Confirm the details with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_name": {
+            "type": "string",
+            "description": "Company name, for a business customer."
+          },
+          "is_person": {
+            "type": "boolean",
+            "description": "true for an individual; then first_name and last_name are used instead of company_name."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name, for an individual."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name, for an individual."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "subsidiary": {
+            "type": "object",
+            "description": "The subsidiary as {\"id\": \"<internal id>\"}; required in OneWorld accounts (SELECT id, name FROM subsidiary).",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            }
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own unique key for the customer, readable later as eid:<value>."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further fields in record API form, e.g. {\"currency\": {\"id\": \"1\"}, \"terms\": {\"id\": \"2\"}, \"comments\": \"...\", \"custentity_region\": \"EU\"}. Field names from netsuite_describe_record_type."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/record/v1/customer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyMapping": {
+          "companyName": "$company_name",
+          "isPerson": "$is_person",
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "email": "$email",
+          "phone": "$phone",
+          "subsidiary": "$subsidiary",
+          "externalId": "$external_id",
+          "__merge": "$fields"
+        },
+        "exposeHeaders": [
+          "location"
+        ]
+      }
+    },
+    {
+      "name": "netsuite_create_sales_order",
+      "description": "Create a sales order for an existing customer, by default in status Pending Approval (A) so nothing is fulfilled before someone approves it. NetSuite answers 204 without a body; the location header holds the new order's URL, whose last part is the internal id. Confirm customer, items, quantities and prices with the user first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The customer's internal id."
+          },
+          "lines": {
+            "type": "array",
+            "description": "The item lines in record API form, e.g. [{\"item\": {\"id\": \"45\"}, \"quantity\": 2, \"rate\": 19.5}]. Without rate NetSuite uses the item's price for the customer.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tran_date": {
+            "type": "string",
+            "description": "Order date, YYYY-MM-DD (default today)."
+          },
+          "po_number": {
+            "type": "string",
+            "description": "The customer's purchase order number (otherRefNum)."
+          },
+          "memo": {
+            "type": "string",
+            "description": "Memo on the order."
+          },
+          "order_status": {
+            "type": "string",
+            "description": "A = Pending Approval (default), B = Pending Fulfillment.",
+            "enum": [
+              "A",
+              "B"
+            ],
+            "default": "A"
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further header fields in record API form, e.g. {\"location\": {\"id\": \"3\"}, \"department\": {\"id\": \"5\"}, \"shipMethod\": {\"id\": \"7\"}}."
+          }
+        },
+        "required": [
+          "customer_id",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/record/v1/salesOrder",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyMapping": {
+          "entity": {
+            "id": "$customer_id"
+          },
+          "tranDate": "$tran_date",
+          "otherRefNum": "$po_number",
+          "memo": "$memo",
+          "orderStatus": {
+            "id": "$order_status"
+          },
+          "item": {
+            "items": "$lines"
+          },
+          "__merge": "$fields"
+        },
+        "exposeHeaders": [
+          "location"
+        ]
+      },
+      "enabled": false
+    },
+    {
+      "name": "netsuite_update_record",
+      "description": "Change fields of an existing record of any type (PATCH): only the fields given are changed. Sublist lines given are added or updated, not replaced. Changes to posted transactions affect the books, so read the record first and confirm every change with the user. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "record_type": {
+            "type": "string",
+            "description": "The record type in camelCase, e.g. customer, vendor, salesOrder."
+          },
+          "id": {
+            "type": "string",
+            "description": "The internal id, or eid: followed by the external id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "The fields to change in record API form, e.g. {\"email\": \"ap@example.com\", \"terms\": {\"id\": \"2\"}}."
+          }
+        },
+        "required": [
+          "record_type",
+          "id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/record/v1/{record_type}/{id}",
+        "encodePathParams": true,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+- Which customer invoices are overdue, and by how many days?
+- Show customer Rossi Srl with their VAT number and open balance.
+- Find the customer with partita IVA IT12345678901.
+- List the invoices we issued in September 2026 with their totals.
+- Which supplier invoices fall due this month, and how much do we owe each supplier?
+- Which items match "laptop", and what do they cost?
+- Compare this quarter's invoiced total with last quarter's.
+- Which customers bought from us last year but have no invoice this year?
+- Which electronic invoices were rejected by the Sistema di Interscambio this month?
+- Show the last five invoices for Bianchi SpA and whether they are paid.
+- Summarise this month's sales by customer, largest first.
+- Which suppliers did we buy the most from this year?

@@ -1,0 +1,961 @@
+{
+  "slug": "tiktok-ads",
+  "name": "TikTok Ads",
+  "description": "Let your AI analyse your TikTok ads: spend, impressions, clicks and conversions by campaign, ad group, ad, day or audience, plus campaigns, Smart+ campaigns, audiences, pixels and the creative library. Can pause or turn on campaigns, ad groups and ads and change campaign budgets once you switch those tools on and confirm.",
+  "instructions": "## TikTok Ads\nThis connector reads and manages a TikTok advertising account through the **TikTok API for Business** (Marketing API v1.3, `https://business-api.tiktok.com/open_api/v1.3`): the ad account, campaigns (also Smart+), ad groups, ads, performance reports, custom and saved audiences, pixels, the video and image library and identities. It can pause or turn on campaigns, ad groups and ads and change campaign budgets; those tools are installed switched off. It creates nothing.\n\n**Setup (about 15 minutes, plus TikTok's app review)**\n1. Sign in at the TikTok API for Business developer portal (https://business-api.tiktok.com/portal) with a TikTok for Business account that has access to the ad account, and click **Become a Developer** (fill in the company details).\n2. **My Apps → Create an app**: name, description, an **Advertiser redirect URL** (any https page of yours; the connector does not use it, you only copy a code from its address) and the permission scopes: at least **Ad Account Management**, **Ads Management**, **Reporting** and **Audience Management**, plus **Pixel Management** and **Creative Management** for those tools. TikTok reviews new apps, usually within two or three business days.\n3. When the app is approved, open it under **My Apps**: copy the **App ID** and **Secret** into `TIKTOK_ADS_APP_ID` and `TIKTOK_ADS_APP_SECRET` (used only to list the authorized ad accounts). Open the **Advertiser authorization URL** shown there, sign in, tick the ad accounts and confirm. The browser lands on your redirect URL with `auth_code=...` in the address bar; the code works once and expires after an hour.\n4. Exchange the code for the access token right away:\n   `curl -X POST https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/ -H \"Content-Type: application/json\" -d '{\"app_id\":\"<App ID>\",\"secret\":\"<Secret>\",\"auth_code\":\"<auth_code>\"}'`\n   The answer holds `data.access_token` and `data.advertiser_ids`. Paste the token into `TIKTOK_ADS_ACCESS_TOKEN` and one of the ids into `TIKTOK_ADS_ADVERTISER_ID`. This long-term token does not expire; it stops working when the authorization is revoked or the secret is reset.\n5. Set `TIKTOK_ADS_API_HOST` to `https://business-api.tiktok.com`, install and run `tiktok_ads_get_advertiser_info`.\n\n**Sandbox**: for tests without real spend, open the app in the developer portal → **Sandbox**, create a sandbox ad account and generate its access token there (no review needed). Use that token and sandbox advertiser id, and set `TIKTOK_ADS_API_HOST` to `https://sandbox-ads.tiktok.com`. Sandbox accounts deliver nothing and report no real data.\n\n**One ad account per connector**: every tool works on `TIKTOK_ADS_ADVERTISER_ID`. A token often covers several accounts (`tiktok_ads_list_authorized_advertisers` lists them); install the connector again for another account.\n\n**Changes spend money: confirm first.** `tiktok_ads_update_campaign_status`, `tiktok_ads_update_ad_group_status` and `tiktok_ads_update_ad_status` (ENABLE starts spending, DISABLE pauses) and `tiktok_ads_update_campaign_budget` act at once. They are installed switched off; once switched on, state the object (name and id), the current and the new value, and wait for the user's yes. An ad delivers only when the ad, its ad group and its campaign are all on. Budgets are decimal amounts in the account currency (`50` = 50.00), not cents; TikTok refuses a budget below its minimum or below 105% of what has already been spent. Ad group budgets are not offered: TikTok's ad group update replaces the whole ad group.\n\n**JSON in parameters**: TikTok takes lists and filters as JSON text in the query, so `fields`, `filtering`, `dimensions`, `metrics`, `pixel_ids`, `video_ids`, `image_ids` and `custom_audience_ids` are strings holding JSON, e.g. `[\"spend\",\"clicks\"]` or `{\"campaign_ids\":[\"1800...\"]}`.\n\n**Reports** (`tiktok_ads_get_report`)\n- Pick the level with `data_level` and the matching ID dimension: AUCTION_CAMPAIGN with `campaign_id`, AUCTION_ADGROUP with `adgroup_id`, AUCTION_AD with `ad_id`, AUCTION_ADVERTISER with `advertiser_id`. Use one ID dimension and at most one time dimension: `stat_time_day` for daily rows (at most 30 days per request; split longer periods) or `stat_time_hour` (one day). Without a time dimension a request may span up to 365 days.\n- Names come as metrics: add `campaign_name`, `adgroup_name` or `ad_name` to `metrics`.\n- Audience breakdowns need `report_type` AUDIENCE with dimensions such as `age`, `gender`, `country_code` or `placement`; not every metric is available there.\n- Dates are in the ad account's timezone; `spend` and costs are in the account currency. Metrics come back as strings.\n- Not every combination of dimensions and metrics is allowed; the error message names the one that is not.\n\n**Lists** return their items in `data.list[]` (`data.pixels[]`, `data.saved_audiences[]` and `data.identity_list[]` for pixels, saved audiences and identities) and `data.page_info` (`page`, `page_size`, `total_number`, `total_page`); ask for the next `page` while `page` < `total_page`. Ids are long numbers: pass them as strings.\n\n**Errors arrive with HTTP 200**: TikTok puts the result in `code` (0 = success) and `message`; the connector turns other codes into errors.\n- 40001: the app or token has no permission for this ad account or action (scope missing in the app, account not authorized). Authorize the ad account again with the needed scopes.\n- 40100, 40016, 40133: too many requests; wait a moment and try again.\n- 40104, 40105, 40102, 40106: the access token is missing, invalid, expired or revoked, or does not belong to this ad account; generate a new one.\n- 40118 to 40125: the app or ad account is not allowed this feature or permission.\n- 40300, 40301: TikTok does not know the advertiser id.\n- 40002 and other 4xxxx codes: a parameter is wrong or missing; `message` names it.\n- 5xxxx, 60001: a TikTok server error or maintenance; try again later.\n\n**Out of scope here**: creating or editing campaigns, ad groups, ads and audiences, uploading creatives, asynchronous report tasks, Business Center management, the Events API and TikTok Shop (GMV Max).",
+  "region": "intl",
+  "category": "advertising",
+  "icon": "tiktok-ads",
+  "docsUrl": "https://business-api.tiktok.com/portal/docs",
+  "requiredEnvVars": [
+    "TIKTOK_ADS_API_HOST",
+    "TIKTOK_ADS_ACCESS_TOKEN",
+    "TIKTOK_ADS_ADVERTISER_ID"
+  ],
+  "optionalEnvVars": [
+    "TIKTOK_ADS_APP_ID",
+    "TIKTOK_ADS_APP_SECRET"
+  ],
+  "appRegistrationUrl": "https://business-api.tiktok.com/portal",
+  "envVarMeta": {
+    "TIKTOK_ADS_API_HOST": {
+      "label": "API host (production or sandbox)",
+      "kind": "address",
+      "help": "https://business-api.tiktok.com for real ad accounts, https://sandbox-ads.tiktok.com for a sandbox ad account and its token.",
+      "example": "https://business-api.tiktok.com",
+      "pattern": "^https://(business-api|sandbox-ads)\\.tiktok\\.com$",
+      "patternMessage": "Use exactly https://business-api.tiktok.com or https://sandbox-ads.tiktok.com, without a path or trailing slash."
+    },
+    "TIKTOK_ADS_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The long-term access_token from exchanging the auth_code of the Advertiser authorization URL (see the setup), or a sandbox token from the app's Sandbox page.",
+      "link": "https://business-api.tiktok.com/portal",
+      "pattern": "^[A-Za-z0-9]+$",
+      "patternMessage": "TikTok access tokens contain only letters and digits. Paste the token alone, without quotes or the word Bearer."
+    },
+    "TIKTOK_ADS_ADVERTISER_ID": {
+      "label": "Advertiser ID (ad account)",
+      "kind": "setting",
+      "help": "The ad account id: one of the advertiser_ids returned with the token, or the aadvid=... number in the TikTok Ads Manager address bar.",
+      "example": "7123456789012345678",
+      "pattern": "^[0-9]{6,25}$",
+      "patternMessage": "The advertiser id is a long number with digits only."
+    },
+    "TIKTOK_ADS_APP_ID": {
+      "label": "App ID",
+      "kind": "credential",
+      "help": "Optional, for tiktok_ads_list_authorized_advertisers: developer portal → My Apps → your app → App ID.",
+      "link": "https://business-api.tiktok.com/portal",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "The App ID is a number."
+    },
+    "TIKTOK_ADS_APP_SECRET": {
+      "label": "App secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Optional, for tiktok_ads_list_authorized_advertisers: the Secret on the same page.",
+      "link": "https://business-api.tiktok.com/portal",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "TikTok refused the request. Check TIKTOK_ADS_ADVERTISER_ID (digits only; codes 40300 and 40301 mean TikTok does not know it) and that TIKTOK_ADS_API_HOST matches the token: a sandbox token only works on https://sandbox-ads.tiktok.com.",
+    "401": "TikTok refused the access token (codes 40102 to 40106): it is wrong, was revoked, or belongs to the other environment. Generate a new one and check TIKTOK_ADS_API_HOST.",
+    "403": "The token has no permission for this ad account or action (code 40001, or 40118 to 40125). Tick the scopes in the app, then authorize the ad account again and exchange a new token.",
+    "rate_limited": "TikTok is rate limiting this app or ad account (code 40100, 40016 or 40133). Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "tiktok_ads_get_advertiser_info"
+  },
+  "prerequisites": "A TikTok for Business account with access to the ad account, and an approved developer app in the TikTok API for Business portal (review takes a few business days) whose advertiser authorization gives the long-term access token. A sandbox ad account and token work without review. About 15 minutes.",
+  "connector": {
+    "name": "TikTok API for Business",
+    "type": "REST",
+    "baseUrl": "{{TIKTOK_ADS_API_HOST}}/open_api/v1.3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Access-Token",
+      "apiKey": "{{TIKTOK_ADS_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "code",
+          "in": [
+            40016,
+            40100,
+            40132,
+            40133
+          ],
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 429
+        },
+        {
+          "path": "code",
+          "in": [
+            40101,
+            40102,
+            40103,
+            40104,
+            40105,
+            40106,
+            40107,
+            40108,
+            40109,
+            40110,
+            40112,
+            40113,
+            40115,
+            40116,
+            40131
+          ],
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 401
+        },
+        {
+          "path": "code",
+          "in": [
+            40001,
+            40118,
+            40119,
+            40124,
+            40125
+          ],
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 403
+        },
+        {
+          "path": "code",
+          "in": [
+            40007
+          ],
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 404
+        },
+        {
+          "path": "code",
+          "in": [
+            60001
+          ],
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 503
+        },
+        {
+          "path": "code",
+          "matches": "^5[0-9]{4}$",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 502
+        },
+        {
+          "path": "code",
+          "matches": "^(?!20001$)[1-9][0-9]*$",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "tiktok_ads_list_authorized_advertisers",
+      "description": "List every ad account (advertiser_id and name) the access token was authorized for. Needs TIKTOK_ADS_APP_ID and TIKTOK_ADS_APP_SECRET, which TikTok asks for on this one call.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oauth2/advertiser/get/",
+        "queryParams": {
+          "app_id": "{{TIKTOK_ADS_APP_ID}}",
+          "secret": "{{TIKTOK_ADS_APP_SECRET}}"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_get_advertiser_info",
+      "description": "Read the configured ad account: name, company, status, currency, timezone, country, balance and more. A quick check that the token and TIKTOK_ADS_ADVERTISER_ID work.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Optional JSON array of fields, e.g. [\"name\",\"status\",\"currency\",\"timezone\",\"balance\"]. Leave empty for all fields."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertiser/info/",
+        "queryParams": {
+          "advertiser_ids": "[\"{{TIKTOK_ADS_ADVERTISER_ID}}\"]",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_list_campaigns",
+      "description": "List the campaigns of the ad account: id, name, objective, budget mode and budget, operation and secondary status, creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filtering": {
+            "type": "string",
+            "description": "Optional JSON object to filter by, e.g. {\"campaign_ids\":[\"1800...\"]}, {\"primary_status\":\"STATUS_DELIVERY_OK\"} (also STATUS_DISABLE, STATUS_DELETE, STATUS_ALL; deleted ones are left out by default), {\"objective_type\":\"TRAFFIC\"}, {\"campaign_name\":\"spring\"}, {\"creation_filter_start_time\":\"2026-10-01 00:00:00\"}."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional JSON array of the fields to return, e.g. [\"campaign_id\",\"campaign_name\",\"budget\"]. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (default 1). page_info.total_page in the answer says how many there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaign/get/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "filtering": "$filtering",
+          "fields": "$fields",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_list_smart_plus_campaigns",
+      "description": "List the Upgraded Smart+ campaigns of the ad account (TikTok's automated campaign type), which tiktok_ads_list_campaigns may not show in full. Not available on the sandbox host.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filtering": {
+            "type": "string",
+            "description": "Optional JSON object to filter by, e.g. {\"campaign_ids\":[\"1800...\"]}, {\"primary_status\":\"STATUS_DELIVERY_OK\"}, {\"objective_type\":\"WEB_CONVERSIONS\"}, {\"campaign_name\":\"spring\"}."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional JSON array of the fields to return, e.g. [\"campaign_id\",\"campaign_name\",\"budget\"]. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (default 1). page_info.total_page in the answer says how many there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/smart_plus/campaign/get/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "filtering": "$filtering",
+          "fields": "$fields",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_list_ad_groups",
+      "description": "List the ad groups of the ad account (TikTok's name for ad sets): campaign, budget, schedule, bidding, optimization goal, placements, targeting and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filtering": {
+            "type": "string",
+            "description": "Optional JSON object to filter by, e.g. {\"campaign_ids\":[\"1800...\"]}, {\"adgroup_ids\":[\"1800...\"]}, {\"primary_status\":\"STATUS_DELIVERY_OK\"} (deleted ones are left out by default), {\"adgroup_name\":\"retargeting\"}."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional JSON array of the fields to return, e.g. [\"adgroup_id\",\"adgroup_name\",\"campaign_id\",\"budget\"]. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (default 1). page_info.total_page in the answer says how many there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adgroup/get/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "filtering": "$filtering",
+          "fields": "$fields",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_list_ads",
+      "description": "List the ads of the ad account: ad group and campaign, ad text, call to action, landing page, video_id or image_ids, identity and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filtering": {
+            "type": "string",
+            "description": "Optional JSON object to filter by, e.g. {\"adgroup_ids\":[\"1800...\"]}, {\"campaign_ids\":[\"1800...\"]}, {\"ad_ids\":[\"1800...\"]}, {\"primary_status\":\"STATUS_DELIVERY_OK\"} (deleted ones are left out by default)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional JSON array of the fields to return, e.g. [\"ad_id\",\"ad_name\",\"adgroup_id\",\"operation_status\"]. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (default 1). page_info.total_page in the answer says how many there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ad/get/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "filtering": "$filtering",
+          "fields": "$fields",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_get_report",
+      "description": "Run a synchronous performance report: spend, impressions, clicks, conversions and more, per campaign, ad group, ad, day or audience breakdown, for a date range or the lifetime. One row per combination of dimensions in list[], each with dimensions and metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD, in the ad account's timezone. Required unless query_lifetime is true."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD. The range may span at most 365 days, 30 with the stat_time_day dimension and one day with stat_time_hour."
+          },
+          "dimensions": {
+            "type": "string",
+            "description": "JSON array of dimensions (default [\"campaign_id\"]): at most one ID dimension (advertiser_id, campaign_id, adgroup_id, ad_id) and at most one time dimension (stat_time_day, stat_time_hour); BASIC also takes country_code. With report_type AUDIENCE: age, gender, country_code, platform, ac, language, placement and more.",
+            "default": "[\"campaign_id\"]"
+          },
+          "metrics": {
+            "type": "string",
+            "description": "JSON array of metrics (default [\"spend\",\"impressions\",\"clicks\",\"ctr\",\"cpc\",\"cpm\",\"reach\",\"conversion\",\"cost_per_conversion\",\"conversion_rate\"]). Also campaign_name, adgroup_name, ad_name, currency, frequency, video_play_actions, video_watched_2s, video_watched_6s, average_video_play, likes, comments, shares, follows, profile_visits, complete_payment, complete_payment_roas, total_complete_payment_rate, real_time_conversion and more.",
+            "default": "[\"spend\",\"impressions\",\"clicks\",\"ctr\",\"cpc\",\"cpm\",\"reach\",\"conversion\",\"cost_per_conversion\",\"conversion_rate\"]"
+          },
+          "data_level": {
+            "type": "string",
+            "description": "AUCTION_CAMPAIGN (default), AUCTION_ADGROUP, AUCTION_AD or AUCTION_ADVERTISER; it must match the ID dimension.",
+            "enum": [
+              "AUCTION_ADVERTISER",
+              "AUCTION_CAMPAIGN",
+              "AUCTION_ADGROUP",
+              "AUCTION_AD"
+            ],
+            "default": "AUCTION_CAMPAIGN"
+          },
+          "report_type": {
+            "type": "string",
+            "description": "BASIC (default) for performance, AUDIENCE for breakdowns by age, gender, country and similar.",
+            "enum": [
+              "BASIC",
+              "AUDIENCE"
+            ],
+            "default": "BASIC"
+          },
+          "query_lifetime": {
+            "type": "boolean",
+            "description": "true for lifetime totals instead of start_date and end_date (BASIC only)."
+          },
+          "filtering": {
+            "type": "string",
+            "description": "Optional JSON array of filters, e.g. [{\"field_name\":\"campaign_ids\",\"filter_type\":\"IN\",\"filter_value\":\"[\\\"1800...\\\"]\"}]. filter_value is itself a JSON string."
+          },
+          "order_field": {
+            "type": "string",
+            "description": "Optional metric to sort by, e.g. spend."
+          },
+          "order_type": {
+            "type": "string",
+            "description": "DESC (default) or ASC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "enable_total_metrics": {
+            "type": "boolean",
+            "description": "true to add total_metrics, the sum over all rows (BASIC only)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (default 1). page_info.total_page in the answer says how many there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 100).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/integrated/get/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "report_type": "$report_type",
+          "data_level": "$data_level",
+          "dimensions": "$dimensions",
+          "metrics": "$metrics",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "query_lifetime": "$query_lifetime",
+          "filtering": "$filtering",
+          "order_field": "$order_field",
+          "order_type": "$order_type",
+          "enable_total_metrics": "$enable_total_metrics",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_list_custom_audiences",
+      "description": "List the custom and lookalike audiences of the ad account: id, name, type, size (cover_num), whether it is valid for ads and when it expires.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "custom_audience_ids": {
+            "type": "string",
+            "description": "Optional JSON array of up to 100 audience ids to restrict the list to."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (default 1). page_info.total_page in the answer says how many there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dmp/custom_audience/list/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "custom_audience_ids": "$custom_audience_ids",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_get_custom_audiences",
+      "description": "Read up to 100 custom audiences in detail, with their rules, source and recent history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "custom_audience_ids": {
+            "type": "string",
+            "description": "JSON array of audience ids, e.g. [\"123456\"]."
+          }
+        },
+        "required": [
+          "custom_audience_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dmp/custom_audience/get/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "custom_audience_ids": "$custom_audience_ids"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_list_saved_audiences",
+      "description": "List the saved audiences (stored targeting presets) of the ad account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "saved_audience_ids": {
+            "type": "string",
+            "description": "Optional JSON array of saved audience ids."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (default 1). page_info.total_page in the answer says how many there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dmp/saved_audience/list/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "saved_audience_ids": "$saved_audience_ids",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_list_pixels",
+      "description": "List the TikTok Pixels of the ad account with their code, setup mode and events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pixel_id": {
+            "type": "string",
+            "description": "Optional: only this pixel."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional: pixels whose name contains this text."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (default 1). page_info.total_page in the answer says how many there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 20 (default 20).",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pixel/list/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "pixel_id": "$pixel_id",
+          "name": "$name",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_get_pixel_event_stats",
+      "description": "Count the events pixels received per event type over a date range of at most 30 days (UTC): a quick check that tracking works.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pixel_ids": {
+            "type": "string",
+            "description": "JSON array of up to 10 pixel ids, e.g. [\"C1234567890\"]."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "pixel_ids",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pixel/event/stats/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "pixel_ids": "$pixel_ids",
+          "date_range": "{\"start_date\":\"${start_date}\",\"end_date\":\"${end_date}\"}"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_get_videos",
+      "description": "Read up to 60 videos of the ad account's creative library by video_id (from tiktok_ads_list_ads): file name, duration, size, format and a preview link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_ids": {
+            "type": "string",
+            "description": "JSON array of video ids, e.g. [\"v10033g50000...\"]."
+          }
+        },
+        "required": [
+          "video_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/file/video/ad/info/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "video_ids": "$video_ids"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_search_videos",
+      "description": "Search the videos of the ad account's creative library, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filtering": {
+            "type": "string",
+            "description": "Optional JSON object, e.g. {\"video_ids\":[\"v10033g...\"]}, {\"material_ids\":[\"7012...\"]}, {\"video_name\":\"summer\"}."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (default 1). page_info.total_page in the answer says how many there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20).",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/file/video/ad/search/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "filtering": "$filtering",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_get_images",
+      "description": "Read up to 100 images of the ad account's creative library by image id: file name, size, format and URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_ids": {
+            "type": "string",
+            "description": "JSON array of image ids."
+          }
+        },
+        "required": [
+          "image_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/file/image/ad/info/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "image_ids": "$image_ids"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_list_identities",
+      "description": "List the identities ads can run under: custom identities and the TikTok accounts linked to the ad account or its Business Center.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identity_type": {
+            "type": "string",
+            "description": "Optional: CUSTOMIZED_USER, AUTH_CODE, TT_USER or BC_AUTH_TT. Leave empty for all identities.",
+            "enum": [
+              "CUSTOMIZED_USER",
+              "AUTH_CODE",
+              "TT_USER",
+              "BC_AUTH_TT"
+            ]
+          },
+          "identity_authorized_bc_id": {
+            "type": "string",
+            "description": "Business Center id, required with BC_AUTH_TT."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (default 1). page_info.total_page in the answer says how many there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/identity/get/",
+        "queryParams": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "identity_type": "$identity_type",
+          "identity_authorized_bc_id": "$identity_authorized_bc_id",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "tiktok_ads_update_campaign_status",
+      "description": "Turn campaigns on (ENABLE, starts spending) or pause them (DISABLE). Acts at once: name the campaigns and the new status and get a yes from the user first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Campaign ids, up to 20."
+          },
+          "operation_status": {
+            "type": "string",
+            "description": "ENABLE to start delivery (it spends money), DISABLE to pause it.",
+            "enum": [
+              "ENABLE",
+              "DISABLE"
+            ]
+          }
+        },
+        "required": [
+          "campaign_ids",
+          "operation_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign/status/update/",
+        "bodyMapping": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "campaign_ids": "$campaign_ids",
+          "operation_status": "$operation_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_ads_update_ad_group_status",
+      "description": "Turn ad groups on (ENABLE, starts spending) or pause them (DISABLE). Acts at once: name the ad groups and the new status and get a yes from the user first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "adgroup_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ad group ids, up to 20."
+          },
+          "operation_status": {
+            "type": "string",
+            "description": "ENABLE to start delivery (it spends money), DISABLE to pause it.",
+            "enum": [
+              "ENABLE",
+              "DISABLE"
+            ]
+          }
+        },
+        "required": [
+          "adgroup_ids",
+          "operation_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/adgroup/status/update/",
+        "bodyMapping": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "adgroup_ids": "$adgroup_ids",
+          "operation_status": "$operation_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_ads_update_ad_status",
+      "description": "Turn ads on (ENABLE, starts spending) or pause them (DISABLE). Acts at once: name the ads and the new status and get a yes from the user first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ad ids, up to 20."
+          },
+          "operation_status": {
+            "type": "string",
+            "description": "ENABLE to start delivery (it spends money), DISABLE to pause it.",
+            "enum": [
+              "ENABLE",
+              "DISABLE"
+            ]
+          }
+        },
+        "required": [
+          "ad_ids",
+          "operation_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ad/status/update/",
+        "bodyMapping": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "ad_ids": "$ad_ids",
+          "operation_status": "$operation_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_ads_update_campaign_budget",
+      "description": "Change the budget of a campaign that has its own budget (budget_mode BUDGET_MODE_DAY, BUDGET_MODE_DYNAMIC_DAILY_BUDGET or BUDGET_MODE_TOTAL), in the account currency as a decimal amount (50 = 50.00). The new budget must be at least TikTok's minimum and at least 105% of what the campaign has already spent. Acts at once: state the campaign, the current and the new budget and get a yes from the user first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "The campaign id."
+          },
+          "budget": {
+            "type": "number",
+            "description": "The new budget in the account currency, e.g. 50 for 50.00."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "budget"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign/update/",
+        "bodyMapping": {
+          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
+          "campaign_id": "$campaign_id",
+          "budget": "$budget"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

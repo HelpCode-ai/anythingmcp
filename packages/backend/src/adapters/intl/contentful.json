@@ -1,0 +1,826 @@
+{
+  "slug": "contentful",
+  "name": "Contentful",
+  "description": "Let your AI work with your Contentful content: search entries and assets, read content types, locales and tags, and create, change, publish or unpublish entries. Delivery token for reads, management token for writes.",
+  "instructions": "## Contentful\nThis connector works with one Contentful space and environment. It reads published content through the **Content Delivery API** (`https://cdn.contentful.com`, read-only, delivery token) and writes through the **Content Management API** (`https://api.contentful.com`, personal access token): content types, entries, assets, locales and tags, plus creating, changing, publishing and unpublishing entries.\n\n**Two tokens, by design.** Reads go to the delivery API with a delivery token that can only read published content. Writes, drafts, spaces and environments need the management API and a personal access token that acts with the full rights of its user. The management variables are optional: without them every read works, and the management tools answer that `CONTENTFUL_MANAGEMENT_URL` or `CONTENTFUL_MANAGEMENT_TOKEN` is missing.\n\n**Setup (about 5 minutes)**\n1. In https://app.contentful.com open the space, then **Settings → API keys → Add API key**. Tick the environments it may read (master at least) and save.\n2. Copy the **Space ID** into `CONTENTFUL_SPACE_ID` and the **Content Delivery API access token** into `CONTENTFUL_DELIVERY_TOKEN`.\n3. Set `CONTENTFUL_ENVIRONMENT` to the environment id, usually `master`.\n4. Set `CONTENTFUL_DELIVERY_URL` to `https://cdn.contentful.com` (or `https://cdn.eu.contentful.com` for a space in the EU data region). To read drafts too, use `https://preview.contentful.com` (or `https://preview.eu.contentful.com`) with the **Content Preview API access token** of the same key instead.\n5. For writes: avatar menu → **Account settings → CMA tokens → Create personal access token**, pick an expiry, copy the token at once (shown only once) into `CONTENTFUL_MANAGEMENT_TOKEN`, and set `CONTENTFUL_MANAGEMENT_URL` to `https://api.contentful.com` (or `https://api.eu.contentful.com`). The token acts as you, in every space you can edit.\n6. Install and run `contentful_get_space`.\n\n**Publishing changes the live website or app: confirm first.** `contentful_publish_entry` and `contentful_unpublish_entry` change what visitors see. State the entry and the effect and wait for the user's yes. `contentful_delete_entry` is installed switched off.\n\n**Read before you write**\n1. `contentful_list_content_types` gives the content type ids and field ids; `contentful_list_locales` the locale codes.\n2. Field values are keyed by field id and then by locale: `{\"title\": {\"en-US\": \"Hello\"}}`. Links are `{\"sys\": {\"type\": \"Link\", \"linkType\": \"Entry\", \"id\": \"...\"}}` (or `\"linkType\": \"Asset\"`).\n3. Every write after the first needs the entry's current `sys.version`: read it with `contentful_get_entry_for_editing` right before writing. A stale version fails with 409 `VersionMismatch`; read again and retry.\n4. `contentful_update_entry` replaces all fields (anything left out is deleted). For one or two fields use `contentful_patch_entry`.\n5. A change is live only after `contentful_publish_entry` with the new version.\n\n**Searching**: `contentful_list_entries` takes `content_type`, full-text `query`, and further search parameters in `filters` as a query string (`fields.slug=hello` or `fields.date[gte]=2026-01-01&sys.id[nin]=a,b`). Filtering or sorting by a field needs `content_type`. Linked entries and assets come back in `includes` (depth via `include`). Asset URLs start with `//`: add `https:`.\n\n**Paging**: lists return `total`, `skip` and `limit` (up to 1000). Ask for the next page with `skip` = previous `skip` + `limit`.\n\n**Common errors**\n- 401 `AccessTokenInvalid`: wrong or expired token, or a delivery token used on the preview host (or the other way round).\n- 404 `NotFound`: wrong id, or the space or environment is not covered by the token (Contentful answers 404, not 403).\n- 400 `BadRequest` \"A Content Type ID is required\": add `content_type` when filtering by fields.\n- 409 `VersionMismatch`: read the entry again and pass its current `sys.version`.\n- 422 `ValidationFailed`: a required field is empty or a value breaks a validation; the details name the field.\n- 429 `RateLimitExceeded`: the management API allows about 7 requests a second; wait and retry.\n\n**Out of scope here**: uploading assets, creating or editing content types, environments, webhooks, roles, apps and GraphQL.\n\n**401 OrganizationAccessGrantRequired on the management tools**: the organization only accepts personal access tokens it has granted. An organization admin opens Organization settings, finds the token under the access settings for personal access tokens and grants it access, then the write tools work. Read tools on the delivery token are not affected.",
+  "region": "intl",
+  "category": "cms",
+  "icon": "contentful",
+  "docsUrl": "https://www.contentful.com/developers/docs/references/content-delivery-api/",
+  "requiredEnvVars": [
+    "CONTENTFUL_SPACE_ID",
+    "CONTENTFUL_ENVIRONMENT",
+    "CONTENTFUL_DELIVERY_URL",
+    "CONTENTFUL_DELIVERY_TOKEN"
+  ],
+  "optionalEnvVars": [
+    "CONTENTFUL_MANAGEMENT_URL",
+    "CONTENTFUL_MANAGEMENT_TOKEN"
+  ],
+  "appRegistrationUrl": "https://app.contentful.com",
+  "envVarMeta": {
+    "CONTENTFUL_SPACE_ID": {
+      "label": "Space ID",
+      "kind": "setting",
+      "help": "Space → Settings → API keys → your key: Space ID (also in the address bar after /spaces/).",
+      "example": "cfexampleapi",
+      "pattern": "^[a-zA-Z0-9]+$",
+      "patternMessage": "The Space ID is a short string of letters and digits, e.g. 7z3abc9xyzq1."
+    },
+    "CONTENTFUL_ENVIRONMENT": {
+      "label": "Environment",
+      "kind": "setting",
+      "help": "The environment id, usually master. Others are listed under Settings → Environments.",
+      "example": "master",
+      "pattern": "^[a-zA-Z0-9_.-]{1,64}$",
+      "patternMessage": "Use the environment id, e.g. master or staging."
+    },
+    "CONTENTFUL_DELIVERY_URL": {
+      "label": "Delivery API host",
+      "kind": "address",
+      "help": "https://cdn.contentful.com for published content, https://preview.contentful.com for drafts (with a preview token). Spaces in the EU data region use cdn.eu.contentful.com or preview.eu.contentful.com.",
+      "example": "https://cdn.contentful.com",
+      "pattern": "^https://(cdn|preview)(\\.eu)?\\.contentful\\.com$",
+      "patternMessage": "Use https://cdn.contentful.com, https://preview.contentful.com or their .eu variants, without a trailing slash."
+    },
+    "CONTENTFUL_DELIVERY_TOKEN": {
+      "label": "Delivery (or preview) access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Space → Settings → API keys → your key: Content Delivery API access token (or the Content Preview API token when the host is preview).",
+      "link": "https://www.contentful.com/developers/docs/references/authentication/",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste only the token, without the word Bearer."
+    },
+    "CONTENTFUL_MANAGEMENT_URL": {
+      "label": "Management API host (for writes)",
+      "kind": "address",
+      "help": "https://api.contentful.com, or https://api.eu.contentful.com for a space in the EU data region. Only needed for writing and for drafts.",
+      "example": "https://api.contentful.com",
+      "pattern": "^https://api(\\.eu)?\\.contentful\\.com$",
+      "patternMessage": "Use https://api.contentful.com or https://api.eu.contentful.com, without a trailing slash."
+    },
+    "CONTENTFUL_MANAGEMENT_TOKEN": {
+      "label": "Personal access token (for writes)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Avatar menu → Account settings → CMA tokens → Create personal access token. Shown only once; acts with your full rights.",
+      "link": "https://www.contentful.com/help/token-management/personal-access-tokens/",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste only the token, without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Contentful refused the token. Check that the delivery token belongs to this space and fits the host (a delivery token does not work on preview.contentful.com and the other way round), and that the personal access token has not expired.",
+    "404": "Contentful does not find the space or environment for this token. Check CONTENTFUL_SPACE_ID and CONTENTFUL_ENVIRONMENT, and that the API key may read that environment (Settings → API keys → Environments).",
+    "rate_limited": "Contentful is rate limiting this space. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "contentful_get_space"
+  },
+  "prerequisites": "A Contentful space with an API key (Settings → API keys) for its Space ID and delivery token; for writes also a personal access token. About 5 minutes.",
+  "connector": {
+    "name": "Contentful Delivery and Management APIs",
+    "type": "REST",
+    "baseUrl": "{{CONTENTFUL_DELIVERY_URL}}",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "contentful_get_space",
+      "description": "Read the space the connector is set up for (Content Delivery API): its name and locales with the default locale. A quick check that the space id and delivery token work.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{{CONTENTFUL_SPACE_ID}}",
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_DELIVERY_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "contentful_list_content_types",
+      "description": "List the content types of the environment (Content Delivery API): for each its sys.id (the id entries are filtered by), name, displayField and fields with id, type, localized and required. Read this before querying or writing entries to learn the field ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Items to skip, for the next page (skip = previous skip + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/content_types",
+        "queryParams": {
+          "limit": "$limit",
+          "skip": "$skip"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_DELIVERY_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "contentful_get_content_type",
+      "description": "Read one content type by id (Content Delivery API): its fields with id, name, type (Symbol, Text, RichText, Integer, Number, Date, Boolean, Location, Link, Array, Object), validations and which field is the title.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content_type_id": {
+            "type": "string",
+            "description": "The content type id (sys.id), e.g. blogPost."
+          }
+        },
+        "required": [
+          "content_type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/content_types/{content_type_id}",
+        "encodePathParams": true,
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_DELIVERY_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "contentful_list_entries",
+      "description": "Search published entries (Content Delivery API). Returns total, skip, limit, items[] (each with sys.id, sys.contentType and fields) and includes with the linked Entry and Asset objects. A field filter needs content_type. With the preview host and a preview token in CONTENTFUL_DELIVERY_URL and CONTENTFUL_DELIVERY_TOKEN, drafts are included too. items is empty when nothing matches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string",
+            "description": "Content type id. Required whenever filters, select or order use fields.*."
+          },
+          "query": {
+            "type": "string",
+            "description": "Full-text search over all text fields."
+          },
+          "filters": {
+            "type": "string",
+            "description": "More search parameters as a query string, e.g. fields.slug=hello-world or fields.publishDate[gte]=2026-01-01&fields.title[match]=launch or sys.id[in]=id1,id2. Operators: [ne], [in], [nin], [all], [exists], [lt], [lte], [gt], [gte], [match], [near], [within]."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated properties to return, e.g. sys.id,fields.title,fields.slug (needs content_type when it names fields)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order, e.g. -sys.createdAt or fields.title (needs content_type for fields). Default: -sys.updatedAt."
+          },
+          "include": {
+            "type": "integer",
+            "description": "Levels of linked entries and assets to resolve into includes, 0 to 10 (default 1)."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale code such as de-DE, or * for all locales (fields then hold one value per locale). Default: the space default locale."
+          },
+          "links_to_entry": {
+            "type": "string",
+            "description": "Only entries that link to this entry id."
+          },
+          "links_to_asset": {
+            "type": "string",
+            "description": "Only entries that link to this asset id."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Only entries with any of these tag ids, comma-separated."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Items to skip, for the next page (skip = previous skip + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/entries",
+        "queryParams": {
+          "content_type": "$content_type",
+          "query": "$query",
+          "__rawquery": "$filters",
+          "select": "$select",
+          "order": "$order",
+          "include": "$include",
+          "locale": "$locale",
+          "links_to_entry": "$links_to_entry",
+          "links_to_asset": "$links_to_asset",
+          "metadata.tags.sys.id[in]": "$tags",
+          "limit": "$limit",
+          "skip": "$skip"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_DELIVERY_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "contentful_get_entry",
+      "description": "Read one published entry by id (Content Delivery API): sys (id, contentType, createdAt, updatedAt, revision), metadata.tags and fields. Links to other entries and assets come back as link objects; to resolve them use contentful_list_entries with filters sys.id=<id> and include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "The entry id (sys.id)."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale code, or * for all locales."
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/entries/{entry_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "locale": "$locale"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_DELIVERY_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "contentful_list_assets",
+      "description": "Search published assets (images, documents, videos) via the Content Delivery API. Each item has sys.id and fields title, description and file (url, fileName, contentType, details with size and image dimensions). file.url starts with // : prefix it with https: to open it. items is empty when nothing matches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Full-text search over title, description and file name."
+          },
+          "mimetype_group": {
+            "type": "string",
+            "description": "Only assets of this kind.",
+            "enum": [
+              "attachment",
+              "plaintext",
+              "image",
+              "audio",
+              "video",
+              "richtext",
+              "presentation",
+              "spreadsheet",
+              "pdfdocument",
+              "archive",
+              "code",
+              "markup"
+            ]
+          },
+          "filters": {
+            "type": "string",
+            "description": "More search parameters as a query string, e.g. fields.file.contentType=image/png or sys.createdAt[gte]=2026-01-01."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order, e.g. -sys.createdAt or fields.file.details.size."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale code, or * for all locales."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Items to skip, for the next page (skip = previous skip + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/assets",
+        "queryParams": {
+          "query": "$query",
+          "mimetype_group": "$mimetype_group",
+          "__rawquery": "$filters",
+          "order": "$order",
+          "locale": "$locale",
+          "limit": "$limit",
+          "skip": "$skip"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_DELIVERY_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "contentful_get_asset",
+      "description": "Read one published asset by id (Content Delivery API): title, description and file with url (prefix https:), fileName, contentType, size and, for images, width and height.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "The asset id (sys.id)."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale code, or * for all locales."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/assets/{asset_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "locale": "$locale"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_DELIVERY_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "contentful_list_locales",
+      "description": "List the locales of the environment (Content Delivery API): code (e.g. en-US, de-DE), name, default flag and fallbackCode. Field values of localized fields are keyed by these codes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Items to skip, for the next page (skip = previous skip + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/locales",
+        "queryParams": {
+          "limit": "$limit",
+          "skip": "$skip"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_DELIVERY_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "contentful_list_tags",
+      "description": "List the public content tags of the environment (Content Delivery API) with sys.id and name. Private tags are not shown here; they are visible only to editors in the web app. Filter entries by tag with the tags argument of contentful_list_entries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Items to skip, for the next page (skip = previous skip + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/tags",
+        "queryParams": {
+          "limit": "$limit",
+          "skip": "$skip"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_DELIVERY_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "contentful_list_spaces",
+      "description": "List the spaces the management token can reach (Content Management API), with sys.id and name. Use it to find CONTENTFUL_SPACE_ID. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Items to skip, for the next page (skip = previous skip + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces",
+        "queryParams": {
+          "limit": "$limit",
+          "skip": "$skip"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/vnd.contentful.management.v1+json"
+        }
+      }
+    },
+    {
+      "name": "contentful_list_environments",
+      "description": "List the environments of the space (Content Management API), e.g. master, staging, with sys.id, name, status and aliases. Use it to pick CONTENTFUL_ENVIRONMENT. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Items to skip, for the next page (skip = previous skip + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces/{{CONTENTFUL_SPACE_ID}}/environments",
+        "queryParams": {
+          "limit": "$limit",
+          "skip": "$skip"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/vnd.contentful.management.v1+json"
+        }
+      }
+    },
+    {
+      "name": "contentful_list_all_entries",
+      "description": "Search all entries including drafts and changed-but-unpublished versions (Content Management API). Each item carries sys.version (needed by the write tools), sys.publishedVersion and sys.archivedVersion, and fields with every locale. Use contentful_list_entries for published content. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string",
+            "description": "Content type id. Required whenever filters, select or order use fields.*."
+          },
+          "query": {
+            "type": "string",
+            "description": "Full-text search over all text fields."
+          },
+          "filters": {
+            "type": "string",
+            "description": "More search parameters as a query string, e.g. fields.slug=hello-world or sys.publishedAt[exists]=false (only entries never published)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated properties to return, e.g. sys,fields.title."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order, e.g. -sys.updatedAt."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Items to skip, for the next page (skip = previous skip + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/entries",
+        "queryParams": {
+          "content_type": "$content_type",
+          "query": "$query",
+          "__rawquery": "$filters",
+          "select": "$select",
+          "order": "$order",
+          "limit": "$limit",
+          "skip": "$skip"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/vnd.contentful.management.v1+json"
+        }
+      }
+    },
+    {
+      "name": "contentful_get_entry_for_editing",
+      "description": "Read the latest version of an entry, draft changes included (Content Management API): fields with every locale, metadata.tags and sys.version. Always read it right before contentful_update_entry, contentful_patch_entry or contentful_publish_entry and pass sys.version as version. An entry is published and current when sys.publishedVersion + 1 equals sys.version. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "The entry id (sys.id)."
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/entries/{entry_id}",
+        "encodePathParams": true,
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/vnd.contentful.management.v1+json"
+        }
+      }
+    },
+    {
+      "name": "contentful_create_entry",
+      "description": "Create a draft entry of a content type (Content Management API). fields maps each field id to its values per locale, e.g. {\"title\": {\"en-US\": \"Hello\"}, \"slug\": {\"en-US\": \"hello\"}}; a link is {\"sys\": {\"type\": \"Link\", \"linkType\": \"Entry\", \"id\": \"<id>\"}}. Returns the entry with sys.id and sys.version 1. It stays unpublished until contentful_publish_entry. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string",
+            "description": "Content type id of the new entry, e.g. blogPost."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Field values keyed by field id, then by locale code."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional tags, e.g. {\"tags\": [{\"sys\": {\"type\": \"Link\", \"linkType\": \"Tag\", \"id\": \"news\"}}]}."
+          }
+        },
+        "required": [
+          "content_type",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/entries",
+        "bodyMapping": {
+          "fields": "$fields",
+          "metadata": "$metadata"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/vnd.contentful.management.v1+json",
+          "X-Contentful-Content-Type": "$content_type"
+        }
+      }
+    },
+    {
+      "name": "contentful_update_entry",
+      "description": "Replace the fields of an entry (Content Management API). Contentful does not merge: every field and locale left out of fields is deleted, so start from contentful_get_entry_for_editing and change only what the user asked. version must be the current sys.version (409 VersionMismatch otherwise). Returns the entry with a new sys.version; publish it again with contentful_publish_entry to make the change live. Prefer contentful_patch_entry for small changes. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "The entry id (sys.id)."
+          },
+          "version": {
+            "type": "integer",
+            "description": "The current sys.version of the entry."
+          },
+          "fields": {
+            "type": "object",
+            "description": "The complete field values keyed by field id, then by locale code."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "The complete metadata, e.g. {\"tags\": [...]}. Pass the entry's current metadata to keep its tags."
+          }
+        },
+        "required": [
+          "entry_id",
+          "version",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/entries/{entry_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "fields": "$fields",
+          "metadata": "$metadata"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/vnd.contentful.management.v1+json",
+          "X-Contentful-Version": "$version"
+        }
+      }
+    },
+    {
+      "name": "contentful_patch_entry",
+      "description": "Change single fields of an entry with JSON Patch operations (Content Management API), leaving the rest untouched. Example: [{\"op\": \"replace\", \"path\": \"/fields/title/en-US\", \"value\": \"New title\"}]. A field that has no value yet must be added whole: {\"op\": \"add\", \"path\": \"/fields/summary\", \"value\": {\"en-US\": \"...\"}}. version must be the current sys.version. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "The entry id (sys.id)."
+          },
+          "version": {
+            "type": "integer",
+            "description": "The current sys.version of the entry."
+          },
+          "operations": {
+            "type": "array",
+            "description": "JSON Patch operations, each with op (add, replace, remove), path and value.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "entry_id",
+          "version",
+          "operations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/entries/{entry_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__raw": "$operations"
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/json-patch+json",
+          "X-Contentful-Version": "$version"
+        }
+      }
+    },
+    {
+      "name": "contentful_publish_entry",
+      "description": "Publish an entry, making its current version visible on the website or app through the delivery API (Content Management API). version must be the current sys.version. Fails with 422 when required fields are missing or validations fail; the answer names them. Confirm with the user before publishing. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "The entry id (sys.id)."
+          },
+          "version": {
+            "type": "integer",
+            "description": "The current sys.version of the entry."
+          }
+        },
+        "required": [
+          "entry_id",
+          "version"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/entries/{entry_id}/published",
+        "encodePathParams": true,
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/vnd.contentful.management.v1+json",
+          "X-Contentful-Version": "$version"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "contentful_unpublish_entry",
+      "description": "Unpublish an entry: it disappears from the delivery API, so from the website or app, and stays as a draft (Content Management API). Confirm with the user first. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "The entry id (sys.id)."
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/entries/{entry_id}/published",
+        "encodePathParams": true,
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/vnd.contentful.management.v1+json"
+        }
+      }
+    },
+    {
+      "name": "contentful_delete_entry",
+      "description": "Delete an entry for good (Content Management API). Unpublish it first. Cannot be undone. Installed switched off; confirm with the user first. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "The entry id (sys.id)."
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/entries/{entry_id}",
+        "encodePathParams": true,
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/vnd.contentful.management.v1+json"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "contentful_create_tag",
+      "description": "Create a content tag in the environment (Content Management API). Public tags are visible through the delivery API, private ones only to editors; visibility cannot be changed later. Attach it to an entry through metadata.tags in contentful_update_entry or contentful_create_entry. Needs CONTENTFUL_MANAGEMENT_URL and CONTENTFUL_MANAGEMENT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag_id": {
+            "type": "string",
+            "description": "Id of the new tag: letters, digits, -, _ and . only, e.g. summerCampaign."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name, e.g. Summer campaign."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "public or private (default private).",
+            "enum": [
+              "public",
+              "private"
+            ]
+          }
+        },
+        "required": [
+          "tag_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "{{CONTENTFUL_MANAGEMENT_URL}}/spaces/{{CONTENTFUL_SPACE_ID}}/environments/{{CONTENTFUL_ENVIRONMENT}}/tags/{tag_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "sys": {
+            "id": "$tag_id",
+            "type": "Tag",
+            "visibility": "$visibility"
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer {{CONTENTFUL_MANAGEMENT_TOKEN}}",
+          "Content-Type": "application/vnd.contentful.management.v1+json"
+        }
+      }
+    }
+  ]
+}

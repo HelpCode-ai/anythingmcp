@@ -101,7 +101,7 @@ const CONNECTORS = `AnythingMCP ships ${COUNT} pre-built connectors (${KEYLESS} 
 • Government & public data — VIES VAT, Handelsregister, DESTATIS, OpenPLZ
 • Banking & payments — Revolut Business, Wise, PAYONE
 • Messaging — WhatsApp, LINE
-• Sports & Web3 — Playtomic, Sorare
+• Sports & Web3 — API-Football, Sorare
 
 Plus 5 connector types you build with no code: REST, SOAP/WSDL, GraphQL,
 Database (Postgres/MySQL/MSSQL/Oracle/MongoDB/SQLite), MCP-to-MCP bridge.

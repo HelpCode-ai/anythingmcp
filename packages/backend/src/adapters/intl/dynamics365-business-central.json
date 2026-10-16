@@ -1,0 +1,1656 @@
+{
+  "slug": "dynamics365-business-central",
+  "name": "Microsoft Dynamics 365 Business Central",
+  "aliases": ["D365", "D365 BC"],
+  "description": "Let your AI work in Business Central: look up customers, vendors and items, read sales quotes, orders and invoices, purchase invoices, the general ledger, chart of accounts and dimensions, and create customers and draft quotes and orders. Business Central online through the standard API v2.0, signed in with your Microsoft account.",
+  "instructions": "## Microsoft Dynamics 365 Business Central\nThis connector works with **Business Central online** through its standard **API v2.0** (`https://api.businesscentral.dynamics.com/v2.0/<tenant>/<environment>/api/v2.0`): companies, customers, vendors, items, sales quotes and orders, sales and purchase invoices, the general ledger, the chart of accounts, dimensions and employees. Every call runs as the user who authorized the connector, with that user's Business Central licence and permission sets: the AI sees and changes exactly what that user may. Business Central on-premises is not covered (it signs in differently); for older NAV installations use the Dynamics NAV connector.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com → **Applications → App registrations → New registration** (or reuse the app of the Outlook, OneDrive or SharePoint connector).\n2. Supported account types: *Accounts in this organizational directory only* is the usual choice.\n3. **Redirect URI**: platform **Web**, `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Dynamics 365 Business Central → Delegated permissions**: tick `Financials.ReadWrite.All` (and `user_impersonation`). Then **Grant admin consent** if your organisation does not let users consent themselves.\n5. **Certificates & secrets → New client secret**; copy the secret **Value** (shown once).\n6. Fill in `MICROSOFT_CLIENT_ID` (Application ID), `MICROSOFT_CLIENT_SECRET` (secret value), `MICROSOFT_TENANT_ID` (the **Directory (tenant) ID** GUID, or your domain such as `contoso.onmicrosoft.com`) and `BC_ENVIRONMENT`, then install.\n7. On the connector page click **Authorize with Provider** and sign in with a Business Central user. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**Tenant and environment are part of every URL.** `MICROSOFT_TENANT_ID` cannot be `common` or `organizations` here, because Business Central needs the real tenant in the address. `BC_ENVIRONMENT` is the environment name exactly as the Business Central admin center lists it: `Production` for most live tenants, `Sandbox` or a custom name such as `SANDBOX-TEST` for sandboxes. A wrong name answers 404; `bc_list_environments` shows the names (some tenants show it only to administrators). Start with a sandbox when you try the connector: writes in Production create real customers and documents.\n\n**Scope**: `https://api.businesscentral.dynamics.com/Financials.ReadWrite.All offline_access`. `offline_access` makes Microsoft issue a refresh token. Do not add Microsoft Graph scopes to this connector: one token serves one API.\n\n**Companies first.** Business data lives in a company. Call `bc_list_companies` and pass its `id` (a GUID) as `company_id` to every other tool. Records are addressed by their `id` GUID too, not by their number: find the id with a list tool and a filter such as `number eq '10000'`.\n\n**Filtering (OData v4)**\n- `filter`: `displayName eq 'Adatum Corporation'`, `contains(displayName,'Adatum')`, `startswith(number,'10')`, `balanceDue gt 0`, `postingDate ge 2026-01-01 and postingDate le 2026-01-31`. Text in single quotes (double a quote inside: `'O''Neil'`), dates and GUIDs bare, enum values as text: `status eq 'Open'`. An enum value with a space is written with `_x0020_` in place of the space, as the answers show it: `status eq 'In_x0020_Review'`, `category eq 'Cost_x0020_of_x0020_Goods_x0020_Sold'`.\n- `select` keeps answers small (`id,number,displayName`); `orderby` sorts (`postingDate desc`); `expand` adds related data, e.g. `salesOrderLines` on an order.\n- Paging: list tools return `top` records (default 50, up to 1000). For the next page call again with `skip` raised by the records already read. Business Central also returns `@odata.nextLink` past 20,000 rows; use `skip` instead.\n\n**Writing**\n- `bc_create_customer`, `bc_create_sales_quote` and `bc_create_sales_order` create records; the documents stay open drafts and nothing is released, shipped, invoiced or posted by this connector. A document can take its lines in the same call (`lines`), or line by line with `bc_add_sales_quote_line` / `bc_add_sales_order_line`. A line needs `lineType` (`Item`, `Account`, `Resource`, `Comment`), `lineObjectNumber` (the item number) and `quantity`; Business Central fills price, description and unit from the item and the customer's price lists unless given.\n- `bc_update_customer` changes only the fields given. Updates carry `If-Match`: pass the record's `@odata.etag` from the last read to refuse the change when someone else edited the record meanwhile (412), or leave the default `*`.\n- Confirm customer, items, quantities and prices with the user before creating a document, and every change before updating.\n\n**Switched off at install**: `bc_delete_customer`, `bc_make_order_from_quote`, `bc_delete_sales_quote`, `bc_delete_sales_order`. Deleting and converting documents cannot be undone from here; turn these on per tool only if the AI should do that.\n\n**Other data**: `bc_query` reads any other API v2.0 resource of a company (contacts, purchase orders, credit memos, shipments, item ledger entries, aged receivables and payables, trial balance, bank accounts, payment terms, currencies, projects) or a nested path such as `salesOrders(<id>)/salesOrderLines`. Custom APIs published by extensions (`/api/<publisher>/<group>/<version>`) are not reached by this connector.\n\n**Limits**: Business Central allows about 6,000 API calls per user in 5 minutes and a few calls at the same time; beyond that it answers 429 with Retry-After. Read with `select` and filters rather than paging through whole tables.\n\n**Common errors**\n- 401: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 or `Authorization_InsufficientPermissions`: the user lacks a Business Central licence or a permission set for that data, or admin consent for the app is missing.\n- 404 `NoEnvironment` or `Not Found`: `BC_ENVIRONMENT` or `MICROSOFT_TENANT_ID` is wrong, or an id does not exist in that company.\n- 400 `BadRequest_ResourceNotFound`: the resource name in `bc_query` is misspelled (camelCase plural, e.g. `purchaseOrders`).\n- 412 `Request_EntityChanged`: the record changed since the etag was read; read it again and retry.\n- 400 `Internal_RecordNotFound` or a validation message: Business Central refused a value (unknown item number, blocked customer, missing posting group in the template).\n\n**Microsoft's own MCP server**: Business Central also offers an MCP server that exposes API pages chosen by an administrator. This connector uses the standard API v2.0 instead, so it works in every environment without that configuration.",
+  "region": "intl",
+  "category": "erp",
+  "icon": "dynamics365-business-central",
+  "docsUrl": "https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/api-reference/v2.0/",
+  "requiredEnvVars": [
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_TENANT_ID",
+    "BC_ENVIRONMENT"
+  ],
+  "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  "envVarMeta": {
+    "MICROSOFT_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center → App registrations → your app → Overview: Application (client) ID. The app registration of the Outlook connector works here too once it has the Business Central permission.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "help": "Same app → Certificates & secrets → New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    },
+    "MICROSOFT_TENANT_ID": {
+      "label": "Tenant ID",
+      "kind": "setting",
+      "help": "The Directory (tenant) ID of the organisation that owns Business Central (Entra admin center → Overview), or its domain such as contoso.onmicrosoft.com. common and organizations do not work here: the tenant is part of the Business Central address.",
+      "example": "aaaabbbb-0000-cccc-1111-dddd2222eeee",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)$",
+      "patternMessage": "Use the tenant GUID or a verified domain such as contoso.onmicrosoft.com."
+    },
+    "BC_ENVIRONMENT": {
+      "label": "Environment name",
+      "kind": "setting",
+      "help": "The Business Central environment, as listed in the Business Central admin center: Production for most live tenants, Sandbox or your sandbox's own name for a test environment.",
+      "example": "Sandbox",
+      "pattern": "^[A-Za-z0-9_-]{1,30}$",
+      "patternMessage": "Use the environment name only, e.g. Production or Sandbox, without spaces or slashes."
+    }
+  },
+  "verifyHints": {
+    "401": "Microsoft refused the access token. Click Authorize with Provider again; if the client secret has expired, create a new one in the app registration first.",
+    "403": "The signed-in user may not use this data: they need a Business Central licence and permission sets in this environment, and the app needs the delegated permission Financials.ReadWrite.All with consent.",
+    "404": "No Business Central environment answered at this address. Check BC_ENVIRONMENT (e.g. Production or Sandbox) and that MICROSOFT_TENANT_ID is the tenant GUID or domain, not common or organizations.",
+    "rate_limited": "Business Central is throttling this user. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "bc_list_companies"
+  },
+  "prerequisites": "Business Central online with a licensed user, and an app registration in Microsoft Entra (free, about 10 minutes) with the redirect URI below, the delegated permission `Financials.ReadWrite.All` of Dynamics 365 Business Central and a client secret. The app of the Outlook connector can be reused: add the permission to it. Some organisations only let an admin grant consent. Try it in a sandbox environment first.",
+  "connector": {
+    "name": "Dynamics 365 Business Central (API v2.0)",
+    "type": "REST",
+    "baseUrl": "https://api.businesscentral.dynamics.com/v2.0/{{MICROSOFT_TENANT_ID}}/{{BC_ENVIRONMENT}}/api/v2.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/token",
+      "scopes": "https://api.businesscentral.dynamics.com/Financials.ReadWrite.All offline_access"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/companies"
+  },
+  "tools": [
+    {
+      "name": "bc_list_environments",
+      "description": "List the Business Central environments of the tenant: name, type (Production or Sandbox), country and web client URL. Use it when calls answer 404 because BC_ENVIRONMENT names no environment. Some tenants allow this list only to Business Central administrators.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.businesscentral.dynamics.com/environments/v1.2"
+      }
+    },
+    {
+      "name": "bc_list_companies",
+      "description": "List the companies in the connected environment with their id, name and display name. Call it first: every other tool needs a company_id from here. A sandbox usually holds the demo company CRONUS.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies"
+      }
+    },
+    {
+      "name": "bc_list_customers",
+      "description": "List or search customers: number, name, address, phone, email, balance, credit limit, currency, blocked state. Filter by name, number, city or balance; for a name search use contains(displayName,'text').",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the customer fields, e.g. \"contains(displayName,'Adatum')\", \"number eq '10000'\", \"balanceDue gt 0\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"id,number,displayName,city,email,balanceDue\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"displayName\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/customers",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "bc_get_customer",
+      "description": "Read one customer with every field, including its @odata.etag for updates. Use expand for related data such as defaultDimensions or customerFinancialDetails.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (GUID) from bc_list_customers."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Without it every field comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"customerFinancialDetails,defaultDimensions\"."
+          }
+        },
+        "required": [
+          "company_id",
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/customers({customer_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_create_customer",
+      "description": "Create a customer. Business Central assigns the number from its number series and fills posting groups from the customer template. Returns the new customer. Check with bc_list_customers that the customer does not exist yet, and confirm the details with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Customer name."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "Company",
+              "Person"
+            ],
+            "description": "Company (default) or Person."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phoneNumber": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website."
+          },
+          "addressLine1": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "addressLine2": {
+            "type": "string",
+            "description": "Second address line."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or county."
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country or region code, e.g. DE, US."
+          },
+          "currencyCode": {
+            "type": "string",
+            "description": "Currency code when it differs from the company's local currency, e.g. USD."
+          },
+          "taxRegistrationNumber": {
+            "type": "string",
+            "description": "VAT or tax registration number."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further fields of the API object to set, by their API names, e.g. {\"creditLimit\": 5000, \"blocked\": \" \"}."
+          }
+        },
+        "required": [
+          "company_id",
+          "displayName"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies({company_id})/customers",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "displayName": "$displayName",
+          "type": "$type",
+          "email": "$email",
+          "phoneNumber": "$phoneNumber",
+          "website": "$website",
+          "addressLine1": "$addressLine1",
+          "addressLine2": "$addressLine2",
+          "city": "$city",
+          "state": "$state",
+          "postalCode": "$postalCode",
+          "country": "$country",
+          "currencyCode": "$currencyCode",
+          "taxRegistrationNumber": "$taxRegistrationNumber",
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "bc_update_customer",
+      "description": "Change fields of one customer; fields left out keep their values. Returns the updated customer. Read it first (bc_get_customer) and confirm the change with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (GUID)."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Fields to change by API name, e.g. {\"phoneNumber\": \"+49 761 1234\", \"creditLimit\": 10000}."
+          },
+          "etag": {
+            "type": "string",
+            "default": "*",
+            "description": "The record's @odata.etag from the last read, so the change is refused (412) if someone else changed the record meanwhile. Default * overwrites whatever version is current."
+          }
+        },
+        "required": [
+          "company_id",
+          "customer_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/companies({company_id})/customers({customer_id})",
+        "encodePathParams": true,
+        "headers": {
+          "If-Match": "$etag"
+        },
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "bc_delete_customer",
+      "description": "Delete one customer. Business Central refuses when the customer has open entries or documents. Installed switched off; turn it on only if the AI should delete customers, and confirm every deletion with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (GUID) of the customer to delete."
+          }
+        },
+        "required": [
+          "company_id",
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/companies({company_id})/customers({customer_id})",
+        "encodePathParams": true,
+        "headers": {
+          "If-Match": "*"
+        }
+      }
+    },
+    {
+      "name": "bc_list_vendors",
+      "description": "List or search vendors (suppliers): number, name, address, phone, email, balance, currency, blocked state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the vendor fields, e.g. \"contains(displayName,'Fabrikam')\", \"number eq '20000'\", \"balance gt 0\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"id,number,displayName,city,email,balance\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"displayName\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/vendors",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "bc_get_vendor",
+      "description": "Read one vendor with every field: address, contact details, balance, payment terms and its @odata.etag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "vendor_id": {
+            "type": "string",
+            "description": "Vendor id (GUID) from bc_list_vendors."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Without it every field comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"defaultDimensions\"."
+          }
+        },
+        "required": [
+          "company_id",
+          "vendor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/vendors({vendor_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_list_items",
+      "description": "List or search items: number, name, type (Inventory, Service, Non-Inventory), category, inventory on hand, unit price, unit cost, base unit of measure, blocked state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the item fields, e.g. \"contains(displayName,'Chair')\", \"number eq '1896-S'\", \"inventory gt 0\", \"itemCategoryCode eq 'TABLE'\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"id,number,displayName,inventory,unitPrice,baseUnitOfMeasureCode\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"number\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/items",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "bc_get_item",
+      "description": "Read one item with every field: prices, cost, inventory, units of measure, GTIN, category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id (GUID) from bc_list_items."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Without it every field comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"itemCategory,itemVariants\"."
+          }
+        },
+        "required": [
+          "company_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/items({item_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_list_sales_quotes",
+      "description": "List sales quotes: number, customer, dates, status (Draft, Sent, Accepted, Expired), amounts. Use expand=salesQuoteLines to include the lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the quote fields, e.g. \"customerNumber eq '10000'\", \"status eq 'Draft'\", \"documentDate ge 2026-01-01\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"id,number,customerName,documentDate,status,totalAmountIncludingTax\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"documentDate desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"salesQuoteLines\"."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/salesQuotes",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_get_sales_quote",
+      "description": "Read one sales quote with every header field; expand=salesQuoteLines adds the lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "quote_id": {
+            "type": "string",
+            "description": "Sales quote id (GUID)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Without it every field comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"salesQuoteLines\"."
+          }
+        },
+        "required": [
+          "company_id",
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/salesQuotes({quote_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_create_sales_quote",
+      "description": "Create a sales quote for a customer, optionally with its lines in the same call. The document stays open (not released, shipped or posted). Use validUntilDate in fields to set how long the offer holds. Returns the document with its lines. Read the customer first and confirm customer, items, quantities and prices with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "customerNumber": {
+            "type": "string",
+            "description": "Customer number, e.g. \"10000\" (bc_list_customers)."
+          },
+          "customerId": {
+            "type": "string",
+            "description": "Customer id (GUID), instead of customerNumber."
+          },
+          "documentDate": {
+            "type": "string",
+            "description": "Document date, YYYY-MM-DD. Defaults to today (the work date)."
+          },
+          "externalDocumentNumber": {
+            "type": "string",
+            "description": "The customer's own reference, e.g. their PO number."
+          },
+          "currencyCode": {
+            "type": "string",
+            "description": "Currency code; defaults to the customer's currency."
+          },
+          "lines": {
+            "type": "array",
+            "description": "Lines to create with the document, each with lineType, lineObjectNumber (or itemId), quantity and optionally unitPrice, description, discountPercent. Lines can also be added afterwards with bc_add_sales_quote_line.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "lineType": {
+                  "type": "string",
+                  "description": "Item (default), Account, Resource, Comment or Charge."
+                },
+                "lineObjectNumber": {
+                  "type": "string",
+                  "description": "Number of the item, G/L account or resource, e.g. \"1896-S\"."
+                },
+                "itemId": {
+                  "type": "string",
+                  "description": "Item id (GUID), instead of lineObjectNumber."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Line text; defaults to the item's name."
+                },
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity."
+                },
+                "unitPrice": {
+                  "type": "number",
+                  "description": "Unit price; defaults to the item's sales price for the customer."
+                },
+                "discountPercent": {
+                  "type": "number",
+                  "description": "Line discount in percent."
+                },
+                "unitOfMeasureCode": {
+                  "type": "string",
+                  "description": "Unit of measure code, e.g. PCS."
+                }
+              }
+            }
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further header fields by API name, e.g. {\"salesperson\": \"JO\", \"shipToName\": \"Warehouse 2\"}."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies({company_id})/salesQuotes",
+        "encodePathParams": true,
+        "queryParams": {
+          "$expand": "salesQuoteLines"
+        },
+        "bodyMapping": {
+          "customerNumber": "$customerNumber",
+          "customerId": "$customerId",
+          "documentDate": "$documentDate",
+          "externalDocumentNumber": "$externalDocumentNumber",
+          "currencyCode": "$currencyCode",
+          "salesQuoteLines": "$lines",
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "bc_add_sales_quote_line",
+      "description": "Add one line to an open sales quote: an item with quantity and optionally price and discount, a G/L account, a resource or a comment. Returns the line with its amounts. Confirm with the user before adding.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "quote_id": {
+            "type": "string",
+            "description": "Id (GUID) of the sales quote."
+          },
+          "lineType": {
+            "type": "string",
+            "default": "Item",
+            "description": "Item (default), Account, Resource, Comment or Charge."
+          },
+          "lineObjectNumber": {
+            "type": "string",
+            "description": "Number of the item, G/L account or resource, e.g. \"1896-S\". Leave out for a Comment line."
+          },
+          "itemId": {
+            "type": "string",
+            "description": "Item id (GUID), instead of lineObjectNumber."
+          },
+          "description": {
+            "type": "string",
+            "description": "Line text; defaults to the item's name. The only field of a Comment line."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity."
+          },
+          "unitPrice": {
+            "type": "number",
+            "description": "Unit price; defaults to the price Business Central finds for the sales quote's customer."
+          },
+          "discountPercent": {
+            "type": "number",
+            "description": "Line discount in percent."
+          },
+          "unitOfMeasureCode": {
+            "type": "string",
+            "description": "Unit of measure code, e.g. PCS. Defaults to the item's sales unit."
+          }
+        },
+        "required": [
+          "company_id",
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies({company_id})/salesQuotes({quote_id})/salesQuoteLines",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "lineType": "$lineType",
+          "lineObjectNumber": "$lineObjectNumber",
+          "itemId": "$itemId",
+          "description": "$description",
+          "quantity": "$quantity",
+          "unitPrice": "$unitPrice",
+          "discountPercent": "$discountPercent",
+          "unitOfMeasureCode": "$unitOfMeasureCode"
+        }
+      }
+    },
+    {
+      "name": "bc_make_order_from_quote",
+      "description": "Turn a sales quote into a sales order (Business Central's Make Order). The quote is removed and an open order with the same lines is created; nothing is shipped or posted. Installed switched off. Confirm with the user before converting, then find the new order with bc_list_sales_orders.",
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "quote_id": {
+            "type": "string",
+            "description": "Sales quote id (GUID)."
+          }
+        },
+        "required": [
+          "company_id",
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies({company_id})/salesQuotes({quote_id})/Microsoft.NAV.makeOrder",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "bc_delete_sales_quote",
+      "description": "Delete one sales quote with its lines. Installed switched off; turn it on only if the AI should delete quotes, and confirm every deletion with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "quote_id": {
+            "type": "string",
+            "description": "Sales quote id (GUID)."
+          }
+        },
+        "required": [
+          "company_id",
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/companies({company_id})/salesQuotes({quote_id})",
+        "encodePathParams": true,
+        "headers": {
+          "If-Match": "*"
+        }
+      }
+    },
+    {
+      "name": "bc_list_sales_orders",
+      "description": "List sales orders: number, customer, order and delivery dates, status (Draft, In Review, Open), fully shipped flag, amounts. Use expand=salesOrderLines to include the lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the order fields, e.g. \"customerNumber eq '10000'\", \"status eq 'Open'\", \"status eq 'In_x0020_Review'\", \"orderDate ge 2026-01-01\", \"fullyShipped eq false\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"id,number,customerName,orderDate,status,totalAmountIncludingTax\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"orderDate desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"salesOrderLines\"."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/salesOrders",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_get_sales_order",
+      "description": "Read one sales order with every header field; expand=salesOrderLines adds the lines with shipped and invoiced quantities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Sales order id (GUID)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Without it every field comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"salesOrderLines\"."
+          }
+        },
+        "required": [
+          "company_id",
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/salesOrders({order_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_create_sales_order",
+      "description": "Create a sales order for a customer, optionally with its lines in the same call. The document stays open (not released, shipped or posted). Set requestedDeliveryDate in fields when the customer named one. Returns the document with its lines. Read the customer first and confirm customer, items, quantities and prices with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "customerNumber": {
+            "type": "string",
+            "description": "Customer number, e.g. \"10000\" (bc_list_customers)."
+          },
+          "customerId": {
+            "type": "string",
+            "description": "Customer id (GUID), instead of customerNumber."
+          },
+          "orderDate": {
+            "type": "string",
+            "description": "Order date, YYYY-MM-DD. Defaults to today (the work date)."
+          },
+          "externalDocumentNumber": {
+            "type": "string",
+            "description": "The customer's own reference, e.g. their PO number."
+          },
+          "currencyCode": {
+            "type": "string",
+            "description": "Currency code; defaults to the customer's currency."
+          },
+          "lines": {
+            "type": "array",
+            "description": "Lines to create with the document, each with lineType, lineObjectNumber (or itemId), quantity and optionally unitPrice, description, discountPercent. Lines can also be added afterwards with bc_add_sales_order_line.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "lineType": {
+                  "type": "string",
+                  "description": "Item (default), Account, Resource, Comment or Charge."
+                },
+                "lineObjectNumber": {
+                  "type": "string",
+                  "description": "Number of the item, G/L account or resource, e.g. \"1896-S\"."
+                },
+                "itemId": {
+                  "type": "string",
+                  "description": "Item id (GUID), instead of lineObjectNumber."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Line text; defaults to the item's name."
+                },
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity."
+                },
+                "unitPrice": {
+                  "type": "number",
+                  "description": "Unit price; defaults to the item's sales price for the customer."
+                },
+                "discountPercent": {
+                  "type": "number",
+                  "description": "Line discount in percent."
+                },
+                "unitOfMeasureCode": {
+                  "type": "string",
+                  "description": "Unit of measure code, e.g. PCS."
+                }
+              }
+            }
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further header fields by API name, e.g. {\"salesperson\": \"JO\", \"shipToName\": \"Warehouse 2\"}."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies({company_id})/salesOrders",
+        "encodePathParams": true,
+        "queryParams": {
+          "$expand": "salesOrderLines"
+        },
+        "bodyMapping": {
+          "customerNumber": "$customerNumber",
+          "customerId": "$customerId",
+          "orderDate": "$orderDate",
+          "externalDocumentNumber": "$externalDocumentNumber",
+          "currencyCode": "$currencyCode",
+          "salesOrderLines": "$lines",
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "bc_add_sales_order_line",
+      "description": "Add one line to an open sales order: an item with quantity and optionally price and discount, a G/L account, a resource or a comment. Returns the line with its amounts. Confirm with the user before adding.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Id (GUID) of the sales order."
+          },
+          "lineType": {
+            "type": "string",
+            "default": "Item",
+            "description": "Item (default), Account, Resource, Comment or Charge."
+          },
+          "lineObjectNumber": {
+            "type": "string",
+            "description": "Number of the item, G/L account or resource, e.g. \"1896-S\". Leave out for a Comment line."
+          },
+          "itemId": {
+            "type": "string",
+            "description": "Item id (GUID), instead of lineObjectNumber."
+          },
+          "description": {
+            "type": "string",
+            "description": "Line text; defaults to the item's name. The only field of a Comment line."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity."
+          },
+          "unitPrice": {
+            "type": "number",
+            "description": "Unit price; defaults to the price Business Central finds for the sales order's customer."
+          },
+          "discountPercent": {
+            "type": "number",
+            "description": "Line discount in percent."
+          },
+          "unitOfMeasureCode": {
+            "type": "string",
+            "description": "Unit of measure code, e.g. PCS. Defaults to the item's sales unit."
+          }
+        },
+        "required": [
+          "company_id",
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies({company_id})/salesOrders({order_id})/salesOrderLines",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "lineType": "$lineType",
+          "lineObjectNumber": "$lineObjectNumber",
+          "itemId": "$itemId",
+          "description": "$description",
+          "quantity": "$quantity",
+          "unitPrice": "$unitPrice",
+          "discountPercent": "$discountPercent",
+          "unitOfMeasureCode": "$unitOfMeasureCode"
+        }
+      }
+    },
+    {
+      "name": "bc_delete_sales_order",
+      "description": "Delete one open sales order with its lines. Business Central refuses orders that are partly shipped or invoiced. Installed switched off; turn it on only if the AI should delete orders, and confirm every deletion with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Sales order id (GUID)."
+          }
+        },
+        "required": [
+          "company_id",
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/companies({company_id})/salesOrders({order_id})",
+        "encodePathParams": true,
+        "headers": {
+          "If-Match": "*"
+        }
+      }
+    },
+    {
+      "name": "bc_list_sales_invoices",
+      "description": "List sales invoices: number, customer, invoice and due dates, status (Draft, In Review, Open, Paid, Canceled, Corrective), total and remaining amount. Open with remainingAmount gt 0 are the unpaid ones.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the invoice fields, e.g. \"status eq 'Open'\", \"dueDate lt 2026-10-01 and remainingAmount gt 0\", \"customerNumber eq '10000'\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"id,number,customerName,invoiceDate,dueDate,status,totalAmountIncludingTax,remainingAmount\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"invoiceDate desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"salesInvoiceLines\"."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/salesInvoices",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_get_sales_invoice",
+      "description": "Read one sales invoice with every header field; expand=salesInvoiceLines adds the lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "invoice_id": {
+            "type": "string",
+            "description": "Sales invoice id (GUID)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Without it every field comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"salesInvoiceLines\"."
+          }
+        },
+        "required": [
+          "company_id",
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/salesInvoices({invoice_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_list_purchase_invoices",
+      "description": "List purchase invoices (vendor bills): number, vendor, vendor invoice number, invoice and due dates, status (Draft, In Review, Open, Paid, Canceled, Corrective), amounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the invoice fields, e.g. \"status eq 'Open'\", \"vendorNumber eq '20000'\", \"invoiceDate ge 2026-01-01\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"id,number,vendorName,vendorInvoiceNumber,invoiceDate,dueDate,status,totalAmountIncludingTax\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"invoiceDate desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"purchaseInvoiceLines\"."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/purchaseInvoices",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_get_purchase_invoice",
+      "description": "Read one purchase invoice with every header field; expand=purchaseInvoiceLines adds the lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "invoice_id": {
+            "type": "string",
+            "description": "Purchase invoice id (GUID)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Without it every field comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include, e.g. \"purchaseInvoiceLines\"."
+          }
+        },
+        "required": [
+          "company_id",
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/purchaseInvoices({invoice_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "bc_list_general_ledger_entries",
+      "description": "List posted general ledger entries: entry number, posting date, document type and number, G/L account, description, debit and credit amount. The ledger is large: always filter by postingDate and usually by accountNumber or documentNumber, and select only the fields needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the ledger entries, e.g. \"postingDate ge 2026-01-01 and postingDate le 2026-01-31\", \"accountNumber eq '6110'\", \"documentNumber eq '103001'\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"entryNumber,postingDate,documentNumber,accountNumber,description,debitAmount,creditAmount\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"entryNumber desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/generalLedgerEntries",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "bc_list_accounts",
+      "description": "List the chart of accounts (G/L accounts): number, name, category (Assets, Liabilities, Equity, Income, Cost of Goods Sold, Expense), sub-category, account type (Posting, Heading, Total, Begin Total, End Total), blocked state, direct posting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the accounts, e.g. \"category eq 'Expense'\", \"startswith(number,'61')\", \"accountType eq 'Posting'\", \"category eq 'Cost_x0020_of_x0020_Goods_x0020_Sold'\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"id,number,displayName,category,accountType\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"number\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/accounts",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "bc_list_dimensions",
+      "description": "List the dimensions (for example DEPARTMENT, PROJECT, AREA) with their codes. bc_list_dimension_values lists the values of one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the dimensions, e.g. \"code eq 'DEPARTMENT'\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"id,code,displayName\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"code\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/dimensions",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "bc_list_dimension_values",
+      "description": "List the values of one dimension, e.g. the departments of DEPARTMENT, with code and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "dimension_id": {
+            "type": "string",
+            "description": "Dimension id (GUID) from bc_list_dimensions."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200,
+            "description": "Maximum number of values (default 200)."
+          }
+        },
+        "required": [
+          "company_id",
+          "dimension_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/dimensions({dimension_id})/dimensionValues",
+        "encodePathParams": true,
+        "queryParams": {
+          "$top": "$top"
+        }
+      }
+    },
+    {
+      "name": "bc_list_employees",
+      "description": "List employees: number, name, job title, email, phone, status (Active, Inactive, Terminated), employment date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the employee fields, e.g. \"status eq 'Active'\", \"contains(displayName,'Ana')\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. \"id,number,displayName,jobTitle,email,status\". Without it every field comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"displayName\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page: raise it by the number already read."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/employees",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "bc_query",
+      "description": "Read any other API v2.0 resource of a company that has no dedicated tool, e.g. contacts, purchaseOrders, salesCreditMemos, salesShipments, itemLedgerEntries, agedAccountsReceivables, agedAccountsPayables, trialBalances, bankAccounts, paymentTerms, currencies, locations, projects, timeRegistrationEntries, or a nested path such as salesOrders(<id>)/salesOrderLines. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a GUID) from bc_list_companies. Every business object lives in one company."
+          },
+          "resource": {
+            "type": "string",
+            "description": "Entity set name (camelCase plural) or nested path below the company, e.g. \"purchaseOrders\" or \"customers(<id>)/defaultDimensions\"."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. \"postingDate ge 2026-01-01\"."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"postingDate desc\"."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related data to include."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Maximum number of records to return (default 50)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Records to skip, for the next page."
+          }
+        },
+        "required": [
+          "company_id",
+          "resource"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies({company_id})/{resource}",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    }
+  ]
+}

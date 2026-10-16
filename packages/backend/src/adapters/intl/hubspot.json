@@ -1,0 +1,850 @@
+{
+  "slug": "hubspot",
+  "name": "HubSpot",
+  "description": "Let your AI work in HubSpot CRM: search and update contacts, companies, deals and tickets, see who is linked to what, check pipelines and owners, and log notes and tasks. One account, through a service key you create yourself.",
+  "instructions": "## HubSpot\nThis connector works with one HubSpot account through the **CRM API** (`https://api.hubapi.com`, date-versioned API 2026-09): search, read, create and update contacts, companies, deals, tickets and other CRM objects, list and create associations, read owners, pipelines and properties, and add notes and tasks. It authenticates with a **service key** (or a legacy private app token) that you create in your own account.\n\n**Setup (super admin or a user with Developer tools access, about 5 minutes)**\n1. In HubSpot open **Development** in the left sidebar, then **Keys → Service keys**, and click **Create service key**.\n2. Name it (for example \"AnythingMCP\"), click **Add new scope** and tick the scopes below, then **Update** and **Create**.\n3. Open the key, click **Show**, then **Copy**, and paste it into `HUBSPOT_ACCESS_TOKEN`. Keys start with `pat-` (for example `pat-eu1-...`).\n4. Older accounts may still use a **legacy private app** (Development → Legacy apps, previously Settings → Integrations → Private Apps): its access token works the same way.\n\n**Scopes**\n- Read: `crm.objects.contacts.read` (also covers notes and tasks), `crm.objects.companies.read`, `crm.objects.deals.read`, `crm.objects.tickets.read`, `crm.objects.owners.read`.\n- Write: `crm.objects.contacts.write` (also needed for notes and tasks), `crm.objects.companies.write`, `crm.objects.deals.write`, `crm.objects.tickets.write`.\n- Read-only setup: give the key only the read scopes and switch off `hubspot_create_object`, `hubspot_update_object`, `hubspot_associate_records`, `hubspot_create_note` and `hubspot_create_task`. `hubspot_archive_object` is installed switched off.\n\n**Ids and properties**: every record has a numeric id (`hs_object_id`), passed as a string. Object types are plural: `contacts`, `companies`, `deals`, `tickets`, `notes`, `tasks`; custom objects use their id such as `2-1234567`. Property values are strings keyed by internal name (`firstname`, `dealstage`, `hubspot_owner_id`); `hubspot_list_properties` gives names, types and dropdown options. Dates are `YYYY-MM-DD` or Unix milliseconds, timestamps ISO 8601. Deal stages and ticket statuses are stage ids from `hubspot_list_pipelines`, not labels. Owners come from `hubspot_list_owners`.\n\n**Search**: `hubspot_search_objects` takes free text, filter groups (AND inside a group, OR between groups, at most 5 groups and 18 filters) and one sort. To find records linked to another, filter on `associations.contact` (or `.company`, `.deal`, `.ticket`) with `EQ` and the id. New or changed records can take a few seconds to show up.\n\n**Associations**: `hubspot_get_object` with `associations=deals` returns linked ids; `hubspot_get_associations` lists them with labels. `hubspot_associate_records` links two records with the default type. On create, `associations` needs a type id: note to contact 202, company 190, deal 214, ticket 228; task to contact 204, company 192, deal 216, ticket 230; contact to company 1; deal to contact 3, deal to company 5; ticket to contact 16, ticket to company 26.\n\n**Pagination**: lists and searches return `paging.next.after`; pass it as `after` with the same other arguments until it is missing. Lists allow 100 per page, search 200 per page and 10,000 results per query.\n\n**Rate limits**: 100 requests per 10 seconds per key on Free and Starter (higher on Professional and Enterprise), 250,000 a day per account, and 5 search requests per second. Over a limit HubSpot answers 429; wait a few seconds.\n\n**Errors**: 401 means the key is wrong, expired or was rotated: copy it again. 403 names the missing scope: add it to the key under Edit. 404 is a wrong id or object type. 400 `VALIDATION_ERROR` names the property or filter that is wrong, for example an unknown property name or a dropdown value that is not an option. \"The following required properties were missing\" lists properties the account made mandatory: accounts with data privacy (GDPR) settings on require `hs_legal_basis` on every new contact.\n\n**Out of scope here**: marketing emails, forms, lists, workflows, files, quotes and line item pricing, merges and batch writes.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "hubspot",
+  "docsUrl": "https://developers.hubspot.com/docs/api-reference/latest/overview",
+  "requiredEnvVars": [
+    "HUBSPOT_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "HUBSPOT_ACCESS_TOKEN": {
+      "label": "Service key",
+      "kind": "credential",
+      "secret": true,
+      "help": "HubSpot → Development → Keys → Service keys → your key → Show → Copy. A legacy private app's access token works too.",
+      "link": "https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys",
+      "pattern": "^pat-[a-z0-9]+-\\S+$",
+      "patternMessage": "Paste the key as shown by HubSpot, starting with pat- (for example pat-eu1-...), without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "HubSpot refused the key. Copy it again from Development → Keys → Service keys; a rotated or deleted key stops working.",
+    "403": "The key lacks a scope this call needs. Open the key, click Edit, add the scope named in the error (for example crm.objects.owners.read) and save.",
+    "rate_limited": "HubSpot is rate limiting this key (100 requests per 10 seconds on Free and Starter, 5 searches per second). Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "hubspot_list_owners",
+    "params": {
+      "limit": 1
+    }
+  },
+  "prerequisites": "A HubSpot account (the free CRM works) and a super admin or a user with Developer tools access, who creates a service key with the CRM scopes listed below (about 5 minutes).",
+  "connector": {
+    "name": "HubSpot CRM API",
+    "type": "REST",
+    "baseUrl": "https://api.hubapi.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{HUBSPOT_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/crm/owners/2026-09?limit=1"
+  },
+  "tools": [
+    {
+      "name": "hubspot_list_owners",
+      "description": "List the HubSpot users who can own records (owners): owner id, user id, email, first and last name, teams and whether archived. The owner id is what hubspot_owner_id properties hold. Pages with after.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Only the owner with this email address."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100,
+            "description": "Owners per page, 1 to 500 (default 100)."
+          },
+          "after": {
+            "type": "string",
+            "description": "paging.next.after from the previous response, to fetch the next page."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true to list only deactivated owners (default false)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/owners/2026-09",
+        "queryParams": {
+          "email": "$email",
+          "limit": "$limit",
+          "after": "$after",
+          "archived": "$archived"
+        }
+      }
+    },
+    {
+      "name": "hubspot_get_account",
+      "description": "Get the HubSpot account the token belongs to: portal id (Hub ID), account type, time zone and UTC offset, company currency and additional currencies, and the data hosting location (na1, eu1).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account-info/2026-09/details"
+      }
+    },
+    {
+      "name": "hubspot_search_objects",
+      "description": "Search CRM records of one object type (contacts, companies, deals, tickets, notes, tasks, ...) by free text and/or property filters, with sorting. Returns total, the matching records with the requested properties, and paging.next.after. Up to 200 per page and 10,000 results per query; search allows 5 requests per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_type": {
+            "type": "string",
+            "description": "CRM object type, plural: contacts, companies, deals, tickets, notes, tasks, calls, meetings, emails, products, line_items, leads, or a custom object's id (e.g. 2-1234567)."
+          },
+          "query": {
+            "type": "string",
+            "description": "Free text searched across the object's default text properties (for contacts: name, email, phone, company)."
+          },
+          "filter_groups": {
+            "type": "array",
+            "description": "Property filters. Filters inside one group are combined with AND, groups with OR; at most 5 groups and 18 filters. Example: [{\"filters\": [{\"propertyName\": \"dealstage\", \"operator\": \"EQ\", \"value\": \"closedwon\"}, {\"propertyName\": \"closedate\", \"operator\": \"GTE\", \"value\": \"2026-01-01\"}]}]. Operators: EQ, NEQ, LT, LTE, GT, GTE, BETWEEN (value + highValue), IN / NOT_IN (values array, lowercase for strings), HAS_PROPERTY, NOT_HAS_PROPERTY, CONTAINS_TOKEN (wildcards *), NOT_CONTAINS_TOKEN. Use the pseudo-property associations.contact (or .company, .deal, .ticket) with EQ and a record id to find records associated with it.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "filters": {
+                  "type": "array",
+                  "description": "Filters combined with AND.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "propertyName": {
+                        "type": "string",
+                        "description": "Internal property name, e.g. email, dealstage, hubspot_owner_id."
+                      },
+                      "operator": {
+                        "type": "string",
+                        "enum": [
+                          "EQ",
+                          "NEQ",
+                          "LT",
+                          "LTE",
+                          "GT",
+                          "GTE",
+                          "BETWEEN",
+                          "IN",
+                          "NOT_IN",
+                          "HAS_PROPERTY",
+                          "NOT_HAS_PROPERTY",
+                          "CONTAINS_TOKEN",
+                          "NOT_CONTAINS_TOKEN"
+                        ],
+                        "description": "Comparison operator."
+                      },
+                      "value": {
+                        "type": "string",
+                        "description": "Value to compare with. Dates as YYYY-MM-DD or Unix milliseconds."
+                      },
+                      "highValue": {
+                        "type": "string",
+                        "description": "Upper bound for BETWEEN."
+                      },
+                      "values": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Values for IN and NOT_IN."
+                      }
+                    },
+                    "required": [
+                      "propertyName",
+                      "operator"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "filters"
+              ]
+            }
+          },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Property names to return, e.g. [\"dealname\", \"amount\", \"dealstage\", \"hubspot_owner_id\"]. Without it only the object's default properties come back."
+          },
+          "sorts": {
+            "type": "array",
+            "description": "One sort rule, e.g. [{\"propertyName\": \"createdate\", \"direction\": \"DESCENDING\"}]. Default: oldest first.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "propertyName": {
+                  "type": "string",
+                  "description": "Property to sort by."
+                },
+                "direction": {
+                  "type": "string",
+                  "enum": [
+                    "ASCENDING",
+                    "DESCENDING"
+                  ],
+                  "description": "Sort direction."
+                }
+              },
+              "required": [
+                "propertyName"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Records per page, 1 to 200 (default 20)."
+          },
+          "after": {
+            "type": "string",
+            "description": "paging.next.after from the previous response, to fetch the next page with the same filters."
+          }
+        },
+        "required": [
+          "object_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/objects/2026-09/{object_type}/search",
+        "bodyMapping": {
+          "query": "$query",
+          "filterGroups": "$filter_groups",
+          "properties": "$properties",
+          "sorts": "$sorts",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hubspot_list_objects",
+      "description": "List CRM records of one object type page by page, oldest id first, with the chosen properties and optionally the ids of associated records. Returns results and paging.next.after. Use hubspot_search_objects to filter or sort.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_type": {
+            "type": "string",
+            "description": "CRM object type, plural: contacts, companies, deals, tickets, notes, tasks, calls, meetings, emails, products, line_items, leads, or a custom object's id (e.g. 2-1234567)."
+          },
+          "properties": {
+            "type": "string",
+            "description": "Comma-separated property names to return, e.g. \"firstname,lastname,email,lifecyclestage\". Without it HubSpot returns a small default set. hubspot_list_properties lists the names."
+          },
+          "associations": {
+            "type": "string",
+            "description": "Comma-separated object types whose associated record ids to include, e.g. \"companies,deals\"."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Records per page, 1 to 100 (default 20)."
+          },
+          "after": {
+            "type": "string",
+            "description": "paging.next.after from the previous response, to fetch the next page."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true to list only archived (deleted) records (default false)."
+          }
+        },
+        "required": [
+          "object_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/objects/2026-09/{object_type}",
+        "queryParams": {
+          "properties": "$properties",
+          "associations": "$associations",
+          "limit": "$limit",
+          "after": "$after",
+          "archived": "$archived"
+        }
+      }
+    },
+    {
+      "name": "hubspot_get_object",
+      "description": "Get one CRM record by id (or by a unique property such as a contact's email with id_property), with the chosen properties, optional property history, and the ids of associated records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_type": {
+            "type": "string",
+            "description": "CRM object type, plural: contacts, companies, deals, tickets, notes, tasks, calls, meetings, emails, products, line_items, leads, or a custom object's id (e.g. 2-1234567)."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "Record id (hs_object_id), e.g. \"51\". With id_property, the value of that property instead, e.g. an email address."
+          },
+          "id_property": {
+            "type": "string",
+            "description": "Look the record up by this unique property instead of its id, e.g. \"email\" for contacts."
+          },
+          "properties": {
+            "type": "string",
+            "description": "Comma-separated property names to return, e.g. \"firstname,lastname,email,lifecyclestage\". Without it HubSpot returns a small default set. hubspot_list_properties lists the names."
+          },
+          "properties_with_history": {
+            "type": "string",
+            "description": "Comma-separated properties to return with their previous values, e.g. \"dealstage\"."
+          },
+          "associations": {
+            "type": "string",
+            "description": "Comma-separated object types whose associated record ids to include, e.g. \"companies,deals\"."
+          }
+        },
+        "required": [
+          "object_type",
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/objects/2026-09/{object_type}/{object_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "idProperty": "$id_property",
+          "properties": "$properties",
+          "propertiesWithHistory": "$properties_with_history",
+          "associations": "$associations"
+        }
+      }
+    },
+    {
+      "name": "hubspot_create_object",
+      "description": "Create a CRM record (contact, company, deal, ticket, ...) with property values, optionally associated with existing records. Returns the new record with its id. Show the user what will be created and wait for confirmation; never retry a successful create.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_type": {
+            "type": "string",
+            "description": "CRM object type, plural: contacts, companies, deals, tickets, notes, tasks, calls, meetings, emails, products, line_items, leads, or a custom object's id (e.g. 2-1234567)."
+          },
+          "properties": {
+            "type": "object",
+            "description": "Property values as strings, keyed by internal name. Contacts: {\"email\": \"ana@example.com\", \"firstname\": \"Ana\", \"lastname\": \"Ruiz\"}; accounts with data privacy (GDPR) settings on also require hs_legal_basis, e.g. \"Legitimate interest – prospect/lead\" (allowed values from hubspot_list_properties). Companies: {\"name\": \"Acme\", \"domain\": \"acme.com\"}. Deals: {\"dealname\": \"Acme renewal\", \"amount\": \"5000\", \"pipeline\": \"default\", \"dealstage\": \"<stage id>\", \"closedate\": \"2026-12-31\"}. Tickets: {\"subject\": \"...\", \"hs_pipeline\": \"0\", \"hs_pipeline_stage\": \"1\"}.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "associations": {
+            "type": "array",
+            "description": "Optional records to associate on creation. Each entry: {\"to\": {\"id\": \"<record id>\"}, \"types\": [{\"associationCategory\": \"HUBSPOT_DEFINED\", \"associationTypeId\": <id>}]}. See the instructions for the common type ids.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "to": {
+                  "type": "object",
+                  "description": "The record to associate with: {\"id\": \"123\"}.",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Record id."
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                },
+                "types": {
+                  "type": "array",
+                  "description": "Association types, usually one: {\"associationCategory\": \"HUBSPOT_DEFINED\", \"associationTypeId\": 202}.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "associationCategory": {
+                        "type": "string",
+                        "enum": [
+                          "HUBSPOT_DEFINED",
+                          "USER_DEFINED",
+                          "INTEGRATOR_DEFINED"
+                        ],
+                        "description": "HUBSPOT_DEFINED for the standard types, USER_DEFINED for custom labels."
+                      },
+                      "associationTypeId": {
+                        "type": "integer",
+                        "description": "Association type id, e.g. 202 for note to contact."
+                      }
+                    },
+                    "required": [
+                      "associationCategory",
+                      "associationTypeId"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "to",
+                "types"
+              ]
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "object_type",
+          "properties"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/objects/2026-09/{object_type}",
+        "bodyMapping": {
+          "properties": "$properties",
+          "associations": "$associations"
+        }
+      }
+    },
+    {
+      "name": "hubspot_update_object",
+      "description": "Change property values of one CRM record; only the given properties change, and an empty string clears a value. Moving a deal to another stage is {\"dealstage\": \"<stage id>\"}. Returns the updated record. Confirm with the user before writing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_type": {
+            "type": "string",
+            "description": "CRM object type, plural: contacts, companies, deals, tickets, notes, tasks, calls, meetings, emails, products, line_items, leads, or a custom object's id (e.g. 2-1234567)."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "Record id, or the value of id_property."
+          },
+          "id_property": {
+            "type": "string",
+            "description": "Address the record by this unique property instead of its id, e.g. \"email\"."
+          },
+          "properties": {
+            "type": "object",
+            "description": "Property values to set, as strings, e.g. {\"lifecyclestage\": \"customer\", \"phone\": \"+49 761 123456\"}.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "object_type",
+          "object_id",
+          "properties"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/crm/objects/2026-09/{object_type}/{object_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "idProperty": "$id_property"
+        },
+        "bodyMapping": {
+          "properties": "$properties"
+        }
+      }
+    },
+    {
+      "name": "hubspot_archive_object",
+      "description": "Archive (delete) one CRM record: it moves to the recycling bin, where it can be restored for 90 days. Installed switched off; turn it on only if the AI should delete records, and confirm every deletion with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_type": {
+            "type": "string",
+            "description": "CRM object type, plural: contacts, companies, deals, tickets, notes, tasks, calls, meetings, emails, products, line_items, leads, or a custom object's id (e.g. 2-1234567)."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "Id of the record to archive."
+          }
+        },
+        "required": [
+          "object_type",
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/crm/objects/2026-09/{object_type}/{object_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "hubspot_get_associations",
+      "description": "List the records of one type associated with a record, with their association types and labels, e.g. all deals of a company or all contacts of a deal. Returns toObjectId per association; long lists page with after.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_object_type": {
+            "type": "string",
+            "description": "Type of the record you start from, e.g. companies."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "Id of that record."
+          },
+          "to_object_type": {
+            "type": "string",
+            "description": "Type of the associated records to list, e.g. deals."
+          },
+          "after": {
+            "type": "string",
+            "description": "paging.next.after of the result, to fetch the next page."
+          }
+        },
+        "required": [
+          "from_object_type",
+          "object_id",
+          "to_object_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/associations/2026-09/{from_object_type}/{to_object_type}/batch/read",
+        "bodyMapping": {
+          "inputs": [
+            {
+              "id": "$object_id",
+              "after": "$after"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hubspot_associate_records",
+      "description": "Link two existing records with HubSpot's default (unlabeled) association, e.g. a contact to a company or a deal to a contact. Linking an already linked pair changes nothing. Confirm with the user before writing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_object_type": {
+            "type": "string",
+            "description": "Type of the first record, e.g. contacts."
+          },
+          "from_object_id": {
+            "type": "string",
+            "description": "Id of the first record."
+          },
+          "to_object_type": {
+            "type": "string",
+            "description": "Type of the second record, e.g. companies."
+          },
+          "to_object_id": {
+            "type": "string",
+            "description": "Id of the second record."
+          }
+        },
+        "required": [
+          "from_object_type",
+          "from_object_id",
+          "to_object_type",
+          "to_object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/crm/objects/2026-09/{from_object_type}/{from_object_id}/associations/default/{to_object_type}/{to_object_id}"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hubspot_list_pipelines",
+      "description": "List the pipelines of deals or tickets with their stages: pipeline id and label, and per stage its id, label, display order and metadata (deal stages carry probability, ticket stages ticketState OPEN or CLOSED). Stage ids are what dealstage and hs_pipeline_stage hold.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_type": {
+            "type": "string",
+            "enum": [
+              "deals",
+              "tickets"
+            ],
+            "description": "deals or tickets."
+          }
+        },
+        "required": [
+          "object_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/pipelines/2026-09/{object_type}"
+      }
+    },
+    {
+      "name": "hubspot_list_properties",
+      "description": "List the properties of an object type, default and custom: internal name, label, type, field type, group, description, whether read-only, and the allowed options of dropdown and checkbox properties. Use it to find the internal names for search filters and writes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_type": {
+            "type": "string",
+            "description": "CRM object type, plural: contacts, companies, deals, tickets, notes, tasks, calls, meetings, emails, products, line_items, leads, or a custom object's id (e.g. 2-1234567)."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true to list only archived properties (default false)."
+          }
+        },
+        "required": [
+          "object_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/properties/2026-09/{object_type}",
+        "queryParams": {
+          "archived": "$archived"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{results: results[].{name: name, label: label, type: type, fieldType: fieldType, groupName: groupName, description: description, readOnly: modificationMetadata.readOnlyValue, calculated: calculated, options: options[].{label: label, value: value}}}"
+        }
+      }
+    },
+    {
+      "name": "hubspot_create_note",
+      "description": "Add a note to the CRM timeline, associated with contacts, companies, deals or tickets. Returns the note with its id. Confirm the text with the user before writing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "Note text; simple HTML such as <p>, <b>, <br> is allowed. Up to 65,536 characters."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "When the note happened, ISO 8601 (e.g. 2026-10-10T09:30:00Z) or Unix milliseconds. Sets its place on the timeline."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Owner id from hubspot_list_owners, shown as the note's author."
+          },
+          "associations": {
+            "type": "array",
+            "description": "Optional records to associate on creation. Each entry: {\"to\": {\"id\": \"<record id>\"}, \"types\": [{\"associationCategory\": \"HUBSPOT_DEFINED\", \"associationTypeId\": <id>}]}. See the instructions for the common type ids.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "to": {
+                  "type": "object",
+                  "description": "The record to associate with: {\"id\": \"123\"}.",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Record id."
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                },
+                "types": {
+                  "type": "array",
+                  "description": "Association types, usually one: {\"associationCategory\": \"HUBSPOT_DEFINED\", \"associationTypeId\": 202}.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "associationCategory": {
+                        "type": "string",
+                        "enum": [
+                          "HUBSPOT_DEFINED",
+                          "USER_DEFINED",
+                          "INTEGRATOR_DEFINED"
+                        ],
+                        "description": "HUBSPOT_DEFINED for the standard types, USER_DEFINED for custom labels."
+                      },
+                      "associationTypeId": {
+                        "type": "integer",
+                        "description": "Association type id, e.g. 202 for note to contact."
+                      }
+                    },
+                    "required": [
+                      "associationCategory",
+                      "associationTypeId"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "to",
+                "types"
+              ]
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "body",
+          "timestamp"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/objects/2026-09/notes",
+        "bodyMapping": {
+          "properties": {
+            "hs_note_body": "$body",
+            "hs_timestamp": "$timestamp",
+            "hubspot_owner_id": "$owner_id"
+          },
+          "associations": "$associations"
+        }
+      }
+    },
+    {
+      "name": "hubspot_create_task",
+      "description": "Create a task (to-do, call or email reminder) with a due date, optionally assigned to an owner and associated with records. Returns the task with its id. Confirm with the user before writing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "due": {
+            "type": "string",
+            "description": "Due date and time, ISO 8601 (e.g. 2026-10-15T09:00:00Z) or Unix milliseconds."
+          },
+          "body": {
+            "type": "string",
+            "description": "Task notes."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "NOT_STARTED",
+              "COMPLETED"
+            ],
+            "description": "Task status (default NOT_STARTED)."
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "description": "Task priority."
+          },
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "TODO",
+              "CALL",
+              "EMAIL"
+            ],
+            "description": "Task type (default TODO)."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Owner id from hubspot_list_owners the task is assigned to."
+          },
+          "associations": {
+            "type": "array",
+            "description": "Optional records to associate on creation. Each entry: {\"to\": {\"id\": \"<record id>\"}, \"types\": [{\"associationCategory\": \"HUBSPOT_DEFINED\", \"associationTypeId\": <id>}]}. See the instructions for the common type ids.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "to": {
+                  "type": "object",
+                  "description": "The record to associate with: {\"id\": \"123\"}.",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Record id."
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                },
+                "types": {
+                  "type": "array",
+                  "description": "Association types, usually one: {\"associationCategory\": \"HUBSPOT_DEFINED\", \"associationTypeId\": 202}.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "associationCategory": {
+                        "type": "string",
+                        "enum": [
+                          "HUBSPOT_DEFINED",
+                          "USER_DEFINED",
+                          "INTEGRATOR_DEFINED"
+                        ],
+                        "description": "HUBSPOT_DEFINED for the standard types, USER_DEFINED for custom labels."
+                      },
+                      "associationTypeId": {
+                        "type": "integer",
+                        "description": "Association type id, e.g. 202 for note to contact."
+                      }
+                    },
+                    "required": [
+                      "associationCategory",
+                      "associationTypeId"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "to",
+                "types"
+              ]
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "subject",
+          "due"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/objects/2026-09/tasks",
+        "bodyMapping": {
+          "properties": {
+            "hs_task_subject": "$subject",
+            "hs_timestamp": "$due",
+            "hs_task_body": "$body",
+            "hs_task_status": "$status",
+            "hs_task_priority": "$priority",
+            "hs_task_type": "$task_type",
+            "hubspot_owner_id": "$owner_id"
+          },
+          "associations": "$associations"
+        }
+      }
+    }
+  ]
+}

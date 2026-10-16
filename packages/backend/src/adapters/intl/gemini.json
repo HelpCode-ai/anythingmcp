@@ -1,0 +1,812 @@
+{
+  "slug": "gemini",
+  "name": "Google Gemini API",
+  "description": "Let your AI use Google Gemini with your own API key: ask Gemini models questions, analyse images and PDFs from a link, count tokens, create embeddings, and generate or edit pictures with Nano Banana that appear right in the chat.",
+  "instructions": "## Google Gemini API\nThis connector calls the **Gemini API** (Generative Language API, `https://generativelanguage.googleapis.com/v1beta`) with the user's own API key from Google AI Studio: text answers from Gemini models, questions about images, PDFs and other files given by link, token counts, text embeddings, image generation and editing (Nano Banana), the model list and the Files API.\n\n**Every call except the model list, the Files API and token counting is billed to the user's key** (or counts against its free tier). Prefer the cheap defaults unless the user asks for more.\n\n**Setup (about 2 minutes)**\n1. Open Google AI Studio at https://aistudio.google.com/apikey and sign in with a Google account.\n2. Click **Create API key**, pick or create a Google Cloud project, and copy the key.\n3. Paste it into `GEMINI_API_KEY` and install the connector. It is sent in the `x-goog-api-key` header and only to Google.\n4. Free tier: text and embedding models can be used free of charge within per-minute and per-day limits, and Google may use free-tier prompts to improve its products. **Image models have no free tier**: enable billing for the project in AI Studio (Get API key, then Set up billing) to generate images, and for higher limits.\n\n**Defaults (cheap and fast)**\n- Text: `gemini-3.1-flash-lite` (stable; about $0.25 per million input tokens and $1.50 per million output tokens on the paid tier). For harder tasks pass `gemini-3.5-flash-lite`, `gemini-3.8-flash` or `gemini-3.1-pro-preview`.\n- Images: `gemini-3.1-flash-lite-image` (about $0.034 per 1K picture). `gemini-nano-banana-2.1` and `gemini-3.1-flash-image` add 2K and 4K, `gemini-3-pro-image` is the most capable (about $0.13 per picture).\n- Embeddings: `gemini-embedding-001` with 768 dimensions.\n- Model codes change often: `gemini_list_models` shows what the key can use. Pass codes without the `models/` prefix.\n\n**Tools**\n- `gemini_generate_text`: one prompt, one answer. Optional system instruction, answer length, temperature and JSON output (`response_mime_type` application/json plus `response_json_schema`).\n- `gemini_generate_content`: the full request, for conversations (a list of user and model turns), several files in one prompt, Google Search grounding (`tools: [{\"googleSearch\": {}}]`) and any generationConfig field.\n- `gemini_analyze_file_url`: a question about one file given by a public HTTPS link (images, PDF, text, CSV, video; up to 15 MB). Gemini fetches the link itself, so it must work without a login.\n- `gemini_count_tokens`: free token count of a text.\n- `gemini_embed_text` and `gemini_batch_embed_texts`: embedding vectors (up to 20 texts per batch call).\n- `gemini_generate_image` and `gemini_edit_image`: pictures returned as images in the chat. Each picture costs money: **confirm with the user before every call**. A client that cannot show images still gets the text part with the size and type of each picture. Pictures over 4 MB are not returned; ask for a smaller size.\n- `gemini_list_models`, `gemini_get_model`: what the key can use.\n- `gemini_list_files`, `gemini_get_file`, `gemini_delete_file`: the project's Files API (files expire after 48 hours; uploading is not part of this connector). `gemini_delete_file` is installed switched off.\n\n**Reading answers**: `text` is the answer, `finishReason` says why it stopped: `STOP` is normal, `MAX_TOKENS` means it was cut (raise `max_output_tokens`, which includes thinking tokens on Gemini 3 models). A prompt or answer blocked by Google's safety filters (`SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST`, `SPII`, `RECITATION`, `IMAGE_SAFETY`) comes back as an error: do not retry the same request. `NO_IMAGE` means the image model answered with text only; rephrase the prompt as a request for a picture.\n\n**Common errors**\n- 400 `API_KEY_INVALID`: the key is wrong or was deleted. Create a new one in AI Studio.\n- 403 `PERMISSION_DENIED`: the key is restricted to other APIs (Google Cloud console, Credentials, API restrictions: allow the Generative Language API), the API is off in its project, or a file link is not public.\n- 404: the model code does not exist or does not support the method; check `gemini_list_models`.\n- 429 `RESOURCE_EXHAUSTED`: a per-minute or per-day limit of the free tier or the paid tier, or an image model without billing. Wait and retry once, or enable billing. Do not retry in a loop.\n- 400 `FAILED_PRECONDITION`: the free tier is not available in the user's region; enable billing.\n\n**Out of scope here**: uploading files, the Live API (audio and video streaming), speech (TTS), video generation (Veo), context caching, batch jobs, tuned models and file search stores.",
+  "region": "intl",
+  "category": "data",
+  "icon": "googlegemini",
+  "docsUrl": "https://ai.google.dev/api",
+  "requiredEnvVars": [
+    "GEMINI_API_KEY"
+  ],
+  "envVarMeta": {
+    "GEMINI_API_KEY": {
+      "label": "Gemini API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Google AI Studio, Get API key, Create API key. Calls are billed to this key's project or count against its free tier.",
+      "link": "https://aistudio.google.com/apikey",
+      "pattern": "^[A-Za-z0-9._-]{30,}$",
+      "patternMessage": "Paste the API key exactly as AI Studio shows it (it usually starts with AIza), without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Google refused the API key (API_KEY_INVALID): it is wrong, was deleted, or has extra characters. Copy it again from https://aistudio.google.com/apikey.",
+    "403": "Google refused the key: it is restricted to other APIs or the Generative Language API is switched off in its project. In the Google Cloud console, open Credentials, the key, API restrictions, and allow the Generative Language API.",
+    "rate_limited": "The key reached a Gemini rate or quota limit. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "gemini_list_models",
+    "params": {
+      "page_size": 5
+    }
+  },
+  "prerequisites": "A Google account and an API key from Google AI Studio. Text and embeddings work on the free tier; image generation needs billing enabled for the key's project. About 2 minutes.",
+  "connector": {
+    "name": "Google Gemini API",
+    "type": "REST",
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-goog-api-key",
+      "apiKey": "{{GEMINI_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/models",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "promptFeedback.blockReason",
+          "messagePath": [
+            "promptFeedback.blockReason"
+          ],
+          "status": 400
+        },
+        {
+          "path": "candidates[0].finishReason",
+          "in": [
+            "SAFETY",
+            "PROHIBITED_CONTENT",
+            "BLOCKLIST",
+            "SPII",
+            "RECITATION",
+            "IMAGE_SAFETY",
+            "IMAGE_PROHIBITED_CONTENT",
+            "IMAGE_RECITATION"
+          ],
+          "messagePath": [
+            "candidates[0].finishReason",
+            "candidates[0].finishMessage"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "gemini_list_models",
+      "description": "List the Gemini models this API key can use, with their input and output token limits, whether they think, and the methods they support (generateContent, countTokens, embedContent). Pass nextPageToken back as page_token for more. Free: no tokens are billed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Models per page, up to 1000. Default 50.",
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/models",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "models": {
+              "$from": "$.models[*]",
+              "$select": {
+                "name": "baseModelId",
+                "resource": "name",
+                "displayName": "displayName",
+                "inputTokenLimit": "inputTokenLimit",
+                "outputTokenLimit": "outputTokenLimit",
+                "thinking": "thinking",
+                "methods": "supportedGenerationMethods"
+              }
+            },
+            "nextPageToken": "$.nextPageToken"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "gemini_get_model",
+      "description": "Read one Gemini model: display name, description, version, input and output token limits, default temperature, top-p and top-k, whether it thinks and the methods it supports. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model code without the models/ prefix, e.g. gemini-3.1-flash-lite."
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/models/{model}"
+      }
+    },
+    {
+      "name": "gemini_generate_text",
+      "description": "Ask a Gemini model one question and get its text answer (generateContent). Billed per token to the user's key; the default gemini-3.1-flash-lite is the cheapest stable model. For a conversation, images or documents use gemini_generate_content or gemini_analyze_file_url. Returns text, finishReason (STOP is normal, MAX_TOKENS means the answer was cut: raise max_output_tokens) and token usage. Read-only: it changes nothing in the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The question or task, as the user would write it."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model code without the models/ prefix. Default gemini-3.1-flash-lite (fast and cheap). Other codes: gemini_list_models.",
+            "default": "gemini-3.1-flash-lite"
+          },
+          "system_instruction": {
+            "type": "string",
+            "description": "How the model should behave (role, tone, language, format). Text only.",
+            "default": "You are a helpful assistant. Answer accurately and concisely."
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "description": "Upper limit for the answer in tokens, thinking included. Model default when left out."
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Randomness from 0 to 2. Leave out for the model default (1.0 on Gemini 3 models, which Google recommends keeping)."
+          },
+          "response_mime_type": {
+            "type": "string",
+            "enum": [
+              "text/plain",
+              "application/json"
+            ],
+            "description": "application/json for a JSON answer, usually with response_json_schema."
+          },
+          "response_json_schema": {
+            "type": "object",
+            "description": "JSON Schema the answer must follow (structured output); set response_mime_type to application/json too."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/models/{model}:generateContent",
+        "bodyMapping": {
+          "contents": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "$prompt"
+                }
+              ]
+            }
+          ],
+          "systemInstruction": {
+            "parts": [
+              {
+                "text": "$system_instruction"
+              }
+            ]
+          },
+          "generationConfig": {
+            "maxOutputTokens": "$max_output_tokens",
+            "temperature": "$temperature",
+            "responseMimeType": "$response_mime_type",
+            "responseJsonSchema": "$response_json_schema"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{text: join('', candidates[0].content.parts[?text != null && thought != `true`].text), finishReason: candidates[0].finishReason, finishMessage: candidates[0].finishMessage, modelVersion: modelVersion, responseId: responseId, usage: usageMetadata, grounding: candidates[0].groundingMetadata.groundingChunks[*].web}",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gemini_generate_content",
+      "description": "Full generateContent call for conversations and mixed input. contents is the list of turns: [{\"role\": \"user\", \"parts\": [{\"text\": \"...\"}]}, {\"role\": \"model\", \"parts\": [{\"text\": \"...\"}]}, {\"role\": \"user\", \"parts\": [...]}]. A part is {\"text\": ...}, or {\"fileData\": {\"fileUri\": \"https://...\", \"mimeType\": \"image/png\"}} for a public HTTPS file up to 15 MB (images, PDF, text, video) or a Files API uri. tools may carry [{\"googleSearch\": {}}] for answers grounded in Google Search (on the paid tier 5,000 search requests a month are free, then $14 per 1,000). Billed per token to the user's key. Read-only: it changes nothing in the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contents": {
+            "type": "array",
+            "description": "Conversation turns, each {\"role\": \"user\" or \"model\", \"parts\": [...]}, oldest first, ending with a user turn."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model code without the models/ prefix. Default gemini-3.1-flash-lite (fast and cheap). Other codes: gemini_list_models.",
+            "default": "gemini-3.1-flash-lite"
+          },
+          "system_instruction": {
+            "type": "object",
+            "description": "System instruction as content, e.g. {\"parts\": [{\"text\": \"Answer in German.\"}]}."
+          },
+          "generation_config": {
+            "type": "object",
+            "description": "generationConfig fields as the API names them: maxOutputTokens, temperature, topP, topK, stopSequences, candidateCount, responseMimeType, responseJsonSchema, thinkingConfig ({\"thinkingLevel\": \"LOW\"} on Gemini 3 models), mediaResolution."
+          },
+          "safety_settings": {
+            "type": "array",
+            "description": "Optional safety thresholds, e.g. [{\"category\": \"HARM_CATEGORY_HARASSMENT\", \"threshold\": \"BLOCK_ONLY_HIGH\"}]."
+          },
+          "tools": {
+            "type": "array",
+            "description": "Built-in tools, e.g. [{\"googleSearch\": {}}] or [{\"urlContext\": {}}]. Leave out for a plain answer."
+          }
+        },
+        "required": [
+          "contents"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/models/{model}:generateContent",
+        "bodyMapping": {
+          "contents": "$contents",
+          "systemInstruction": "$system_instruction",
+          "generationConfig": "$generation_config",
+          "safetySettings": "$safety_settings",
+          "tools": "$tools"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{text: join('', candidates[0].content.parts[?text != null && thought != `true`].text), finishReason: candidates[0].finishReason, finishMessage: candidates[0].finishMessage, modelVersion: modelVersion, responseId: responseId, usage: usageMetadata, grounding: candidates[0].groundingMetadata.groundingChunks[*].web}",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gemini_analyze_file_url",
+      "description": "Ask a Gemini model about a file on the web: an image, a PDF, a text or CSV file or a short video, given by its public HTTPS link (up to 15 MB; Gemini fetches it, so the link must work without a login). Describe or read a picture, summarise a PDF, extract data. Billed per token to the user's key, images and pages included. Read-only: it changes nothing in the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "What to do with the file, e.g. \"Extract the invoice number and total as JSON\"."
+          },
+          "file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https:// link to the file (or a Files API uri)."
+          },
+          "mime_type": {
+            "type": "string",
+            "description": "Type of the file: image/png, image/jpeg, image/webp, application/pdf, text/plain, text/csv, text/html, video/mp4 and so on."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model code without the models/ prefix. Default gemini-3.1-flash-lite (fast and cheap, reads images and PDFs). Other codes: gemini_list_models.",
+            "default": "gemini-3.1-flash-lite"
+          },
+          "system_instruction": {
+            "type": "string",
+            "description": "How the model should behave. Text only.",
+            "default": "You are a helpful assistant. Answer accurately and concisely."
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "description": "Upper limit for the answer in tokens. Model default when left out."
+          },
+          "response_mime_type": {
+            "type": "string",
+            "enum": [
+              "text/plain",
+              "application/json"
+            ],
+            "description": "application/json for a JSON answer."
+          }
+        },
+        "required": [
+          "prompt",
+          "file_url",
+          "mime_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/models/{model}:generateContent",
+        "bodyMapping": {
+          "contents": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "fileData": {
+                    "fileUri": "$file_url",
+                    "mimeType": "$mime_type"
+                  }
+                },
+                {
+                  "text": "$prompt"
+                }
+              ]
+            }
+          ],
+          "systemInstruction": {
+            "parts": [
+              {
+                "text": "$system_instruction"
+              }
+            ]
+          },
+          "generationConfig": {
+            "maxOutputTokens": "$max_output_tokens",
+            "responseMimeType": "$response_mime_type"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{text: join('', candidates[0].content.parts[?text != null && thought != `true`].text), finishReason: candidates[0].finishReason, finishMessage: candidates[0].finishMessage, modelVersion: modelVersion, responseId: responseId, usage: usageMetadata, grounding: candidates[0].groundingMetadata.groundingChunks[*].web}",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gemini_count_tokens",
+      "description": "Count how many input tokens a text is for a Gemini model, to estimate cost or check it fits the context window before a long call. Free: countTokens is not billed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text to count."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model code without the models/ prefix. Default gemini-3.1-flash-lite (tokenizers differ little between Gemini models). Other codes: gemini_list_models.",
+            "default": "gemini-3.1-flash-lite"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/models/{model}:countTokens",
+        "bodyMapping": {
+          "contents": [
+            {
+              "parts": [
+                {
+                  "text": "$text"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gemini_embed_text",
+      "description": "Turn one text into an embedding vector (embedContent) for semantic search, clustering or similarity. Default gemini-embedding-001 with 768 dimensions, which keeps the answer small; 1536 or 3072 for the full vector. Billed per input token to the user's key. For several texts at once use gemini_batch_embed_texts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text to embed."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model code without the models/ prefix. Default gemini-embedding-001 (stable text embedding model). Other codes: gemini_list_models.",
+            "default": "gemini-embedding-001"
+          },
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "RETRIEVAL_QUERY",
+              "RETRIEVAL_DOCUMENT",
+              "SEMANTIC_SIMILARITY",
+              "CLASSIFICATION",
+              "CLUSTERING",
+              "QUESTION_ANSWERING",
+              "FACT_VERIFICATION",
+              "CODE_RETRIEVAL_QUERY"
+            ],
+            "description": "What the vector is for, which improves quality on gemini-embedding-001: RETRIEVAL_QUERY for a search query, RETRIEVAL_DOCUMENT for a text to be found, SEMANTIC_SIMILARITY, CLASSIFICATION, CLUSTERING and so on. Not supported by gemini-embedding-2."
+          },
+          "output_dimensionality": {
+            "type": "integer",
+            "description": "Vector length. Default 768; 1536 and 3072 are also recommended.",
+            "default": 768
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the document, only with task_type RETRIEVAL_DOCUMENT."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/models/{model}:embedContent",
+        "bodyMapping": {
+          "model": "models/${model}",
+          "content": {
+            "parts": [
+              {
+                "text": "$text"
+              }
+            ]
+          },
+          "taskType": "$task_type",
+          "outputDimensionality": "$output_dimensionality",
+          "title": "$title"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "values": "$.embedding.values",
+            "usage": "$.usageMetadata"
+          },
+          "maxBytes": 120000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gemini_batch_embed_texts",
+      "description": "Embed up to 20 texts in one call (batchEmbedContents); the vectors come back in the order given. Each request is {\"model\": \"models/gemini-embedding-001\", \"content\": {\"parts\": [{\"text\": \"...\"}]}, \"taskType\": \"RETRIEVAL_DOCUMENT\", \"outputDimensionality\": 768}, and its model must be the same as the model parameter. Keep outputDimensionality at 768 or lower so the answer stays readable. Billed per input token to the user's key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requests": {
+            "type": "array",
+            "description": "Up to 20 embed requests in the form shown above."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model code without the models/ prefix. Default gemini-embedding-001 (must match the model in every request). Other codes: gemini_list_models.",
+            "default": "gemini-embedding-001"
+          }
+        },
+        "required": [
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/models/{model}:batchEmbedContents",
+        "bodyMapping": {
+          "requests": "$requests"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "embeddings": "$.embeddings[*].values",
+            "usage": "$.usageMetadata"
+          },
+          "maxBytes": 400000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gemini_generate_image",
+      "description": "Create a picture from a text description with a Gemini image model (Nano Banana) and return it as an image the user can see. COSTS MONEY: about $0.034 per picture with the default gemini-3.1-flash-lite-image (1K only), more for 2K and 4K on other models, billed to the user's key; image models have no free tier, so the key's project needs billing. Confirm with the user before calling, and before calling it again. Every image carries an invisible SynthID watermark.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "A full description of the picture: subject, setting, style, lighting, any text to show. Sentences work better than keywords."
+          },
+          "model": {
+            "type": "string",
+            "description": "Image model. Default gemini-3.1-flash-lite-image (fastest and cheapest, 1K only); gemini-nano-banana-2.1 or gemini-3.1-flash-image for 2K and 4K and better text; gemini-3-pro-image for professional assets (about $0.13 per image).",
+            "default": "gemini-3.1-flash-lite-image"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "1:1",
+              "2:3",
+              "3:2",
+              "3:4",
+              "4:3",
+              "4:5",
+              "5:4",
+              "9:16",
+              "16:9",
+              "21:9",
+              "1:4",
+              "4:1",
+              "1:8",
+              "8:1"
+            ],
+            "description": "Width to height. Default 1:1. 1:4, 4:1, 1:8 and 8:1 only on some models.",
+            "default": "1:1"
+          },
+          "image_size": {
+            "type": "string",
+            "enum": [
+              "512",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            "description": "Resolution. Model default (1K) when left out. gemini-3.1-flash-lite-image only supports 1K; 512 only on gemini-3.1-flash-image. Larger pictures cost more and may exceed the 4 MB limit for returning an image."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/models/{model}:generateContent",
+        "bodyMapping": {
+          "contents": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "$prompt"
+                }
+              ]
+            }
+          ],
+          "generationConfig": {
+            "responseModalities": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "imageConfig": {
+              "aspectRatio": "$aspect_ratio",
+              "imageSize": "$image_size"
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "candidates[*].content.parts[*].inlineData.data"
+          ],
+          "maxImages": 4
+        },
+        "transform": {
+          "select": {
+            "modelVersion": "$.modelVersion",
+            "finishReason": "$.candidates[0].finishReason",
+            "finishMessage": "$.candidates[0].finishMessage",
+            "parts": {
+              "$from": "$.candidates[0].content.parts[*]",
+              "$select": {
+                "text": "text",
+                "image": "inlineData.data",
+                "mimeType": "inlineData.mimeType",
+                "thought": "thought"
+              }
+            },
+            "usage": "$.usageMetadata"
+          },
+          "maxBytes": 50000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "gemini_edit_image",
+      "description": "Change an existing picture with a Gemini image model: describe the edit (\"replace the sky with a sunset\", \"remove the person on the left\", \"turn this sketch into a photo\") and give the picture as a public HTTPS link (up to 15 MB). Returns the new picture as an image. COSTS MONEY: about $0.034 per picture with the default gemini-3.1-flash-lite-image, billed to the user's key (no free tier). Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The change to make, in full sentences. Say what must stay the same."
+          },
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https:// link to the picture to edit (or a Files API uri)."
+          },
+          "image_mime_type": {
+            "type": "string",
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/webp"
+            ],
+            "description": "Type of that picture."
+          },
+          "model": {
+            "type": "string",
+            "description": "Image model. Default gemini-3.1-flash-lite-image; gemini-nano-banana-2.1 keeps people and objects more consistent across edits.",
+            "default": "gemini-3.1-flash-lite-image"
+          },
+          "image_config": {
+            "type": "object",
+            "description": "Optional output settings, e.g. {\"aspectRatio\": \"16:9\", \"imageSize\": \"2K\"}. Without it the picture keeps the proportions of the input."
+          }
+        },
+        "required": [
+          "prompt",
+          "image_url",
+          "image_mime_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/models/{model}:generateContent",
+        "bodyMapping": {
+          "contents": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "fileData": {
+                    "fileUri": "$image_url",
+                    "mimeType": "$image_mime_type"
+                  }
+                },
+                {
+                  "text": "$prompt"
+                }
+              ]
+            }
+          ],
+          "generationConfig": {
+            "responseModalities": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "imageConfig": "$image_config"
+          }
+        }
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "candidates[*].content.parts[*].inlineData.data"
+          ],
+          "maxImages": 4
+        },
+        "transform": {
+          "select": {
+            "modelVersion": "$.modelVersion",
+            "finishReason": "$.candidates[0].finishReason",
+            "finishMessage": "$.candidates[0].finishMessage",
+            "parts": {
+              "$from": "$.candidates[0].content.parts[*]",
+              "$select": {
+                "text": "text",
+                "image": "inlineData.data",
+                "mimeType": "inlineData.mimeType",
+                "thought": "thought"
+              }
+            },
+            "usage": "$.usageMetadata"
+          },
+          "maxBytes": 50000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "gemini_list_files",
+      "description": "List the files stored in the project's Gemini Files API (uploaded for prompts, or generated), newest first, with name, display name, MIME type, size, state and expiry (files are deleted automatically after 48 hours). Pass nextPageToken back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Files per page, up to 100. Default 20.",
+            "default": 20
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "gemini_get_file",
+      "description": "Read one file of the Gemini Files API: display name, MIME type, size, state (PROCESSING, ACTIVE or FAILED), uri to use in gemini_generate_content or gemini_analyze_file_url, and expiry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "The id after files/ in the file name, e.g. abc-123 for files/abc-123."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{file_id}"
+      }
+    },
+    {
+      "name": "gemini_delete_file",
+      "description": "Delete a file from the Gemini Files API before it expires. It cannot be restored and prompts that use its uri stop working. Confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "The id after files/ in the file name."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/files/{file_id}"
+      }
+    }
+  ]
+}

@@ -18,15 +18,19 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { RolesGuard } from '../auth/roles.guard';
-import { LicenseController } from './license.controller';
+import { CheckoutLinkDto, LicenseController } from './license.controller';
 import { LicenseService } from './license.service';
 import {
   CHECKOUT_PLANS,
+  CHECKOUT_SOURCES,
   CheckoutUnavailableError,
   cardTrialEnd,
   checkoutAdMetadata,
   cloudFrontendOrigin,
+  withSourceParam,
 } from './license-checkout';
 
 jest.mock('axios');
@@ -76,6 +80,15 @@ describe('checkoutAdMetadata', () => {
     expect(
       checkoutAdMetadata({ gclid: 'abc', ad_consent: 'granted', captured_at: '2026-09-01T00:00:00Z' }),
     ).toEqual({ ad_consent: 'granted', gclid: 'abc' });
+  });
+
+  it('passes a consented ChatGPT Ads oppref, alone or next to a Google click id', () => {
+    expect(checkoutAdMetadata({ oppref: 'op-1', ad_consent: 'granted' })).toEqual({ ad_consent: 'granted', oppref: 'op-1' });
+    expect(checkoutAdMetadata({ gclid: 'abc', oppref: 'op-1', ad_consent: 'granted' })).toEqual({
+      ad_consent: 'granted',
+      gclid: 'abc',
+      oppref: 'op-1',
+    });
   });
 
   it('sends nothing without consent or without an id', () => {
@@ -139,12 +152,30 @@ describe('LicenseService.createCheckoutIntent', () => {
 
     await expect(makeService().createCheckoutIntent(payload)).resolves.toEqual({
       url: 'https://anythingmcp.com/api/stripe/checkout/start?intent=i1',
+      trial: false,
     });
     const [url, body, config] = mockedAxios.post.mock.calls[0] as any[];
     expect(url).toMatch(/\/api\/stripe\/checkout-intent$/);
     expect(body).toEqual(payload);
     expect(config.headers['x-amcp-service-token']).toBe('service-token');
     expect(config.timeout).toBeGreaterThan(0);
+  });
+
+  it('reports whether the licence site granted the trial', async () => {
+    const trialPayload = { ...payload, trialEnd: '2026-10-06T10:00:00.000Z' };
+    mockedAxios.post.mockResolvedValueOnce({ data: { url: 'https://anythingmcp.com/c', trial: false } } as any);
+    await expect(makeService().createCheckoutIntent(trialPayload)).resolves.toEqual({
+      url: 'https://anythingmcp.com/c',
+      trial: false,
+    });
+    mockedAxios.post.mockResolvedValueOnce({ data: { url: 'https://anythingmcp.com/c', trial: true } } as any);
+    await expect(makeService().createCheckoutIntent(trialPayload)).resolves.toEqual({
+      url: 'https://anythingmcp.com/c',
+      trial: true,
+    });
+    // No trial asked, none granted, whatever the answer says.
+    mockedAxios.post.mockResolvedValueOnce({ data: { url: 'https://anythingmcp.com/c', trial: true } } as any);
+    await expect(makeService().createCheckoutIntent(payload)).resolves.toMatchObject({ trial: false });
   });
 
   it('retries once on an upstream fault', async () => {
@@ -154,6 +185,7 @@ describe('LicenseService.createCheckoutIntent', () => {
 
     await expect(makeService().createCheckoutIntent(payload)).resolves.toEqual({
       url: 'https://anythingmcp.com/c',
+      trial: false,
     });
     expect(mockedAxios.post).toHaveBeenCalledTimes(2);
   });
@@ -192,15 +224,31 @@ describe('LicenseController.checkoutLink', () => {
     user: { sub: 'u1', email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' },
   };
 
-  function makeController(opts: { isCloud?: boolean; license?: any; click?: any; fail?: boolean } = {}) {
+  function makeController(
+    opts: {
+      isCloud?: boolean;
+      license?: any;
+      click?: any;
+      fail?: boolean;
+      hadSubscription?: boolean | null;
+      paymentFailed?: any;
+    } = {},
+  ) {
     const licenseService = {
       getCurrentLicense: jest.fn(async () => (opts.license === undefined ? trialLicense() : opts.license)),
+      getPaymentFailedLicense: jest.fn(async () => opts.paymentFailed ?? null),
       createCheckoutIntent: jest.fn(async () => {
         if (opts.fail) throw new CheckoutUnavailableError('Checkout intent failed: HTTP 500', 500);
         return { url: 'https://anythingmcp.com/api/stripe/checkout/start?intent=i1' };
       }),
     };
-    const productEvents = { clickIdForUser: jest.fn(async () => opts.click ?? null) };
+    const productEvents = {
+      clickIdForUser: jest.fn(async () => opts.click ?? null),
+      log: jest.fn(async () => undefined),
+    };
+    const eligibility = {
+      hadSubscription: jest.fn(async () => (opts.hadSubscription === undefined ? false : opts.hadSubscription)),
+    };
     const controller = new LicenseController(
       licenseService as any,
       {} as any,
@@ -208,8 +256,10 @@ describe('LicenseController.checkoutLink', () => {
       {} as any,
       { isCloud: () => opts.isCloud ?? true } as any,
       productEvents as any,
+      eligibility as any,
+      {} as any,
     );
-    return { controller, licenseService, productEvents };
+    return { controller, licenseService, productEvents, eligibility };
   }
 
   beforeEach(() => {
@@ -248,6 +298,7 @@ describe('LicenseController.checkoutLink', () => {
       returnUrl: 'https://cloud.example.com/settings/license/activate',
       organizationId: 'org-1',
       adMetadata: { ad_consent: 'granted', gclid: 'g-1' },
+      source: 'app',
     });
   });
 
@@ -364,6 +415,86 @@ describe('LicenseController.checkoutLink', () => {
     }
   });
 
+  it('asks for no trial for an address that had a subscription: it pays today', async () => {
+    const { controller, licenseService, eligibility } = makeController({ hadSubscription: true });
+    await controller.checkoutLink(adminReq, { plan: 'starter', billingPeriod: 'monthly', trial: true });
+    expect(eligibility.hadSubscription).toHaveBeenCalledWith('admin@example.com');
+    const [payload] = licenseService.createCheckoutIntent.mock.calls[0] as any[];
+    expect(payload).not.toHaveProperty('trialEnd');
+  });
+
+  it('still asks for the trial when the history is unknown: the licence site decides', async () => {
+    const { controller, licenseService } = makeController({ hadSubscription: null });
+    await controller.checkoutLink(adminReq, { plan: 'starter', billingPeriod: 'monthly', trial: true });
+    const [payload] = licenseService.createCheckoutIntent.mock.calls[0] as any[];
+    expect(payload.trialEnd).toBe(IN_FIVE_DAYS.toISOString());
+  });
+
+  it('does not look up the history for a plain purchase', async () => {
+    const { controller, eligibility } = makeController();
+    await controller.checkoutLink(adminReq, { plan: 'starter', billingPeriod: 'monthly', trial: false });
+    expect(eligibility.hadSubscription).not.toHaveBeenCalled();
+  });
+
+  it('passes the in-app source through, and records the checkout link with where it came from', async () => {
+    const { controller, licenseService, productEvents } = makeController();
+    await controller.checkoutLink(adminReq, {
+      plan: 'starter',
+      billingPeriod: 'monthly',
+      trial: true,
+      source: 'first_success_banner',
+    });
+    const [payload] = licenseService.createCheckoutIntent.mock.calls[0] as any[];
+    expect(payload.source).toBe('first_success_banner');
+    expect(productEvents.log).toHaveBeenCalledWith({
+      event: 'checkout_link_created',
+      userId: 'u1',
+      organizationId: 'org-1',
+      metadata: { via: 'first_success_banner', kind: 'trial' },
+    });
+  });
+
+  it('sends a source with every checkout: "app" when the page does not name one', async () => {
+    const plain = makeController();
+    await plain.controller.checkoutLink(adminReq, { plan: 'team', billingPeriod: 'monthly', trial: false });
+    const [plainPayload] = plain.licenseService.createCheckoutIntent.mock.calls[0] as any[];
+    expect(plainPayload.source).toBe('app');
+    expect(plain.productEvents.log).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { via: 'app', kind: 'pay' } }),
+    );
+  });
+
+  it('records no checkout link when the licence site fails', async () => {
+    const { controller, productEvents } = makeController({ fail: true });
+    await controller
+      .checkoutLink(adminReq, { plan: 'team', billingPeriod: 'monthly', trial: true, source: 'first_success' })
+      .catch(() => undefined);
+    expect(productEvents.log).not.toHaveBeenCalled();
+  });
+
+  it('accepts only known sources: the value ends up in Stripe metadata', async () => {
+    const base = { plan: 'starter', billingPeriod: 'monthly', trial: true };
+    for (const source of CHECKOUT_SOURCES) {
+      const ok = await validate(plainToInstance(CheckoutLinkDto, { ...base, source }));
+      expect(ok).toHaveLength(0);
+    }
+    const none = await validate(plainToInstance(CheckoutLinkDto, base));
+    expect(none).toHaveLength(0);
+    for (const source of ['newsletter', 'first_success; drop', '', 42]) {
+      const errors = await validate(plainToInstance(CheckoutLinkDto, { ...base, source }));
+      expect(errors.map((e) => e.property)).toContain('source');
+    }
+  });
+
+  it('refuses a second subscription while a declined card is being retried', async () => {
+    const { controller, licenseService } = makeController({
+      license: null,
+      paymentFailed: { plan: 'starter', status: 'revoked', billing: { status: 'past_due', cancelling: false } },
+    });
+    await expect(controller.checkoutLink(adminReq, { plan: 'starter' } as any)).rejects.toThrow(/Update your payment method/);
+    expect(licenseService.createCheckoutIntent).not.toHaveBeenCalled();
+  });
+
   it('maps any licence-site failure to a generic 502', async () => {
     const { controller } = makeController({ fail: true });
     const err = await controller
@@ -371,5 +502,16 @@ describe('LicenseController.checkoutLink', () => {
       .catch((e) => e);
     expect(err).toBeInstanceOf(BadGatewayException);
     expect(err.message).not.toMatch(/HTTP 500/);
+  });
+});
+
+describe('withSourceParam', () => {
+  it('adds the source to the query, ahead of any fragment', () => {
+    expect(withSourceParam('https://anythingmcp.com/pricing', 'email_winback')).toBe(
+      'https://anythingmcp.com/pricing?source=email_winback',
+    );
+    expect(withSourceParam('https://anythingmcp.com/pricing?promo=X#t=tok', 'email_trial_warn1')).toBe(
+      'https://anythingmcp.com/pricing?promo=X&source=email_trial_warn1#t=tok',
+    );
   });
 });

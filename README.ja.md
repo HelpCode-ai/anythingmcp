@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。332 のコネクター、うち 17 は API キー不要。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。475 のコネクター、うち 20 は API キー不要。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：セルフホスト型 MCP ゲートウェイ</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、REST/OpenAPI、SOAP、GraphQL、OData、SQL のあらゆるシステムを Claude、ChatGPT、Copilot 用の MCP ツールに変換します。</strong><br/>
-  SAP、Etsy、weclapp、Amazon Seller などを含む 332 種類の既製アダプターを同梱しており、うち 17 は API キー不要です。
+  SAP、Etsy、weclapp、Amazon Seller などを含む 475 種類の既製アダプターを同梱しており、うち 20 は API キー不要です。
 </p>
 
 <p align="center">
@@ -111,7 +111,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 ## コネクターカタログ
 
-332 個のアダプターで 2,400 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
+475 個のアダプターで 2,400 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
 
 | カテゴリー | 例 |
 |---|---|
@@ -154,7 +154,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 † ベンダーが公開している API ドキュメントを基に作成しており、実際のテナントではまだ検証していません。これらのシステムをお使いの方からの報告や修正を歓迎します。
 
-**リポジトリ:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
+**リポジトリ:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 </details>
 
@@ -182,7 +182,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 † ベンダーが公開している API ドキュメントを基に作成しており、実際の販売者アカウントではまだ検証していません。
 
-**リポジトリ:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server) · [woocommerce-mcp-server](https://github.com/keysersoft/woocommerce-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
+**リポジトリ:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
 
 </details>
 
@@ -224,7 +224,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 同じ MCP サーバーが MCP 対応のあらゆるクライアントで動くため、コネクターは一度作るだけで済みます。
 
 - **Claude。** *Customize → Connectors* でサーバーの URL を**カスタムコネクター**として追加すると、Claude.ai、Claude Desktop、Claude Code で使えます。OAuth 2.0 に標準対応しています。AnythingMCP Cloud なら [Claude ディレクトリ](https://claude.ai/directory/anythingmcp)からワンクリックで追加することもできます。[Claude の設定](docs/integrations/claude.md)
-- **ChatGPT。** ChatGPT のアプリは MCP の上に作られています。ChatGPT の設定でサーバーを追加するか、Apps SDK アプリのツール層として使います。[ChatGPT の設定](docs/integrations/chatgpt.md)
+- **ChatGPT。** ChatGPT のアプリは MCP の上に作られています。ChatGPT の *Plugins* でサーバーを追加するか（*+ → Add custom MCP server*）、Apps SDK アプリのツール層として使います。[ChatGPT の設定](docs/integrations/chatgpt.md)
 - **Meta Muse。** Muse で *Settings → Connectors → Add custom connector* を開き、サーバーの URL を貼り付けて AnythingMCP にサインインします。[Muse の設定](docs/integrations/muse.md)
 - **Copilot、Gemini、Cursor** などの MCP クライアント：[クライアント設定ガイド](docs/guides.md)。
 
@@ -288,27 +288,8 @@ REST コネクターを作成し、仕様を URL か貼り付けでインポー�
 
 ## 貢献する
 
-PR を送る前に[コントリビューションガイド](.github/CONTRIBUTING.md)をお読みください。いちばん手軽で役に立つ貢献はアダプターです。JSON ファイル 1 つで済み、[手順を説明した issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) もあります。
+PR を送る前に[コントリビューションガイド](.github/CONTRIBUTING.md)をお読みください。いちばん手軽で役に立つ貢献はアダプターです。JSON ファイル 1 つで済み、[手順を説明した issue](https://github.com/HelpCode-ai/anythingmcp/issues/982) もあります。
 
 ## License
 
 [GNU Affero General Public License v3](LICENSE)（AGPL-3.0-only）のもとで**オープンソース**です。自社内での商用利用は当初から認められています。コピーレフトの義務が生じるのは、AnythingMCP を改変し、その改変版をネットワーク経由で他者に提供する場合だけです。`ee/` 配下のクラウド運用者向けコードは別ライセンスで、セルフホストには不要です。[ライセンス FAQ](docs/license-faq.md) を参照してください。
-
----
-
-<p align="center">
-  <strong>⭐ MCP サーバーを書く 1 週間を節約できたなら、Star をお願いします。</strong><br/>
-  <em>Star は次の人がこのプロジェクトを見つける手がかりになり、次にどのアダプターを作るかを決める材料にもなります。</em>
-</p>
-
-<p align="center">
-  <a href="https://star-history.com/#HelpCode-ai/anythingmcp&Date">
-    <img src="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date" alt="Star history" width="70%">
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/HelpCode-ai/anythingmcp/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=HelpCode-ai/anythingmcp" alt="Contributors">
-  </a>
-</p>

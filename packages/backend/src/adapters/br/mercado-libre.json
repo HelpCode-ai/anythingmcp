@@ -1,8 +1,9 @@
 {
   "slug": "mercado-libre",
   "name": "Mercado Libre",
-  "description": "LATAM's largest e-commerce marketplace — search items, fetch product details, look up users, and list seller orders across Brasil (MLB), Argentina (MLA), Mexico (MLM), Chile (MLC), Colombia (MCO), Peru (MPE), Uruguay (MLU). OAuth2 access token required for every endpoint.",
-  "instructions": "This connector uses the Mercado Libre REST API.\n\n**All endpoints now require OAuth2.** Historically `/sites/{site_id}/search`, `/items/{item_id}` and `/users/{user_id}` were public, but as of 2025 Mercado Libre returns HTTP 403 on unauthenticated calls. You need a valid access token for every tool in this adapter.\n\n**Creating an app**: register at https://developers.mercadolibre.com/devcenter → 'Create app' → set a redirect URI (e.g. `https://<your AnythingMCP URL>/api/mcp-oauth/callback (on AnythingMCP Cloud: https://cloud.anythingmcp.com/api/mcp-oauth/callback)`). Copy `client_id` and `client_secret` into the env vars.\n\n**Authorization URL**: pick the country-specific URL based on the seller's marketplace:\n- Brasil: `https://auth.mercadolivre.com.br/authorization`\n- Argentina: `https://auth.mercadolibre.com.ar/authorization`\n- Mexico: `https://auth.mercadolibre.com.mx/authorization`\n- (and similar for .cl, .co, .pe, .com.uy)\n\nThis adapter defaults to Brasil — change it after import if your seller is on a different marketplace.\n\n**Site ids** (used by `search_items` and `get_item`):\n- MLB = Brasil, MLA = Argentina, MLM = Mexico, MLC = Chile, MCO = Colombia, MPE = Peru, MLU = Uruguay\n\n**Item ids**: format `{SITE}{NUMBER}` (e.g. `MLB1234567890`). Always include the site prefix.\n\n**Rate limits**: 60,000 calls/hour per app for read endpoints; lower for write endpoints. Returns 429 with `X-RateLimit-*` headers when exceeded.\n\n**Seller-specific endpoints** (`list_orders`) require the OAuth2 token to belong to the seller whose orders you're querying — you cannot view another seller's orders even with valid auth.",
+  "aliases": ["Mercado Livre", "MercadoLivre", "MELI"],
+  "description": "LATAM's largest marketplace: search items, read products and sellers, list orders, and manage the seller's own listings (create, validate, change price, stock and description, pause or close) on Brasil (MLB), Argentina (MLA), Mexico (MLM), Chile (MLC), Colombia (MCO), Peru (MPE) and Uruguay (MLU). Sign in with the seller's Mercado Libre account.",
+  "instructions": "This connector uses the Mercado Libre REST API (api.mercadolibre.com), one API for every country site. Every endpoint needs the seller's OAuth2 sign-in; unauthenticated calls get 401 or 403.\n\n**Setup**: in the developer center of your country (https://developers.mercadolibre.com/devcenter) create an application, register the redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`) and copy the App ID and the Secret Key into `MERCADO_LIBRE_CLIENT_ID` and `MERCADO_LIBRE_CLIENT_SECRET`. `MERCADO_LIBRE_SITE_DOMAIN` picks the sign-in page of the seller's country (mercadolivre.com.br, mercadolibre.com.ar, mercadolibre.com.mx, mercadolibre.cl, mercadolibre.com.co, mercadolibre.com.pe, mercadolibre.com.uy). Then authorize the connector with the seller account. Keep the scopes `offline_access read write`: the listing tools need write.\n\n**Site ids**: MLB = Brasil, MLA = Argentina, MLM = Mexico, MLC = Chile, MCO = Colombia, MPE = Peru, MLU = Uruguay. Item ids carry the site prefix (`MLB1234567890`), and so do category ids (`MLB1055`).\n\n**Your seller id**: `mercado_libre_get_user` with user_id `me` returns the signed-in account; its `id` is the seller id for `mercado_libre_list_seller_items` and `mercado_libre_list_orders`. Seller endpoints only answer for the signed-in seller.\n\n**Creating a listing** (there is no sandbox, so whatever is created is live):\n1. `mercado_libre_predict_category` with the product title gives the category_id.\n2. `mercado_libre_get_category_attributes` lists the attributes; send every one tagged required (often BRAND, MODEL, GTIN). `mercado_libre_get_category_sale_terms` gives the warranty fields and `mercado_libre_list_listing_types` the listing types (gold_special = classic, gold_pro = premium). `mercado_libre_get_category` has the limits: max_title_length, max_pictures_per_item, minimum_price.\n3. `mercado_libre_validate_listing` with the full listing; an empty answer means it would be accepted.\n4. `mercado_libre_create_listing`, then `mercado_libre_add_listing_description` with the text.\n\n**Title or family_name**: sellers on the User Products model (most sellers since 2025) send `family_name`, a generic product name such as 'Apple iPhone 15 128GB', and no `title`: Mercado Libre writes the title itself. Sellers still on the old model send `title`. The error 'The fields [title] are invalid' means: send family_name instead. A listing that has a family_name does not accept title changes.\n\n**Changing listings**: `mercado_libre_update_listing` changes price, stock, pictures, attributes and sale terms (send only what changes; pictures and attributes replace the whole list). Stock 0 pauses the listing until stock comes back. `mercado_libre_set_listing_status` pauses or reactivates, `mercado_libre_update_listing_description` replaces the text. Title, condition and buying mode are locked once a listing has sales. `mercado_libre_close_listing` ends a listing for good and is installed switched off. Every write acts on the live shop: confirm each one with the user.\n\n**Rate limits**: Mercado Libre answers 429 when an application sends too many requests. Wait before retrying and do not fire many listing changes in parallel.",
   "region": "br",
   "category": "e-commerce",
   "icon": "mercado-libre",
@@ -176,6 +177,786 @@
           "sort": "$sort",
           "limit": "$limit",
           "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_predict_category",
+      "description": "Suggest the category for a new listing from its title (the category predictor). Returns up to 8 predictions, most likely first, each with category_id, category_name, domain_id and the attributes it read from the title (e.g. BRAND, MODEL). Start here before creating a listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "enum": [
+              "MLB",
+              "MLA",
+              "MLM",
+              "MLC",
+              "MCO",
+              "MPE",
+              "MLU"
+            ],
+            "description": "Site code: MLB=Brasil, MLA=Argentina, MLM=Mexico, MLC=Chile, MCO=Colombia, MPE=Peru, MLU=Uruguay."
+          },
+          "q": {
+            "type": "string",
+            "description": "Product title in the site's language, e.g. 'celular iphone 15 128gb'."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Number of predictions, 1 to 8 (default 4)."
+          }
+        },
+        "required": [
+          "site_id",
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/domain_discovery/search",
+        "encodePathParams": true,
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_category",
+      "description": "Read a category and the rules a listing in it must follow: path_from_root, listing_allowed, status, and settings such as max_title_length, buying_modes, currencies, item_conditions, max_pictures_per_item, minimum_price and shipping_modes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id, e.g. 'MLB1055' (from mercado_libre_predict_category)."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/{category_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mercado_libre_get_category_attributes",
+      "description": "List the attributes (technical specifications) of a category: id, name, value_type, allowed values with their value_id, and tags. Attributes tagged required must be sent to create a listing, new_required ones when the condition is new; read_only ones cannot be set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id, e.g. 'MLB1055' (from mercado_libre_predict_category)."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/{category_id}/attributes",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mercado_libre_get_category_sale_terms",
+      "description": "List the sale terms of a category, such as WARRANTY_TYPE and WARRANTY_TIME with their allowed values and units, to fill sale_terms when creating or changing a listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id, e.g. 'MLB1055' (from mercado_libre_predict_category)."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/{category_id}/sale_terms",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mercado_libre_list_listing_types",
+      "description": "List the listing types of a site (e.g. gold_pro, gold_special, free) with their names. A listing needs a listing_type_id; exposure and selling fees depend on it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "enum": [
+              "MLB",
+              "MLA",
+              "MLM",
+              "MLC",
+              "MCO",
+              "MPE",
+              "MLU"
+            ],
+            "description": "Site code: MLB=Brasil, MLA=Argentina, MLM=Mexico, MLC=Chile, MCO=Colombia, MPE=Peru, MLU=Uruguay."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/listing_types",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mercado_libre_list_seller_items",
+      "description": "List the ids of a seller's listings, 50 per page by default (max 100), optionally filtered by status or SKU. Use mercado_libre_get_user with user_id 'me' to find your own seller id, and mercado_libre_get_item for the details of each id. offset stops at 1000.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Seller id (numeric). Must be the account the connector is signed in with."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "closed",
+              "under_review",
+              "inactive"
+            ],
+            "description": "Only listings in this status."
+          },
+          "seller_sku": {
+            "type": "string",
+            "description": "Only listings whose SELLER_SKU attribute has this value."
+          },
+          "orders": {
+            "type": "string",
+            "description": "Sort order, e.g. start_time_desc (default stop_time_asc)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Results per page (default 50, max 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Results to skip, for paging."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/items/search",
+        "encodePathParams": true,
+        "queryParams": {
+          "status": "$status",
+          "seller_sku": "$seller_sku",
+          "orders": "$orders",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_validate_listing",
+      "description": "Check a new listing without publishing it. Takes the same fields as mercado_libre_create_listing; an empty answer (HTTP 204) means it would be accepted, otherwise the answer lists every problem (missing attributes, wrong fields, title not allowed). Run this before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id, e.g. 'MLB1055' (from mercado_libre_predict_category)."
+          },
+          "family_name": {
+            "type": "string",
+            "description": "Generic product name shared by its variants, e.g. 'Apple iPhone 15 128GB'. Required for sellers on the User Products model (most sellers now); Mercado Libre then writes the title itself. At most the category's max_title_length."
+          },
+          "title": {
+            "type": "string",
+            "description": "Listing title, only for sellers still on the old model (Product + brand + model + key specs, no condition, stock or shipping words). If Mercado Libre answers 'The fields [title] are invalid', send family_name instead."
+          },
+          "price": {
+            "type": "number",
+            "description": "Price in the site currency, e.g. 199.9."
+          },
+          "currency_id": {
+            "type": "string",
+            "description": "Currency of the site: BRL, ARS, MXN, CLP, COP, PEN or UYU."
+          },
+          "available_quantity": {
+            "type": "integer",
+            "description": "Units in stock (0 creates the listing paused, out of stock)."
+          },
+          "buying_mode": {
+            "type": "string",
+            "enum": [
+              "buy_it_now",
+              "classified",
+              "auction"
+            ],
+            "description": "buy_it_now for normal product listings."
+          },
+          "listing_type_id": {
+            "type": "string",
+            "description": "Listing type, e.g. gold_special (classic) or gold_pro (premium); see mercado_libre_list_listing_types."
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "new",
+              "used",
+              "not_specified"
+            ],
+            "description": "Item condition."
+          },
+          "pictures": {
+            "type": "array",
+            "description": "Pictures as [{\"source\": \"https://...jpg\"}]: public image URLs, the first one is the cover. The category sets the maximum (max_pictures_per_item).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "Public URL of the image."
+                }
+              },
+              "required": [
+                "source"
+              ]
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Technical specifications as [{\"id\": \"BRAND\", \"value_name\": \"Apple\"}] or with \"value_id\" for list values. Send every attribute tagged required in mercado_libre_get_category_attributes (often BRAND, MODEL and GTIN); a SKU goes in SELLER_SKU.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Attribute id, e.g. BRAND."
+                },
+                "value_id": {
+                  "type": "string",
+                  "description": "Id of an allowed value."
+                },
+                "value_name": {
+                  "type": "string",
+                  "description": "Value as text."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          },
+          "sale_terms": {
+            "type": "array",
+            "description": "Sale terms such as the warranty: [{\"id\": \"WARRANTY_TYPE\", \"value_name\": \"Garantia do vendedor\"}, {\"id\": \"WARRANTY_TIME\", \"value_name\": \"90 dias\"}]. Allowed values: mercado_libre_get_category_sale_terms.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Sale term id, e.g. WARRANTY_TIME."
+                },
+                "value_id": {
+                  "type": "string",
+                  "description": "Id of an allowed value."
+                },
+                "value_name": {
+                  "type": "string",
+                  "description": "Value as text, with its unit where it has one."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          },
+          "video_id": {
+            "type": "string",
+            "description": "Optional YouTube video id."
+          },
+          "shipping": {
+            "type": "object",
+            "description": "Optional shipping settings, e.g. {\"mode\": \"me2\", \"free_shipping\": false, \"local_pick_up\": false}. Leave out to use the seller's defaults."
+          }
+        },
+        "required": [
+          "category_id",
+          "price",
+          "currency_id",
+          "available_quantity",
+          "buying_mode",
+          "listing_type_id",
+          "condition",
+          "pictures"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items/validate",
+        "bodyMapping": {
+          "category_id": "$category_id",
+          "family_name": "$family_name",
+          "title": "$title",
+          "price": "$price",
+          "currency_id": "$currency_id",
+          "available_quantity": "$available_quantity",
+          "buying_mode": "$buying_mode",
+          "listing_type_id": "$listing_type_id",
+          "condition": "$condition",
+          "pictures": "$pictures",
+          "attributes": "$attributes",
+          "sale_terms": "$sale_terms",
+          "video_id": "$video_id",
+          "shipping": "$shipping"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mercado_libre_create_listing",
+      "description": "Publish a new listing on the seller's account; it goes live and can sell at once. Send family_name (User Products sellers) or title, never both. Get category_id from mercado_libre_predict_category and the required attributes from mercado_libre_get_category_attributes, run mercado_libre_validate_listing first, then add the text with mercado_libre_add_listing_description. Show the user the listing and wait for confirmation; never retry a successful create.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id, e.g. 'MLB1055' (from mercado_libre_predict_category)."
+          },
+          "family_name": {
+            "type": "string",
+            "description": "Generic product name shared by its variants, e.g. 'Apple iPhone 15 128GB'. Required for sellers on the User Products model (most sellers now); Mercado Libre then writes the title itself. At most the category's max_title_length."
+          },
+          "title": {
+            "type": "string",
+            "description": "Listing title, only for sellers still on the old model (Product + brand + model + key specs, no condition, stock or shipping words). If Mercado Libre answers 'The fields [title] are invalid', send family_name instead."
+          },
+          "price": {
+            "type": "number",
+            "description": "Price in the site currency, e.g. 199.9."
+          },
+          "currency_id": {
+            "type": "string",
+            "description": "Currency of the site: BRL, ARS, MXN, CLP, COP, PEN or UYU."
+          },
+          "available_quantity": {
+            "type": "integer",
+            "description": "Units in stock (0 creates the listing paused, out of stock)."
+          },
+          "buying_mode": {
+            "type": "string",
+            "enum": [
+              "buy_it_now",
+              "classified",
+              "auction"
+            ],
+            "description": "buy_it_now for normal product listings."
+          },
+          "listing_type_id": {
+            "type": "string",
+            "description": "Listing type, e.g. gold_special (classic) or gold_pro (premium); see mercado_libre_list_listing_types."
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "new",
+              "used",
+              "not_specified"
+            ],
+            "description": "Item condition."
+          },
+          "pictures": {
+            "type": "array",
+            "description": "Pictures as [{\"source\": \"https://...jpg\"}]: public image URLs, the first one is the cover. The category sets the maximum (max_pictures_per_item).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "Public URL of the image."
+                }
+              },
+              "required": [
+                "source"
+              ]
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Technical specifications as [{\"id\": \"BRAND\", \"value_name\": \"Apple\"}] or with \"value_id\" for list values. Send every attribute tagged required in mercado_libre_get_category_attributes (often BRAND, MODEL and GTIN); a SKU goes in SELLER_SKU.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Attribute id, e.g. BRAND."
+                },
+                "value_id": {
+                  "type": "string",
+                  "description": "Id of an allowed value."
+                },
+                "value_name": {
+                  "type": "string",
+                  "description": "Value as text."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          },
+          "sale_terms": {
+            "type": "array",
+            "description": "Sale terms such as the warranty: [{\"id\": \"WARRANTY_TYPE\", \"value_name\": \"Garantia do vendedor\"}, {\"id\": \"WARRANTY_TIME\", \"value_name\": \"90 dias\"}]. Allowed values: mercado_libre_get_category_sale_terms.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Sale term id, e.g. WARRANTY_TIME."
+                },
+                "value_id": {
+                  "type": "string",
+                  "description": "Id of an allowed value."
+                },
+                "value_name": {
+                  "type": "string",
+                  "description": "Value as text, with its unit where it has one."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          },
+          "video_id": {
+            "type": "string",
+            "description": "Optional YouTube video id."
+          },
+          "shipping": {
+            "type": "object",
+            "description": "Optional shipping settings, e.g. {\"mode\": \"me2\", \"free_shipping\": false, \"local_pick_up\": false}. Leave out to use the seller's defaults."
+          }
+        },
+        "required": [
+          "category_id",
+          "price",
+          "currency_id",
+          "available_quantity",
+          "buying_mode",
+          "listing_type_id",
+          "condition",
+          "pictures"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items",
+        "bodyMapping": {
+          "category_id": "$category_id",
+          "family_name": "$family_name",
+          "title": "$title",
+          "price": "$price",
+          "currency_id": "$currency_id",
+          "available_quantity": "$available_quantity",
+          "buying_mode": "$buying_mode",
+          "listing_type_id": "$listing_type_id",
+          "condition": "$condition",
+          "pictures": "$pictures",
+          "attributes": "$attributes",
+          "sale_terms": "$sale_terms",
+          "video_id": "$video_id",
+          "shipping": "$shipping"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_update_listing",
+      "description": "Change a listing: price, stock (available_quantity), pictures, attributes, sale terms, video or shipping. Send only the fields to change; pictures and attributes replace the whole list. title only while nothing has sold and only on old-model listings (with family_name set, change family_name instead). Stock 0 pauses the listing. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Listing id with its site prefix, e.g. 'MLB1234567890'."
+          },
+          "price": {
+            "type": "number",
+            "description": "New price in the listing currency."
+          },
+          "available_quantity": {
+            "type": "integer",
+            "description": "New stock. 0 pauses the listing as out of stock; a positive number reactivates it."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title. Only allowed while sold_quantity is 0 and the listing has no family_name."
+          },
+          "family_name": {
+            "type": "string",
+            "description": "New generic product name (User Products listings), only while no item of the product has sold."
+          },
+          "pictures": {
+            "type": "array",
+            "description": "Pictures as [{\"source\": \"https://...jpg\"}]: public image URLs, the first one is the cover. The category sets the maximum (max_pictures_per_item).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "Public URL of the image."
+                }
+              },
+              "required": [
+                "source"
+              ]
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Technical specifications as [{\"id\": \"BRAND\", \"value_name\": \"Apple\"}] or with \"value_id\" for list values. Send every attribute tagged required in mercado_libre_get_category_attributes (often BRAND, MODEL and GTIN); a SKU goes in SELLER_SKU.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Attribute id, e.g. BRAND."
+                },
+                "value_id": {
+                  "type": "string",
+                  "description": "Id of an allowed value."
+                },
+                "value_name": {
+                  "type": "string",
+                  "description": "Value as text."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          },
+          "sale_terms": {
+            "type": "array",
+            "description": "Sale terms such as the warranty: [{\"id\": \"WARRANTY_TYPE\", \"value_name\": \"Garantia do vendedor\"}, {\"id\": \"WARRANTY_TIME\", \"value_name\": \"90 dias\"}]. Allowed values: mercado_libre_get_category_sale_terms.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Sale term id, e.g. WARRANTY_TIME."
+                },
+                "value_id": {
+                  "type": "string",
+                  "description": "Id of an allowed value."
+                },
+                "value_name": {
+                  "type": "string",
+                  "description": "Value as text, with its unit where it has one."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          },
+          "video_id": {
+            "type": "string",
+            "description": "YouTube video id."
+          },
+          "shipping": {
+            "type": "object",
+            "description": "Shipping settings, e.g. {\"free_shipping\": true}."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "price": "$price",
+          "available_quantity": "$available_quantity",
+          "title": "$title",
+          "family_name": "$family_name",
+          "pictures": "$pictures",
+          "attributes": "$attributes",
+          "sale_terms": "$sale_terms",
+          "video_id": "$video_id",
+          "shipping": "$shipping"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_set_listing_status",
+      "description": "Pause a listing (hidden from buyers, can be reactivated) or reactivate a paused one. A listing paused for lack of stock comes back by itself when mercado_libre_update_listing sets stock above 0. To end a listing for good use mercado_libre_close_listing. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Listing id with its site prefix, e.g. 'MLB1234567890'."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "paused",
+              "active"
+            ],
+            "description": "paused hides the listing, active reactivates it."
+          }
+        },
+        "required": [
+          "item_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mercado_libre_close_listing",
+      "description": "End a listing for good (status closed). A closed listing cannot be reactivated, only relisted as a new one, so pause it with mercado_libre_set_listing_status unless the user wants it gone. Installed switched off; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Listing id with its site prefix, e.g. 'MLB1234567890'."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "status": "closed"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "mercado_libre_get_listing_description",
+      "description": "Read the description text of a listing (plain_text), with its creation and update dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Listing id with its site prefix, e.g. 'MLB1234567890'."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{item_id}/description",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mercado_libre_add_listing_description",
+      "description": "Add the description to a listing that has none yet, typically right after mercado_libre_create_listing. Plain text only (line breaks as \\n, no HTML or emoji). If the listing already has a description Mercado Libre refuses it; use mercado_libre_update_listing_description. Confirm the text with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Listing id with its site prefix, e.g. 'MLB1234567890'."
+          },
+          "plain_text": {
+            "type": "string",
+            "description": "Description in plain text, in the site's language."
+          }
+        },
+        "required": [
+          "item_id",
+          "plain_text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items/{item_id}/description",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "plain_text": "$plain_text"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_update_listing_description",
+      "description": "Replace the description of a listing. Plain text only (line breaks as \\n, no HTML or emoji); an error names the position of a character that is not allowed. Possible whether or not the listing has sales. Confirm the text with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Listing id with its site prefix, e.g. 'MLB1234567890'."
+          },
+          "plain_text": {
+            "type": "string",
+            "description": "New description in plain text, in the site's language."
+          }
+        },
+        "required": [
+          "item_id",
+          "plain_text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{item_id}/description",
+        "encodePathParams": true,
+        "queryParams": {
+          "api_version": "2"
+        },
+        "bodyMapping": {
+          "plain_text": "$plain_text"
         }
       }
     }

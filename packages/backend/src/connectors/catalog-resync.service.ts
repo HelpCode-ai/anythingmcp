@@ -279,7 +279,13 @@ export class CatalogResyncService {
     }
 
     const adapter = getAdapter(diff.slug) as AdapterDefinition;
-    const catalogTools = adapter.tools as CatalogTool[];
+    // As in computeDiff: the tools of a bridge to a vendor's MCP server are
+    // the server's. An update for its instructions or base URL must not write
+    // the snapshot's descriptions and remote names over them (a gateway's
+    // namespaced name would go back to one it does not answer to) or retire
+    // the tools the snapshot lacks.
+    const serverOwnsTools = adapter.connector.type === 'MCP';
+    const catalogTools = serverOwnsTools ? [] : (adapter.tools as CatalogTool[]);
     const catalogByName = new Map(catalogTools.map((t) => [t.name, t]));
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -361,6 +367,10 @@ export class CatalogResyncService {
               endpointMapping: ct.endpointMapping as any,
               responseMapping: (ct.responseMapping as any) ?? undefined,
               useProxy: ct.useProxy === true,
+              // A tool the catalog ships switched off (a delete, say) arrives
+              // switched off here too, as it does on a fresh install. Without
+              // this an update turned on what an install would have left off.
+              isEnabled: ct.enabled !== false,
               // Only on create: on an existing tool this column may hold the
               // operator's own override.
               annotations: (ct.annotations as any) ?? undefined,
@@ -373,7 +383,7 @@ export class CatalogResyncService {
 
       // Soft-deprecate CATALOG tools no longer in the catalog (full mode
       // only). The user's own tools on this connector are never retired.
-      if (mode === 'full') {
+      if (mode === 'full' && !serverOwnsTools) {
         const now = new Date();
         const catalogNames = new Set(catalogByName.keys());
         for (const et of connector.tools) {

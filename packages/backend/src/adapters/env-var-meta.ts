@@ -1,4 +1,5 @@
 import { isSecretName } from '../connectors/connector-secrets.util';
+import { isMachineGrant } from '../connectors/oauth-grant.util';
 import type { AdapterDefinition } from './catalog';
 
 /**
@@ -68,7 +69,7 @@ export function needsBrowserAuthorization(adapter: Pick<AdapterDefinition, 'conn
     // An MCP bridge has no authorization URL of its own: the server's OAuth
     // metadata names it when the user clicks "Authorize with Provider".
     (!!auth.authorizationUrl || adapter.connector.type === 'MCP') &&
-    String(auth.grant ?? '') !== 'client_credentials'
+    !isMachineGrant(auth.grant)
   );
 }
 

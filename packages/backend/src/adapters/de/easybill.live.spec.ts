@@ -37,6 +37,19 @@ describe('easybill adapter — static spec conformance', () => {
     expect(a.connector.authConfig.token).toBe('{{EASYBILL_API_KEY}}');
   });
 
+  it('points to where easybill keeps the API key today (Profil und Einstellungen)', () => {
+    const { instructions, envVarMeta } = adapter as unknown as {
+      instructions: string;
+      envVarMeta: Record<string, { help: string; secret: boolean }>;
+    };
+    // easybill help center, "API Key - REST-Schnittstelle": user name (bottom
+    // left) > Profil und Einstellungen > API Key > Neuen Schlüssel generieren.
+    expect(instructions).toMatch(/user name at the bottom left, choose \*\*Profil und Einstellungen\*\*.*\*\*API Key\*\* section.*\*\*Neuen Schlüssel generieren\*\*/s);
+    expect(instructions).not.toMatch(/App-Center/);
+    expect(envVarMeta.EASYBILL_API_KEY.help).toMatch(/Profil und Einstellungen > API Key/);
+    expect(envVarMeta.EASYBILL_API_KEY.secret).toBe(true);
+  });
+
   it('exposes the documented customers, documents and positions paths', () => {
     const paths = a.tools.map((t) => t.endpointMapping.path);
     expect(paths).toContain('/customers');

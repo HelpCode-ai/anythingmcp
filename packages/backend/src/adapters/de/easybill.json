@@ -9,6 +9,16 @@
   "requiredEnvVars": [
     "EASYBILL_API_KEY"
   ],
+  "envVarMeta": {
+    "EASYBILL_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "In easybill: your user name (bottom left) > Profil und Einstellungen > API Key section > Neuen Schlüssel generieren, then Speichern. Renew it at least once a year.",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the key on its own, without \"Bearer\" and without spaces."
+    }
+  },
   "connector": {
     "name": "easybill REST API",
     "type": "REST",
@@ -21,7 +31,7 @@
       "Accept": "application/json"
     }
   },
-  "instructions": "easybill is a German cloud invoicing / accounting tool (100% Made in Germany, 20,000+ customers) with a clean REST API at https://api.easybill.de/rest/v1.\n\n## Authentication\nGenerate an API key in easybill under Settings → App-Center / API (if you can't find it, contact easybill support to enable API access). Set it as `EASYBILL_API_KEY`. The connector sends it as `Authorization: Bearer <key>`. (easybill also accepts HTTP Basic Auth with email:apikey, but Bearer is simpler and is what this connector uses.)\n\n## Core concepts\n- **Customers** (`/customers`) — your clients. Identified by numeric `id` and a human `number`.\n- **Documents** (`/documents`) — the single resource for every document kind, discriminated by `type`: `INVOICE`, `CREDIT`, `OFFER`, `REMINDER`, `DELIVERY`, etc. Filter a list with `type=INVOICE` (comma-separated for several types). Each document carries an `items` array of line items.\n- **Positions** (`/positions`) — your reusable product/article catalog (article number, description, unit price, VAT).\n\n## Pagination\nList endpoints are page-based: `page` (default 1) and `limit` (default 100, max 1000). List responses wrap the rows in a `documents`/`page`/`pages`/`total` envelope.\n\n## Dates & filters\nDate filters accept a single `YYYY-MM-DD` or a `from,to` range (e.g. `document_date=2026-01-01,2026-03-31`). `paid_at=null` returns unpaid invoices. Most ID filters accept comma-separated lists.\n\n## Tips\n- To list only open invoices: `easybill_list_documents` with `type=INVOICE` and `paid_at=null`.\n- Fetch a finished invoice as a PDF with `easybill_get_document_pdf` (returns the PDF base64-encoded in the `pdf` field).\n- Amounts are in the document currency; VAT is per line item (`vat_percent`).",
+  "instructions": "easybill is a German cloud invoicing / accounting tool (100% Made in Germany, 20,000+ customers) with a clean REST API at https://api.easybill.de/rest/v1.\n\n## Authentication\nCreate the API key in easybill: click your user name at the bottom left, choose **Profil und Einstellungen** (profile and settings), scroll down to the **API Key** section, click **Neuen Schlüssel generieren** (generate a new key) and then **Speichern** (save) at the top right. These are the places in easybill's new menu; if your screen still shows the old layout, click your user name in the blue bar at the top right and switch on **Neues Menü**. On the PREMIUM plan every staff account (Mitarbeiterzugang) has its own key in the same place. easybill asks you to renew the key at least once a year: generate a new one there and update `EASYBILL_API_KEY`. Set the key as `EASYBILL_API_KEY`. The connector sends it as `Authorization: Bearer <key>`. (easybill also accepts HTTP Basic Auth with email:apikey, but Bearer is simpler and is what this connector uses.)\n\n## Core concepts\n- **Customers** (`/customers`) — your clients. Identified by numeric `id` and a human `number`.\n- **Documents** (`/documents`) — the single resource for every document kind, discriminated by `type`: `INVOICE`, `CREDIT`, `OFFER`, `REMINDER`, `DELIVERY`, etc. Filter a list with `type=INVOICE` (comma-separated for several types). Each document carries an `items` array of line items.\n- **Positions** (`/positions`) — your reusable product/article catalog (article number, description, unit price, VAT).\n\n## Pagination\nList endpoints are page-based: `page` (default 1) and `limit` (default 100, max 1000). List responses wrap the rows in a `documents`/`page`/`pages`/`total` envelope.\n\n## Dates & filters\nDate filters accept a single `YYYY-MM-DD` or a `from,to` range (e.g. `document_date=2026-01-01,2026-03-31`). `paid_at=null` returns unpaid invoices. Most ID filters accept comma-separated lists.\n\n## Tips\n- To list only open invoices: `easybill_list_documents` with `type=INVOICE` and `paid_at=null`.\n- Fetch a finished invoice as a PDF with `easybill_get_document_pdf` (returns the PDF base64-encoded in the `pdf` field).\n- Amounts are in the document currency; VAT is per line item (`vat_percent`).",
   "tools": [
     {
       "name": "easybill_list_customers",

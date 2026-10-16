@@ -1,0 +1,728 @@
+{
+  "slug": "openai",
+  "name": "OpenAI API",
+  "description": "Let your AI use the OpenAI API with your own key: ask GPT models through the Responses API, analyse pictures from a link, generate and edit images that appear right in the chat, create embeddings, check content with moderation, and read models, files and batch jobs.",
+  "instructions": "## OpenAI API\nThis connector calls the **OpenAI API** (`https://api.openai.com/v1`) with the user's own API key: answers from OpenAI models through the Responses API (text, pictures by link, conversations, web search, structured output), image generation and editing with the GPT image models, embeddings, moderation, the model list, files and Batch API jobs.\n\n**Every model call is billed to the user's OpenAI account** (moderation is free; the model, file and batch lists cost nothing). Prefer the cheap defaults unless the user asks for more.\n\n**Setup (about 3 minutes)**\n1. Sign in at https://platform.openai.com and add credit under Settings, Billing (the API is prepaid and separate from a ChatGPT subscription).\n2. Open https://platform.openai.com/api-keys, click **Create new secret key**, pick the project, and copy the key (it starts with `sk-`; it is shown only once).\n3. Paste it into `OPENAI_API_KEY` and install the connector. It is sent as `Authorization: Bearer` and only to OpenAI.\n4. Optional: `OPENAI_ORGANIZATION` (org-...) and `OPENAI_PROJECT` (proj_...) when the user belongs to several organizations or wants usage counted on a specific project. Leave them empty otherwise; a value that does not match the key is refused with 401.\n5. For the GPT image models OpenAI requires a **verified organization**: Settings, Organization, General, Verify Organization. Without it the image tools answer 403.\n\n**Defaults (cheap and fast)**\n- Text: `gpt-6-luna` (about $0.10 per million input tokens and $0.50 per million output tokens). `gpt-6.1-sol` and `gpt-6-astra` are stronger and 20 to 100 times the price.\n- Images: `gpt-image-1-mini` at medium quality, 1024x1024, JPEG (about $0.01 per picture). `gpt-image-2.5-flare` and `gpt-image-2.5-sunburst` are the newest models.\n- Embeddings: `text-embedding-3-small` with 256 dimensions. Moderation: `omni-moderation-latest`.\n- Model ids change often: `openai_list_models` shows what the key can use.\n\n**Tools**\n- `openai_create_response`: one call of the Responses API. `input` is a prompt string or a list of items; pictures go in as `{\"type\": \"input_image\", \"image_url\": \"https://...\", \"detail\": \"auto\"}` inside a user message. `instructions` sets the behaviour, `reasoning` the effort of reasoning models (`{\"effort\": \"low\"}` is cheaper), `text` the output format (JSON schema), `tools: [{\"type\": \"web_search\"}]` adds web search (billed per search). Responses are not stored at OpenAI unless `store` is true; only stored responses can be continued with `previous_response_id`.\n- `openai_generate_image` and `openai_edit_image`: pictures returned as images in the chat. Each picture costs money: **confirm with the user before every call**, and keep `n` at 1 unless they ask for more. A client that cannot show images still gets the text part with the size and type of each picture. Pictures over 4 MB are not returned; use JPEG or WebP, or a smaller size. Edits take pictures by public link or file id (`images`), plus an optional `mask`.\n- `openai_create_embeddings`: vectors for one text or up to 20 texts.\n- `openai_moderate`: content policy check of text and pictures.\n- `openai_list_models`, `openai_get_model`: what the key can use.\n- `openai_list_files`, `openai_get_file`, `openai_delete_file`: files in the account (no upload or download here). `openai_delete_file` is installed switched off.\n- `openai_list_batches`, `openai_get_batch`: status of Batch API jobs started elsewhere.\n\n**Reading answers**: `output_text` is the answer. `status` `incomplete` with `incomplete_details.reason` `max_output_tokens` means it was cut (raise `max_output_tokens`, which includes reasoning tokens). `refusal` holds the model's refusal text when it declined. An answer stopped by OpenAI's content filter comes back as an error: do not retry the same request.\n\n**Common errors**\n- 401: the key is wrong or revoked, or `OPENAI_ORGANIZATION` / `OPENAI_PROJECT` do not match it.\n- 403: the organization is not verified (GPT image models), or the model or region is not available to it.\n- 404 `model_not_found`: check `openai_list_models`.\n- 429 `insufficient_quota`: no credit left or the spending limit is reached; add credit. 429 `rate_limit_exceeded`: wait and retry once. Do not retry in a loop.\n- 400 `moderation_blocked` or `content_policy_violation`: the safety system refused the prompt.\n\n**Out of scope here**: chat completions (the Responses API covers it), audio (speech, transcription), realtime, video, file upload and download, creating batches, fine-tuning, vector stores, assistants and the admin API.",
+  "region": "intl",
+  "category": "data",
+  "icon": "openai",
+  "docsUrl": "https://developers.openai.com/api/reference",
+  "requiredEnvVars": [
+    "OPENAI_API_KEY"
+  ],
+  "optionalEnvVars": [
+    "OPENAI_ORGANIZATION",
+    "OPENAI_PROJECT"
+  ],
+  "envVarMeta": {
+    "OPENAI_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "platform.openai.com, API keys, Create new secret key. Calls are billed to the OpenAI account of this key.",
+      "link": "https://platform.openai.com/api-keys",
+      "pattern": "^sk-[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste the secret key as OpenAI shows it, starting with sk-, without the word Bearer."
+    },
+    "OPENAI_ORGANIZATION": {
+      "label": "Organization ID",
+      "kind": "setting",
+      "help": "Only when the key's user belongs to several organizations: Settings, Organization, General, Organization ID. Leave empty otherwise.",
+      "link": "https://platform.openai.com/settings/organization/general",
+      "example": "org-AbCdEf123456",
+      "pattern": "^(org-[A-Za-z0-9]+)?$",
+      "patternMessage": "Use the organization id starting with org-, or leave it empty.",
+      "advanced": true
+    },
+    "OPENAI_PROJECT": {
+      "label": "Project ID",
+      "kind": "setting",
+      "help": "Only to count usage on a specific project: Settings, Project, General, Project ID. Leave empty otherwise.",
+      "link": "https://platform.openai.com/settings/organization/projects",
+      "example": "proj_AbCdEf123456",
+      "pattern": "^(proj_[A-Za-z0-9]+)?$",
+      "patternMessage": "Use the project id starting with proj_, or leave it empty.",
+      "advanced": true
+    }
+  },
+  "verifyHints": {
+    "401": "OpenAI refused the key: it is wrong or revoked, or the organization or project id does not match it. Create a key at https://platform.openai.com/api-keys and clear OPENAI_ORGANIZATION and OPENAI_PROJECT unless you need them.",
+    "403": "OpenAI refused the key for this request: the project may not allow model listing, or the account is in an unsupported region.",
+    "rate_limited": "The key reached an OpenAI rate limit or has no credit left. Check Settings, Billing at platform.openai.com, then verify again."
+  },
+  "probe": {
+    "tool": "openai_list_models"
+  },
+  "prerequisites": "An OpenAI Platform account with prepaid credit and an API key (a ChatGPT subscription does not include API access). The image tools also need a verified organization. About 3 minutes.",
+  "connector": {
+    "name": "OpenAI API",
+    "type": "REST",
+    "baseUrl": "https://api.openai.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{OPENAI_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/models",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error.code",
+          "equals": "server_error",
+          "messagePath": [
+            "error.code",
+            "error.message"
+          ],
+          "status": 502
+        },
+        {
+          "path": "error.message",
+          "messagePath": [
+            "error.code",
+            "error.message"
+          ],
+          "status": 400
+        },
+        {
+          "path": "incomplete_details.reason",
+          "equals": "content_filter",
+          "messagePath": [
+            "incomplete_details.reason"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "openai_list_models",
+      "description": "List the OpenAI models this API key can use (chat and reasoning, image, embedding, moderation, audio), with owner, creation time and announced shutdown date. Free: nothing is billed.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/models",
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "models": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "owned_by": "owned_by",
+                "created": "created",
+                "shutdown_date": "shutdown_date"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "openai_get_model",
+      "description": "Read one OpenAI model: id, owner, creation time and shutdown date when one is announced. Answers 404 when the key has no access to it. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model id, e.g. gpt-6-luna or gpt-image-1-mini."
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/models/{model}",
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      }
+    },
+    {
+      "name": "openai_create_response",
+      "description": "Ask an OpenAI model and get its answer (Responses API). input is either a plain prompt string or a list of items, e.g. [{\"role\": \"user\", \"content\": [{\"type\": \"input_text\", \"text\": \"What is in this picture?\"}, {\"type\": \"input_image\", \"image_url\": \"https://...\", \"detail\": \"auto\"}]}] for images by public link, or earlier turns for a conversation. Billed per token to the user's key; the default gpt-6-luna is OpenAI's cheapest current model. Returns output_text, status (incomplete with reason max_output_tokens means the answer was cut) and usage. Read-only: it changes nothing in the account (the response is not stored unless store is true).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": [
+              "string",
+              "array"
+            ],
+            "description": "The prompt as text, or a list of input items (messages with input_text, input_image or input_file parts)."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model id. Default gpt-6-luna (fast and cheap); gpt-6.1-sol or gpt-6-astra for harder work, at 20 to 100 times the price. Other ids: openai_list_models.",
+            "default": "gpt-6-luna"
+          },
+          "instructions": {
+            "type": "string",
+            "description": "System or developer instructions: role, tone, language, format."
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "description": "Upper limit for the answer in tokens, reasoning tokens included. Model default when left out."
+          },
+          "reasoning": {
+            "type": "object",
+            "description": "Reasoning settings for reasoning models, e.g. {\"effort\": \"low\"} (none, minimal, low, medium, high, xhigh, max; not every model supports every value). Lower effort is faster and cheaper. Leave out for models without reasoning."
+          },
+          "text": {
+            "type": "object",
+            "description": "Output format, e.g. {\"format\": {\"type\": \"json_schema\", \"name\": \"invoice\", \"schema\": {...}, \"strict\": true}} for structured output, or {\"verbosity\": \"low\"}."
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Randomness from 0 to 2. Not accepted by most reasoning models; leave out unless needed."
+          },
+          "tools": {
+            "type": "array",
+            "description": "Built-in tools, e.g. [{\"type\": \"web_search\"}] for answers from the web (billed per search on top of tokens). Leave out for a plain answer."
+          },
+          "previous_response_id": {
+            "type": "string",
+            "description": "id of an earlier response to continue the conversation from; that response must have been created with store true."
+          },
+          "store": {
+            "type": "boolean",
+            "description": "Keep the response at OpenAI for 30 days so previous_response_id can continue it. Default false.",
+            "default": false
+          }
+        },
+        "required": [
+          "input"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/responses",
+        "bodyMapping": {
+          "model": "$model",
+          "input": "$input",
+          "instructions": "$instructions",
+          "max_output_tokens": "$max_output_tokens",
+          "reasoning": "$reasoning",
+          "text": "$text",
+          "temperature": "$temperature",
+          "tools": "$tools",
+          "previous_response_id": "$previous_response_id",
+          "store": "$store"
+        },
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: id, model: model, status: status, incomplete_details: incomplete_details, output_text: join('', output[?type=='message'][].content[?type=='output_text'][].text), refusal: join('', output[?type=='message'][].content[?type=='refusal'][].refusal), citations: output[?type=='message'][].content[?type=='output_text'][].annotations[?type=='url_citation'][].url, usage: usage}",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openai_generate_image",
+      "description": "Create pictures from a text description with an OpenAI GPT image model and return them as images the user can see. COSTS MONEY, billed to the user's key: with the default gpt-image-1-mini at medium quality about $0.01 per 1024x1024 picture; gpt-image-2 or gpt-image-2.5-flare at high quality cost several times more per picture. Confirm with the user before calling, and before calling it again. GPT image models need a verified OpenAI organization.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "A full description of the picture: subject, setting, style, lighting, any text to show (up to 32,000 characters)."
+          },
+          "model": {
+            "type": "string",
+            "description": "Image model. Default gpt-image-1-mini (cheapest); gpt-image-2.5-flare (fast, everyday), gpt-image-2.5-sunburst (most capable), gpt-image-2, gpt-image-1.5.",
+            "default": "gpt-image-1-mini"
+          },
+          "size": {
+            "type": "string",
+            "description": "1024x1024 (default), 1536x1024 (landscape), 1024x1536 (portrait) or auto. gpt-image-2 and newer also take any WIDTHxHEIGHT with both sides divisible by 16, up to 3840x2160.",
+            "default": "1024x1024"
+          },
+          "quality": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "auto",
+              "xhigh",
+              "max"
+            ],
+            "description": "low, medium (default), high or auto; xhigh and max only on gpt-image-2.5 models. Higher quality costs more.",
+            "default": "medium"
+          },
+          "n": {
+            "type": "integer",
+            "description": "Number of pictures, 1 to 4 (each one is billed). Default 1.",
+            "default": 1,
+            "minimum": 1,
+            "maximum": 4
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "description": "File format. Default jpeg, which keeps pictures small; png or webp for a transparent background.",
+            "default": "jpeg"
+          },
+          "output_compression": {
+            "type": "integer",
+            "description": "Compression 0 to 100 for jpeg and webp only (100 is the API default). Do not send it with png."
+          },
+          "background": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            "description": "transparent needs output_format png or webp."
+          },
+          "moderation": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "low"
+            ],
+            "description": "Content filtering level. Default auto."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/images/generations",
+        "bodyMapping": {
+          "model": "$model",
+          "prompt": "$prompt",
+          "size": "$size",
+          "quality": "$quality",
+          "n": "$n",
+          "output_format": "$output_format",
+          "output_compression": "$output_compression",
+          "background": "$background",
+          "moderation": "$moderation"
+        },
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "data[*].b64_json"
+          ],
+          "maxImages": 4
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "openai_edit_image",
+      "description": "Change existing pictures with an OpenAI GPT image model, or combine several into a new one: describe the edit and pass the pictures by public link or uploaded file id. Returns the new pictures as images. An optional mask (a PNG with transparent areas) limits the edit to those areas. COSTS MONEY, billed to the user's key: about $0.01 per picture with the default gpt-image-1-mini at medium quality, plus the input pictures. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The change to make, in full sentences. Say what must stay the same."
+          },
+          "images": {
+            "type": "array",
+            "description": "Up to 16 input pictures, each {\"image_url\": \"https://...\"} (or a data: URL) or {\"file_id\": \"file-...\"}. PNG, JPEG or WebP."
+          },
+          "mask": {
+            "type": "object",
+            "description": "Optional mask for the first picture, {\"image_url\": \"https://...\"} or {\"file_id\": \"file-...\"}: transparent areas are edited, the rest is kept. Same size as the picture."
+          },
+          "model": {
+            "type": "string",
+            "description": "Image model. Default gpt-image-1-mini. Always set: the API default for edits is the most expensive model.",
+            "default": "gpt-image-1-mini"
+          },
+          "size": {
+            "type": "string",
+            "description": "1024x1024, 1536x1024, 1024x1536 or auto (the API default, which follows the input)."
+          },
+          "quality": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "auto",
+              "xhigh",
+              "max"
+            ],
+            "description": "low, medium (default), high or auto.",
+            "default": "medium"
+          },
+          "n": {
+            "type": "integer",
+            "description": "Number of results, 1 to 4 (each one is billed). Default 1.",
+            "default": 1,
+            "minimum": 1,
+            "maximum": 4
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "description": "File format. Default jpeg; png or webp for transparency.",
+            "default": "jpeg"
+          },
+          "input_fidelity": {
+            "type": "string",
+            "enum": [
+              "low",
+              "high"
+            ],
+            "description": "How closely faces and details of the input are kept: high on gpt-image-1 and gpt-image-1.5 only; gpt-image-1-mini supports only low; leave out for gpt-image-2."
+          },
+          "background": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            "description": "transparent needs output_format png or webp."
+          }
+        },
+        "required": [
+          "prompt",
+          "images"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/images/edits",
+        "bodyMapping": {
+          "model": "$model",
+          "prompt": "$prompt",
+          "images": "$images",
+          "mask": "$mask",
+          "size": "$size",
+          "quality": "$quality",
+          "n": "$n",
+          "output_format": "$output_format",
+          "input_fidelity": "$input_fidelity",
+          "background": "$background"
+        },
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "data[*].b64_json"
+          ],
+          "maxImages": 4
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "openai_create_embeddings",
+      "description": "Turn one text, or a list of up to 20 texts, into embedding vectors for semantic search, clustering or similarity. Default text-embedding-3-small with 256 dimensions, which keeps the answer small; up to 1536 (3072 on text-embedding-3-large) for the full vector. Billed per input token to the user's key (about $0.02 per million tokens). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": [
+              "string",
+              "array"
+            ],
+            "description": "A text, or a list of texts (each up to 8,192 tokens)."
+          },
+          "model": {
+            "type": "string",
+            "description": "Embedding model. Default text-embedding-3-small; text-embedding-3-large for higher quality.",
+            "default": "text-embedding-3-small"
+          },
+          "dimensions": {
+            "type": "integer",
+            "description": "Vector length. Default 256.",
+            "default": 256
+          }
+        },
+        "required": [
+          "input"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/embeddings",
+        "bodyMapping": {
+          "model": "$model",
+          "input": "$input",
+          "dimensions": "$dimensions"
+        },
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "model": "$.model",
+            "embeddings": {
+              "$from": "$.data[*]",
+              "$select": {
+                "index": "index",
+                "embedding": "embedding"
+              }
+            },
+            "usage": "$.usage"
+          },
+          "maxBytes": 400000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openai_moderate",
+      "description": "Check text, or text with images, against OpenAI's content policy categories (harassment, hate, self-harm, sexual, violence, illicit and their subcategories): flagged, the categories hit and a score per category. Free of charge with omni-moderation-latest. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": [
+              "string",
+              "array"
+            ],
+            "description": "A text, a list of texts, or a list of parts such as [{\"type\": \"text\", \"text\": \"...\"}, {\"type\": \"image_url\", \"image_url\": {\"url\": \"https://...\"}}]."
+          },
+          "model": {
+            "type": "string",
+            "description": "Moderation model. Default omni-moderation-latest.",
+            "default": "omni-moderation-latest"
+          }
+        },
+        "required": [
+          "input"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/moderations",
+        "bodyMapping": {
+          "model": "$model",
+          "input": "$input"
+        },
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openai_list_files",
+      "description": "List the files stored in the OpenAI account (for batches, fine-tuning, assistants, vision or user data), newest first, with id, name, size, purpose and expiry. Call again with after = the last id while has_more is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "description": "Only files with this purpose: assistants, batch, batch_output, fine-tune, fine-tune-results, vision or user_data."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Files per page, 1 to 10,000. Default 20.",
+            "default": 20
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "desc",
+              "asc"
+            ],
+            "description": "By creation time. Default desc (newest first)."
+          },
+          "after": {
+            "type": "string",
+            "description": "File id to continue after (last_id of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files",
+        "queryParams": {
+          "purpose": "$purpose",
+          "limit": "$limit",
+          "order": "$order",
+          "after": "$after"
+        },
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 150000,
+          "exclude": [
+            "data[*].status_details"
+          ]
+        }
+      }
+    },
+    {
+      "name": "openai_get_file",
+      "description": "Read the details of one file in the OpenAI account: name, size in bytes, purpose, creation time and expiry. Does not download the content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File id, e.g. file-abc123."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{file_id}",
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      }
+    },
+    {
+      "name": "openai_delete_file",
+      "description": "Delete a file from the OpenAI account. It cannot be restored, and batches, fine-tuning jobs or vector stores that use it lose it. Confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File id, e.g. file-abc123."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/files/{file_id}",
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      }
+    },
+    {
+      "name": "openai_list_batches",
+      "description": "List the Batch API jobs of the account, newest first: endpoint, model, status (validating, in_progress, finalizing, completed, failed, expired, cancelled), request counts and the ids of the output and error files. Call again with after = the last id while has_more is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Batches per page, 1 to 100. Default 20.",
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Batch id to continue after (last_id of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/batches",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after"
+        },
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "openai_get_batch",
+      "description": "Read one Batch API job: status, timestamps of each stage, request counts (total, completed, failed), token usage, errors and the output_file_id and error_file_id once it has finished.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "description": "Batch id, e.g. batch_abc123."
+          }
+        },
+        "required": [
+          "batch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/batches/{batch_id}",
+        "headers": {
+          "OpenAI-Organization": "${OPENAI_ORGANIZATION}",
+          "OpenAI-Project": "${OPENAI_PROJECT}"
+        }
+      }
+    }
+  ]
+}

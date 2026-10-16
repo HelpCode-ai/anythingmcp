@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { useTrustStats } from '@/lib/trust-stats';
 import { TrustLine, TrustPanel } from '@/components/auth-trust';
 import { safeRedirect } from '@/lib/safe-redirect';
+import { startTrialPath } from '@/lib/checkout-source';
 import { captureSignupAttribution, clearSignupAttribution, getSignupAttribution } from '@/lib/attribution';
 import { pushSignUpVerified } from '@/lib/conversion';
 import {
@@ -188,7 +189,7 @@ function LoginForm() {
     });
     if (!eligible || readCardTrialPrompt(u.id) !== null) return false;
     writeCardTrialPrompt(u.id, 'shown');
-    router.push('/start-trial');
+    router.push(startTrialPath('signup_prompt'));
     return true;
   };
 
@@ -491,9 +492,12 @@ function LoginForm() {
                 // Mail) or a message right above the keyboard.
                 autoComplete="one-time-code"
                 name="one-time-code"
-                maxLength={6}
+                // No maxLength: the browser cuts a paste to that length before
+                // onChange runs, so "504 452" (a space, as older emails showed
+                // it) arrived as "504 45" and the code could not be submitted.
+                // Keep the digits of whatever is pasted, then the first six.
                 value={verificationCode}
-                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="000000"
                 className="w-full text-center text-2xl tracking-[0.5em] font-mono h-12 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[var(--text)] placeholder:text-[var(--text-3)] outline-none transition-colors focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-ring)]"
                 autoFocus
@@ -1126,7 +1130,7 @@ function LoginForm() {
   return (
     <div className={singleColumn}>
       {formCard}
-      {infoLoaded && <TrustLine cloud={isCloudMode} stats={trustStats} />}
+      {infoLoaded && <TrustLine cloud={isCloudMode} />}
     </div>
   );
 }

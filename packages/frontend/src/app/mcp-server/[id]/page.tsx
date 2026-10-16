@@ -10,8 +10,11 @@ import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ConnectionCheck } from '@/components/connection-check';
+import { FirstSuccessOffer } from '@/components/first-success-offer';
 import { copyText } from '@/lib/clipboard';
+import { getApiOrigin } from '@/lib/origin';
 import { CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
+import { INSPECTOR_URL, inspectorCommand } from '@/lib/inspector-url';
 
 // Opens claude.ai straight on its "Add custom connector" dialog. Connectors
 // moved from Settings to Customize → Connectors; the old settings URL now only
@@ -26,6 +29,9 @@ export default function McpServerDetailPage() {
   const router = useRouter();
 
   const [server, setServer] = useState<any>(null);
+  // Bumped a moment after the first request arrives, so the card-trial offer
+  // (which the backend unlocks on the first successful call) can appear.
+  const [offerKey, setOfferKey] = useState(0);
   const [allConnectors, setAllConnectors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -98,11 +104,7 @@ export default function McpServerDetailPage() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, [token, id]);
 
-  const apiUrl = typeof window !== 'undefined'
-    ? window.location.hostname === 'localhost'
-      ? `${window.location.protocol}//${window.location.hostname}:4000`
-      : window.location.origin
-    : 'http://localhost:4000';
+  const apiUrl = getApiOrigin();
 
   const handleSave = async () => {
     if (!token || !id) return;
@@ -355,6 +357,7 @@ export default function McpServerDetailPage() {
     { id: 'muse', name: 'Meta Muse', init: 'Mu', tone: 'info' },
     { id: 'gemini', name: 'Gemini CLI', init: 'Ge', tone: 'pink' },
     { id: 'windsurf', name: 'Windsurf', init: 'Wi', tone: 'success' },
+    { id: 'inspector', name: 'MCP Inspector', init: 'In', tone: 'neutral' },
   ];
 
   const codeBlock = (text: string, label: string) => (
@@ -554,12 +557,18 @@ export default function McpServerDetailPage() {
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. Click the button below to open ChatGPT&apos;s connector settings.<br />
-              2. Click <strong>Add connector</strong> or <strong>Create</strong>.<br />
-              3. Paste the MCP endpoint URL below.
+              1. Click the button below to open <strong>Plugins</strong> in ChatGPT, then click <strong>+</strong> and <strong>Add custom MCP server</strong>.<br />
+              2. Enter a name (e.g. AnythingMCP), paste the MCP endpoint URL below as the <strong>Server URL</strong> and keep <strong>Authentication</strong> on <strong>OAuth</strong>.<br />
+              3. Select <strong>I understand and want to continue</strong>, then <strong>Create as a plugin</strong>, and sign in to AnythingMCP when asked.<br />
+              4. Install the plugin from your personal plugins, then type <strong>@</strong> in a chat to use it.
             </p>
-            {linkAction('https://chatgpt.com/admin/mcp', 'Open ChatGPT Settings', true)}
+            {linkAction('https://chatgpt.com/plugins', 'Open ChatGPT Plugins', true)}
             {endpointRow('modal-chatgpt-url')}
+            <p className="text-xs leading-[1.55] text-[var(--text-3)]">
+              No developer mode needed. On a Business workspace only admins and owners can add
+              custom MCP servers; on Enterprise and Edu an admin can grant the <strong>Create plugins with MCPs</strong> permission
+              under <strong>Workspace settings → Permissions &amp; roles</strong>.
+            </p>
           </div>
         );
       case 'muse': {
@@ -618,6 +627,36 @@ Auth: OAuth`;
             {codeBlock(windsurfConfig, 'windsurf')}
           </div>
         );
+      case 'inspector': {
+        const cmd = inspectorCommand(endpointUrl);
+        return (
+          <div className="space-y-4">
+            <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
+              Run this command in your terminal (Node 22.19 or later). It starts the Inspector already pointed at this server:
+            </p>
+            <div className="flex gap-2">
+              <code className="flex-1 break-all rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[9px] font-mono text-[12px] text-[var(--text-2)]">{cmd}</code>
+              <button
+                onClick={() => handleCopy(cmd, 'modal-inspector')}
+                className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'flex-shrink-0')}
+              >
+                {copied === 'modal-inspector' ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
+              The Inspector opens in your browser. If it doesn&apos;t, open it here:
+            </p>
+            {linkAction(INSPECTOR_URL, 'Open in MCP Inspector', true)}
+            <p className="text-xs leading-[1.55] text-[var(--text-3)]">
+              The Inspector hands its session token (<code className="rounded bg-[var(--surface-2)] px-1 font-mono">MCP_INSPECTOR_API_TOKEN</code>) to the page it opens, so you don&apos;t need to copy it.
+            </p>
+            <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
+              Sign in with OAuth when the Inspector asks (connect, sign in and approve access), or use an API key: set an <code className="rounded bg-[var(--surface-2)] px-1 font-mono text-xs">X-API-Key</code> header in the server&apos;s settings in the Inspector. You can also add <code className="rounded bg-[var(--surface-2)] px-1 font-mono text-xs">--header &quot;X-API-Key: &lt;your key&gt;&quot;</code> to the command, but the key then stays in your shell history.
+            </p>
+            {endpointRow('modal-inspector-url')}
+          </div>
+        );
+      }
       default:
         return null;
     }
@@ -671,7 +710,14 @@ Auth: OAuth`;
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         {/* Connect a client — sticky right column on desktop, shown first on mobile */}
         <aside className="order-1 flex flex-col gap-4 lg:order-2 lg:sticky lg:top-4">
-        {token && <ConnectionCheck serverId={id} token={token} />}
+        {token && (
+          <ConnectionCheck
+            serverId={id}
+            token={token}
+            onFirstCall={() => setTimeout(() => setOfferKey((k) => k + 1), 3000)}
+          />
+        )}
+        <FirstSuccessOffer via="connect" refreshKey={offerKey} />
         <Card className="p-[22px]">
           <div className="mb-[14px] text-sm font-semibold">Connect your MCP client</div>
           <div className="mb-1.5 text-[11px] text-[var(--text-3)]">MCP endpoint</div>

@@ -1,0 +1,1084 @@
+{
+  "slug": "neon",
+  "name": "Neon",
+  "aliases": [
+    "Neon Postgres",
+    "Neon Serverless Postgres",
+    "Neon Database"
+  ],
+  "description": "Let your AI manage Neon serverless Postgres: projects, branches, compute endpoints, databases, roles, schemas, operations and consumption. It can create branches and start or suspend computes after your confirmation. Never returns passwords. With a Neon API key.",
+  "instructions": "## Neon\nThis connector manages **Neon** serverless Postgres through the Neon API v2 (`https://console.neon.tech/api/v2`) with an API key: organizations, projects, branches, compute endpoints (start and suspend), databases, roles, database schemas, operations and consumption. It does not run SQL (see below).\n\n**Setup (about 2 minutes)**\n1. In the Neon Console open **Account settings → API keys** (personal key: acts as you, in every organization you belong to) or **Organization settings → API keys** (organization key: only that organization's projects; a project-scoped key: only one project).\n2. Create the key, copy it at once (Neon shows it only once) and paste it into `NEON_API_KEY`.\n3. Install and run `neon_list_organizations`.\n\n**Write tools need confirmation.** Before `neon_create_branch`, `neon_start_endpoint` or `neon_suspend_endpoint`, tell the user what will happen and wait for a clear yes.\n- A running compute uses compute hours (CU-hours), which count against the plan's allowance or are billed on paid plans; `neon_start_endpoint` starts that meter. Computes scale to zero by themselves after the suspend timeout.\n- `neon_suspend_endpoint` closes every open connection to that compute at once.\n- `neon_create_branch` creates a copy-on-write branch (instant, no data copied). Branches beyond the plan's allowance and their storage changes can be billed; adding an endpoint also starts a compute. Set `expires_at` for temporary branches.\n- **Switched off at install**: `neon_delete_branch` (deletes the branch and its computes; the root and default branch cannot be deleted).\n\n**Finding things**\n- `neon_list_organizations` gives the `org_id`s. With a **personal** API key, `neon_list_projects` needs `org_id` for organization projects; with an organization key it is inferred.\n- `neon_list_projects` → `neon_get_project` (settings and this period's usage) → `neon_list_branches` / `neon_get_branch` (the default branch has `default: true`) → `neon_list_databases` / `neon_list_roles` / `neon_get_database_schema`. Ids: projects like `shiny-wind-028834`, branches `br-...`, computes `ep-...`.\n- `neon_list_endpoints` (or `neon_get_endpoint` for one) shows each compute's state (`active`, `idle`), size range in CU and the host name.\n- Every change runs as asynchronous operations: the answer lists them, and `neon_get_operation` shows when they finish (`finished`, `failed`).\n- Lists page with `cursor`: pass `pagination.next` (branches) or `pagination.cursor` (projects, operations) from the previous answer.\n\n**Usage and cost**: `neon_get_consumption` returns compute unit seconds, storage, branch counts and network transfer per project and period (hourly for the last 7 days, daily for 60 days, monthly for a year). It needs `org_id` and is available on paid plans only (Launch, Scale, Business, Enterprise). It does not wake computes. Project and branch details also show `compute_time_seconds`, `active_time_seconds`, `written_data_bytes` and `data_transfer_bytes` for the current period.\n\n**Passwords and connection strings are never returned.** Role passwords, connection URIs and the reveal-password call are left out on purpose, so no database password reaches the AI.\n\n**Running SQL is not part of this connector.** Neon's SQL over HTTP endpoint (`https://<endpoint host>/sql`) authenticates with a full Postgres connection string including the role's password, not with the API key, so it would put a database password in front of the AI. To query data, use the **PostgreSQL** connector with a dedicated read-only Postgres role on the Neon host (`<endpoint host>`, port 5432, SSL required). `neon_get_database_schema` still shows the tables and columns without a password.\n\n**Common errors**\n- 401 `supplied credentials do not pass authentication`: wrong or revoked API key. Neon answers 401 on every URL for a bad key.\n- 403: the key may not access that project or organization (a project-scoped or organization key used elsewhere), or the plan does not include the feature (consumption history).\n- 404: wrong project, branch or endpoint id. 423 `Locked`: another operation is running on the project; wait for it (`neon_list_operations`) and retry.\n- 429: too many requests; wait a little and retry.\n\n**Out of scope here**: SQL, creating or deleting projects, databases and roles, resetting role passwords, Neon Auth, the Data API, snapshots and organization administration.",
+  "region": "intl",
+  "category": "database",
+  "icon": "neon",
+  "docsUrl": "https://api-docs.neon.tech/reference/getting-started-with-neon-api",
+  "prerequisites": "A Neon account and an API key from the Neon Console (Account settings → API keys, or an organization's API keys). About 2 minutes.",
+  "requiredEnvVars": [
+    "NEON_API_KEY"
+  ],
+  "envVarMeta": {
+    "NEON_API_KEY": {
+      "label": "Neon API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Neon Console → Account settings → API keys (personal) or Organization settings → API keys. Copy it when created: Neon shows it only once.",
+      "link": "https://console.neon.tech/app/settings/api-keys",
+      "example": "napi_abc123...",
+      "pattern": "^(napi_)?[A-Za-z0-9]{20,}$",
+      "patternMessage": "Paste only the key as Neon shows it, without spaces and without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Neon refused the API key: it is wrong or was revoked. Create a new one in the Neon Console under API keys.",
+    "403": "The API key may not access this. A project-scoped or organization key only reaches its own project or organization.",
+    "rate_limited": "Neon is rate limiting this key. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "neon_list_organizations"
+  },
+  "connector": {
+    "name": "Neon",
+    "type": "REST",
+    "baseUrl": "https://console.neon.tech/api/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{NEON_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users/me/organizations"
+  },
+  "tools": [
+    {
+      "name": "neon_list_organizations",
+      "description": "List the Neon organizations the API key belongs to, with org_id, name, handle and plan. With an organization or project key it returns the one organization that owns the key. Start here for the org_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me/organizations"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "organizations": {
+              "$from": "$.organizations",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "handle": "handle",
+                "plan": "plan",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "neon_list_projects",
+      "description": "List Neon projects with id, name, region, Postgres version, organization, storage size and last compute activity. With a personal API key pass org_id for an organization's projects. Search by partial name or id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (from neon_list_organizations). Needed with a personal API key for organization projects."
+          },
+          "search": {
+            "type": "string",
+            "description": "Filter by partial project name or id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Projects per page, 1 to 400. Default 50.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 400
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "org_id": "$org_id",
+          "search": "$search",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "pagination": "$.pagination",
+            "unavailable_project_ids": "$.unavailable_project_ids",
+            "projects": {
+              "$from": "$.projects",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "region_id": "region_id",
+                "pg_version": "pg_version",
+                "org_id": "org_id",
+                "created_at": "created_at",
+                "compute_last_active_at": "compute_last_active_at",
+                "synthetic_storage_size": "synthetic_storage_size",
+                "history_retention_seconds": "history_retention_seconds"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "neon_get_project",
+      "description": "Get one Neon project: region, Postgres version, default compute settings, history retention, and this billing period's compute time, active time, written data, data transfer and storage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "project": {
+              "id": "$.project.id",
+              "name": "$.project.name",
+              "region_id": "$.project.region_id",
+              "platform_id": "$.project.platform_id",
+              "pg_version": "$.project.pg_version",
+              "org_id": "$.project.org_id",
+              "created_at": "$.project.created_at",
+              "updated_at": "$.project.updated_at",
+              "history_retention_seconds": "$.project.history_retention_seconds",
+              "default_endpoint_settings": "$.project.default_endpoint_settings",
+              "compute_time_seconds": "$.project.compute_time_seconds",
+              "active_time_seconds": "$.project.active_time_seconds",
+              "written_data_bytes": "$.project.written_data_bytes",
+              "data_transfer_bytes": "$.project.data_transfer_bytes",
+              "data_storage_bytes_hour": "$.project.data_storage_bytes_hour",
+              "synthetic_storage_size": "$.project.synthetic_storage_size",
+              "consumption_period_start": "$.project.consumption_period_start",
+              "consumption_period_end": "$.project.consumption_period_end",
+              "compute_last_active_at": "$.project.compute_last_active_at",
+              "owner_name": "$.project.owner.name"
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "neon_list_branches",
+      "description": "List the branches of a Neon project with id, name, parent, state, default and protected flags, logical size and this period's compute time. Newest changes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Filter by partial branch name or id."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field: updated_at (default), created_at or name.",
+            "enum": [
+              "updated_at",
+              "created_at",
+              "name"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "desc (default) or asc.",
+            "enum": [
+              "desc",
+              "asc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Branches per page. Default 50.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/branches",
+        "queryParams": {
+          "search": "$search",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "pagination": "$.pagination",
+            "branches": {
+              "$from": "$.branches",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "parent_id": "parent_id",
+                "current_state": "current_state",
+                "default": "default",
+                "protected": "protected",
+                "logical_size": "logical_size",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "expires_at": "expires_at",
+                "compute_time_seconds": "compute_time_seconds",
+                "active_time_seconds": "active_time_seconds",
+                "written_data_bytes": "written_data_bytes",
+                "data_transfer_bytes": "data_transfer_bytes"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "neon_get_branch",
+      "description": "Get one Neon branch: name, parent and branch point, state, default and protected flags, expiry, logical size and this period's compute and data usage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id, starting with 'br-', e.g. 'br-aged-salad-637688' (from neon_list_branches)."
+          }
+        },
+        "required": [
+          "project_id",
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/branches/{branch_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "branch": {
+              "id": "$.branch.id",
+              "name": "$.branch.name",
+              "parent_id": "$.branch.parent_id",
+              "current_state": "$.branch.current_state",
+              "default": "$.branch.default",
+              "protected": "$.branch.protected",
+              "logical_size": "$.branch.logical_size",
+              "created_at": "$.branch.created_at",
+              "updated_at": "$.branch.updated_at",
+              "expires_at": "$.branch.expires_at",
+              "compute_time_seconds": "$.branch.compute_time_seconds",
+              "active_time_seconds": "$.branch.active_time_seconds",
+              "written_data_bytes": "$.branch.written_data_bytes",
+              "data_transfer_bytes": "$.branch.data_transfer_bytes",
+              "parent_lsn": "$.branch.parent_lsn",
+              "parent_timestamp": "$.branch.parent_timestamp",
+              "init_source": "$.branch.init_source"
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "neon_create_branch",
+      "description": "Create a Neon branch (an instant copy-on-write copy of a parent branch, optionally at a point in time). Confirm with the user first: extra branches and any compute you add can be billed. Pass endpoints [{\"type\": \"read_write\"}] to add a compute that starts at once. No passwords or connection strings are returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name for the new branch, e.g. 'feature-checkout'. Auto-generated if left out."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Branch to copy from. Default: the project's default branch."
+          },
+          "parent_timestamp": {
+            "type": "string",
+            "description": "Copy the parent as it was at this time (RFC 3339, within the history retention window), e.g. '2026-10-14T08:00:00Z'."
+          },
+          "parent_lsn": {
+            "type": "string",
+            "description": "Copy the parent at this Postgres LSN instead of a time."
+          },
+          "init_source": {
+            "type": "string",
+            "description": "parent-data (default) copies schema and data; parent-schema copies only the parent's schema; schema-only creates a new root branch with the schema only.",
+            "enum": [
+              "parent-data",
+              "parent-schema",
+              "schema-only"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "Delete the branch automatically at this time (RFC 3339), for temporary branches."
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Computes to create with the branch, e.g. [{\"type\": \"read_write\"}] or with sizes {\"type\": \"read_write\", \"autoscaling_limit_min_cu\": 0.25, \"autoscaling_limit_max_cu\": 1}. Leave out for a branch without compute."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/branches",
+        "bodyMapping": {
+          "branch": {
+            "name": "$name",
+            "parent_id": "$parent_id",
+            "parent_timestamp": "$parent_timestamp",
+            "parent_lsn": "$parent_lsn",
+            "init_source": "$init_source",
+            "expires_at": "$expires_at"
+          },
+          "endpoints": "$endpoints"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "branch": {
+              "id": "$.branch.id",
+              "name": "$.branch.name",
+              "parent_id": "$.branch.parent_id",
+              "current_state": "$.branch.current_state",
+              "pending_state": "$.branch.pending_state",
+              "created_at": "$.branch.created_at",
+              "expires_at": "$.branch.expires_at"
+            },
+            "endpoints": {
+              "$from": "$.endpoints",
+              "$select": {
+                "id": "id",
+                "host": "host",
+                "branch_id": "branch_id",
+                "type": "type",
+                "current_state": "current_state",
+                "pending_state": "pending_state",
+                "autoscaling_limit_min_cu": "autoscaling_limit_min_cu",
+                "autoscaling_limit_max_cu": "autoscaling_limit_max_cu",
+                "suspend_timeout_seconds": "suspend_timeout_seconds",
+                "pooler_enabled": "pooler_enabled",
+                "disabled": "disabled",
+                "last_active": "last_active",
+                "region_id": "region_id"
+              }
+            },
+            "databases": {
+              "$from": "$.databases",
+              "$select": {
+                "name": "name",
+                "owner_name": "owner_name"
+              }
+            },
+            "roles": {
+              "$from": "$.roles",
+              "$select": {
+                "name": "name"
+              }
+            },
+            "operations": {
+              "$from": "$.operations",
+              "$select": {
+                "id": "id",
+                "action": "action",
+                "status": "status",
+                "branch_id": "branch_id",
+                "endpoint_id": "endpoint_id",
+                "error": "error",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "total_duration_ms": "total_duration_ms"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "neon_delete_branch",
+      "enabled": false,
+      "description": "Delete a Neon branch and its computes, ending all their connections. Switched off at install. Confirm with the user first and name the branch; the root and default branch, and branches with children, cannot be deleted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id, starting with 'br-', e.g. 'br-aged-salad-637688' (from neon_list_branches)."
+          }
+        },
+        "required": [
+          "project_id",
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/projects/{project_id}/branches/{branch_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "branch": {
+              "id": "$.branch.id",
+              "name": "$.branch.name",
+              "current_state": "$.branch.current_state"
+            },
+            "operations": {
+              "$from": "$.operations",
+              "$select": {
+                "id": "id",
+                "action": "action",
+                "status": "status",
+                "branch_id": "branch_id",
+                "endpoint_id": "endpoint_id",
+                "error": "error",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "total_duration_ms": "total_duration_ms"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "neon_list_endpoints",
+      "description": "List the compute endpoints of a Neon project: id, branch, read-write or read-only, state (active, idle), autoscaling range in compute units, suspend timeout, pooler and host name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/endpoints"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "endpoints": {
+              "$from": "$.endpoints",
+              "$select": {
+                "id": "id",
+                "host": "host",
+                "branch_id": "branch_id",
+                "type": "type",
+                "current_state": "current_state",
+                "pending_state": "pending_state",
+                "autoscaling_limit_min_cu": "autoscaling_limit_min_cu",
+                "autoscaling_limit_max_cu": "autoscaling_limit_max_cu",
+                "suspend_timeout_seconds": "suspend_timeout_seconds",
+                "pooler_enabled": "pooler_enabled",
+                "disabled": "disabled",
+                "last_active": "last_active",
+                "region_id": "region_id"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "neon_get_endpoint",
+      "description": "Get one Neon compute endpoint: state, branch, type, autoscaling range, suspend timeout, last activity, start and suspend times and host name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Compute endpoint id, starting with 'ep-' (from neon_list_endpoints)."
+          }
+        },
+        "required": [
+          "project_id",
+          "endpoint_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/endpoints/{endpoint_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "endpoint": {
+              "id": "$.endpoint.id",
+              "host": "$.endpoint.host",
+              "branch_id": "$.endpoint.branch_id",
+              "type": "$.endpoint.type",
+              "current_state": "$.endpoint.current_state",
+              "pending_state": "$.endpoint.pending_state",
+              "autoscaling_limit_min_cu": "$.endpoint.autoscaling_limit_min_cu",
+              "autoscaling_limit_max_cu": "$.endpoint.autoscaling_limit_max_cu",
+              "suspend_timeout_seconds": "$.endpoint.suspend_timeout_seconds",
+              "pooler_enabled": "$.endpoint.pooler_enabled",
+              "disabled": "$.endpoint.disabled",
+              "last_active": "$.endpoint.last_active",
+              "region_id": "$.endpoint.region_id",
+              "started_at": "$.endpoint.started_at",
+              "suspended_at": "$.endpoint.suspended_at",
+              "created_at": "$.endpoint.created_at"
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "neon_start_endpoint",
+      "description": "Start (wake) a Neon compute endpoint. Confirm with the user first: a running compute uses billable compute hours until it scales to zero again. Follow the returned operations with neon_get_operation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Compute endpoint id, starting with 'ep-' (from neon_list_endpoints)."
+          }
+        },
+        "required": [
+          "project_id",
+          "endpoint_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/endpoints/{endpoint_id}/start"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "endpoint": {
+              "id": "$.endpoint.id",
+              "host": "$.endpoint.host",
+              "branch_id": "$.endpoint.branch_id",
+              "type": "$.endpoint.type",
+              "current_state": "$.endpoint.current_state",
+              "pending_state": "$.endpoint.pending_state",
+              "autoscaling_limit_min_cu": "$.endpoint.autoscaling_limit_min_cu",
+              "autoscaling_limit_max_cu": "$.endpoint.autoscaling_limit_max_cu",
+              "suspend_timeout_seconds": "$.endpoint.suspend_timeout_seconds",
+              "pooler_enabled": "$.endpoint.pooler_enabled",
+              "disabled": "$.endpoint.disabled",
+              "last_active": "$.endpoint.last_active",
+              "region_id": "$.endpoint.region_id"
+            },
+            "operations": {
+              "$from": "$.operations",
+              "$select": {
+                "id": "id",
+                "action": "action",
+                "status": "status",
+                "branch_id": "branch_id",
+                "endpoint_id": "endpoint_id",
+                "error": "error",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "total_duration_ms": "total_duration_ms"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "neon_suspend_endpoint",
+      "description": "Suspend a Neon compute endpoint now, which stops compute billing but closes every open connection to it. Confirm with the user first. It wakes again on the next connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Compute endpoint id, starting with 'ep-' (from neon_list_endpoints)."
+          }
+        },
+        "required": [
+          "project_id",
+          "endpoint_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/endpoints/{endpoint_id}/suspend"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "endpoint": {
+              "id": "$.endpoint.id",
+              "host": "$.endpoint.host",
+              "branch_id": "$.endpoint.branch_id",
+              "type": "$.endpoint.type",
+              "current_state": "$.endpoint.current_state",
+              "pending_state": "$.endpoint.pending_state",
+              "autoscaling_limit_min_cu": "$.endpoint.autoscaling_limit_min_cu",
+              "autoscaling_limit_max_cu": "$.endpoint.autoscaling_limit_max_cu",
+              "suspend_timeout_seconds": "$.endpoint.suspend_timeout_seconds",
+              "pooler_enabled": "$.endpoint.pooler_enabled",
+              "disabled": "$.endpoint.disabled",
+              "last_active": "$.endpoint.last_active",
+              "region_id": "$.endpoint.region_id"
+            },
+            "operations": {
+              "$from": "$.operations",
+              "$select": {
+                "id": "id",
+                "action": "action",
+                "status": "status",
+                "branch_id": "branch_id",
+                "endpoint_id": "endpoint_id",
+                "error": "error",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "total_duration_ms": "total_duration_ms"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "neon_list_databases",
+      "description": "List the Postgres databases of a Neon branch with name and owner role.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id, starting with 'br-', e.g. 'br-aged-salad-637688' (from neon_list_branches)."
+          }
+        },
+        "required": [
+          "project_id",
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/branches/{branch_id}/databases"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "databases": {
+              "$from": "$.databases",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "owner_name": "owner_name",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "neon_list_roles",
+      "description": "List the Postgres roles of a Neon branch with name, protected flag and authentication method. Passwords are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id, starting with 'br-', e.g. 'br-aged-salad-637688' (from neon_list_branches)."
+          }
+        },
+        "required": [
+          "project_id",
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/branches/{branch_id}/roles"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "roles": {
+              "$from": "$.roles",
+              "$select": {
+                "name": "name",
+                "protected": "protected",
+                "authentication_method": "authentication_method",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "neon_get_database_schema",
+      "description": "Get the schema of one database on a Neon branch (tables, columns, types, indexes, constraints, as pg_dump-style SQL), optionally as it was at a past time. Read-only; no password needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id, starting with 'br-', e.g. 'br-aged-salad-637688' (from neon_list_branches)."
+          },
+          "db_name": {
+            "type": "string",
+            "description": "Database name, e.g. 'neondb' (from neon_list_databases)."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "Read the schema as it was at this time (RFC 3339), within the history retention window."
+          },
+          "lsn": {
+            "type": "string",
+            "description": "Read the schema at this Postgres LSN instead of a time."
+          }
+        },
+        "required": [
+          "project_id",
+          "branch_id",
+          "db_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/branches/{branch_id}/schema",
+        "queryParams": {
+          "db_name": "$db_name",
+          "timestamp": "$timestamp",
+          "lsn": "$lsn",
+          "format": "sql"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "sql": "$.sql"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "neon_list_operations",
+      "description": "List the operations of a Neon project (branch creation, compute start and suspend, config changes), newest first, with status, error and duration.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Operations per page, 1 to 1000. Default 20.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.cursor from the previous page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/operations",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "pagination": "$.pagination",
+            "operations": {
+              "$from": "$.operations",
+              "$select": {
+                "id": "id",
+                "action": "action",
+                "status": "status",
+                "branch_id": "branch_id",
+                "endpoint_id": "endpoint_id",
+                "error": "error",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "total_duration_ms": "total_duration_ms"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "neon_get_operation",
+      "description": "Get one Neon operation: action, status (scheduling, running, finished, failed, cancelled), error, retries and duration. Use it to follow a change until it finishes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Neon project id, e.g. 'shiny-wind-028834' (id from neon_list_projects)."
+          },
+          "operation_id": {
+            "type": "string",
+            "description": "Operation id (a UUID) from an earlier answer."
+          }
+        },
+        "required": [
+          "project_id",
+          "operation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/operations/{operation_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "operation": {
+              "id": "$.operation.id",
+              "action": "$.operation.action",
+              "status": "$.operation.status",
+              "branch_id": "$.operation.branch_id",
+              "endpoint_id": "$.operation.endpoint_id",
+              "error": "$.operation.error",
+              "created_at": "$.operation.created_at",
+              "updated_at": "$.operation.updated_at",
+              "total_duration_ms": "$.operation.total_duration_ms",
+              "failures_count": "$.operation.failures_count",
+              "retry_at": "$.operation.retry_at"
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "neon_get_consumption",
+      "description": "Get Neon consumption per project and period: compute unit seconds, root and child branch storage, instant restore storage, extra branches, snapshots and network transfer. Paid plans only; needs org_id. Does not wake computes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (from neon_list_organizations)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start, RFC 3339, e.g. '2026-10-01T00:00:00Z'."
+          },
+          "to": {
+            "type": "string",
+            "description": "End, RFC 3339, e.g. '2026-10-15T00:00:00Z'."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "hourly (last 168 hours), daily (last 60 days) or monthly (last year).",
+            "enum": [
+              "hourly",
+              "daily",
+              "monthly"
+            ]
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "compute_unit_seconds",
+                "root_branch_bytes_month",
+                "child_branch_bytes_month",
+                "instant_restore_bytes_month",
+                "public_network_transfer_bytes",
+                "private_network_transfer_bytes",
+                "extra_branches_month",
+                "snapshot_storage_bytes_month"
+              ]
+            },
+            "description": "Metrics to return. Default: compute_unit_seconds, root_branch_bytes_month, child_branch_bytes_month, public_network_transfer_bytes.",
+            "default": [
+              "compute_unit_seconds",
+              "root_branch_bytes_month",
+              "child_branch_bytes_month",
+              "public_network_transfer_bytes"
+            ]
+          },
+          "project_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these project ids (up to 100)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Projects per page, 1 to 100. Default 10.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.cursor from the previous page."
+          }
+        },
+        "required": [
+          "org_id",
+          "from",
+          "to",
+          "granularity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/consumption_history/v2/projects",
+        "queryParams": {
+          "org_id": "$org_id",
+          "from": "$from",
+          "to": "$to",
+          "granularity": "$granularity",
+          "metrics": "$metrics",
+          "project_ids": "$project_ids",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "projects": "$.projects",
+            "pagination": "$.pagination"
+          },
+          "maxBytes": 100000
+        }
+      }
+    }
+  ]
+}

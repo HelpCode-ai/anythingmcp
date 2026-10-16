@@ -1,0 +1,1940 @@
+{
+  "slug": "pagerduty",
+  "name": "PagerDuty",
+  "description": "Let your AI work with PagerDuty: see open incidents with their timeline, alerts and notes, find out who is on call, read services, escalation policies, schedules and teams, acknowledge, resolve, reassign or escalate incidents after confirming with you, and pull incident analytics.",
+  "instructions": "## PagerDuty\nThis connector works with one PagerDuty account through the **REST API v2** (`https://api.pagerduty.com`, or `https://api.eu.pagerduty.com` for accounts in the EU service region): incidents with their notes, timeline and alerts, services, escalation policies, who is on call, schedules, users, teams, priorities and incident analytics. It can acknowledge, resolve, reassign and escalate incidents, change their title, urgency or priority, add notes and open new incidents.\n\n**Setup (about 3 minutes)**\n1. Pick the key type. A **user token** acts as one person and sees what that person sees: in PagerDuty open your avatar, **My Profile, User Settings, Create API User Token**. A **general access key** acts for the whole account and needs an admin: **Integrations, API Access Keys, Create New API Key**. Tick **Read-only** there for a connector that only reads.\n2. Paste the key into `PAGERDUTY_API_KEY`. It is sent as `Authorization: Token token=<key>` together with `Accept: application/vnd.pagerduty+json;version=2`.\n3. Set `PAGERDUTY_API_HOST` to `api.pagerduty.com`, or to `api.eu.pagerduty.com` when your PagerDuty address is in the EU region (your account's service region is shown under Account Settings). A key only works on its own region's host.\n4. With a general access key, also set `PAGERDUTY_FROM_EMAIL` to the email of a PagerDuty user: PagerDuty requires it in the `From` header of every change and records the change under that user. A user token does not need it.\n5. Check the setup with `pagerduty_list_services`. `pagerduty_get_current_user` only works with a user token; with a general access key PagerDuty answers 400 because the key belongs to no user.\n\n**Changes page people and close incidents: confirm first.** `pagerduty_acknowledge_incident`, `pagerduty_resolve_incident`, `pagerduty_reassign_incident`, `pagerduty_escalate_incident`, `pagerduty_update_incident`, `pagerduty_add_incident_note`, `pagerduty_create_incident` change live incidents. Acknowledging stops the paging, resolving closes the incident, reassigning and escalating page other people, creating an incident pages the on-call responders of the service. Before each call, show the user the incident (number and title) and the change and wait for their yes. Nothing here deletes anything. For a read-only setup use a read-only general access key, or switch those tools off.\n\n**How to work**\n1. Open incidents: `pagerduty_list_incidents` with statuses [\"triggered\", \"acknowledged\"]. Then `pagerduty_get_incident`, `pagerduty_list_incident_log_entries` (timeline), `pagerduty_list_incident_alerts` (what the monitoring tool sent) and `pagerduty_list_incident_notes`.\n2. Who is on call now: `pagerduty_list_oncalls` without dates; for a team's schedule `pagerduty_list_schedules` then `pagerduty_get_schedule`. Escalation levels: `pagerduty_list_escalation_policies` and `pagerduty_get_escalation_policy`.\n3. Directory: `pagerduty_list_services`, `pagerduty_get_service`, `pagerduty_list_users`, `pagerduty_get_user`, `pagerduty_list_teams`, `pagerduty_list_priorities`.\n4. Acting: `pagerduty_acknowledge_incident`, `pagerduty_resolve_incident`, `pagerduty_reassign_incident` (to a user id), `pagerduty_escalate_incident` (to a level), `pagerduty_update_incident` (title, urgency, priority by name), `pagerduty_add_incident_note`, `pagerduty_create_incident` (on a service).\n5. Reporting: `pagerduty_get_incident_analytics` (per incident) and `pagerduty_get_incident_metrics` (totals, per day, week or month). Both need a PagerDuty plan that includes Analytics, and a user token must filter by service_ids or team_ids.\n\n**Ids and dates**: ids are short strings such as `PT4KHLK`; the incident number (#1234) is not an id. Dates are ISO 8601. `pagerduty_list_incidents` covers the last 30 days unless you pass since and until (at most 6 months apart) or date_range all.\n\n**Paging**: lists take `limit` (up to 100) and `offset`; while the answer has `more: true`, call again with offset + limit. Analytics pages with `starting_after`.\n\n**Common errors**\n- 401: the key is wrong, was deleted, or belongs to the other region's host.\n- 400 with \"From\": a general access key made a change without `PAGERDUTY_FROM_EMAIL`, or the email is not a user of the account.\n- 400 on `pagerduty_get_current_user`: the key is a general access key.\n- 403: a read-only key tried a change, the user's role does not allow it, or the plan lacks the feature (teams, analytics).\n- 404: no such id on this account. 429: too many requests; wait and retry.\n\n**Out of scope here**: the Events API (sending alerts with an integration's routing key is what monitoring tools do, on a separate host with a separate key; `pagerduty_create_incident` covers opening an incident by hand), creating or changing services, schedules, escalation policies and users, status pages, incident workflows, webhooks and all deletes.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "pagerduty",
+  "docsUrl": "https://developer.pagerduty.com/api-reference/",
+  "prerequisites": "A PagerDuty account and an API key: a user token from your profile (User Settings) or a general access key an admin creates under Integrations, API Access Keys. With a general access key, the email of a PagerDuty user to record changes under. About 3 minutes.",
+  "requiredEnvVars": [
+    "PAGERDUTY_API_KEY",
+    "PAGERDUTY_API_HOST"
+  ],
+  "optionalEnvVars": [
+    "PAGERDUTY_FROM_EMAIL"
+  ],
+  "envVarMeta": {
+    "PAGERDUTY_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "A user token (My Profile, User Settings, Create API User Token) or a general access key (Integrations, API Access Keys, Create New API Key; tick Read-only for a read-only connector). Paste the key alone, without Token token=.",
+      "link": "https://support.pagerduty.com/main/docs/api-access-keys",
+      "pattern": "^(?!Token\\s)(?!token=)(?!Bearer\\s)\\S{16,}$",
+      "patternMessage": "Paste only the key as PagerDuty shows it, without Token token= or Bearer in front and without spaces."
+    },
+    "PAGERDUTY_API_HOST": {
+      "label": "API host",
+      "kind": "setting",
+      "help": "api.pagerduty.com for the US service region, api.eu.pagerduty.com for the EU service region.",
+      "example": "api.pagerduty.com",
+      "pattern": "^api(\\.eu)?\\.pagerduty\\.com$",
+      "patternMessage": "Enter api.pagerduty.com or api.eu.pagerduty.com, without https://."
+    },
+    "PAGERDUTY_FROM_EMAIL": {
+      "label": "Email for changes (general access key only)",
+      "kind": "setting",
+      "help": "Only needed with a general access key: the email of a PagerDuty user, sent in the From header so PagerDuty can record who acknowledged, resolved or noted something. Leave empty with a user token.",
+      "example": "oncall-bot@example.com",
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "patternMessage": "Enter the email address of a user in your PagerDuty account."
+    }
+  },
+  "verifyHints": {
+    "401": "PagerDuty refused the key: it is wrong, was deleted, or belongs to the other service region. Check the key and that PAGERDUTY_API_HOST is api.pagerduty.com (US) or api.eu.pagerduty.com (EU).",
+    "403": "PagerDuty accepted the key but refused this request: the user's role or the plan does not allow it.",
+    "429": "PagerDuty is rate limiting this key. Wait a moment and verify again."
+  },
+  "probe": {
+    "tool": "pagerduty_list_services",
+    "params": {
+      "limit": 5
+    }
+  },
+  "connector": {
+    "name": "PagerDuty REST API v2",
+    "type": "REST",
+    "baseUrl": "https://{{PAGERDUTY_API_HOST}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Token token={{PAGERDUTY_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/vnd.pagerduty+json;version=2",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/abilities"
+  },
+  "tools": [
+    {
+      "name": "pagerduty_get_current_user",
+      "description": "Read the PagerDuty user behind the API key: id, name, email, role, time zone and teams. Works only with a user token (Profile, User Settings, Create API User Token); a general access key from Integrations, API Access Keys has no user and PagerDuty answers 400. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.user.id",
+            "name": "$.user.name",
+            "email": "$.user.email",
+            "role": "$.user.role",
+            "job_title": "$.user.job_title",
+            "time_zone": "$.user.time_zone",
+            "teams": {
+              "$from": "$.user.teams[*]",
+              "$select": {
+                "id": "id",
+                "name": "summary"
+              }
+            },
+            "html_url": "$.user.html_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_incidents",
+      "description": "List incidents, newest first by default: id, number, title, status, urgency, priority, service, escalation policy, who it is assigned to, teams, alert counts and link. Without since and until PagerDuty returns the last 30 days; date_range all ignores the window. Filter by status (triggered, acknowledged, resolved), urgency, services, teams or assigned users. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "triggered",
+                "acknowledged",
+                "resolved"
+              ]
+            },
+            "description": "Only incidents with these statuses, e.g. [\"triggered\", \"acknowledged\"] for open incidents."
+          },
+          "urgencies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "high",
+                "low"
+              ]
+            },
+            "description": "Only incidents with these urgencies."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only incidents of these service ids (from pagerduty_list_services)."
+          },
+          "team_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only incidents of these team ids (from pagerduty_list_teams). Needs the teams ability on the account."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only incidents assigned to these user ids."
+          },
+          "since": {
+            "type": "string",
+            "description": "Start of the window, ISO 8601 such as 2026-10-01T00:00:00Z."
+          },
+          "until": {
+            "type": "string",
+            "description": "End of the window, ISO 8601. At most 6 months after since."
+          },
+          "date_range": {
+            "type": "string",
+            "enum": [
+              "all"
+            ],
+            "description": "Set to all to ignore since and until and search every incident."
+          },
+          "incident_key": {
+            "type": "string",
+            "description": "Only the incident with this de-duplication key."
+          },
+          "sort_by": {
+            "type": "string",
+            "default": "created_at:desc",
+            "description": "Sort field and direction: created_at, resolved_at, incident_number or urgency, with :asc or :desc (default created_at:desc)."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone for the dates in the answer, e.g. Europe/Berlin. Default UTC."
+          },
+          "total": {
+            "type": "boolean",
+            "description": "Also return the total count (slower). Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page (default 25, up to 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip. While the answer says more: true, call again with offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/incidents",
+        "queryParams": {
+          "statuses[]": "$statuses",
+          "urgencies[]": "$urgencies",
+          "service_ids[]": "$service_ids",
+          "team_ids[]": "$team_ids",
+          "user_ids[]": "$user_ids",
+          "since": "$since",
+          "until": "$until",
+          "date_range": "$date_range",
+          "incident_key": "$incident_key",
+          "sort_by": "$sort_by",
+          "time_zone": "$time_zone",
+          "total": "$total",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "incidents": {
+              "$from": "$.incidents[*]",
+              "$select": {
+                "id": "id",
+                "incident_number": "incident_number",
+                "title": "title",
+                "status": "status",
+                "urgency": "urgency",
+                "priority": "priority.summary",
+                "service": {
+                  "id": "service.id",
+                  "name": "service.summary"
+                },
+                "escalation_policy": {
+                  "id": "escalation_policy.id",
+                  "name": "escalation_policy.summary"
+                },
+                "assigned_to": {
+                  "$from": "assignments[*]",
+                  "$select": {
+                    "id": "assignee.id",
+                    "name": "assignee.summary"
+                  }
+                },
+                "teams": {
+                  "$from": "teams[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "summary"
+                  }
+                },
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "last_status_change_at": "last_status_change_at",
+                "incident_key": "incident_key",
+                "alert_counts": "alert_counts",
+                "html_url": "html_url"
+              }
+            },
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "more": "$.more",
+            "total": "$.total"
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_get_incident",
+      "description": "Read one incident: number, title, status, urgency, priority, service, escalation policy, assignees, acknowledgements, teams, alert counts, resolve reason and link. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident id such as PT4KHLK (from pagerduty_list_incidents), not the incident number."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/incidents/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "incident": {
+              "id": "$.incident.id",
+              "incident_number": "$.incident.incident_number",
+              "title": "$.incident.title",
+              "status": "$.incident.status",
+              "urgency": "$.incident.urgency",
+              "priority": "$.incident.priority.summary",
+              "created_at": "$.incident.created_at",
+              "updated_at": "$.incident.updated_at",
+              "last_status_change_at": "$.incident.last_status_change_at",
+              "incident_key": "$.incident.incident_key",
+              "alert_counts": "$.incident.alert_counts",
+              "html_url": "$.incident.html_url",
+              "service": {
+                "id": "$.incident.service.id",
+                "name": "$.incident.service.summary"
+              },
+              "escalation_policy": {
+                "id": "$.incident.escalation_policy.id",
+                "name": "$.incident.escalation_policy.summary"
+              },
+              "assigned_to": {
+                "$from": "$.incident.assignments[*]",
+                "$select": {
+                  "id": "assignee.id",
+                  "name": "assignee.summary",
+                  "at": "at"
+                }
+              },
+              "acknowledged_by": {
+                "$from": "$.incident.acknowledgements[*]",
+                "$select": {
+                  "id": "acknowledger.id",
+                  "name": "acknowledger.summary",
+                  "at": "at"
+                }
+              },
+              "teams": {
+                "$from": "$.incident.teams[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "summary"
+                }
+              },
+              "resolve_reason": "$.incident.resolve_reason",
+              "conference_bridge": "$.incident.conference_bridge"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_incident_notes",
+      "description": "List the notes on an incident, oldest first: id, text, who wrote it and when. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident id such as PT4KHLK (from pagerduty_list_incidents), not the incident number."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/incidents/{id}/notes"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "notes": {
+              "$from": "$.notes[*]",
+              "$select": {
+                "id": "id",
+                "content": "content",
+                "created_at": "created_at",
+                "user": {
+                  "id": "user.id",
+                  "name": "user.summary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_incident_log_entries",
+      "description": "Read the timeline of an incident: triggers, notifications, acknowledgements, escalations, reassignments, notes and resolution, each with type, summary, time and who or what caused it. is_overview true (default) keeps only the important entries. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident id such as PT4KHLK (from pagerduty_list_incidents), not the incident number."
+          },
+          "is_overview": {
+            "type": "boolean",
+            "default": true,
+            "description": "Only the most important entries (default true). false lists every notification too."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only entries after this time, ISO 8601."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only entries before this time, ISO 8601."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone for the dates, e.g. Europe/Berlin."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page (default 25, up to 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip. While the answer says more: true, call again with offset + limit."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/incidents/{id}/log_entries",
+        "queryParams": {
+          "is_overview": "$is_overview",
+          "since": "$since",
+          "until": "$until",
+          "time_zone": "$time_zone",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "log_entries": {
+              "$from": "$.log_entries[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "summary": "summary",
+                "created_at": "created_at",
+                "agent": {
+                  "type": "agent.type",
+                  "name": "agent.summary"
+                },
+                "channel": "channel.type"
+              }
+            },
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "more": "$.more",
+            "total": "$.total"
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_incident_alerts",
+      "description": "List the alerts grouped into an incident: id, summary, status, severity, alert key, service, created time and the event details the monitoring tool sent (shortened). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident id such as PT4KHLK (from pagerduty_list_incidents), not the incident number."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "triggered",
+                "resolved"
+              ]
+            },
+            "description": "Only alerts with these statuses."
+          },
+          "alert_key": {
+            "type": "string",
+            "description": "Only alerts with this de-duplication key."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "resolved_at",
+              "created_at:asc",
+              "created_at:desc",
+              "resolved_at:asc",
+              "resolved_at:desc"
+            ],
+            "description": "Sort order, e.g. created_at:desc."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Results per page (default 10, up to 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip. While the answer says more: true, call again with offset + limit."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/incidents/{id}/alerts",
+        "queryParams": {
+          "statuses[]": "$statuses",
+          "alert_key": "$alert_key",
+          "sort_by": "$sort_by",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "alerts": {
+              "$from": "$.alerts[*]",
+              "$select": {
+                "id": "id",
+                "summary": "summary",
+                "status": "status",
+                "severity": "severity",
+                "alert_key": "alert_key",
+                "created_at": "created_at",
+                "service": {
+                  "id": "service.id",
+                  "name": "service.summary"
+                },
+                "details": "body.details",
+                "html_url": "html_url"
+              }
+            },
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "more": "$.more",
+            "total": "$.total"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "pagerduty_acknowledge_incident",
+      "description": "Acknowledge an incident: it stops escalating and the responders are no longer paged for it, but it stays open. Before calling, tell the user which incident (number and title) will be acknowledged and wait for their yes. PagerDuty records the change under the user behind the key, or under the email in PAGERDUTY_FROM_EMAIL when the key is a general access (account) key. Returns the updated incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident id such as PT4KHLK (from pagerduty_list_incidents), not the incident number."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/incidents/{id}",
+        "headers": {
+          "From": "${PAGERDUTY_FROM_EMAIL}"
+        },
+        "bodyMapping": {
+          "incident": {
+            "type": "incident_reference",
+            "status": "acknowledged"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "incident": {
+              "id": "$.incident.id",
+              "incident_number": "$.incident.incident_number",
+              "title": "$.incident.title",
+              "status": "$.incident.status",
+              "urgency": "$.incident.urgency",
+              "priority": "$.incident.priority.summary",
+              "escalation_policy": "$.incident.escalation_policy.summary",
+              "html_url": "$.incident.html_url"
+            },
+            "assigned_to": {
+              "$from": "$.incident.assignments[*]",
+              "$select": {
+                "id": "assignee.id",
+                "name": "assignee.summary"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_resolve_incident",
+      "description": "Resolve an incident: it is closed, its alerts are resolved and nobody is paged for it any more. Before calling, tell the user which incident (number and title) will be resolved and wait for their yes. PagerDuty records the change under the user behind the key, or under the email in PAGERDUTY_FROM_EMAIL when the key is a general access (account) key. Returns the updated incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident id such as PT4KHLK (from pagerduty_list_incidents), not the incident number."
+          },
+          "resolution": {
+            "type": "string",
+            "description": "Optional resolution note, added to the Resolve entry of the timeline."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/incidents/{id}",
+        "headers": {
+          "From": "${PAGERDUTY_FROM_EMAIL}"
+        },
+        "bodyMapping": {
+          "incident": {
+            "type": "incident_reference",
+            "status": "resolved",
+            "resolution": "$resolution"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "incident": {
+              "id": "$.incident.id",
+              "incident_number": "$.incident.incident_number",
+              "title": "$.incident.title",
+              "status": "$.incident.status",
+              "urgency": "$.incident.urgency",
+              "priority": "$.incident.priority.summary",
+              "escalation_policy": "$.incident.escalation_policy.summary",
+              "html_url": "$.incident.html_url"
+            },
+            "assigned_to": {
+              "$from": "$.incident.assignments[*]",
+              "$select": {
+                "id": "assignee.id",
+                "name": "assignee.summary"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_reassign_incident",
+      "description": "Reassign an incident to one user: PagerDuty pages that user and removes the current assignees. Before calling, tell the user the incident and the person it will go to and wait for their yes. PagerDuty records the change under the user behind the key, or under the email in PAGERDUTY_FROM_EMAIL when the key is a general access (account) key. Returns the updated incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident id such as PT4KHLK (from pagerduty_list_incidents), not the incident number."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User id of the new assignee, from pagerduty_list_users or pagerduty_list_oncalls."
+          }
+        },
+        "required": [
+          "id",
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/incidents/{id}",
+        "headers": {
+          "From": "${PAGERDUTY_FROM_EMAIL}"
+        },
+        "bodyMapping": {
+          "incident": {
+            "type": "incident_reference",
+            "assignments": [
+              {
+                "assignee": {
+                  "id": "$user_id",
+                  "type": "user_reference"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "incident": {
+              "id": "$.incident.id",
+              "incident_number": "$.incident.incident_number",
+              "title": "$.incident.title",
+              "status": "$.incident.status",
+              "urgency": "$.incident.urgency",
+              "priority": "$.incident.priority.summary",
+              "escalation_policy": "$.incident.escalation_policy.summary",
+              "html_url": "$.incident.html_url"
+            },
+            "assigned_to": {
+              "$from": "$.incident.assignments[*]",
+              "$select": {
+                "id": "assignee.id",
+                "name": "assignee.summary"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_escalate_incident",
+      "description": "Escalate an incident to a level of its escalation policy: PagerDuty pages the on-call responders of that level. Before calling, tell the user the incident and the level and wait for their yes. PagerDuty records the change under the user behind the key, or under the email in PAGERDUTY_FROM_EMAIL when the key is a general access (account) key. Returns the updated incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident id such as PT4KHLK (from pagerduty_list_incidents), not the incident number."
+          },
+          "escalation_level": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Escalation level to move to, from 1 (see pagerduty_get_escalation_policy for the levels)."
+          }
+        },
+        "required": [
+          "id",
+          "escalation_level"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/incidents/{id}",
+        "headers": {
+          "From": "${PAGERDUTY_FROM_EMAIL}"
+        },
+        "bodyMapping": {
+          "incident": {
+            "type": "incident_reference",
+            "escalation_level": "$escalation_level"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "incident": {
+              "id": "$.incident.id",
+              "incident_number": "$.incident.incident_number",
+              "title": "$.incident.title",
+              "status": "$.incident.status",
+              "urgency": "$.incident.urgency",
+              "priority": "$.incident.priority.summary",
+              "escalation_policy": "$.incident.escalation_policy.summary",
+              "html_url": "$.incident.html_url"
+            },
+            "assigned_to": {
+              "$from": "$.incident.assignments[*]",
+              "$select": {
+                "id": "assignee.id",
+                "name": "assignee.summary"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_update_incident",
+      "description": "Change an incident's title, urgency or priority. Changing urgency can change who is paged and how. Before calling, show the user the new values and wait for their yes. PagerDuty records the change under the user behind the key, or under the email in PAGERDUTY_FROM_EMAIL when the key is a general access (account) key. Returns the updated incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident id such as PT4KHLK (from pagerduty_list_incidents), not the incident number."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "high",
+              "low"
+            ],
+            "description": "New urgency."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Name of a priority as listed by pagerduty_list_priorities, e.g. P1. PagerDuty uses the highest priority with that name."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/incidents/{id}",
+        "headers": {
+          "From": "${PAGERDUTY_FROM_EMAIL}"
+        },
+        "bodyMapping": {
+          "incident": {
+            "type": "incident_reference",
+            "title": "$title",
+            "urgency": "$urgency",
+            "priority": "$priority"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "incident": {
+              "id": "$.incident.id",
+              "incident_number": "$.incident.incident_number",
+              "title": "$.incident.title",
+              "status": "$.incident.status",
+              "urgency": "$.incident.urgency",
+              "priority": "$.incident.priority.summary",
+              "escalation_policy": "$.incident.escalation_policy.summary",
+              "html_url": "$.incident.html_url"
+            },
+            "assigned_to": {
+              "$from": "$.incident.assignments[*]",
+              "$select": {
+                "id": "assignee.id",
+                "name": "assignee.summary"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_add_incident_note",
+      "description": "Add a note to an incident's timeline. Everyone with access to the incident sees it, and notes cannot be edited later. Before calling, show the user the text and wait for their yes. PagerDuty records the change under the user behind the key, or under the email in PAGERDUTY_FROM_EMAIL when the key is a general access (account) key. Returns the note.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident id such as PT4KHLK (from pagerduty_list_incidents), not the incident number."
+          },
+          "content": {
+            "type": "string",
+            "description": "Text of the note."
+          }
+        },
+        "required": [
+          "id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/incidents/{id}/notes",
+        "headers": {
+          "From": "${PAGERDUTY_FROM_EMAIL}"
+        },
+        "bodyMapping": {
+          "note": {
+            "content": "$content"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "note": {
+              "id": "$.note.id",
+              "content": "$.note.content",
+              "created_at": "$.note.created_at",
+              "user": "$.note.user.summary"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_create_incident",
+      "description": "Open a new incident on a service: PagerDuty pages the on-call responders of the service's escalation policy right away. Before calling, show the user the service, title, urgency and details and wait for their yes. PagerDuty records the change under the user behind the key, or under the email in PAGERDUTY_FROM_EMAIL when the key is a general access (account) key. Returns the new incident with its id and number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id from pagerduty_list_services."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short description of what is wrong."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "high",
+              "low"
+            ],
+            "description": "high pages immediately, low follows the service's low-urgency rules. Default: the service setting."
+          },
+          "details": {
+            "type": "string",
+            "description": "Longer description shown in the incident body."
+          },
+          "incident_key": {
+            "type": "string",
+            "description": "Optional de-duplication key: a second create with the same key on the same service is refused while the first incident is open."
+          }
+        },
+        "required": [
+          "service_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/incidents",
+        "headers": {
+          "From": "${PAGERDUTY_FROM_EMAIL}"
+        },
+        "bodyMapping": {
+          "incident": {
+            "type": "incident",
+            "title": "$title",
+            "service": {
+              "id": "$service_id",
+              "type": "service_reference"
+            },
+            "urgency": "$urgency",
+            "body": {
+              "type": "incident_body",
+              "details": "$details"
+            },
+            "incident_key": "$incident_key"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "incident": {
+              "id": "$.incident.id",
+              "incident_number": "$.incident.incident_number",
+              "title": "$.incident.title",
+              "status": "$.incident.status",
+              "urgency": "$.incident.urgency",
+              "service": "$.incident.service.summary",
+              "escalation_policy": "$.incident.escalation_policy.summary",
+              "html_url": "$.incident.html_url"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_services",
+      "description": "List services (the things PagerDuty raises incidents for): id, name, description, status (active, warning, critical, maintenance, disabled), escalation policy, teams and the time of the last incident. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Only services whose name contains this text."
+          },
+          "team_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only services of these team ids."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "name",
+              "name:asc",
+              "name:desc"
+            ],
+            "description": "Sort by name (default ascending)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page (default 25, up to 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip. While the answer says more: true, call again with offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services",
+        "queryParams": {
+          "query": "$query",
+          "team_ids[]": "$team_ids",
+          "sort_by": "$sort_by",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "services": {
+              "$from": "$.services[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "status": "status",
+                "escalation_policy": {
+                  "id": "escalation_policy.id",
+                  "name": "escalation_policy.summary"
+                },
+                "teams": {
+                  "$from": "teams[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "summary"
+                  }
+                },
+                "last_incident_timestamp": "last_incident_timestamp",
+                "acknowledgement_timeout": "acknowledgement_timeout",
+                "auto_resolve_timeout": "auto_resolve_timeout",
+                "html_url": "html_url"
+              }
+            },
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "more": "$.more",
+            "total": "$.total"
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_get_service",
+      "description": "Read one service: name, description, status, escalation policy, teams, urgency rule, acknowledgement and auto-resolve timeouts, alert grouping and the integrations sending events to it (names only). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Service id from pagerduty_list_services."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "service": {
+              "id": "$.service.id",
+              "name": "$.service.name",
+              "description": "$.service.description",
+              "status": "$.service.status",
+              "last_incident_timestamp": "$.service.last_incident_timestamp",
+              "acknowledgement_timeout": "$.service.acknowledgement_timeout",
+              "auto_resolve_timeout": "$.service.auto_resolve_timeout",
+              "html_url": "$.service.html_url",
+              "escalation_policy": {
+                "id": "$.service.escalation_policy.id",
+                "name": "$.service.escalation_policy.summary"
+              },
+              "teams": {
+                "$from": "$.service.teams[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "summary"
+                }
+              },
+              "incident_urgency_rule": "$.service.incident_urgency_rule",
+              "alert_creation": "$.service.alert_creation",
+              "integrations": {
+                "$from": "$.service.integrations[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "summary",
+                  "type": "type"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_escalation_policies",
+      "description": "List escalation policies: id, name, description, how many times they repeat, the levels with their delay and targets (users or schedules), services and teams. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Only policies whose name contains this text."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only policies that contain these users."
+          },
+          "team_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only policies of these teams."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page (default 25, up to 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip. While the answer says more: true, call again with offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/escalation_policies",
+        "queryParams": {
+          "query": "$query",
+          "user_ids[]": "$user_ids",
+          "team_ids[]": "$team_ids",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "escalation_policies": {
+              "$from": "$.escalation_policies[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "num_loops": "num_loops",
+                "levels": {
+                  "$from": "escalation_rules[*]",
+                  "$select": {
+                    "escalation_delay_in_minutes": "escalation_delay_in_minutes",
+                    "targets": {
+                      "$from": "targets[*]",
+                      "$select": {
+                        "id": "id",
+                        "type": "type",
+                        "name": "summary"
+                      }
+                    }
+                  }
+                },
+                "services": {
+                  "$from": "services[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "summary"
+                  }
+                },
+                "teams": {
+                  "$from": "teams[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "summary"
+                  }
+                },
+                "html_url": "html_url"
+              }
+            },
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "more": "$.more",
+            "total": "$.total"
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_get_escalation_policy",
+      "description": "Read one escalation policy: levels in order with their delay in minutes and targets (users and schedules), repeat count, services and teams. Level numbers start at 1 and are what pagerduty_escalate_incident takes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Escalation policy id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/escalation_policies/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "escalation_policy": {
+              "id": "$.escalation_policy.id",
+              "name": "$.escalation_policy.name",
+              "description": "$.escalation_policy.description",
+              "num_loops": "$.escalation_policy.num_loops",
+              "levels": {
+                "$from": "$.escalation_policy.escalation_rules[*]",
+                "$select": {
+                  "escalation_delay_in_minutes": "escalation_delay_in_minutes",
+                  "targets": {
+                    "$from": "targets[*]",
+                    "$select": {
+                      "id": "id",
+                      "type": "type",
+                      "name": "summary"
+                    }
+                  }
+                }
+              },
+              "services": {
+                "$from": "$.escalation_policy.services[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "summary"
+                }
+              },
+              "teams": {
+                "$from": "$.escalation_policy.teams[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "summary"
+                }
+              },
+              "html_url": "$.escalation_policy.html_url"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_oncalls",
+      "description": "Who is on call: one entry per user, escalation policy and level, with the schedule behind it and the shift start and end. Without since and until it answers who is on call right now. earliest true keeps only the next shift per user, policy and level. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "escalation_policy_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these escalation policies."
+          },
+          "schedule_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these schedules."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these users."
+          },
+          "since": {
+            "type": "string",
+            "description": "Start of the window, ISO 8601. Omit for now."
+          },
+          "until": {
+            "type": "string",
+            "description": "End of the window, ISO 8601, at most 90 days after since."
+          },
+          "earliest": {
+            "type": "boolean",
+            "description": "Only the earliest on-call per user, policy and level, to find the next shift."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone for the dates, e.g. Europe/Berlin."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page (default 25, up to 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip. While the answer says more: true, call again with offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oncalls",
+        "queryParams": {
+          "escalation_policy_ids[]": "$escalation_policy_ids",
+          "schedule_ids[]": "$schedule_ids",
+          "user_ids[]": "$user_ids",
+          "since": "$since",
+          "until": "$until",
+          "earliest": "$earliest",
+          "time_zone": "$time_zone",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "oncalls": {
+              "$from": "$.oncalls[*]",
+              "$select": {
+                "user": {
+                  "id": "user.id",
+                  "name": "user.summary"
+                },
+                "escalation_policy": {
+                  "id": "escalation_policy.id",
+                  "name": "escalation_policy.summary"
+                },
+                "escalation_level": "escalation_level",
+                "schedule": {
+                  "id": "schedule.id",
+                  "name": "schedule.summary"
+                },
+                "start": "start",
+                "end": "end"
+              }
+            },
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "more": "$.more",
+            "total": "$.total"
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_schedules",
+      "description": "List on-call schedules: id, name, description, time zone, the users in them and the escalation policies that use them. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Only schedules whose name contains this text."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page (default 25, up to 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip. While the answer says more: true, call again with offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/schedules",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "schedules": {
+              "$from": "$.schedules[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "time_zone": "time_zone",
+                "users": {
+                  "$from": "users[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "summary"
+                  }
+                },
+                "escalation_policies": {
+                  "$from": "escalation_policies[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "summary"
+                  }
+                },
+                "html_url": "html_url"
+              }
+            },
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "more": "$.more",
+            "total": "$.total"
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_get_schedule",
+      "description": "Read one schedule with its final rotation for a time window: who is on call from when to when, after overrides. Pass since (until defaults to two weeks later) or until (since defaults to two weeks earlier); without either PagerDuty may return no shifts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Schedule id from pagerduty_list_schedules."
+          },
+          "since": {
+            "type": "string",
+            "description": "Start of the window, ISO 8601 such as 2026-10-15T00:00:00Z."
+          },
+          "until": {
+            "type": "string",
+            "description": "End of the window, ISO 8601."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone for the shift times, e.g. Europe/Berlin. Default: the schedule's own."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/schedules/{id}",
+        "queryParams": {
+          "since": "$since",
+          "until": "$until",
+          "time_zone": "$time_zone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "schedule": {
+              "id": "$.schedule.id",
+              "name": "$.schedule.name",
+              "description": "$.schedule.description",
+              "time_zone": "$.schedule.time_zone",
+              "shifts": {
+                "$from": "$.schedule.final_schedule.rendered_schedule_entries[*]",
+                "$select": {
+                  "start": "start",
+                  "end": "end",
+                  "user": {
+                    "id": "user.id",
+                    "name": "user.summary"
+                  }
+                }
+              },
+              "escalation_policies": {
+                "$from": "$.schedule.escalation_policies[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "summary"
+                }
+              },
+              "html_url": "$.schedule.html_url"
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_users",
+      "description": "List users: id, name, email, role, job title, time zone and teams. Use it to find the user id for pagerduty_reassign_incident. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Only users whose name or email contains this text."
+          },
+          "team_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only members of these teams."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page (default 25, up to 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip. While the answer says more: true, call again with offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "query": "$query",
+          "team_ids[]": "$team_ids",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "users": {
+              "$from": "$.users[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "email": "email",
+                "role": "role",
+                "job_title": "job_title",
+                "time_zone": "time_zone",
+                "teams": {
+                  "$from": "teams[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "summary"
+                  }
+                },
+                "html_url": "html_url"
+              }
+            },
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "more": "$.more",
+            "total": "$.total"
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_get_user",
+      "description": "Read one user: name, email, role, job title, time zone, teams and the type of each contact method (email, phone, push) without the addresses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "User id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "user": {
+              "id": "$.user.id",
+              "name": "$.user.name",
+              "email": "$.user.email",
+              "role": "$.user.role",
+              "job_title": "$.user.job_title",
+              "time_zone": "$.user.time_zone",
+              "html_url": "$.user.html_url",
+              "teams": {
+                "$from": "$.user.teams[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "summary"
+                }
+              },
+              "contact_methods": {
+                "$from": "$.user.contact_methods[*]",
+                "$select": {
+                  "type": "type",
+                  "name": "summary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_teams",
+      "description": "List teams: id, name and description. Team ids filter incidents, services, escalation policies and users. Needs the teams feature on the account. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Only teams whose name contains this text."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page (default 25, up to 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip. While the answer says more: true, call again with offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "teams": {
+              "$from": "$.teams[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "html_url": "html_url"
+              }
+            },
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "more": "$.more",
+            "total": "$.total"
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_list_priorities",
+      "description": "List the incident priorities of the account in order (for example P1 to P5): id, name and description. The name is what pagerduty_update_incident takes. Empty when priorities are switched off. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/priorities"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "priorities": {
+              "$from": "$.priorities[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pagerduty_get_incident_analytics",
+      "description": "Analytics per incident: seconds to first acknowledgement, to engage, to mobilise and to resolve, escalations, reassignments, interruptions (business, off and sleep hours), responders, service, team and priority. Needs a plan with Analytics. Data lags real time by a few hours. Read-only (the API takes the filters in a POST body).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_at_start": {
+            "type": "string",
+            "description": "Only incidents created at or after this time, ISO 8601 such as 2026-09-01T00:00:00Z."
+          },
+          "created_at_end": {
+            "type": "string",
+            "description": "Only incidents created before this time, ISO 8601."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "high",
+              "low"
+            ],
+            "description": "Only incidents with this urgency."
+          },
+          "major": {
+            "type": "boolean",
+            "description": "true for major incidents only (the two highest priorities), false to leave them out."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these services. A user token needs service_ids or team_ids."
+          },
+          "team_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these teams. A user token needs service_ids or team_ids."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone for the dates, e.g. Europe/Berlin."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction (default desc)."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "seconds_to_resolve"
+            ],
+            "description": "Sort field (default created_at)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 25,
+            "description": "Incidents per page (default 25, up to 1000)."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the last value from the previous answer while more is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/analytics/raw/incidents",
+        "bodyMapping": {
+          "filters": {
+            "created_at_start": "$created_at_start",
+            "created_at_end": "$created_at_end",
+            "urgency": "$urgency",
+            "major": "$major",
+            "service_ids": "$service_ids",
+            "team_ids": "$team_ids"
+          },
+          "order": "$order",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "starting_after": "$starting_after",
+          "time_zone": "$time_zone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "incidents": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "incident_number": "incident_number",
+                "description": "description",
+                "status": "status",
+                "urgency": "urgency",
+                "major": "major",
+                "priority_name": "priority_name",
+                "service_name": "service_name",
+                "team_name": "team_name",
+                "escalation_policy_name": "escalation_policy_name",
+                "created_at": "created_at",
+                "resolved_at": "resolved_at",
+                "seconds_to_first_ack": "seconds_to_first_ack",
+                "seconds_to_engage": "seconds_to_engage",
+                "seconds_to_mobilize": "seconds_to_mobilize",
+                "seconds_to_resolve": "seconds_to_resolve",
+                "escalation_count": "escalation_count",
+                "reassignment_count": "reassignment_count",
+                "assigned_user_names": "assigned_user_names",
+                "resolved_by_user_name": "resolved_by_user_name",
+                "business_hour_interruptions": "business_hour_interruptions",
+                "off_hour_interruptions": "off_hour_interruptions",
+                "sleep_hour_interruptions": "sleep_hour_interruptions"
+              }
+            },
+            "more": "$.more",
+            "first": "$.first",
+            "last": "$.last",
+            "limit": "$.limit"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pagerduty_get_incident_metrics",
+      "description": "Aggregated incident metrics for a period: incident count, mean and percentile times to acknowledge and resolve, escalations, interruptions and uptime, for the whole period or per day, week or month. Needs a plan with Analytics. Read-only (the API takes the filters in a POST body).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_at_start": {
+            "type": "string",
+            "description": "Only incidents created at or after this time, ISO 8601 such as 2026-09-01T00:00:00Z."
+          },
+          "created_at_end": {
+            "type": "string",
+            "description": "Only incidents created before this time, ISO 8601."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "high",
+              "low"
+            ],
+            "description": "Only incidents with this urgency."
+          },
+          "major": {
+            "type": "boolean",
+            "description": "true for major incidents only (the two highest priorities), false to leave them out."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these services. A user token needs service_ids or team_ids."
+          },
+          "team_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these teams. A user token needs service_ids or team_ids."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone for the dates, e.g. Europe/Berlin."
+          },
+          "aggregate_unit": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Split the period by day, week or month. Omit for one total."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/analytics/metrics/incidents/all",
+        "bodyMapping": {
+          "filters": {
+            "created_at_start": "$created_at_start",
+            "created_at_end": "$created_at_end",
+            "urgency": "$urgency",
+            "major": "$major",
+            "service_ids": "$service_ids",
+            "team_ids": "$team_ids"
+          },
+          "aggregate_unit": "$aggregate_unit",
+          "time_zone": "$time_zone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": "$.data",
+            "aggregate_unit": "$.aggregate_unit",
+            "time_zone": "$.time_zone"
+          },
+          "maxBytes": 30000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

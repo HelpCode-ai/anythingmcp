@@ -73,7 +73,7 @@ export class McpClientEngine {
         config.authType === 'OAUTH2' &&
         config.authConfig?.refreshToken &&
         config.authConfig?.tokenUrl &&
-        error?.message?.includes?.('401')
+        isUnauthorized(error)
       ) {
         this.logger.debug('MCP OAuth2: 401 despite proactive refresh, retrying...');
         const newToken = await this.oauth2TokenService.renewAfterRejection(
@@ -267,6 +267,25 @@ export class McpClientEngine {
       }
     }
   }
+}
+
+/**
+ * The remote MCP server refused the access token. The SDK reports a 401 as an
+ * SdkHttpError whose message is only the response body ("Error POSTing to
+ * endpoint: {"error":"invalid_token",...}", Cloudinary) with the status in
+ * `data.status`, so looking for "401" in the message missed it and the
+ * renewal after a rejection never ran.
+ */
+export function isUnauthorized(error: unknown): boolean {
+  const err = error as
+    | { data?: { status?: unknown }; status?: unknown; message?: unknown; cause?: unknown }
+    | null
+    | undefined;
+  if (!err) return false;
+  if (err.data?.status === 401 || err.status === 401) return true;
+  const message = typeof err.message === 'string' ? err.message : '';
+  if (/\bHTTP 401\b|\b401 Unauthorized\b|"invalid_token"/i.test(message)) return true;
+  return err.cause !== undefined && err.cause !== error && isUnauthorized(err.cause);
 }
 
 /**

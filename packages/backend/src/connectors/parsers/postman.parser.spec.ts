@@ -54,6 +54,34 @@ describe('PostmanParser', () => {
     expect(tools[0].endpointMapping.path).toBe('/users');
   });
 
+  it('drops a host variable from a string URL and turns its query into parameters', async () => {
+    // Monet's published collection (11 Oct 2026): every URL is a string that
+    // starts with {{url}} and carries example query values.
+    const collection = {
+      ...minimalCollection,
+      item: [
+        {
+          name: 'GetCustBalance',
+          request: {
+            method: 'GET',
+            url: '{{url}}DesktopModules/MonetServices2/API/V2/GetCustBalance?_accountNum=0001&_search=',
+          },
+        },
+        {
+          name: 'Plain',
+          request: { method: 'GET', url: 'https://api.example.com/v1/items?page=2' },
+        },
+      ],
+    };
+    const [monet, plain] = await parser.parse(collection);
+    expect(monet.endpointMapping.path).toBe('/DesktopModules/MonetServices2/API/V2/GetCustBalance');
+    expect(monet.endpointMapping.queryParams).toEqual({ _accountNum: '$_accountNum', _search: '$_search' });
+    expect(monet.parameters.properties).not.toHaveProperty('url');
+    expect(monet.parameters.required).toEqual(['_search']);
+    expect(plain.endpointMapping.path).toBe('/v1/items');
+    expect(plain.endpointMapping.queryParams).toEqual({ page: '$page' });
+  });
+
   it('should handle query parameters', async () => {
     const collection = {
       ...minimalCollection,
@@ -257,6 +285,85 @@ describe('PostmanParser', () => {
     const params = tools[0].parameters as any;
     expect(params.required).toContain('username');
     expect(params.required).toContain('password');
+    // Sent as a form, not as JSON: Content-Type is not a replayed header.
+    expect(tools[0].endpointMapping.bodyEncoding).toBe('form-urlencoded');
+  });
+
+  it('leaves the encoding unset (JSON) for a raw JSON body and a raw XML body', async () => {
+    const tools = await parser.parse({
+      ...minimalCollection,
+      item: [
+        {
+          name: 'Create',
+          request: {
+            method: 'POST',
+            url: { raw: 'https://api.example.com/items', path: ['items'] },
+            body: { mode: 'raw', raw: '{"name":"x"}' },
+          },
+        },
+        {
+          name: 'Soap',
+          request: {
+            method: 'POST',
+            url: { raw: 'https://api.example.com/soap', path: ['soap'] },
+            body: { mode: 'raw', raw: '<Envelope/>' },
+          },
+        },
+      ],
+    });
+    expect(tools.map((t) => t.endpointMapping.bodyEncoding)).toEqual([undefined, undefined]);
+  });
+
+  it('ignores body field names that would write to the prototype', async () => {
+    const tools = await parser.parse({
+      ...minimalCollection,
+      item: [
+        {
+          name: 'Form',
+          request: {
+            method: 'POST',
+            url: { raw: 'https://api.example.com/form', path: ['form'] },
+            body: {
+              mode: 'formdata',
+              formdata: [
+                { key: '__proto__', value: 'x', type: 'text' },
+                { key: 'constructor', type: 'file' },
+                { key: 'name', value: 'n', type: 'text' },
+              ],
+            },
+          },
+        },
+        {
+          name: 'Json',
+          request: {
+            method: 'POST',
+            url: { raw: 'https://api.example.com/json', path: ['json'] },
+            body: { mode: 'raw', raw: '{"__proto__":{"polluted":true},"ok":1}' },
+          },
+        },
+      ],
+    });
+    expect(Object.keys(tools[0].endpointMapping.bodyMapping!)).toEqual(['name']);
+    expect(Object.keys(tools[1].endpointMapping.bodyMapping!)).toEqual(['ok']);
+    expect(({} as any).polluted).toBeUndefined();
+  });
+
+  it('sets no encoding for a form whose fields are all disabled', async () => {
+    const tools = await parser.parse({
+      ...minimalCollection,
+      item: [
+        {
+          name: 'Empty form',
+          request: {
+            method: 'POST',
+            url: { raw: 'https://api.example.com/form', path: ['form'] },
+            body: { mode: 'urlencoded', urlencoded: [{ key: 'a', value: '1', disabled: true }] },
+          },
+        },
+      ],
+    });
+    expect(tools[0].endpointMapping.bodyMapping).toBeUndefined();
+    expect(tools[0].endpointMapping.bodyEncoding).toBeUndefined();
   });
 
   it('should parse POST with form-data body', async () => {
@@ -281,8 +388,14 @@ describe('PostmanParser', () => {
     };
     const tools = await parser.parse(collection);
     expect(tools).toHaveLength(1);
-    expect(tools[0].endpointMapping.bodyMapping!['file']).toBe('$file');
+    // multipart/form-data; the file part is downloaded from the URL the
+    // caller passes, the text part goes as given.
+    expect(tools[0].endpointMapping.bodyEncoding).toBe('form-data');
+    expect(tools[0].endpointMapping.bodyMapping!['file']).toEqual({ __file: '$file' });
     expect(tools[0].endpointMapping.bodyMapping!['description']).toBe('$description');
+    const params = tools[0].parameters as any;
+    expect(params.properties.file.description).toMatch(/^File to upload\. Public https URL/);
+    expect(params.properties.description.type).toBe('string');
   });
 
   it('should skip disabled form-data fields', async () => {
@@ -307,8 +420,9 @@ describe('PostmanParser', () => {
     };
     const tools = await parser.parse(collection);
     expect(tools).toHaveLength(1);
-    expect(tools[0].endpointMapping.bodyMapping!['file']).toBe('$file');
+    expect(tools[0].endpointMapping.bodyMapping!['file']).toEqual({ __file: '$file' });
     expect(tools[0].endpointMapping.bodyMapping?.['debug']).toBeUndefined();
+    expect(tools[0].endpointMapping.bodyEncoding).toBe('form-data');
   });
 
   it('should handle raw non-JSON body (XML/SOAP)', async () => {
