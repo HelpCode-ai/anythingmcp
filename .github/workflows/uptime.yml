@@ -19,7 +19,7 @@ name: Uptime probe
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       simulate_failure:
