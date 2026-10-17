@@ -23,12 +23,15 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { SecurityEventService } from '../audit/security-event.service';
 import { RunScriptDto } from './codebound.dto';
 import { RUN_TIMEOUT_MS, runSandbox, ScriptError } from './sandbox';
+import { isCodeboundTool } from '../mcp-server/codebound-tools';
 
 export interface ScriptCaller {
   sub: string;
   email: string;
   organizationId: string;
   role?: string;
+  authMethod?: string;
+  apiKeyName?: string;
 }
 
 @Injectable()
@@ -78,6 +81,7 @@ export class CodeboundService {
     return this.registry.getAllTools().filter(
       (tool) =>
         tool.organizationId === caller.organizationId &&
+        !isCodeboundTool(tool.name) &&
         connectorIds.has(tool.connectorId) &&
         (allowedIds === null || allowedIds.includes(tool.id)) &&
         isListable(tool) &&
@@ -112,6 +116,7 @@ export class CodeboundService {
     serverId: string,
     dto: RunScriptDto,
     savedScript?: { id: string; revision: number },
+    checkConnection?: () => Promise<void>,
   ) {
     // Per-process backpressure, also bounding uninterruptible upstream reads.
     if (
@@ -132,6 +137,7 @@ export class CodeboundService {
     let status = 'ERROR';
     let calls = 0;
     try {
+      await checkConnection?.();
       await this.license.checkLicenseActive(caller.organizationId);
       await this.toolsFor(caller, serverId);
       const allowlist = new Set(dto.allowedTools);
@@ -141,6 +147,7 @@ export class CodeboundService {
         async (name, args) => {
           runningCalls++;
           try {
+            await checkConnection?.();
             if (!allowlist.has(name))
               throw new ScriptError("Tool is not in this run's allowlist.");
             // Recheck current assignments and permissions for EVERY nested call.
@@ -167,7 +174,8 @@ export class CodeboundService {
               userId: caller.sub,
               userEmail: caller.email,
               organizationId: caller.organizationId,
-              authMethod: 'jwt',
+              authMethod: caller.authMethod ?? 'jwt',
+              apiKeyName: caller.apiKeyName,
               mcpServerId: serverId,
               connectorIds: [tool.connectorId],
               // Always audit script reads and avoid shared response cache entries.

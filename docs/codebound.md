@@ -46,8 +46,10 @@ reviewed revision. Reopen it after a conflict to review the current source.
 Deleting a script removes access to it; deleting its server also deletes linked
 scripts. Runs already in progress use the snapshot loaded when the run began.
 
-MCP discovery/invocation of saved scripts, marketplace bundles, AI authoring,
-and the quotation workflow remain later milestones.
+An AI client can now write scripts, execute them, save workflows, and reuse
+saved IDs through six MCP tools. See [AI-authored scripts through MCP](codebound-mcp.md)
+for client setup and examples. Marketplace bundles, separate MCP tool names for
+each saved script, and the quotation workflow remain later milestones.
 
 Both Cloud and self-hosted deployments use the same page and authenticated API.
 The existing workspace license check still applies. Server assignment, active
@@ -172,9 +174,10 @@ third-party integration.
 
 | Working directory | Command | Result |
 | --- | --- | --- |
-| `packages/backend` | `npm test -- --runInBand` | 662 suites passed; 19,799 tests passed; 5 suites / 1,454 tests skipped (including 5 opt-in PostgreSQL tests, exercised separately below) |
-| `packages/backend` | `npm test -- --runInBand codebound` | 48 tests passed; PostgreSQL tests are opt-in |
-| `packages/backend` | `RUN_CODEBOUND_DB=1 npm test -- --runInBand codebound` | 53 tests passed, including PostgreSQL persistence and isolation |
+| `packages/backend` | `npm test -- --runInBand` | 664 suites / 19,826 tests passed; 1 suite / 1 test failed in unchanged `response-images.util.spec.ts`; 5 suites / 1,454 tests skipped |
+| `packages/backend` | `npm test -- --runInBand response-images.util.spec` | All 14 tests passed when run separately |
+| `packages/backend` | `npm test -- --runInBand codebound` | 76 tests; PostgreSQL tests are opt-in |
+| `packages/backend` | `RUN_CODEBOUND_DB=1 npm test -- --runInBand codebound` | 81 tests passed, including MCP invocation and PostgreSQL persistence/isolation |
 | `packages/backend` | `npx prisma validate` / `npx prisma migrate deploy` | Schema valid; new migration applied to local development PostgreSQL |
 | `packages/backend` | `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code` | No difference detected |
 | `packages/backend` | `npm run lint:check` | Passed; 14 existing warnings |
@@ -187,9 +190,13 @@ third-party integration.
 | Repository root | `node scripts/validate-adapters.mjs` | 490 adapters passed; 1,458 existing non-blocking warnings |
 | Repository root | `node scripts/check-runtime-deps.mjs` | Passed |
 
-The first backend baseline under the restricted execution sandbox had 23 failed
-suites because local HTTP listeners were blocked. The full rerun with localhost
-access passed as recorded above. Browser installation and Playwright also needed
-access outside that sandbox. The initial UI run caught an ambiguous alert test
-locator; the corrected tests pass. Regular development servers and Playwright's
+The full backend run reports a `RangeError: Maximum call stack size exceeded` in
+the unchanged image-response test for a 12 MiB aggregate result. That suite passes
+when run separately; the full run is not a pass. All 81 focused Codebound tests
+pass on the final source, including the five opt-in PostgreSQL tests.
+
+Earlier UI and persistence verification also required access outside the
+restricted execution sandbox for localhost listeners and browser installation.
+The frontend is unchanged by the MCP integration; its results above are from the
+saved-script UI implementation. Regular development servers and Playwright's
 server were stopped after verification.

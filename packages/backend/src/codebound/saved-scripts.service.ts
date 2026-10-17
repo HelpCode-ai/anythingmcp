@@ -89,9 +89,13 @@ export class SavedScriptsService {
     return { items, total };
   }
 
-  async get(caller: ScriptCaller, id: string) {
+  async get(caller: ScriptCaller, id: string, serverId?: string) {
     const script = await this.prisma.codeboundScript.findFirst({
-      where: { id, organizationId: caller.organizationId },
+      where: {
+        id,
+        organizationId: caller.organizationId,
+        ...(serverId ? { mcpServerId: serverId } : {}),
+      },
       select: FULL,
     });
     if (!script) throw new NotFoundException('Script not found.');
@@ -197,13 +201,19 @@ export class SavedScriptsService {
     return { deleted: true };
   }
 
-  async run(caller: ScriptCaller, id: string, dto: RunSavedScriptDto) {
-    const script = await this.get(caller, id);
+  async run(
+    caller: ScriptCaller,
+    id: string,
+    dto: RunSavedScriptDto,
+    checkConnection?: () => Promise<void>,
+    serverId?: string,
+  ) {
+    const script = await this.get(caller, id, serverId);
     if (dto.revision !== script.revision)
       throw new ConflictException('Script changed. Reopen it before running.');
     // Source, server and capabilities come exclusively from the stored record.
     // The runner rechecks the caller's live connector permissions for each call.
-    return this.runner.run(
+    const args = [
       caller,
       script.mcpServerId,
       {
@@ -212,6 +222,9 @@ export class SavedScriptsService {
         allowedTools: script.allowedTools,
       },
       { id: script.id, revision: script.revision },
-    );
+    ] as const;
+    return checkConnection
+      ? this.runner.run(...args, checkConnection)
+      : this.runner.run(...args);
   }
 }

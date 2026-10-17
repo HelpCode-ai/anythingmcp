@@ -4,8 +4,9 @@ import type { ReturnAssistant } from './shared-toolset';
 /**
  * Connector setup through the shared `/mcp` endpoint.
  *
- * The shared endpoint serves a fixed list of eight tools (it is what the
- * Claude directory reviewed). Setting up connectors from a chat is offered
+ * The shared endpoint's connector interface serves eight fixed helper tools.
+ * The controller adds Codebound tools separately for identified callers.
+ * Setting up connectors from a chat is offered
  * BEHIND those tools, as a virtual "AnythingMCP Setup" connector whose tools
  * are found with anythingmcp_search_tools and run with run_read_tool /
  * run_write_tool, exactly like a workspace's own tools.

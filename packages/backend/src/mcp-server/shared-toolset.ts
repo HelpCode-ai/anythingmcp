@@ -8,15 +8,16 @@ import type { ToolResultContent } from './dynamic-mcp-tools';
 import { isMuseHost, knownClientFor } from '../auth/auth-page';
 
 /**
- * The fixed tool set of the shared `/mcp` endpoint.
+ * The fixed connector tool set of the shared `/mcp` endpoint.
  *
  * `/mcp` is one URL for every workspace, and a directory listing reviews one
  * tool list that must be the same for everyone who installs it. So the shared
- * endpoint no longer lists a workspace's own tools: it lists these eight, with
+ * endpoint no longer lists a workspace's own tools: this module lists eight helpers, with
  * the same names, descriptions, schemas and annotations for every caller, and
  * the workspace's tools are searched, described and run THROUGH them. Every
  * lookup and every run stays inside the caller's scope, computed exactly as
- * before (connection grant, then MCP role); nothing here widens it.
+ * before (connection grant, then MCP role); nothing here widens it. The
+ * controller adds the Codebound tools separately for identified callers.
  *
  * `/mcp/<serverId>` is unaffected and keeps exposing a server's tools
  * directly, for clients that want the full list up front.

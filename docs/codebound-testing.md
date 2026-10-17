@@ -270,7 +270,7 @@ cd /Users/gone_snow/anythingmcp/packages/backend
 npm test -- --runInBand codebound
 ```
 
-Expect **48 passing tests** and the PostgreSQL tests skipped by default.
+Expect **76 passing tests** and the PostgreSQL tests skipped by default.
 Local HTTP fixture tests need permission to listen on localhost when run inside
 a restricted coding-agent sandbox.
 
@@ -285,7 +285,7 @@ set +a
 RUN_CODEBOUND_DB=1 npm test -- --runInBand codebound
 ```
 
-Expect **53 passing tests**. These require the migrated local database at
+Expect **81 passing tests**. These require the migrated local database at
 localhost:5433 and create/remove their own temporary records.
 
 Browser tests, with the regular dev server stopped:
@@ -325,8 +325,10 @@ saved scripts are scoped to their workspace, and execution retains the caller's
 tool permissions and existing license checks. The terminal, database, SMTP, and
 loopback setup above is for local self-hosted development only.
 
-Saved scripts are not exposed through MCP yet. Testing them through Inspector
-or an AI client is a later milestone; use the Codebound page for this version.
+To have an agent write and submit its own scripts, or to exercise execution and
+save/reuse in Inspector, follow [AI-authored scripts through MCP](codebound-mcp.md).
+The six Codebound tools are available on authenticated per-server and shared
+connections. You can test them without manually creating a script per connector.
 
 When finished, stop `npm run dev` and the local API with **Ctrl+C**. Keep the
 PostgreSQL data volume so saved scripts remain available for the next session.

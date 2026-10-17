@@ -29,6 +29,7 @@ import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
 import { SharedSetupRegistry } from './shared-setup';
+import { CodeboundConnection, CodeboundRegistry, codeboundEntries, isCodeboundTool } from './codebound-tools';
 import {
   McpConnectionGrantService,
   ResolvedGrant,
@@ -174,6 +175,7 @@ interface ToolSetParams {
   captureIntent: boolean;
   kgEnabled: boolean;
   invocationContext: InvocationContext;
+  codeboundConnection?: CodeboundConnection;
   /** Optional text appended as a trailing content block to every successful
    *  tool result (used by the public demo to say where the answer came from). */
   resultFooter?: string;
@@ -234,7 +236,37 @@ export class McpEndpointController {
     private readonly grants: McpConnectionGrantService,
     private readonly kgSkills: KgSkillService,
     @Optional() private readonly sharedSetup?: SharedSetupRegistry,
+    @Optional() private readonly codebound?: CodeboundRegistry,
   ) {}
+
+  private codeboundConnection(user: any, endpointServerId?: string, organizationId?: string): CodeboundConnection | undefined {
+    const orgId = organizationId ?? user?.organizationId;
+    if (!user?.sub || !orgId) return undefined;
+    return {
+      userId: user.sub, email: user.email ?? user.user_data?.email ?? '', organizationId: orgId,
+      authMethod: user.authMethod ?? 'jwt', apiKeyName: user.apiKeyName,
+      oauthClientId: oauthClientId(user), pinnedServerId: user.mcpServerId, endpointServerId,
+    };
+  }
+
+  private codeboundFor(user: any) {
+    const provider = this.codebound?.get();
+    const connection = this.codeboundConnection(user);
+    return provider && connection ? codeboundEntries(provider, connection) : [];
+  }
+
+  private async serveCodeboundCall(req: Request, res: Response): Promise<boolean> {
+    const body = (req as any).body;
+    if (!body || Array.isArray(body) || body.method !== 'tools/call' || !isCodeboundTool(body.params?.name)) return false;
+    const entries = this.codeboundFor((req as any).user);
+    if (!entries.length) return false;
+    await this.serveStateless(req, res, body, () => {
+      const server = new McpServer({ name: 'AnythingMCP Codebound', version: APP_VERSION });
+      for (const entry of entries) entry.register(server);
+      return server;
+    }, 'Codebound shared /mcp');
+    return true;
+  }
 
   // Streamable-HTTP response framing. Default: SSE-framed responses
   // (`text/event-stream`), the spec-standard envelope that also carries
@@ -284,6 +316,7 @@ export class McpEndpointController {
       await this.serveSharedToolset(req, res);
       return;
     }
+    if (await this.serveCodeboundCall(req, res)) return;
     if (this.refuseHiddenToolCall(req, res, visible)) return;
     if (this.answerToolsList(req, res, visible)) return;
     await mcpHttpTransport.httpHandlers.handlePost(req, res);
@@ -447,6 +480,7 @@ export class McpEndpointController {
           { instructions: sharedToolsetInstructions(profile) },
         );
         registerSharedToolset(mcpServer, scopeTools, deps, profile);
+        for (const entry of this.codeboundFor(user)) entry.register(mcpServer);
         return mcpServer;
       },
       'shared /mcp',
@@ -681,6 +715,8 @@ export class McpEndpointController {
       (req as { visibleTools?: RegisteredTool[] }).visibleTools ?? [];
     const seen = new Set<string>();
     const listed: Array<Record<string, unknown>> = [];
+    const codebound = this.codeboundFor((req as any).user);
+    for (const entry of codebound) seen.add(entry.name);
     for (const tool of tools) {
       if (!isListable(tool)) continue;
       // Two reachable connectors may expose the same name (a grant spanning
@@ -705,6 +741,7 @@ export class McpEndpointController {
       });
     }
 
+    listed.push(...codebound.map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations })));
     const payload = {
       jsonrpc: '2.0',
       id: body.id ?? null,
@@ -1109,6 +1146,7 @@ export class McpEndpointController {
       captureIntent,
       kgEnabled,
       invocationContext,
+      codeboundConnection: this.codeboundConnection(user, serverId, mcpServerConfig.organizationId),
     };
 
     // Register this server's tool surface onto the per-request McpServer.
@@ -1307,7 +1345,16 @@ export class McpEndpointController {
 
     this.sessionManager.touch(sessionId, Date.now());
     try {
-      await session.transport.handleRequest(req, res, body);
+      const connection = this.codeboundConnection((req as any).user, serverId, session.organizationId ?? undefined);
+      // Session handlers are long-lived. Bind Codebound to THIS request's
+      // OAuth client/key scope rather than the token that opened the session.
+      if (connection && this.codebound) {
+        await this.codebound.withConnection(connection, async () => {
+          await session.transport.handleRequest(req, res, body);
+        });
+      } else {
+        await session.transport.handleRequest(req, res, body);
+      }
     } catch (error: any) {
       this.logger.error(
         `Error routing MCP request to session ${sessionId}: ${error.message}`,
@@ -1353,7 +1400,7 @@ export class McpEndpointController {
         this.sessionManager.add({
           sessionId: sid,
           serverId,
-          organizationId: invocationContext.organizationId ?? null,
+          organizationId: serverOrganizationId,
           principalKey,
           transport,
           mcpServer,
@@ -1451,6 +1498,7 @@ export class McpEndpointController {
         captureIntent,
         kgEnabled,
         invocationContext,
+        codeboundConnection: this.codeboundConnection(user, serverId, serverOrganizationId),
       });
       const signature = this.aggregateSig(entries);
       if (signature === session.signature) return; // nothing changed here
@@ -1498,8 +1546,10 @@ export class McpEndpointController {
       invocationContext,
       resultFooter,
     } = params;
-    const entries: ToolEntry[] = [];
-    const registeredNames = new Set<string>();
+    const provider = this.codebound?.get();
+    const entries: ToolEntry[] = provider && params.codeboundConnection
+      ? codeboundEntries(provider, params.codeboundConnection) : [];
+    const registeredNames = new Set<string>(entries.map((entry) => entry.name));
 
     for (const tool of serverTools) {
       // A connector that is not set up yet would only produce errors.
