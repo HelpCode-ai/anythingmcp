@@ -1,5 +1,8 @@
 # Codebound script runner
 
+For setup commands and a complete manual walkthrough, see
+[Set up and test Codebound locally](codebound-testing.md).
+
 Codebound saves JavaScript workflows and runs them against authorized connector
 tools, returning a compact JSON result. Open **Build → Codebound**, choose an
 active MCP server, select the tools a run may call, then click **Run script**.
