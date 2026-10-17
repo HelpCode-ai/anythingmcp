@@ -11,6 +11,7 @@ import { mcpStrategy } from './mcp-server/mcp-strategy';
 import { AuthModule } from './auth/auth.module';
 import { ConnectorsModule } from './connectors/connectors.module';
 import { McpServerModule } from './mcp-server/mcp-server.module';
+import { CodeboundModule } from './codebound/codebound.module';
 
 import { UsersModule } from './users/users.module';
 import { AuditModule } from './audit/audit.module';
@@ -161,6 +162,7 @@ if (useOAuth) {
     ConnectorsModule,
     AdaptersModule,
     McpServerModule,
+    CodeboundModule,
 
     OrganizationsModule,
     AuditModule,

@@ -221,6 +221,8 @@ export class DynamicMcpTools {
       mcpServerName?: string;
       connectorIds?: string[];
       intent?: string;
+      /** Script reads must always execute and audit in their own caller scope. */
+      skipCache?: boolean;
     },
   ): Promise<{
     content: ToolResultContent;
@@ -295,7 +297,7 @@ export class DynamicMcpTools {
     // after up to cacheTtl seconds.
     const responseMapping = tool.responseMapping as ResponseMapping | undefined;
     const cacheTtl = responseMapping?.cacheTtl;
-    if (cacheTtl && cacheTtl > 0) {
+    if (!context?.skipCache && cacheTtl && cacheTtl > 0) {
       const cacheKey = this.buildCacheKey(toolName, params);
       const cached = await this.redisService.get(cacheKey);
       if (cached) {
@@ -502,7 +504,7 @@ export class DynamicMcpTools {
       void this.kgService.scheduleObservationalIngest(context?.organizationId);
 
       // Cache the raw response if cacheTtl is set (shaping happens on read).
-      if (cacheTtl && cacheTtl > 0) {
+      if (!context?.skipCache && cacheTtl && cacheTtl > 0) {
         const cacheKey = this.buildCacheKey(toolName, params);
         // The audit log above got the bare body; the cache needs the headers
         // too, or a cached page would come back without its next cursor.

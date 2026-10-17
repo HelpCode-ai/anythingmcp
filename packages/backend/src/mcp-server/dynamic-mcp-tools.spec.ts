@@ -185,6 +185,20 @@ describe('DynamicMcpTools — actionable hint on upstream errors', () => {
 });
 
 describe('DynamicMcpTools — response cache', () => {
+  it('bypasses cache reads and writes for an audited script call', async () => {
+    const { executor, redis, audit, restEngine } = build(makeTool({ ...SELECT_TRANSFORM, cacheTtl: 300 }), {
+      cached: JSON.stringify({ tenant: 'another caller' }),
+    });
+    const result = await executor.executeTool('list_devices', {}, {
+      organizationId: 'org-script', connectorIds: ['conn-1'], skipCache: true,
+    });
+    expect(redis.get).not.toHaveBeenCalled();
+    expect(redis.set).not.toHaveBeenCalled();
+    expect(restEngine.execute).toHaveBeenCalledTimes(1);
+    expect(audit.logInvocation).toHaveBeenCalledTimes(1);
+    expect(result.structured).toEqual(MAPPED);
+  });
+
   it('caches the raw response, not the rendered text', async () => {
     const { executor, redis } = build(makeTool({ ...SELECT_TRANSFORM, cacheTtl: 300 }));
     await executor.executeTool('list_devices', {});

@@ -57,6 +57,7 @@ const NAV: NavGroup[] = [
       { href: '/connectors', label: 'Connectors', icon: ConnectorsIcon },
       { href: '/connectors/store', label: 'Marketplace', icon: StoreIcon },
       { href: '/mcp-server', label: 'MCP Servers', icon: McpIcon },
+      { href: '/codebound', label: 'Codebound', icon: SkillsIcon },
     ],
   },
   {

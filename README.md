@@ -205,6 +205,9 @@ Everything runs on your infrastructure, so you decide what leaves it. OAuth2, RB
 
 [Response mapping reference](docs/tool-definition.md#3-response-mapping-optional)
 
+**Codebound prototype:** save and run JavaScript against authorized REST read tools and
+return a compact JSON result from the app. [Script runner guide](docs/codebound.md)
+
 ---
 
 ## Use it from Claude, ChatGPT, Copilot and Gemini

@@ -1523,3 +1523,58 @@ export const mcpServers = {
   assignConnectors: (id: string, connectorIds: string[], token: string) =>
     request(`/api/mcp-servers/${id}/connectors`, { method: 'PUT', body: { connectorIds }, token }),
 };
+
+export interface ScriptTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema: unknown;
+}
+
+export interface SavedScriptSummary {
+  id: string;
+  name: string;
+  description: string;
+  mcpServerId: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedScript extends SavedScriptSummary {
+  code: string;
+  input: Record<string, unknown>;
+  allowedTools: string[];
+}
+
+export interface SaveScriptBody {
+  name: string;
+  description: string;
+  mcpServerId: string;
+  code: string;
+  input: Record<string, unknown>;
+  allowedTools: string[];
+}
+
+export const codebound = {
+  list: (token: string, offset = 0) =>
+    request<{ items: SavedScriptSummary[]; total: number }>(`/api/codebound/scripts?limit=20&offset=${offset}`, { token }),
+  get: (id: string, token: string) =>
+    request<SavedScript>(`/api/codebound/scripts/${encodeURIComponent(id)}`, { token }),
+  create: (body: SaveScriptBody, token: string) =>
+    request<SavedScript>('/api/codebound/scripts', { method: 'POST', body, token }),
+  update: (id: string, body: SaveScriptBody & { revision: number }, token: string) =>
+    request<SavedScript>(`/api/codebound/scripts/${encodeURIComponent(id)}`, { method: 'PUT', body, token }),
+  delete: (id: string, token: string) =>
+    request<{ deleted: boolean }>(`/api/codebound/scripts/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
+  runSaved: (id: string, input: Record<string, unknown>, revision: number, token: string) =>
+    request<{ runId: string; result: unknown; calls: number; durationMs: number }>(
+      `/api/codebound/scripts/${encodeURIComponent(id)}/run`, { method: 'POST', body: { input, revision }, token },
+    ),
+  tools: (serverId: string, token: string) =>
+    request<ScriptTool[]>(`/api/codebound/servers/${encodeURIComponent(serverId)}/tools`, { token }),
+  run: (serverId: string, body: { code: string; input: Record<string, unknown>; allowedTools: string[] }, token: string) =>
+    request<{ runId: string; result: unknown; calls: number; durationMs: number }>(
+      `/api/codebound/servers/${encodeURIComponent(serverId)}/run`, { method: 'POST', body, token },
+    ),
+};

@@ -30,6 +30,7 @@ model Organization {
   members          OrganizationMember[]
   connectors       Connector[]
   mcpServers       McpServerConfig[]
+  codeboundScripts CodeboundScript[]
   roles            Role[]
   mcpApiKeys       McpApiKey[]
   invitationTokens InvitationToken[]
@@ -600,10 +601,36 @@ model McpServerConfig {
   apiKeys         McpApiKey[]
   toolInvocations ToolInvocation[]
   kgSkills        KgSkillSuggestion[]
+  codeboundScripts CodeboundScript[]
 
+  @@unique([id, organizationId])
   @@unique([organizationId, slug])
   @@index([organizationId])
   @@map("mcp_server_configs")
+}
+
+// ── Saved Codebound Scripts ────────────────────────────────────────────────
+
+model CodeboundScript {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mcpServerId    String @map("mcp_server_id")
+  // The composite FK prevents binding a script to another tenant's server.
+  mcpServer      McpServerConfig @relation(fields: [mcpServerId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  name         String @db.VarChar(120)
+  description  String @default("") @db.Text
+  code         String @db.Text
+  input        Json @default("{}")
+  allowedTools String[] @default([]) @map("allowed_tools")
+  revision     Int @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([organizationId, updatedAt, id])
+  @@index([mcpServerId, organizationId])
+  @@map("codebound_scripts")
 }
 
 // ── MCP Server ↔ Connector (many-to-many) ───────────────────────────────────
