@@ -18,6 +18,10 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 | **Cursor** | [Setup →](integrations/claude.md#cursor) | Streamable HTTP |
 | **Any MCP client** | [Setup →](integrations/claude.md#any-mcp-client) | Streamable HTTP |
 
+### Share a server with your team
+
+On an MCP server's page, the **Share this server** card gives you "Add to Cursor" and "Add to VS Code" badges to paste into a team README, wiki or onboarding page (**Copy Markdown** or **Copy HTML**). They use the editors' https install links, so they survive GitHub's Markdown sanitizer. A badge carries only the server's MCP URL, never an API key: whoever clicks it signs in with OAuth and must be a member of the workspace, so badges are shown only when `MCP_AUTH_MODE` is `oauth2` or `both`. If the URL is `localhost` or `127.0.0.1`, the badges only work on that machine. The card appears once the server's auth mode is known. The preview on the page is rendered locally and links to the same https install URLs as the snippet; only the copied snippet references remote badge images.
+
 ---
 
 ## Connector guides
