@@ -175,6 +175,21 @@ describe('DynamicMcpTools — actionable hint on upstream errors', () => {
     expect(audit.logInvocation.mock.calls[0][0].error).not.toMatch(/fetch ONE record/);
   });
 
+  it("returns the engine's own hint (a refused refresh token) to the model", async () => {
+    const { executor, restEngine } = build(makeTool());
+    const hint =
+      "Google revoked the sign-in 7 days after it was granted. This happens when the OAuth app in your Google Cloud project is in 'Testing'.";
+    restEngine.execute.mockRejectedValueOnce(
+      Object.assign(new Error(`OAuth2: the provider refused this connector's refresh token. ${hint}`), {
+        status: 401,
+        hint,
+      }),
+    );
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBe(true);
+    expect(JSON.parse(res.content[0].text).hint).toBe(hint);
+  });
+
   it('adds no hint for an ordinary failure on an unknown host', async () => {
     const { executor, restEngine } = build(makeTool());
     restEngine.execute.mockRejectedValueOnce(new Error('boom'));

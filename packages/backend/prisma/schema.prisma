@@ -421,6 +421,28 @@ model Connector {
   // AI instructions — contextual guidance for LLMs using this connector's tools
   instructions String? @db.Text
 
+  // Credential health, written by the engines and cleared by a new
+  // authorization or token (see connector-auth-status.service.ts).
+  //   needs_reauth — the provider refused the credential for good (OAuth2
+  //                  refresh token refused, Meta session logged out): calls
+  //                  fail fast with authStatusMessage until it is replaced.
+  //   expiring     — still works, but stops on tokenExpiresAt (a pasted
+  //                  short-lived token that cannot be renewed).
+  authStatus        String?   @map("auth_status")
+  // Machine-readable reason, e.g. refresh_refused, google_testing_7d, meta_logged_out.
+  authStatusCode    String?   @map("auth_status_code")
+  // What to do about it, in words for the user and the model.
+  authStatusMessage String?   @db.Text @map("auth_status_message")
+  authStatusAt      DateTime? @map("auth_status_at")
+  // A hash of the credential the status applies to: a different credential
+  // (rotated, re-authorized, pasted again) is not blocked by it.
+  authStatusRef     String?   @map("auth_status_ref")
+  // When the workspace owner was emailed about the current status (once).
+  authNotifiedAt    DateTime? @map("auth_notified_at")
+  // When a pasted bearer token expires, when known (Meta debug_token, or the
+  // expires_in of an exchange). Null for tokens that never expire.
+  tokenExpiresAt    DateTime? @map("token_expires_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

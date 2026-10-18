@@ -419,6 +419,12 @@ export interface Connector {
   icon?: string | null;
   setupStatus?: string;
   missingVariables?: string[];
+  /** Credential health: 'needs_reauth' (calls fail until fixed) or 'expiring'. */
+  authStatus?: string | null;
+  authStatusCode?: string | null;
+  authStatusMessage?: string | null;
+  authStatusAt?: string | null;
+  tokenExpiresAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   [key: string]: unknown;

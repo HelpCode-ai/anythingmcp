@@ -482,3 +482,25 @@ describe('deriveErrorHint: web search APIs for agents', () => {
     expect(deriveErrorHint({ host: 'example-serpapi.com', status: 401 })).toBeUndefined();
   });
 });
+
+describe('Meta Graph API error 190', () => {
+  const graph = 'graph.facebook.com';
+  const body = (subcode?: number) => ({
+    error: { message: 'Error validating access token', type: 'OAuthException', code: 190, error_subcode: subcode },
+  });
+
+  it('tells an expired token from a session that ended and from an invalid one', () => {
+    expect(deriveErrorHint({ host: graph, status: 400, body: body(463) })).toMatch(/has expired.*META_APP_ID/);
+    for (const subcode of [458, 460, 467]) {
+      expect(deriveErrorHint({ host: graph, status: 401, body: body(subcode) })).toMatch(/ended this token's session/);
+    }
+    expect(deriveErrorHint({ host: graph, status: 400, body: body() })).toMatch(/invalid, revoked/);
+    // The body arrives as text from some paths.
+    expect(deriveErrorHint({ host: 'graph.instagram.com', status: 400, body: JSON.stringify(body(467)) })).toMatch(/ended/);
+  });
+
+  it('stays quiet for other Meta errors and other hosts', () => {
+    expect(deriveErrorHint({ host: graph, status: 400, body: { error: { code: 4, message: 'rate' } } })).toBeUndefined();
+    expect(deriveErrorHint({ host: 'api.example.com', status: 400, body: body(467) })).toBeUndefined();
+  });
+});

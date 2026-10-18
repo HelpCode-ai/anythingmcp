@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { PrismaService } from '../../common/prisma.service';
@@ -14,6 +14,7 @@ import {
 import { outboundAxiosOptions } from '../../common/outbound-http';
 import { connectorPageUrl } from '../../common/url.util';
 import { isMachineGrant } from '../oauth-grant.util';
+import { ConnectorAuthStatusService, credentialRef } from './connector-auth-status.service';
 
 /** Refresh tokens that expire within this window (5 minutes). */
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -38,6 +39,14 @@ function refreshWindowMs(lifetimeMs: number | undefined): number {
 const REFRESH_LOCK_MAX_WAIT_MS = 3_000;
 const REFRESH_LOCK_TIMEOUT_MS = 30_000;
 const REFRESH_LOCK_NAMESPACE = 'amcp:oauth2-refresh:';
+
+/**
+ * After a refresh token was refused, calls fail at once for this long before
+ * the database is asked again whether the connector was re-authorized (by
+ * another process, say). The token endpoint is not asked again until the
+ * stored refresh token changes.
+ */
+const REFUSED_RECHECK_MS = 10 * 60 * 1000;
 
 /** What a renewal may do besides asking the token endpoint. */
 interface RenewOptions {
@@ -102,9 +111,14 @@ export class OAuth2TokenService {
   // caller (status + the provider's error code, never the request).
   private lastRefreshError = new Map<string, string>();
 
+  // Connectors whose refresh token the provider refused (invalid_grant):
+  // what to tell the caller, and when to look at the database again.
+  private refused = new Map<string, { message: string; recheckAt: number }>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    @Optional() private readonly authStatus?: ConnectorAuthStatusService,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -134,6 +148,11 @@ export class OAuth2TokenService {
       }
     }
 
+    // The provider refused this connector's refresh token: say so at once,
+    // without asking the token endpoint or the API again.
+    const refusedError = this.refusedRefreshError(connectorId);
+    if (refusedError) throw refusedError;
+
     // 2. Determine if proactive refresh is possible and needed.
     // client_credentials needs only tokenUrl + clientId/Secret; password needs
     // tokenUrl + username/password; refresh_token needs a stored refreshToken.
@@ -156,6 +175,10 @@ export class OAuth2TokenService {
       if (refreshed) {
         return refreshed;
       }
+      // The refresh token was refused for good: the stored access token has
+      // expired or is about to, so sending it would only earn a 401.
+      const refused = this.refusedRefreshError(connectorId);
+      if (refused) throw refused;
       // Refresh failed — fall through to return stored token
       refreshFailed = true;
     }
@@ -359,6 +382,8 @@ export class OAuth2TokenService {
     pending: PendingRotation = {},
   ): Promise<string | null> {
     const cacheKey = keyFor(authConfig, connectorId);
+    // Refused a moment ago (see refusedRefreshError): not again.
+    if (this.refusedRefreshError(connectorId)) return null;
     // Rolling refresh tokens (e.g. DATEV rotates the refresh token on every
     // use) invalidate the previous one. The in-memory registry caches an
     // authConfig snapshot that is NOT updated after a refresh — only the DB is
@@ -373,6 +398,25 @@ export class OAuth2TokenService {
         const adopted = this.adoptStoredToken(fresh.authConfig, connectorId, options);
         if (adopted) return adopted;
         authConfig = { ...authConfig, ...fresh.authConfig };
+        // Refused before (by this process or another), and nobody has
+        // authorized again since: the token endpoint would refuse it again.
+        const status = fresh.status;
+        if (
+          status?.authStatus === 'needs_reauth' &&
+          status.authStatusRef &&
+          !isMachineGrant(String(authConfig.grant || 'refresh_token')) &&
+          status.authStatusRef === credentialRef(String(authConfig.refreshToken || ''))
+        ) {
+          this.noteRefused(
+            connectorId,
+            status.authStatusMessage || genericRefusedHint(authConfig.tokenUrl, connectorId),
+          );
+          this.lastRefreshError.set(
+            cacheKey,
+            'the provider refused this refresh token before; it was not sent again',
+          );
+          return null;
+        }
       }
       connectorHeaders = fresh?.headers;
     }
@@ -557,6 +601,12 @@ export class OAuth2TokenService {
         );
       }
 
+      // A token came back: whatever was recorded against the old one is over.
+      if (connectorId) {
+        this.refused.delete(connectorId);
+        await this.authStatus?.clear(connectorId);
+      }
+
       this.logger.debug(`OAuth2 (${grant}): token refreshed successfully`);
       return access_token;
     } catch (err: any) {
@@ -567,8 +617,55 @@ export class OAuth2TokenService {
           `: ${reason}`,
       );
       this.lastRefreshError.set(cacheKey, reason);
+      // The refresh token itself was refused (expired, revoked, already
+      // rotated): no retry can succeed until someone authorizes again.
+      // Remember it, so the next calls neither ask the token endpoint nor
+      // send an expired token to the API, and tell the workspace.
+      if (connectorId && !isMachineGrant(grant) && isRefusedRefreshToken(err)) {
+        const issue = refusedRefreshIssue({
+          tokenUrl,
+          authorizedAt: authConfig.authorizedAt,
+          reason,
+          connectorId,
+        });
+        this.noteRefused(connectorId, issue.message);
+        await this.authStatus?.mark(connectorId, {
+          status: 'needs_reauth',
+          code: issue.code,
+          message: issue.message,
+          ref: credentialRef(refreshToken),
+        });
+      }
       return null;
     }
+  }
+
+  private noteRefused(connectorId: string, message: string): void {
+    this.refused.set(connectorId, { message, recheckAt: Date.now() + REFUSED_RECHECK_MS });
+  }
+
+  /**
+   * The error for a call on a connector whose refresh token was refused,
+   * while that is fresh in memory; undefined otherwise, and once
+   * REFUSED_RECHECK_MS has passed, so the next renewal looks at the database
+   * again (where a re-authorization by another process would show).
+   */
+  private refusedRefreshError(
+    connectorId?: string,
+  ): (Error & { status?: number; hint?: string }) | undefined {
+    if (!connectorId) return undefined;
+    const entry = this.refused.get(connectorId);
+    if (!entry) return undefined;
+    if (Date.now() >= entry.recheckAt) {
+      this.refused.delete(connectorId);
+      return undefined;
+    }
+    const err = unauthorized(
+      "OAuth2: the provider refused this connector's refresh token, so no new access token can be " +
+        `obtained. No request was sent to the API. ${entry.message}`,
+    ) as Error & { status?: number; hint?: string };
+    err.hint = entry.message;
+    return err;
   }
 
   /**
@@ -605,6 +702,8 @@ export class OAuth2TokenService {
     authConfig: Record<string, unknown>,
     connectorId?: string,
   ): (Error & { status?: number }) | undefined {
+    const refused = this.refusedRefreshError(connectorId);
+    if (refused) return refused;
     const reason = this.lastRefreshError.get(keyFor(authConfig, connectorId));
     if (!reason) return undefined;
     return unauthorized(
@@ -625,6 +724,7 @@ export class OAuth2TokenService {
   forget(connectorId: string): void {
     this.tokenCache.delete(connectorId);
     this.lastRefreshError.delete(connectorId);
+    this.refused.delete(connectorId);
   }
 
   /**
@@ -693,11 +793,26 @@ export class OAuth2TokenService {
   private async loadAuthConfigFromDb(
     connectorId: string,
     db: ConnectorDb = this.prisma,
-  ): Promise<{ authConfig: Record<string, unknown>; headers: unknown } | null> {
+  ): Promise<{
+    authConfig: Record<string, unknown>;
+    headers: unknown;
+    status?: {
+      authStatus: string | null;
+      authStatusRef: string | null;
+      authStatusMessage: string | null;
+    };
+  } | null> {
     try {
       const connector = await db.connector.findUnique({
         where: { id: connectorId },
-        select: { authConfig: true, envVars: true, headers: true },
+        select: {
+          authConfig: true,
+          envVars: true,
+          headers: true,
+          authStatus: true,
+          authStatusRef: true,
+          authStatusMessage: true,
+        },
       });
       if (!connector?.authConfig) return null;
       const envVars = (connector.envVars as Record<string, string> | null) ?? {};
@@ -714,6 +829,11 @@ export class OAuth2TokenService {
           envVars,
         ),
         headers: interpolateDeep(connector.headers ?? undefined, envVars),
+        status: {
+          authStatus: connector.authStatus ?? null,
+          authStatusRef: connector.authStatusRef ?? null,
+          authStatusMessage: connector.authStatusMessage ?? null,
+        },
       };
     } catch (err: any) {
       this.logger.warn(
@@ -855,4 +975,68 @@ function describeTokenError(err: any): string {
           .map((v: string) => v.slice(0, 120))
       : [];
   return [`HTTP ${status}`, ...new Set(fields)].join(': ');
+}
+
+/**
+ * The token endpoint refused the refresh token itself, as opposed to a
+ * network error, a 5xx or a misconfigured client. RFC 6749 §5.2 calls it
+ * invalid_grant (Google, Microsoft, Salesforce, Xero, Dropbox, Reddit…);
+ * a few providers use a word of their own.
+ */
+export function isRefusedRefreshToken(err: any): boolean {
+  const status = err?.response?.status;
+  if (typeof status !== 'number' || status < 400 || status >= 500) return false;
+  const data = err.response.data;
+  if (!data || typeof data !== 'object') return false;
+  const code = typeof data.error === 'string' ? data.error : '';
+  if (['invalid_grant', 'invalid_refresh_token', 'expired_refresh_token'].includes(code)) return true;
+  // HubSpot answers {"status":"BAD_REFRESH_TOKEN"}.
+  return data.status === 'BAD_REFRESH_TOKEN';
+}
+
+const GOOGLE_TOKEN_HOSTS = new Set(['oauth2.googleapis.com', 'accounts.google.com', 'www.googleapis.com']);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const GOOGLE_TESTING_APP_HINT =
+  'Google revoked the sign-in 7 days after it was granted. This happens when the OAuth app in your ' +
+  "Google Cloud project is in 'Testing'. Publish it ('In production') under APIs & Services → " +
+  'OAuth consent screen, then click Authorize with Provider again.';
+
+function genericRefusedHint(tokenUrl: unknown, connectorId?: string, reason?: string): string {
+  const page = connectorPageUrl(connectorId);
+  return (
+    `The provider (${hostOf(tokenUrl)}) refused the refresh token${reason ? ` (${reason})` : ''}: it ` +
+    'has expired or was revoked, and retrying will not help. Authorize again: open the connector in ' +
+    `AnythingMCP${page ? ` (${page})` : ''} and click Authorize with Provider.`
+  );
+}
+
+/**
+ * What to tell the user about a refused refresh token. Google refuses the
+ * refresh tokens of an OAuth app in "Testing" 7 days after consent, so a
+ * refusal 6.5 to 8 days after the last authorization almost certainly means
+ * that, and the fix is in the Google Cloud console rather than here.
+ */
+export function refusedRefreshIssue(input: {
+  tokenUrl: unknown;
+  authorizedAt: unknown;
+  reason?: string;
+  connectorId?: string;
+  now?: number;
+}): { code: 'google_testing_7d' | 'refresh_refused'; message: string } {
+  const host = hostOf(input.tokenUrl);
+  const authorizedAt = Date.parse(String(input.authorizedAt ?? ''));
+  const age = (input.now ?? Date.now()) - authorizedAt;
+  if (
+    GOOGLE_TOKEN_HOSTS.has(host) &&
+    Number.isFinite(authorizedAt) &&
+    age >= 6.5 * DAY_MS &&
+    age <= 8 * DAY_MS
+  ) {
+    return { code: 'google_testing_7d', message: GOOGLE_TESTING_APP_HINT };
+  }
+  return {
+    code: 'refresh_refused',
+    message: genericRefusedHint(input.tokenUrl, input.connectorId, input.reason),
+  };
 }

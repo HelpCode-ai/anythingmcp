@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   AxiosRequestConfig,
   AxiosResponse,
@@ -10,6 +10,7 @@ import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
+import { BearerTokenRenewalService } from './bearer-token-renewal.service';
 import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
@@ -88,6 +89,7 @@ export class RestEngine {
   constructor(
     private readonly oauth2TokenService: OAuth2TokenService,
     private readonly loginTokenService: LoginTokenService,
+    @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
   ) {}
 
   /**
@@ -532,6 +534,19 @@ export class RestEngine {
         const retryResponse = await outboundRequest(axiosConfig, outbound);
         return withMeta(retryResponse);
       }
+      // A pasted token the provider ended for good (Meta 190 logged out,
+      // expired, password changed): mark the connector, stop sending it,
+      // and say what to do next to the vendor's own error.
+      if (
+        error instanceof AxiosError &&
+        error.response &&
+        config.authType === 'BEARER_TOKEN' &&
+        this.bearerTokens &&
+        config.authConfig?.tokenRenewal
+      ) {
+        const hint = await this.bearerTokens.onRejected(config.authConfig, config.connectorId, error);
+        if (hint) (error as AxiosError & { hint?: string }).hint = hint;
+      }
       throw restateProxyError(error);
     }
   }
@@ -707,12 +722,19 @@ export class RestEngine {
         }
         break;
       }
-      case 'BEARER_TOKEN':
+      case 'BEARER_TOKEN': {
+        // A token the adapter can renew (authConfig.tokenRenewal, see
+        // bearer-token-renewal.service.ts) may be swapped for a long-lived one.
+        const token =
+          this.bearerTokens && config.authConfig.tokenRenewal
+            ? await this.bearerTokens.getToken(config.authConfig, config.connectorId)
+            : config.authConfig.token;
         axiosConfig.headers = {
           ...axiosConfig.headers,
-          Authorization: `Bearer ${config.authConfig.token}`,
+          Authorization: `Bearer ${token}`,
         };
         break;
+      }
       case 'BASIC_AUTH':
         // An empty password is a real configuration, not a missing one:
         // Companies House (and other key-as-username APIs) want exactly

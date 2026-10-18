@@ -36,6 +36,8 @@ import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
+import { ConnectorAuthStatusService } from './engines/connector-auth-status.service';
+import { BearerTokenRenewalService, withTokenRenewal } from './engines/bearer-token-renewal.service';
 import { connectorErrorWhen } from './error-when.util';
 import { ResponseBodyError } from './engines/response-error.util';
 
@@ -63,6 +65,8 @@ export class ConnectorsService {
     private readonly mcpClientEngine: McpClientEngine,
     @Optional() private readonly odataEngine?: ODataEngine,
     @Optional() private readonly oauth2TokenService?: OAuth2TokenService,
+    @Optional() private readonly authStatus?: ConnectorAuthStatusService,
+    @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -195,7 +199,23 @@ export class ConnectorsService {
       data: updateData,
     });
     if (data.authConfig) this.oauth2TokenService?.forget(id);
+    // A new app id or secret is a variable, not authConfig: start the
+    // renewal state over on any edit.
+    this.bearerTokens?.forget(id);
+    // A replaced credential is not the one the provider refused.
+    if (data.authConfig && credentialsChanged(this.readAuthConfig(existing.authConfig), data.authConfig)) {
+      await this.authStatus?.clear(id);
+    }
     return updated;
+  }
+
+  private readAuthConfig(value: unknown): Record<string, unknown> {
+    if (typeof value !== 'string' || !value) return {};
+    try {
+      return JSON.parse(decrypt(value, this.encryptionKey)) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
   }
 
   /**
@@ -224,6 +244,7 @@ export class ConnectorsService {
     // A new authorization or new client settings: a token cached from the
     // old ones, or the error the old refresh token got, no longer applies.
     this.oauth2TokenService?.forget(id);
+    if (credentialsChanged(existing, merged)) await this.authStatus?.clear(id);
     return updated;
   }
 
@@ -312,12 +333,17 @@ export class ConnectorsService {
       // credentials the workspace actually has rather than the placeholders the
       // adapter shipped with.
       const envVars = (connector.envVars as Record<string, string> | null) || {};
-      const authConfig = connector.authConfig
-        ? interpolateDeep(
-            JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
-            envVars,
-          )
-        : undefined;
+      const authConfig = withTokenRenewal(
+        connector.authType,
+        connector.authConfig
+          ? interpolateDeep(
+              JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
+              envVars,
+            )
+          : undefined,
+        connector.config,
+        envVars,
+      );
       const baseUrl = interpolateDeep(connector.baseUrl, envVars);
       const headers = interpolateDeep(
         (connector.headers as Record<string, string>) || undefined,
@@ -781,7 +807,7 @@ export class ConnectorsService {
     const config = {
       baseUrl: resolved.baseUrl,
       authType: connector.authType,
-      authConfig,
+      authConfig: withTokenRenewal(connector.authType, authConfig, connector.config, envVars),
       headers: resolved.headers as Record<string, string>,
       specUrl: connector.specUrl ?? undefined,
       connectorId: connector.id,
@@ -1338,4 +1364,30 @@ function assertValidHeaderNames(
 ): void {
   const invalid = invalidConnectorHeaderNames(headers, authConfig);
   if (invalid.length > 0) throw new BadRequestException(describeInvalidHeaderNames(invalid));
+}
+
+/**
+ * Whether an edit replaced the credential itself (a token, a key, the client),
+ * as opposed to static settings such as scopes. A status recorded against the
+ * old credential is cleared only then: clearing it on any edit would let the
+ * same refused token start a new incident, and a second email.
+ */
+const CREDENTIAL_FIELDS = [
+  'token',
+  'accessToken',
+  'refreshToken',
+  'apiKey',
+  'clientId',
+  'clientSecret',
+  'username',
+  'password',
+  'tokenUrl',
+];
+export function credentialsChanged(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): boolean {
+  return CREDENTIAL_FIELDS.some(
+    (k) => JSON.stringify(before?.[k] ?? null) !== JSON.stringify(after?.[k] ?? null),
+  );
 }

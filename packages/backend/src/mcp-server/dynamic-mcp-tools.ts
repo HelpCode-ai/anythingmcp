@@ -51,6 +51,7 @@ export type ToolResultContent = [
 import { ResponseBodyError } from '../connectors/engines/response-error.util';
 import { isMaskedEnvVar, secretContext } from '../connectors/connector-secrets.util';
 import { redactSecretsDeep } from '../common/secret-literals.util';
+import { withTokenRenewal } from '../connectors/engines/bearer-token-renewal.service';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -364,13 +365,18 @@ export class DynamicMcpTools {
       // connector first and filled its credentials afterwards therefore kept
       // sending the placeholder text forever. Interpolating here makes the two
       // paths agree.
-      const authConfig = tool.connectorConfig.authConfig
-        ? interpolateDeep(
-            JSON.parse(tool.connectorConfig.authConfig),
-            interpolationVars,
-            { reservedPrefix: CALLER_CONTEXT_PREFIX },
-          )
-        : undefined;
+      const authConfig = withTokenRenewal(
+        tool.connectorConfig.authType,
+        tool.connectorConfig.authConfig
+          ? interpolateDeep(
+              JSON.parse(tool.connectorConfig.authConfig),
+              interpolationVars,
+              { reservedPrefix: CALLER_CONTEXT_PREFIX },
+            )
+          : undefined,
+        tool.connectorConfig.config,
+        envVars,
+      );
 
       const engineConfig = {
         baseUrl: interpolatedConfig.baseUrl,
@@ -541,7 +547,11 @@ export class DynamicMcpTools {
       // One actionable line for the client, on top of the vendor's own body.
       // Keyed on the upstream host so hand-built tools get the same help as
       // catalog ones; see error-hints.ts for why this exists.
-      const hint = deriveErrorHint({
+      // The engines attach their own hint when they know more than the
+      // response says (a refresh token refused 7 days after a Google
+      // authorization, a Meta session that was logged out).
+      const engineHint = typeof error?.hint === 'string' && error.hint ? error.hint : undefined;
+      const hint = engineHint ?? deriveErrorHint({
         host:
           hostFromAxiosConfig(error?.config) ??
           hostFromUrl(tool.connectorConfig?.baseUrl),

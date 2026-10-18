@@ -146,7 +146,19 @@ describe('facebook-pages adapter: static spec conformance', () => {
 
   it('sends the Page token as a bearer header to Graph API v26.0, never in the URL', async () => {
     expect(a.connector.authType).toBe('BEARER_TOKEN');
-    expect(a.connector.authConfig).toEqual({ token: '{{FACEBOOK_PAGE_ACCESS_TOKEN}}' });
+    expect(a.connector.authConfig).toEqual({
+      token: '{{FACEBOOK_PAGE_ACCESS_TOKEN}}',
+      // A pasted user token becomes a Page token that does not expire when
+      // the app id and secret are set.
+      tokenRenewal: {
+        provider: 'meta',
+        appIdVar: 'META_APP_ID',
+        appSecretVar: 'META_APP_SECRET',
+        pageIdVar: 'FACEBOOK_PAGE_ID',
+        graphVersion: 'v26.0',
+      },
+    });
+    expect((a as { optionalEnvVars?: string[] }).optionalEnvVars).toEqual(['META_APP_ID', 'META_APP_SECRET']);
     expect(a.connector.baseUrl).toBe(BASE);
     expect(a.instructions).toContain('v26.0');
     mockedAxios.mockResolvedValue({ data: {} });

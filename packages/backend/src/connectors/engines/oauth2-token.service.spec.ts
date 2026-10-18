@@ -1017,12 +1017,15 @@ describe('OAuth2TokenService', () => {
         'conn-bad',
       );
 
+      // invalid_grant is a refused refresh token: the message says so, names
+      // the provider's reason and the way out.
       await expect(call).rejects.toMatchObject({
         status: 401,
         message: expect.stringContaining(
-          'could not renew the access token at api.etsy.com (HTTP 400: invalid_grant: Invalid refresh token)',
+          '(api.etsy.com) refused the refresh token (HTTP 400: invalid_grant: Invalid refresh token)',
         ),
       });
+      await expect(call).rejects.toThrow(/No request was sent to the API.*Authorize with Provider/);
       await expect(call).rejects.not.toThrow(/bad-token|secret/);
     });
 

@@ -268,11 +268,16 @@ export function toPublicConnector<
   T extends ConnectorLike & { envVars?: unknown; authConfig?: unknown },
 >(
   connector: T,
-): Omit<T, 'authConfig'> & { maskedEnvVars: string[]; maskedHeaders: string[] } {
+): Omit<T, 'authConfig' | 'authStatusRef'> & { maskedEnvVars: string[]; maskedHeaders: string[] } {
   const ctx = secretContext(connector);
   const env = maskEnvVars(connector.envVars, ctx);
   const hdr = maskHeaders(connector.headers, ctx);
-  const { authConfig: _authConfig, ...rest } = connector;
+  // authStatusRef is a hash of a credential: of no use to a client.
+  const {
+    authConfig: _authConfig,
+    authStatusRef: _authStatusRef,
+    ...rest
+  } = connector as T & { authStatusRef?: unknown };
   return {
     ...rest,
     envVars: env.envVars,

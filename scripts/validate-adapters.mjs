@@ -100,7 +100,11 @@ export function adapterResult(loaded, file, region) {
 // endpoint header out when it is empty, which is how an optional key works).
 function isPlaceholderReferenced(envVar, adapter) {
   const json = JSON.stringify(adapter);
-  return json.includes(`{{${envVar}}}`) || json.includes(`\${${envVar}}`);
+  if (json.includes(`{{${envVar}}}`) || json.includes(`\${${envVar}}`)) return true;
+  // A bearer-token renewal names its optional variables instead of using
+  // placeholders (see bearer-token-renewal.service.ts).
+  const renewal = adapter.connector?.authConfig?.tokenRenewal;
+  return !!renewal && [renewal.appIdVar, renewal.appSecretVar, renewal.pageIdVar].includes(envVar);
 }
 
 // Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:

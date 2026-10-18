@@ -119,7 +119,12 @@ describe('meta-ads adapter: static spec conformance', () => {
 
   it('sends the token as a bearer header to Graph API v26.0', async () => {
     expect(a.connector.authType).toBe('BEARER_TOKEN');
-    expect(a.connector.authConfig).toEqual({ token: '{{META_ADS_ACCESS_TOKEN}}' });
+    expect(a.connector.authConfig).toEqual({
+      token: '{{META_ADS_ACCESS_TOKEN}}',
+      // User tokens are exchanged and renewed when the app id and secret are set.
+      tokenRenewal: { provider: 'meta', appIdVar: 'META_APP_ID', appSecretVar: 'META_APP_SECRET', graphVersion: 'v26.0' },
+    });
+    expect((a as { optionalEnvVars?: string[] }).optionalEnvVars).toEqual(['META_APP_ID', 'META_APP_SECRET']);
     expect(a.connector.baseUrl).toBe(BASE);
     expect(a.instructions).toContain('v26.0');
     mockedAxios.mockResolvedValue({ data: {} });

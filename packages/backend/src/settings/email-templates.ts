@@ -143,6 +143,39 @@ export function invitationEmail(
   });
 }
 
+/**
+ * A connector stopped working because the provider refused its credential for
+ * good (a refresh token refused, a Meta session logged out). Sent once to the
+ * workspace owner; calls fail fast until the credential is replaced, so
+ * nothing else would tell them. Transactional: no unsubscribe line.
+ */
+export function connectorAuthEmail(
+  input: { name: string | null; connectorName: string; message: string; connectorUrl: string },
+  ctx: EmailBrandContext,
+): RenderedEmail {
+  const hi = greeting(input.name);
+  const connector = input.connectorName.trim() || 'A connector';
+  return build({
+    subject: `${connector} needs a new sign-in`,
+    preheader: 'Your AI client cannot use it until you authorize it again.',
+    bodyHtml:
+      h1('A connector needs a new sign-in.', 'Your AI client cannot use it until then.') +
+      p(
+        `${esc(hi)} the provider behind <strong style="font-weight:600;">${esc(connector)}</strong> refused its credential, ` +
+          'so AnythingMCP stopped retrying and every tool call now answers with what to do instead.',
+      ) +
+      p(esc(input.message)) +
+      button(input.connectorUrl, 'Open the connector') +
+      small('This is the only email about it. Once you sign in again, the connector works as before.'),
+    bodyText:
+      `${hi}\n\nThe provider behind "${connector}" refused its credential, so AnythingMCP stopped retrying and every tool call now answers with what to do instead.\n\n` +
+      `${input.message}\n\n` +
+      `Open the connector: ${input.connectorUrl}\n\n` +
+      'This is the only email about it. Once you sign in again, the connector works as before.',
+    ctx,
+  });
+}
+
 export function licenseKeyEmail(
   input: { name: string; licenseKey: string },
   ctx: EmailBrandContext,

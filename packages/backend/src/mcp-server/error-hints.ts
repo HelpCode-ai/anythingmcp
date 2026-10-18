@@ -140,6 +140,26 @@ const WECLAPP_OPTIMISTIC_LOCK_HINT =
   'current `version`, check the change still makes sense, then retry once. Leaving ' +
   '`version` out skips the check but can overwrite the other change.';
 
+// Meta's Graph API answers a token it will never accept again with error 190.
+// On 17 Oct 2026 an Instagram connector failed 85 times in a day with 190/463
+// and then 190/467, each call a retry that could not work.
+const META_TOKEN_EXPIRED_HINT =
+  'The Meta access token has expired (error 190/463). Retrying will not help: the user has to ' +
+  'paste a new token into the connector in AnythingMCP. Tokens from the Graph API Explorer last ' +
+  'one to two hours; a System User token with expiry Never does not expire, and the Instagram, ' +
+  'Facebook Pages and Meta Ads connectors renew user tokens by themselves when META_APP_ID and ' +
+  'META_APP_SECRET are set.';
+
+const META_SESSION_ENDED_HINT =
+  "Meta ended this token's session: the user logged out of Facebook, changed the password or " +
+  'removed the app (error 190). Retrying will not help: the user has to paste a new access token ' +
+  'into the connector in AnythingMCP. A System User token with expiry Never is not tied to a login.';
+
+const META_TOKEN_INVALID_HINT =
+  'Meta refused the access token (error 190: invalid, revoked or for another app). Retrying will ' +
+  'not help: the user has to paste a valid token into the connector in AnythingMCP, without the ' +
+  'word Bearer.';
+
 const NEW_COUNTRY_HINT =
   'The service refused the sign-in because it came from a new location (the ' +
   'connector signs in from the AnythingMCP server, not from the user\'s device). ' +
@@ -486,6 +506,11 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     return SHOPIFY_PROTECTED_DATA_HINT;
   }
 
+  if (hostMatches(input.host, 'graph.facebook.com') || hostMatches(input.host, 'graph.instagram.com')) {
+    const hint = metaTokenHint(input.body);
+    if (hint) return hint;
+  }
+
   if (hostMatches(input.host, 'api.printful.com') && /requires `?store_id`?/i.test(text)) {
     return PRINTFUL_STORE_ID_HINT;
   }
@@ -534,6 +559,25 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   }
 
   return undefined;
+}
+
+/** Meta Graph API error 190, by subcode. */
+function metaTokenHint(body: unknown): string | undefined {
+  let data = body;
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      return undefined;
+    }
+  }
+  const error = (data as { error?: { code?: unknown; error_subcode?: unknown } } | null)?.error;
+  if (!error || error.code !== 190) return undefined;
+  if (error.error_subcode === 463) return META_TOKEN_EXPIRED_HINT;
+  if (error.error_subcode === 458 || error.error_subcode === 460 || error.error_subcode === 467) {
+    return META_SESSION_ENDED_HINT;
+  }
+  return META_TOKEN_INVALID_HINT;
 }
 
 function tavilyHint(status: number | undefined, text: string): string | undefined {

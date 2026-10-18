@@ -895,6 +895,18 @@ export class ConnectorsController {
     const results = await Promise.allSettled(
       active.map(async (c) => {
         const start = Date.now();
+        // The provider refused this connector's credential for good: asking
+        // again on every dashboard load only earns the same refusal.
+        if (c.authStatus === 'needs_reauth') {
+          return {
+            id: c.id,
+            name: c.name,
+            type: c.type,
+            status: 'needs_reauth',
+            message: c.authStatusMessage ?? 'The provider refused the credential; authorize again.',
+            latencyMs: 0,
+          };
+        }
         try {
           const result = await this.connectorsService.testConnection(c.id);
           return {

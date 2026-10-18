@@ -3,17 +3,18 @@
   "name": "Instagram",
   "aliases": ["Facebook", "FB", "Meta", "IG"],
   "description": "Read an Instagram professional (business or creator) account through Meta's Instagram API with Facebook Login: profile, posts, reels and stories, account and post insights, comments and replies, hashtag search and public business profiles. Content publishing is included but installed switched off.",
-  "instructions": "## Instagram (Instagram API with Facebook Login)\nThis connector calls the Graph API at `https://graph.facebook.com/v25.0` for one Instagram professional account (business or creator) that is linked to a Facebook Page. Personal Instagram accounts have no API access.\n\n**Authentication.** Meta's Facebook Login issues no refresh tokens: a token from the login dialog lasts one to two hours, a long-lived user token about 60 days. The connector therefore takes a ready token. The recommended one is a **System User token** (Meta Business settings, Users, System users, Generate token), which does not expire. Grant it `instagram_basic`, `instagram_manage_insights`, `instagram_manage_comments`, `pages_show_list`, `pages_read_engagement` and `business_management`; add `instagram_content_publish` only if you want to publish. Assign the Facebook Page and the Instagram account to the system user as assets. A long-lived user token from the Graph API Explorer also works, but must be replaced every 60 days.\n\n**Which tool first.** `instagram_list_linked_accounts` lists the Facebook Pages the token can see with the Instagram account linked to each; the `instagram_business_account.id` there (a number starting with 1784) is the value for `INSTAGRAM_ACCOUNT_ID`. Then `instagram_get_account` checks the setup and returns follower and media counts. Tools that act on the account take its id from the connector, so you never pass it.\n\n**Ids.** Media ids come from `instagram_list_media`, `instagram_list_stories` or `instagram_list_tagged_media`; comment ids from `instagram_list_comments`; hashtag ids from `instagram_search_hashtag`. Ids are strings of digits; pass them unchanged.\n\n**Fields.** The Graph API returns only the fields you ask for. Every read tool has a `fields` parameter with a sensible default; add fields with a comma, nested fields with braces, e.g. `children{media_url}`.\n\n**Pagination.** List answers carry `paging.cursors.after` and `paging.next`. Call the tool again with `after` set to that cursor; when `paging.next` is missing you have the last page. `since` and `until` take Unix timestamps.\n\n**Insights.** Account insights need `metric` and `period=day`; most metrics also need `metric_type=total_value`. Use `views` instead of `impressions` (removed in v22.0). Demographic metrics (`follower_demographics`, `engaged_audience_demographics`) need `period=lifetime`, `metric_type=total_value`, a `timeframe` and a `breakdown` (age, city, country, gender). Data can lag up to 48 hours, accounts below 100 followers return no demographics, and a metric that does not apply returns an error rather than zero. Media insights: `reach,likes,comments,saved,shares,total_interactions,views` for posts and reels, `reach,replies,navigation,views` for stories (stories expire after 24 hours).\n\n**Hashtags.** `instagram_search_hashtag` turns a name into an id; an account can query at most 30 distinct hashtags in a rolling 7 days. Top and recent media return public posts only, without usernames. Hashtag search needs the Instagram Public Content Access feature on the app.\n\n**Publishing** (switched off at install): create a container with `instagram_create_media_container`, check `instagram_get_container_status` until `status_code` is `FINISHED` (videos take a while), then `instagram_publish_media`. Media must be at a public HTTPS URL. API publishing is limited to 50 posts per 24 hours; `instagram_get_publishing_limit` shows the usage.\n\n**Rate limits.** Business Use Case limits: about 4800 calls per 24 hours times the account's impressions. A 400 with error code 4, 17, 32 or 613 means throttled: wait and retry. Error 190 means the token expired or was revoked; error 10 or 200 means a permission is missing.",
+  "instructions": "## Instagram (Instagram API with Facebook Login)\nThis connector calls the Graph API at `https://graph.facebook.com/v25.0` for one Instagram professional account (business or creator) that is linked to a Facebook Page. Personal Instagram accounts have no API access.\n\n**Authentication.** Meta's Facebook Login issues no refresh tokens: a token from the login dialog or the Graph API Explorer lasts one to two hours, a long-lived user token about 60 days. The connector takes a ready token in `INSTAGRAM_ACCESS_TOKEN`, in one of two ways:\n1. **System User token** (recommended, never expires): Meta Business settings, Users, System users, Generate token, expiry **Never**. Grant it `instagram_basic`, `instagram_manage_insights`, `instagram_manage_comments`, `pages_show_list`, `pages_read_engagement` and `business_management`; add `instagram_content_publish` only if you want to publish. Assign the Facebook Page and the Instagram account to the system user as assets.\n2. **User token, renewed automatically**: paste a user token from the Graph API Explorer (https://developers.facebook.com/tools/explorer/) with the same permissions, and set `META_APP_ID` and `META_APP_SECRET` (the app's App settings, Basic). AnythingMCP exchanges the token for a long-lived one (about 60 days) on its first call and renews it on the first call once fewer than 10 days remain. Without the app ID and secret the token is used as pasted: a short-lived one stops within hours, and the connector page warns before a token expires.\n\nA token stops working for good when the user logs out of Facebook, changes the password or removes the app (error 190 with subcode 467, 460 or 458). The connector then answers at once with what to do instead of retrying; paste a new token to continue.\n\n**Which tool first.** `instagram_list_linked_accounts` lists the Facebook Pages the token can see with the Instagram account linked to each; the `instagram_business_account.id` there (a number starting with 1784) is the value for `INSTAGRAM_ACCOUNT_ID`. Then `instagram_get_account` checks the setup and returns follower and media counts. Tools that act on the account take its id from the connector, so you never pass it.\n\n**Ids.** Media ids come from `instagram_list_media`, `instagram_list_stories` or `instagram_list_tagged_media`; comment ids from `instagram_list_comments`; hashtag ids from `instagram_search_hashtag`. Ids are strings of digits; pass them unchanged.\n\n**Fields.** The Graph API returns only the fields you ask for. Every read tool has a `fields` parameter with a sensible default; add fields with a comma, nested fields with braces, e.g. `children{media_url}`.\n\n**Pagination.** List answers carry `paging.cursors.after` and `paging.next`. Call the tool again with `after` set to that cursor; when `paging.next` is missing you have the last page. `since` and `until` take Unix timestamps.\n\n**Insights.** Account insights need `metric` and `period=day`; most metrics also need `metric_type=total_value`. Use `views` instead of `impressions` (removed in v22.0). Demographic metrics (`follower_demographics`, `engaged_audience_demographics`) need `period=lifetime`, `metric_type=total_value`, a `timeframe` and a `breakdown` (age, city, country, gender). Data can lag up to 48 hours, accounts below 100 followers return no demographics, and a metric that does not apply returns an error rather than zero. Media insights: `reach,likes,comments,saved,shares,total_interactions,views` for posts and reels, `reach,replies,navigation,views` for stories (stories expire after 24 hours).\n\n**Hashtags.** `instagram_search_hashtag` turns a name into an id; an account can query at most 30 distinct hashtags in a rolling 7 days. Top and recent media return public posts only, without usernames. Hashtag search needs the Instagram Public Content Access feature on the app.\n\n**Publishing** (switched off at install): create a container with `instagram_create_media_container`, check `instagram_get_container_status` until `status_code` is `FINISHED` (videos take a while), then `instagram_publish_media`. Media must be at a public HTTPS URL. API publishing is limited to 50 posts per 24 hours; `instagram_get_publishing_limit` shows the usage.\n\n**Rate limits.** Business Use Case limits: about 4800 calls per 24 hours times the account's impressions. A 400 with error code 4, 17, 32 or 613 means throttled: wait and retry. Error 190 means the token expired or was revoked; error 10 or 200 means a permission is missing.",
   "region": "intl",
   "category": "social",
   "icon": "instagram",
   "docsUrl": "https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login",
   "requiredEnvVars": ["INSTAGRAM_ACCESS_TOKEN", "INSTAGRAM_ACCOUNT_ID"],
+  "optionalEnvVars": ["META_APP_ID", "META_APP_SECRET"],
   "envVarMeta": {
     "INSTAGRAM_ACCESS_TOKEN": {
       "label": "Access token",
       "kind": "credential",
-      "help": "Meta Business settings → Users → System users → your system user → Generate token: pick your Meta app, set expiry to Never and grant instagram_basic, instagram_manage_insights, instagram_manage_comments, pages_show_list, pages_read_engagement and business_management (plus instagram_content_publish to publish). The system user must have the Facebook Page and the Instagram account assigned.",
+      "help": "Recommended: Meta Business settings → Users → System users → your system user → Generate token: pick your Meta app, set expiry to Never and grant instagram_basic, instagram_manage_insights, instagram_manage_comments, pages_show_list, pages_read_engagement and business_management (plus instagram_content_publish to publish). The system user must have the Facebook Page and the Instagram account assigned. A user token from the Graph API Explorer also works: set META_APP_ID and META_APP_SECRET as well and it is turned into a long-lived token and renewed automatically.",
       "link": "https://business.facebook.com/settings/system-users"
     },
     "INSTAGRAM_ACCOUNT_ID": {
@@ -24,12 +25,30 @@
       "example": "17841400000000000",
       "pattern": "^[0-9]{10,20}$",
       "patternMessage": "The account id is a number of 10 to 20 digits, usually starting with 1784. It is not the Instagram username."
+    },
+    "META_APP_ID": {
+      "label": "Meta app ID (optional)",
+      "kind": "setting",
+      "help": "Only to renew user tokens automatically. developers.facebook.com → My Apps → the app the token was created with → App settings → Basic → App ID. With the app ID and app secret set, a pasted user token (even a short-lived one from the Graph API Explorer) is exchanged for a long-lived one and renewed before it expires. Leave empty with a System User token.",
+      "link": "https://developers.facebook.com/apps/",
+      "example": "1234567890123456",
+      "pattern": "^[0-9]{5,20}$",
+      "patternMessage": "The app ID is a number, shown under App settings → Basic."
+    },
+    "META_APP_SECRET": {
+      "label": "Meta app secret (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Only to renew user tokens automatically, together with META_APP_ID: App settings → Basic → App secret → Show. It is stored encrypted and sent only to graph.facebook.com.",
+      "link": "https://developers.facebook.com/apps/",
+      "pattern": "^[0-9a-f]{32}$",
+      "patternMessage": "The app secret is 32 characters, digits and the letters a to f."
     }
   },
   "prerequisites": "An Instagram **business or creator** account linked to a Facebook Page, a Meta app with the Instagram product, and a **System User** token from Meta Business settings. Personal Instagram accounts have no API access.",
   "verifyHints": {
     "400": "Meta refused the request. Error 190 means the token is invalid or expired: generate a System User token with expiry Never. If the message says the object does not exist, use the 1784... account id (not the username or the Page id) and assign the Instagram account to the system user.",
-    "401": "Meta refused the token, or it has expired (error 190). Generate a System User token with expiry Never.",
+    "401": "Meta refused the token, or it has expired (error 190). Generate a System User token with expiry Never, or paste a new user token and set META_APP_ID and META_APP_SECRET so it is renewed automatically.",
     "403": "The token lacks a permission (error 10 or 200). Generate it again with instagram_basic, instagram_manage_insights, pages_show_list and pages_read_engagement.",
     "rate_limited": "Meta is throttling this account or app (error 4, 17, 32 or 613). Wait a few minutes and try again."
   },
@@ -40,7 +59,13 @@
     "baseUrl": "https://graph.facebook.com/v25.0",
     "authType": "BEARER_TOKEN",
     "authConfig": {
-      "token": "{{INSTAGRAM_ACCESS_TOKEN}}"
+      "token": "{{INSTAGRAM_ACCESS_TOKEN}}",
+      "tokenRenewal": {
+        "provider": "meta",
+        "appIdVar": "META_APP_ID",
+        "appSecretVar": "META_APP_SECRET",
+        "graphVersion": "v25.0"
+      }
     }
   },
   "tools": [
