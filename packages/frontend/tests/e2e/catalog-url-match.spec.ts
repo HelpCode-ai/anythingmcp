@@ -6,6 +6,14 @@ import { expect, test } from '@playwright/test';
  * custom connector form offers the ready-made connector.
  */
 
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+};
+
 const USER = { id: 'u1', email: 'test@example.com', name: 'Test User', role: 'ADMIN', organizationId: 'o1', emailVerified: true };
 
 test('a known base URL offers the catalog connector', async ({ page, baseURL }) => {
@@ -22,7 +30,7 @@ test('a known base URL offers the catalog connector', async ({ page, baseURL }) 
       const typed = new URL(url).searchParams.get('url') ?? '';
       asked.push(typed);
       return json({
-        matches: typed.includes('printify.com')
+        matches: hostOf(typed) === 'api.printify.com'
           ? [{ slug: 'printify', name: 'Printify', icon: 'printify', description: 'Print on demand.', toolCount: 24 }]
           : [],
       });
