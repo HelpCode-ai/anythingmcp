@@ -116,7 +116,7 @@
       "responseMapping": {
         "transform": {
           "mode": "jmespath",
-          "expression": "{generated_at: generated_at, products: from_items(items(products)[*].[@[0], {bookmakers: from_items(@[1].bookmakers[*].[key, keys(sports)]), exchanges: from_items(@[1].exchanges[*].[key, keys(sports)])}])}"
+          "expression": "{generated_at: generated_at, products: from_items(items(products || `{}`)[*].[@[0], {bookmakers: from_items((@[1].bookmakers || `[]`)[*].[key, keys(sports || `{}`)]), exchanges: from_items((@[1].exchanges || `[]`)[*].[key, keys(sports || `{}`)])}])}"
         }
       }
     },
