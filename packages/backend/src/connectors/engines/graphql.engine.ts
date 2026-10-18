@@ -122,6 +122,7 @@ export class GraphqlEngine {
           const bundle = await this.loginTokenService.getToken(
             auth,
             config.connectorId,
+            { proxyUrl: config.proxyUrl },
           );
           applyLoginTokenHeaders(headers, auth, bundle.token, bundle.aud);
           break;
@@ -254,6 +255,7 @@ export class GraphqlEngine {
         const bundle = await this.loginTokenService.forceRelogin(
           auth,
           config.connectorId,
+          { proxyUrl: config.proxyUrl },
         );
         applyLoginTokenHeaders(headers, auth, bundle.token, bundle.aud);
         const retry = await axios.post(config.baseUrl, requestConfig, {

@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, isMachineGrant, type OAuthGrant } from '@/lib/api';
+import { adapters, connectors, isMachineGrant, type CatalogUrlMatch, type OAuthGrant } from '@/lib/api';
+import { ConnectorLogo } from '@/components/connector-logo';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -102,6 +103,32 @@ export default function NewConnectorPage() {
     suggestedFix?: { action: string; hostname?: string; url?: string };
   } | null>(null);
   const [createdConnector, setCreatedConnector] = useState<{ id: string; name: string } | null>(null);
+  // Catalog connectors for the API at the typed base URL. People kept
+  // building by hand connectors the catalog already had (Printify, Fatture in
+  // Cloud, Pinterest…), most with fewer tools than the ready-made one.
+  const [catalogMatches, setCatalogMatches] = useState<CatalogUrlMatch[]>([]);
+  useEffect(() => {
+    const url = baseUrl.trim();
+    if (!token || !url || selectedType === 'DATABASE' || !url.includes('.')) {
+      setCatalogMatches([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      adapters
+        .matchUrl(url, token)
+        .then((res) => {
+          if (!cancelled) setCatalogMatches(res.matches);
+        })
+        .catch(() => {
+          if (!cancelled) setCatalogMatches([]);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [baseUrl, selectedType, token]);
 
   const buildAuthConfig = () => {
     switch (authType) {
@@ -425,6 +452,43 @@ export default function NewConnectorPage() {
                   className={cn(inputClass, 'font-mono text-[13px]')}
                   required
                 />
+                {catalogMatches.length > 0 && (
+                  <div
+                    className="mt-2 rounded-[11px] border border-[var(--t-info-fg)]/25 bg-[var(--t-info-bg)] p-3"
+                    data-testid="catalog-url-match"
+                  >
+                    <p className="text-[12.5px] font-medium text-[var(--text)]">
+                      {catalogMatches.length === 1
+                        ? 'There is a ready-made connector for this API'
+                        : 'There are ready-made connectors for this API'}
+                    </p>
+                    <p className="mt-0.5 text-xs text-[var(--text-2)]">
+                      Its tools, descriptions and sign-in are already set up and tested, and it gets catalog updates.
+                    </p>
+                    <ul className="mt-2 space-y-1.5">
+                      {catalogMatches.map((m) => (
+                        <li key={m.slug}>
+                          <Link
+                            href={`/connectors/setup/${m.slug}`}
+                            className="flex items-center gap-2.5 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 text-[13px] text-[var(--text)] hover:border-[var(--border-strong)]"
+                          >
+                            <ConnectorLogo icon={m.icon} name={m.name} small />
+                            <span className="min-w-0 flex-1 truncate">
+                              <span className="font-medium">{m.name}</span>
+                              <span className="text-[var(--text-3)]">
+                                {' '}
+                                · {m.toolCount} {m.toolCount === 1 ? 'tool' : 'tools'}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-xs font-medium text-[var(--t-info-fg)]">
+                              Set it up instead →
+                            </span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {selectedType === 'MCP' && (
                   <p className="mt-1 text-xs text-[var(--text-3)]">
                     Paste the complete MCP endpoint URL including its path — e.g. a

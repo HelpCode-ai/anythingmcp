@@ -44,12 +44,14 @@ import { storableBaseUrl } from '../connectors/catalog-env-rebuild.util';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
+import { matchCatalogUrl, UrlMatch, UrlMatchCandidate } from './catalog-url-match';
 
 @Injectable()
 export class AdaptersService {
   private readonly logger = new Logger(AdaptersService.name);
   private readonly encryptionKey: string;
   private readonly publicCatalogCache = new Map<string, SerializedBody>();
+  private urlMatchCandidates: UrlMatchCandidate[] | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -93,6 +95,21 @@ export class AdaptersService {
       this.publicCatalogCache.set(key, entry);
     }
     return entry;
+  }
+
+  /**
+   * The listed adapters that serve the API at `url`, for the custom connector
+   * form: someone typing a base URL the catalog knows is offered the
+   * ready-made connector (see catalog-url-match.ts).
+   */
+  matchByUrl(url: string): UrlMatch[] {
+    this.urlMatchCandidates ??= this.listAll().flatMap((a) => {
+      const baseUrl = getAdapter(a.slug)?.connector?.baseUrl;
+      return typeof baseUrl === 'string'
+        ? [{ slug: a.slug, name: a.name, icon: a.icon, description: a.description, toolCount: a.toolCount, baseUrl }]
+        : [];
+    });
+    return matchCatalogUrl(url, this.urlMatchCandidates);
   }
 
   /** Setup instructions of one listed adapter, for its marketplace page. */

@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import * as bcrypt from 'bcrypt';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
   LoginTokenService,
   jsonPath,
@@ -262,6 +263,45 @@ describe('LoginTokenService', () => {
     };
     const bundle = await service.getToken(auth, 'conn-7');
     expect(bundle.token).toBe('jwt-plain');
+  });
+
+  it('sends the login, salt fetch included, through the proxy the tool call uses', async () => {
+    // Playtomic answers logins from our server's IP with a 403 page; through
+    // the connector proxy it answers normally. A proxied tool whose login went
+    // out directly could never get a token.
+    const seen: any[] = [];
+    (mockedAxios as unknown as jest.Mock).mockImplementation(async (config: any) => {
+      seen.push(config);
+      if (config.url.includes('/users/')) {
+        return { data: { salt: bcrypt.genSaltSync(4) } };
+      }
+      return { data: { data: { signIn: { token: 'jwt-proxied', aud: 'x' } } } };
+    });
+
+    const bundle = await service.getToken(baseAuth, 'conn-proxy', {
+      proxyUrl: 'http://key:@proxy.example.com:8011',
+    });
+
+    expect(bundle.token).toBe('jwt-proxied');
+    expect(seen).toHaveLength(2);
+    for (const config of seen) {
+      expect(config.proxy).toBe(false);
+      expect(config.httpsAgent).toBeInstanceOf(HttpsProxyAgent);
+      expect(config.httpsAgent.proxy.host).toBe('proxy.example.com:8011');
+    }
+  });
+
+  it('logs in directly when the call is not proxied', async () => {
+    (mockedAxios as unknown as jest.Mock).mockImplementation(async (config: any) => {
+      expect(config.httpsAgent).not.toBeInstanceOf(HttpsProxyAgent);
+      expect(config.proxy).toBeUndefined();
+      return { data: { data: { signIn: { token: 'jwt-direct', aud: 'x' } } } };
+    });
+
+    const auth: LoginTokenAuthConfig = { ...baseAuth, passwordHashing: { scheme: 'none' } };
+    await expect(service.getToken(auth, 'conn-direct')).resolves.toMatchObject({
+      token: 'jwt-direct',
+    });
   });
 
   it("surfaces the service's own refusal rather than our json path", async () => {

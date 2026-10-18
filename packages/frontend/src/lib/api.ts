@@ -624,6 +624,15 @@ export type VerifyResult =
 
 export type ConnectorSetupStatus = 'ready' | 'needs_input' | 'needs_authorization';
 
+/** A catalog connector serving the API at a URL the user typed. */
+export interface CatalogUrlMatch {
+  slug: string;
+  name: string;
+  icon: string;
+  description: string;
+  toolCount: number;
+}
+
 export const adapters = {
   list: (token: string) =>
     request<any[]>('/api/adapters', { token }),
@@ -650,6 +659,12 @@ export const adapters = {
       token,
       body: { credentials, ...(connectorId ? { connectorId } : {}) },
     }),
+  /** Catalog connectors for the API at a base URL, best first. */
+  matchUrl: (url: string, token: string) =>
+    request<{ matches: CatalogUrlMatch[] }>(
+      `/api/adapters/match-url?url=${encodeURIComponent(url)}`,
+      { token },
+    ),
   popularConnectors: (token: string) =>
     request<{ items: PopularConnectorItem[] }>('/api/adapters/popular-connectors', { token }),
   starterPack: (token: string) =>
