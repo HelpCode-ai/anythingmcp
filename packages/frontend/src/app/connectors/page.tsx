@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, withSecretsNotice } from '@/lib/api';
+import { connectors, withSecretsNotice, withImportNotice } from '@/lib/api';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AppSelect } from '@/components/ui/select';
 import { AppShell } from '@/components/app-shell';
@@ -129,7 +129,7 @@ export default function ConnectorsPage() {
     setMsg('Importing specification...');
     try {
       const result = await connectors.importSpec(id, token);
-      setMsg(withSecretsNotice(result.message, result));
+      setMsg(withImportNotice(result.message, result));
       const updated = await connectors.list(token);
       setList(updated);
     } catch (err: any) {

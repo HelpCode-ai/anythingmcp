@@ -99,6 +99,28 @@ describe('scrubProviderMessage', () => {
     expect(scrubProviderMessage('x'.repeat(30) + ' ' + 'word '.repeat(60))!.length).toBe(160);
     expect(scrubProviderMessage('   ')).toBeNull();
   });
+
+  it('cuts a URL at its first ? or #, wherever it sits in the text', () => {
+    expect(scrubProviderMessage('see "https://a.example/x#frag" and http://b.example/y?k=v&z=1 now')).toBe(
+      'see "https://a.example/x" and http://b.example/y now',
+    );
+    expect(scrubProviderMessage('plain https://c.example/path, done')).toBe('plain https://c.example/path, done');
+  });
+
+  it('masks a secret that straddles the part the regexes read', () => {
+    const secret = 'zz-secret-value';
+    // Cut first, mask after, and "zz-secret-" would survive the 2000-character cut.
+    expect(scrubProviderMessage(`${' '.repeat(1990)}${secret} given`, [secret])).toBe('*** given');
+  });
+
+  it('stays fast on a long crafted input (CodeQL js/polynomial-redos)', () => {
+    for (const input of ['http://'.repeat(50_000), `${'http://a'.repeat(20_000)}?`, 'a'.repeat(31).concat(' ').repeat(10_000)]) {
+      const started = Date.now();
+      const out = scrubProviderMessage(input);
+      expect(Date.now() - started).toBeLessThan(200);
+      expect(out!.length).toBeLessThanOrEqual(160);
+    }
+  });
 });
 
 describe('ProductEventService.log — server-written metadata', () => {

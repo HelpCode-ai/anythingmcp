@@ -322,13 +322,28 @@ export function sanitizeSearchQuery(value: unknown): string | null {
  * A provider's error message, made safe to keep: query strings dropped from
  * URLs (keys travel there), any of the given secret values masked, long
  * token-like runs masked, and the whole capped at 160 characters.
+ *
+ * The message comes from a vendor or an OAuth callback, so it can be long and
+ * crafted. Secrets are masked on the whole text (a plain split, no regex), then
+ * only the first SCRUB_INPUT_LIMIT characters reach the regexes, and those are
+ * linear: the URL one used to rescan the rest of the input from every
+ * `http://` of `http://http://…` (CodeQL js/polynomial-redos).
  */
+const SCRUB_INPUT_LIMIT = 2000;
+
 export function scrubProviderMessage(message: unknown, secrets: unknown[] = []): string | null {
   if (typeof message !== 'string' || !message.trim()) return null;
-  let out = message.replace(/(https?:\/\/[^\s?#"']+)[?#][^\s"']*/g, '$1');
+  let out = message;
   for (const secret of secrets) {
     if (typeof secret === 'string' && secret.length >= 6) out = out.split(secret).join('***');
   }
+  out = out.slice(0, SCRUB_INPUT_LIMIT);
+  // Each URL is matched once (the match always succeeds and the scan moves on
+  // past it), then cut at its first ? or #.
+  out = out.replace(/https?:\/\/[^\s"']*/g, (url) => {
+    const cut = url.search(/[?#]/);
+    return cut === -1 ? url : url.slice(0, cut);
+  });
   out = out.replace(/[A-Za-z0-9_\-.+/=]{32,}/g, '***');
   out = out.replace(/\s+/g, ' ').trim();
   return out.length > 160 ? `${out.slice(0, 159)}…` : out;

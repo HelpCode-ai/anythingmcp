@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { mcpServers, connectors as connectorsApi, mcpKeys, productEvents } from '@/lib/api';
+import { mcpServers, connectors as connectorsApi, mcpKeys, productEvents, server as serverApi } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -15,6 +15,15 @@ import { copyText } from '@/lib/clipboard';
 import { getApiOrigin } from '@/lib/origin';
 import { CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
 import { INSPECTOR_URL, inspectorCommand } from '@/lib/inspector-url';
+import {
+  cursorDeepLink as buildCursorDeepLink,
+  vscodeDeepLink as buildVscodeDeepLink,
+  cursorInstallUrl,
+  vscodeInstallUrl,
+  installBadgesHtml,
+  installBadgesMarkdown,
+  isLocalOnlyUrl,
+} from '@/lib/mcp-install-links';
 
 // Opens claude.ai straight on its "Add custom connector" dialog. Connectors
 // moved from Settings to Customize → Connectors; the old settings URL now only
@@ -34,6 +43,8 @@ export default function McpServerDetailPage() {
   const [offerKey, setOfferKey] = useState(0);
   const [allConnectors, setAllConnectors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // MCP auth mode of this instance; install badges only work with OAuth.
+  const [mcpAuthMode, setMcpAuthMode] = useState('');
 
   // Edit state
   const [editName, setEditName] = useState('');
@@ -103,6 +114,10 @@ export default function McpServerDetailPage() {
       setAssignedIds(ids);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [token, id]);
+
+  useEffect(() => {
+    serverApi.info().then((info) => setMcpAuthMode(info?.mcpAuthMode || '')).catch(() => {});
+  }, []);
 
   const apiUrl = getApiOrigin();
 
@@ -336,15 +351,12 @@ export default function McpServerDetailPage() {
   }
 }`;
 
-  const cursorDeepLink = () => {
-    const config = btoa(JSON.stringify({ url: endpointUrl }));
-    return `cursor://anysphere.cursor-deeplink/mcp/install?name=${encodeURIComponent(slug)}&config=${config}`;
-  };
-
-  const vscodeDeepLink = () => {
-    const config = { name: slug, type: 'http', url: endpointUrl };
-    return `vscode:mcp/install?${encodeURIComponent(JSON.stringify(config))}`;
-  };
+  const installTarget = { name: slug, url: endpointUrl };
+  const cursorDeepLink = () => buildCursorDeepLink(installTarget);
+  const vscodeDeepLink = () => buildVscodeDeepLink(installTarget);
+  const badgesMarkdown = installBadgesMarkdown(installTarget);
+  const badgesHtml = installBadgesHtml(installTarget);
+  const badgesSupported = mcpAuthMode === 'oauth2' || mcpAuthMode === 'both';
 
   const aiClients: { id: string; name: string; init: string; tone: Tone }[] = [
     { id: 'cursor', name: 'Cursor', init: 'Cu', tone: 'info' },
@@ -802,6 +814,64 @@ Auth: OAuth`;
             </div>
           </details>
         </Card>
+        {mcpAuthMode && (
+        <Card className="p-[22px]" data-testid="share-server">
+          <div className="mb-[6px] text-sm font-semibold">Share this server</div>
+          <p className="mb-[14px] text-[12px] text-[var(--text-3)]">
+            Put one-click install badges in your team README, wiki or onboarding page.
+            They contain only the MCP URL; whoever clicks still signs in.
+          </p>
+          {!badgesSupported ? (
+            <p className="text-[12px] text-[var(--text-2)]" data-testid="share-oauth-required">
+              One-click installs need OAuth: set <code className="rounded bg-[var(--surface-2)] px-1 font-mono">MCP_AUTH_MODE=oauth2</code> or <code className="rounded bg-[var(--surface-2)] px-1 font-mono">both</code>.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {isLocalOnlyUrl(endpointUrl) && (
+                <p
+                  className="rounded-[9px] px-3 py-2 text-[12px]"
+                  style={{ background: 'var(--t-warn-bg)', color: 'var(--t-warn-fg)' }}
+                  data-testid="share-localhost-warning"
+                >
+                  This MCP URL points to localhost, so the badges only work on this machine.
+                </p>
+              )}
+              {/* Local preview: styled links only, no remote images (offline installs). */}
+              <div className="flex flex-wrap gap-2" data-testid="share-preview">
+                <a
+                  href={cursorInstallUrl(installTarget)}
+                  className="inline-flex items-center overflow-hidden rounded-[6px] bg-[#0b1220] text-[12px] font-semibold text-white"
+                >
+                  <span className="px-2 py-1">Cursor</span>
+                  <span className="bg-[#1f2937] px-2 py-1">Add to Cursor</span>
+                </a>
+                <a
+                  href={vscodeInstallUrl(installTarget)}
+                  className="inline-flex items-center overflow-hidden rounded-[6px] bg-[#0b1220] text-[12px] font-semibold text-white"
+                >
+                  <span className="px-2 py-1">VS Code</span>
+                  <span className="bg-[#0066CC] px-2 py-1">Add to VS Code</span>
+                </a>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleCopy(badgesMarkdown, 'badge-markdown')}
+                  className={buttonVariants({ variant: 'secondary', size: 'md' })}
+                >
+                  {copied === 'badge-markdown' ? 'Copied!' : 'Copy Markdown'}
+                </button>
+                <button
+                  onClick={() => handleCopy(badgesHtml, 'badge-html')}
+                  className={buttonVariants({ variant: 'secondary', size: 'md' })}
+                >
+                  {copied === 'badge-html' ? 'Copied!' : 'Copy HTML'}
+                </button>
+              </div>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-[10px] bg-[#0c0f16] p-[13px] font-mono text-[12px] leading-[1.6] text-[#cdd6e8]">{badgesMarkdown}</pre>
+            </div>
+          )}
+        </Card>
+        )}
         </aside>
 
         {/* Connect Modal */}

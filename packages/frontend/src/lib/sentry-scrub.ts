@@ -9,7 +9,7 @@
  * Request bodies, cookies and every header but user-agent are dropped; so is
  * the user. Console breadcrumbs are dropped too, a log line can quote anything.
  */
-import type { Breadcrumb, Event } from '@sentry/nextjs';
+import type { Breadcrumb, Event, EventHint } from '@sentry/nextjs';
 
 const KEPT_HEADERS = new Set(['user-agent']);
 
@@ -143,9 +143,28 @@ export function isInjectedScriptError(event: Event): boolean {
   return frames.every((f) => !SCRIPT_FILE.test(f.filename ?? f.abs_path ?? ''));
 }
 
+/**
+ * True for a promise rejected with a plain object carrying `status: 401`
+ * (ANYTHINGMCP-CLOUD-FRONTEND-H: `{status, error: true, body}` on / in Safari,
+ * no stack). None of our code rejects like that: the API client throws
+ * ApiError, an Error, and signs the session out on a 401. The shape comes from
+ * a script wrapping `window.fetch` (an extension) whose own promise nobody
+ * awaits, so there is nothing of ours to fix and the expired session is
+ * already handled.
+ */
+export function isForeignAuthRejection(hint?: EventHint): boolean {
+  const reason = hint?.originalException;
+  return (
+    typeof reason === 'object' &&
+    reason !== null &&
+    !(reason instanceof Error) &&
+    (reason as { status?: unknown }).status === 401
+  );
+}
+
 /** The browser's beforeSend: drop injected-script noise, scrub the rest. */
-export function beforeSendBrowser<T extends Event>(event: T): T | null {
-  return isInjectedScriptError(event) ? null : scrubEvent(event);
+export function beforeSendBrowser<T extends Event>(event: T, hint?: EventHint): T | null {
+  return isInjectedScriptError(event) || isForeignAuthRejection(hint) ? null : scrubEvent(event);
 }
 
 /** Errors raised by scripts browser extensions inject into the page. */

@@ -2254,6 +2254,11 @@ export class ConnectorsController {
     }
 
     const matchedIds = new Set<string>();
+    // Matched tools that kept their name because another tool of the
+    // connector already has the wanted one (the name is unique per connector).
+    const renameConflicts: Array<{ toolId: string; kept: string; wanted: string }> = [];
+    // Parsed tools not created because their name is already in use.
+    const skipped: string[] = [];
     let createdCount = 0;
     let updatedCount = 0;
     const tools: any[] = [];
@@ -2264,21 +2269,34 @@ export class ConnectorsController {
         em?.method && em?.path
           ? `${String(em.method).toUpperCase()} ${em.path}`
           : null;
+      // A tool another entry of this import already matched is not a
+      // candidate again: two entries with the same operationId, endpoint or
+      // name would otherwise overwrite each other.
+      const unclaimed = (t: (typeof existing)[number] | undefined) =>
+        t && !matchedIds.has(t.id) ? t : undefined;
       // By name last: a static tool has no path to match on, and without this
       // a re-import tried to create it again, hit the unique name and left the
       // old (possibly retired) copy as it was.
       const match =
-        (tool.operationId && byOperationId.get(tool.operationId)) ||
-        (endpointKey && byEndpoint.get(endpointKey)) ||
-        byName.get(tool.name) ||
+        (tool.operationId && unclaimed(byOperationId.get(tool.operationId))) ||
+        (endpointKey && unclaimed(byEndpoint.get(endpointKey))) ||
+        unclaimed(byName.get(tool.name)) ||
         null;
 
       if (match) {
         matchedIds.add(match.id);
+        // When a different tool holds the wanted name (two endpoints swapped
+        // names, or a tool renamed by hand), keep the current name and still
+        // refresh everything else, instead of failing the import on P2002.
+        const holder = byName.get(tool.name);
+        const nameTaken = holder !== undefined && holder.id !== match.id;
+        if (nameTaken) {
+          renameConflicts.push({ toolId: match.id, kept: match.name, wanted: tool.name });
+        }
         const updated = await this.prisma.mcpTool.update({
           where: { id: match.id },
           data: {
-            name: tool.name,
+            ...(nameTaken ? {} : { name: tool.name }),
             description: tool.description,
             parameters: tool.parameters as any,
             endpointMapping: tool.endpointMapping as any,
@@ -2309,8 +2327,20 @@ export class ConnectorsController {
             isEnabled: match.deprecatedAt ? true : match.isEnabled,
           },
         });
+        if (!nameTaken && match.name !== tool.name) {
+          if (byName.get(match.name)?.id === match.id) byName.delete(match.name);
+          byName.set(tool.name, match);
+        }
         tools.push(updated);
         updatedCount++;
+        continue;
+      }
+
+      // Another tool of the connector (an existing one matched by a
+      // different entry, or one created earlier in this import) already has
+      // this name.
+      if (byName.has(tool.name)) {
+        skipped.push(tool.name);
         continue;
       }
 
@@ -2332,13 +2362,34 @@ export class ConnectorsController {
             ...(tool.origin === 'catalog' ? { origin: 'catalog' } : {}),
           },
         });
+        matchedIds.add(created.id);
+        byName.set(created.name, created);
         tools.push(created);
         createdCount++;
       } catch (err: any) {
-        // A different existing tool happens to share the new tool's name
-        // (e.g. same name across two re-imports on parametric paths).
-        // Skip rather than throw — preserves prior semantics.
+        // A concurrent write took the name in the meantime.
         if (err.code !== 'P2002') throw err;
+        skipped.push(tool.name);
+      }
+    }
+
+    // A name may have been freed by a rename later in the loop (A wants B's
+    // name, B moves on to a new one): apply those renames now. A true swap
+    // stays a conflict, the tools keep their names.
+    for (let progress = true; progress && renameConflicts.length > 0; ) {
+      progress = false;
+      for (const conflict of [...renameConflicts]) {
+        if (byName.has(conflict.wanted)) continue;
+        const renamed = await this.prisma.mcpTool.update({
+          where: { id: conflict.toolId },
+          data: { name: conflict.wanted },
+        });
+        if (byName.get(conflict.kept)?.id === conflict.toolId) byName.delete(conflict.kept);
+        byName.set(conflict.wanted, renamed);
+        const i = tools.findIndex((t) => t.id === conflict.toolId);
+        if (i >= 0) tools[i] = renamed;
+        renameConflicts.splice(renameConflicts.indexOf(conflict), 1);
+        progress = true;
       }
     }
 
@@ -2363,15 +2414,20 @@ export class ConnectorsController {
 
     const parts = [`created ${createdCount}`, `updated ${updatedCount}`];
     if (deprecated.length > 0) parts.push(`deprecated ${deprecated.length}`);
+    if (skipped.length > 0) parts.push(`skipped ${skipped.length}`);
+    if (renameConflicts.length > 0) {
+      this.logger.warn(
+        `Import into connector ${connectorId}: ${renameConflicts.length} tool(s) kept their name, the new one is used by another tool`,
+      );
+    }
     return {
       message: `Imported tools: ${parts.join(', ')}`,
       tools,
       created: createdCount,
       updated: updatedCount,
       deprecated,
-      // `skipped` kept for back-compat with clients that consumed the old
-      // shape; always empty under the new upsert strategy.
-      skipped: [] as string[],
+      skipped,
+      renameConflicts,
       ...secrets.summary(),
     };
   }
