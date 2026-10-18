@@ -1,0 +1,640 @@
+{
+  "slug": "wati",
+  "name": "WATI",
+  "aliases": ["Wati.io", "WATI WhatsApp API"],
+  "description": "Run your WATI WhatsApp Business inbox from your AI: list approved templates, find, add and update contacts, read a contact's chat history, assign conversations to team members, and send a template message. Session, interactive and bulk sends are installed switched off.",
+  "instructions": "## WATI\nThis connector calls the **WATI API v1** on your workspace's own **API Endpoint** with its access token: message templates, contacts and their attributes, chat history, operator assignment, and sending template, session and interactive messages.\n\n**Writes need a yes.** Messages go straight to the customer's WhatsApp and template messages are charged by Meta per conversation. Before `wati_send_template_message` show the template, the number and the parameter values and wait for the user's confirmation; do the same before `wati_add_contact` and `wati_update_contact_attributes`. `wati_send_session_message`, `wati_send_interactive_buttons` and `wati_send_template_broadcast` (one template to up to 1,000 numbers per call) are installed switched off: an admin turns them on deliberately, and even then confirm every send. `wati_assign_operator` only changes the shared inbox.\n\n**Setup (about 2 minutes)**\n1. Sign in to WATI and open **API Docs** in the menu (newer workspaces: **Connector, API**).\n2. Copy the **API Endpoint**, e.g. `https://live-mt-server.wati.io/123456`, into `WATI_API_ENDPOINT`. The number at the end is your workspace (tenant) id.\n3. Copy the **Access Token** into `WATI_ACCESS_TOKEN` **without** the word `Bearer` in front: WATI shows it as `Bearer eyJ...`, paste only the part from `eyJ` on.\nThe token is sent as `Authorization: Bearer ...` and only to your API Endpoint.\n\n**Numbers and targets**: WhatsApp numbers are in international format with the country code and without `+` or spaces, e.g. `919876543210`. Where a tool asks for a `target` you can also pass a WATI contact id.\n\n**Templates vs session messages**: outside the 24-hour window after the customer's last message WhatsApp only allows approved templates (`wati_list_message_templates`, then `wati_send_template_message`); inside the window free text (`wati_send_session_message`) and buttons (`wati_send_interactive_buttons`) are allowed. Template `parameters` are `{name, value}` pairs whose names match the template's placeholders (`{{1}}` or `{{name}}`).\n\n**Workflow**\n- Find people: `wati_list_contacts` (filter by name, attribute or creation date); read the chat with `wati_get_messages`. A contact who never chatted answers `Can't find Conversation`, reported as not found.\n- Keep the CRM tidy: `wati_add_contact`, `wati_update_contact_attributes`.\n- Run the inbox: `wati_assign_operator` hands a chat to a team member, or back to the bot.\n- Reach out: `wati_list_message_templates`, `wati_send_template_message`; bulk with `wati_send_template_broadcast`.\n\n**Rate limits**: contacts and messages about 10 requests per 10 seconds; template sends 30 to 100 per 10 seconds by plan. A 429 means wait and retry.\n\n**Common errors**: 401 means the token is wrong, expired or still starts with `Bearer`; 403 means the token or your plan does not allow this call; 404 usually means a wrong API Endpoint. WATI also answers some failures with HTTP 200 and `result: false` or `ok: false` (an invalid number, a template that is not approved); the connector turns those into errors with WATI's text. A successful send means WATI accepted the message, not that it was delivered.\n\n**Out of scope here**: WATI's newer API v3 (conversation tags and status, channels, campaigns, credits) needs a token that the API Endpoint screen does not give, so it is not used. Also out of scope: creating or deleting templates, scheduled campaigns and CSV sends, media and file messages, list and CTA messages, chatbots, segments, webhooks, WhatsApp Pay, and rotating the token.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "wati",
+  "docsUrl": "https://docs.wati.io/reference/introduction",
+  "prerequisites": "A WATI workspace (Growth plan or higher) and its API Endpoint and Access Token from API Docs in WATI. About 2 minutes.",
+  "requiredEnvVars": ["WATI_API_ENDPOINT", "WATI_ACCESS_TOKEN"],
+  "envVarMeta": {
+    "WATI_API_ENDPOINT": {
+      "label": "API Endpoint",
+      "kind": "address",
+      "help": "WATI, API Docs: the API Endpoint, your WATI server followed by your workspace (tenant) id. Paste it as shown, without /api/v1.",
+      "example": "https://live-mt-server.wati.io/123456",
+      "pattern": "^https://[A-Za-z0-9.-]+\\.wati\\.io/[A-Za-z0-9_-]+/?$",
+      "patternMessage": "Use the API Endpoint as WATI shows it, e.g. https://live-mt-server.wati.io/123456, without /api/v1 or anything after the workspace id."
+    },
+    "WATI_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "WATI, API Docs: Access Token. WATI shows it with Bearer in front; paste only the token itself, starting at eyJ.",
+      "pattern": "^(?![Bb]earer)[A-Za-z0-9._~+/=-]{20,}$",
+      "patternMessage": "Paste the token without the word Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "WATI refused the access token. Copy it again from API Docs in WATI, without the Bearer in front; a token stops working when the account password changes.",
+    "403": "WATI accepted the token but refused this request: the token lacks the scope for it, or your plan does not include the feature.",
+    "404": "WATI does not know this address. Check WATI_API_ENDPOINT: it must be the API Endpoint from API Docs, e.g. https://live-mt-server.wati.io/123456.",
+    "429": "WATI is rate limiting this workspace. Wait a few seconds and verify again."
+  },
+  "probe": {
+    "tool": "wati_list_message_templates",
+    "params": { "page_size": 1 }
+  },
+  "connector": {
+    "name": "WATI API",
+    "type": "REST",
+    "baseUrl": "{{WATI_API_ENDPOINT}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WATI_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/v1/getMessageTemplates?pageSize=1&pageNumber=1",
+    "config": {
+      "errorWhen": [
+        { "path": "result", "equals": false, "messagePath": ["info", "errors.error"], "messageMatches": "Can't find Conversation", "status": 404 },
+        { "path": "result", "equals": false, "messagePath": ["info", "errors.error"], "status": 400 },
+        { "path": "ok", "equals": false, "messagePath": ["info", "errors"], "status": 400 }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "wati_list_message_templates",
+      "description": "List the workspace's WhatsApp message templates: id, name, category, status (APPROVED, PENDING, REJECTED), language, header, body with its placeholders, footer, buttons and custom parameters. Only APPROVED templates can be sent. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "default": 50,
+            "description": "Templates per page."
+          },
+          "page_number": {
+            "type": "integer",
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "channel_phone_number": {
+            "type": "string",
+            "description": "Only for workspaces with several WhatsApp numbers: the sending number with country code, e.g. 85264318722."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/getMessageTemplates",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number",
+          "channelPhoneNumber": "$channel_phone_number"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "templates": {
+              "$from": "$.messageTemplates[*]",
+              "$select": {
+                "id": "id",
+                "name": "elementName",
+                "category": "category",
+                "status": "status",
+                "language": "language.value",
+                "header": "header",
+                "body": "body",
+                "footer": "footer",
+                "buttons": "buttons",
+                "customParams": "customParams"
+              }
+            },
+            "link": "$.link"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "wati_list_contacts",
+      "description": "List or search the workspace's contacts, page by page: id, WhatsApp number, name, phone, status, opt-in, broadcast permission, custom attributes, teams and dates. Filter by name, an attribute condition or creation date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only contacts whose name contains this text."
+          },
+          "attribute": {
+            "type": "string",
+            "description": "Attribute filter as JSON text, e.g. [{\"name\": \"city\", \"operator\": \"==\", \"value\": \"Pune\"}]. Operators: contain, notContain, exist, notExist, ==, !=, valid, invalid."
+          },
+          "created_date": {
+            "type": "string",
+            "description": "Only contacts created on this date, YYYY-MM-DD."
+          },
+          "page_size": {
+            "type": "integer",
+            "default": 50,
+            "description": "Contacts per page."
+          },
+          "page_number": {
+            "type": "integer",
+            "default": 1,
+            "description": "Page, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/getContacts",
+        "queryParams": {
+          "name": "$name",
+          "attribute": "$attribute",
+          "createdDate": "$created_date",
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "contacts": {
+              "$from": "$.contact_list[*]",
+              "$select": {
+                "id": "id",
+                "wAid": "wAid",
+                "fullName": "fullName",
+                "firstName": "firstName",
+                "phone": "phone",
+                "contactStatus": "contactStatus",
+                "optedIn": "optedIn",
+                "allowBroadcast": "allowBroadcast",
+                "source": "source",
+                "customParams": "customParams",
+                "teamIds": "teamIds",
+                "created": "created",
+                "lastUpdated": "lastUpdated"
+              }
+            },
+            "link": "$.link"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "wati_get_messages",
+      "description": "Read the chat history with one contact, newest first, page by page: message id, time, type, text, whether we sent it (owner), delivery status, operator and ticket events. Optional time window in UTC. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "WhatsApp number with country code (e.g. 919876543210) or WATI contact id."
+          },
+          "page_size": {
+            "type": "integer",
+            "default": 50,
+            "description": "Messages per page."
+          },
+          "page_number": {
+            "type": "integer",
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only messages from this time, UTC, 'YYYY-MM-DD HH:MM:SS'."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only messages up to this time, UTC, 'YYYY-MM-DD HH:MM:SS'."
+          },
+          "channel_phone_number": {
+            "type": "string",
+            "description": "Only for workspaces with several WhatsApp numbers: the business number with country code."
+          }
+        },
+        "required": ["target"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/getMessages/{target}",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number",
+          "from": "$from",
+          "to": "$to",
+          "channelPhoneNumber": "$channel_phone_number"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "messages": {
+              "$from": "$.messages[*]",
+              "$select": {
+                "id": "id",
+                "created": "created",
+                "eventType": "eventType",
+                "type": "type",
+                "text": "text",
+                "owner": "owner",
+                "status": "statusString",
+                "operatorName": "operatorName",
+                "eventDescription": "eventDescription",
+                "data": "data"
+              }
+            },
+            "link": "$.link"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "wati_add_contact",
+      "description": "Add a contact to WATI with a name and optional custom attributes. WATI also creates contacts on their own when you message a new number, so this is for building the list ahead. Tell the user what will be saved and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "whatsapp_number": {
+            "type": "string",
+            "description": "WhatsApp number with country code, without + or spaces, e.g. 919876543210."
+          },
+          "name": {
+            "type": "string",
+            "description": "Contact name."
+          },
+          "custom_params": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "description": "Attribute name as set up in WATI." },
+                "value": { "type": "string", "description": "Attribute value." }
+              }
+            },
+            "description": "Custom attributes as {name, value} pairs, e.g. [{\"name\": \"city\", \"value\": \"Pune\"}]."
+          }
+        },
+        "required": ["whatsapp_number", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/addContact/{whatsapp_number}",
+        "bodyMapping": {
+          "name": "$name",
+          "customParams": "$custom_params"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "result": "$.result",
+            "info": "$.info",
+            "contact": "$.contact"
+          },
+          "maxBytes": 10000
+        }
+      }
+    },
+    {
+      "name": "wati_update_contact_attributes",
+      "description": "Set custom attributes on a contact, e.g. order status, city or lead stage; attributes you do not pass stay as they are. Tell the user what will change and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "WhatsApp number with country code (e.g. 919876543210) or WATI contact id."
+          },
+          "custom_params": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "description": "Attribute name as set up in WATI." },
+                "value": { "type": "string", "description": "New value." }
+              }
+            },
+            "description": "Attributes to set as {name, value} pairs, e.g. [{\"name\": \"order_status\", \"value\": \"shipped\"}]."
+          }
+        },
+        "required": ["target", "custom_params"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/updateContactAttributes/{target}",
+        "bodyMapping": {
+          "customParams": "$custom_params"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "result": "$.result",
+            "info": "$.info"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "wati_assign_operator",
+      "description": "Assign a contact's conversation to a WATI team member by their email, or hand it back to the bot by leaving the email out. Internal: the customer does not see who is assigned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "WhatsApp number with country code (e.g. 919876543210) or WATI contact id."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email of the WATI user to assign. Leave empty to assign the conversation to the bot."
+          },
+          "channel_phone_number": {
+            "type": "string",
+            "description": "Only for workspaces with several WhatsApp numbers: the business number with country code."
+          }
+        },
+        "required": ["target"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/assignOperator",
+        "queryParams": {
+          "target": "$target",
+          "email": "$email",
+          "channelPhoneNumber": "$channel_phone_number"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "result": "$.result",
+            "info": "$.info"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "wati_send_template_message",
+      "description": "Send one approved WhatsApp template to one number, the only way to write first or after the 24-hour window. Meta charges per conversation and the customer receives it at once: show template, number and values and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "whatsapp_number": {
+            "type": "string",
+            "description": "Recipient's WhatsApp number with country code, without + or spaces, e.g. 919876543210."
+          },
+          "template_name": {
+            "type": "string",
+            "description": "Template name (name in wati_list_message_templates); it must be APPROVED."
+          },
+          "parameters": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "description": "Placeholder name, e.g. '1' for {{1}} or 'name' for {{name}}." },
+                "value": { "type": "string", "description": "Value to put in." }
+              }
+            },
+            "description": "Values for the template's placeholders as {name, value} pairs, e.g. [{\"name\": \"1\", \"value\": \"Anna\"}]. Empty for a template without placeholders."
+          },
+          "broadcast_name": {
+            "type": "string",
+            "default": "AnythingMCP",
+            "description": "Label the send is grouped under in WATI's reports. Does not change the message."
+          },
+          "channel_number": {
+            "type": "string",
+            "description": "Only for workspaces with several WhatsApp numbers: the business number to send from, with country code."
+          }
+        },
+        "required": ["whatsapp_number", "template_name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/sendTemplateMessage",
+        "queryParams": {
+          "whatsappNumber": "$whatsapp_number"
+        },
+        "bodyMapping": {
+          "template_name": "$template_name",
+          "broadcast_name": "$broadcast_name",
+          "parameters": "$parameters",
+          "channel_number": "$channel_number"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "result": "$.result",
+            "info": "$.info",
+            "phoneNumber": "$.phone_number",
+            "templateName": "$.template_name",
+            "validWhatsAppNumber": "$.validWhatsAppNumber",
+            "localMessageId": "$.local_message_id"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "wati_send_template_broadcast",
+      "description": "Send one approved template to many numbers at once (up to 1,000 per call) with values per recipient, as a WATI broadcast. Every recipient is charged and messaged: show the list, template and values and confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_name": {
+            "type": "string",
+            "description": "Template name (name in wati_list_message_templates); it must be APPROVED."
+          },
+          "broadcast_name": {
+            "type": "string",
+            "description": "Name of the broadcast as it will appear in WATI's reports."
+          },
+          "receivers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "whatsappNumber": { "type": "string", "description": "Recipient's number with country code, e.g. 919876543210." },
+                "customParams": {
+                  "type": "array",
+                  "description": "This recipient's placeholder values as {name, value} pairs.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": { "type": "string", "description": "Placeholder name." },
+                      "value": { "type": "string", "description": "Value." }
+                    }
+                  }
+                },
+                "localMessageId": { "type": "string", "description": "Optional id of your own to recognise this send in webhooks." }
+              }
+            },
+            "description": "Recipients, each {whatsappNumber, customParams}, at most 1,000."
+          },
+          "channel_number": {
+            "type": "string",
+            "description": "Only for workspaces with several WhatsApp numbers: the business number to send from."
+          }
+        },
+        "required": ["template_name", "broadcast_name", "receivers"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/sendTemplateMessages",
+        "bodyMapping": {
+          "template_name": "$template_name",
+          "broadcast_name": "$broadcast_name",
+          "receivers": "$receivers",
+          "channel_number": "$channel_number"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "result": "$.result",
+            "errors": "$.errors"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "wati_send_session_message",
+      "description": "Send a free-text WhatsApp message to a contact who wrote to you in the last 24 hours (open session). The customer receives it at once: show the text and confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "WhatsApp number with country code (e.g. 919876543210) or WATI contact id."
+          },
+          "message_text": {
+            "type": "string",
+            "description": "Text to send. WhatsApp formatting works: *bold*, _italic_."
+          },
+          "reply_context_id": {
+            "type": "string",
+            "description": "Optional: WhatsApp message id (wamid) of the message you answer, to quote it."
+          },
+          "channel_phone_number": {
+            "type": "string",
+            "description": "Only for workspaces with several WhatsApp numbers: the business number to send from."
+          }
+        },
+        "required": ["target", "message_text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/sendSessionMessage/{target}",
+        "queryParams": {
+          "messageText": "$message_text",
+          "replyContextId": "$reply_context_id",
+          "channelPhoneNumber": "$channel_phone_number"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "ok": "$.ok",
+            "result": "$.result",
+            "messageId": "$.message.id",
+            "created": "$.message.created",
+            "text": "$.message.text"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "wati_send_interactive_buttons",
+      "description": "Send a message with up to three reply buttons to a contact in an open 24-hour session, e.g. 'Track order' or 'Talk to us'. The customer receives it at once: show it and confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "whatsapp_number": {
+            "type": "string",
+            "description": "Recipient's WhatsApp number with country code, e.g. 919876543210."
+          },
+          "body": {
+            "type": "string",
+            "description": "Main text of the message."
+          },
+          "buttons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": { "type": "string", "description": "Button label, at most 20 characters." }
+              }
+            },
+            "description": "One to three buttons, e.g. [{\"text\": \"Yes\"}, {\"text\": \"No\"}]."
+          },
+          "header": {
+            "type": "object",
+            "description": "Optional header, e.g. {\"type\": \"Text\", \"text\": \"Your order\"}, or an image {\"type\": \"Image\", \"media\": {\"url\": \"https://...\", \"fileName\": \"order.jpg\"}}."
+          },
+          "footer": {
+            "type": "string",
+            "description": "Optional small text under the message."
+          },
+          "channel_phone_number": {
+            "type": "string",
+            "description": "Only for workspaces with several WhatsApp numbers: the business number to send from."
+          }
+        },
+        "required": ["whatsapp_number", "body", "buttons"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/sendInteractiveButtonsMessage",
+        "queryParams": {
+          "whatsappNumber": "$whatsapp_number",
+          "channelPhoneNumber": "$channel_phone_number"
+        },
+        "bodyMapping": {
+          "header": "$header",
+          "body": "$body",
+          "footer": "$footer",
+          "buttons": "$buttons"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "ok": "$.ok",
+            "info": "$.info",
+            "errors": "$.errors",
+            "messageId": "$.message.id",
+            "created": "$.message.created"
+          },
+          "maxBytes": 5000
+        }
+      }
+    }
+  ]
+}

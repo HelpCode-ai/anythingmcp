@@ -1,0 +1,1931 @@
+{
+  "slug": "sellercloud",
+  "name": "Sellercloud",
+  "description": "Sellercloud multichannel e-commerce operations: sales orders with notes and packages, saved order views, product catalog and prices, inventory per warehouse, customers, companies, purchase orders, vendors and their products, returns (RMAs), warehouses, transfers, picklists and queued jobs. Read-only, signs in with a Sellercloud employee login.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "sellercloud",
+  "docsUrl": "https://developer.sellercloud.com/dev-article/rest-services-overview/",
+  "aliases": [
+    "Seller Cloud",
+    "Sellercloud Delta"
+  ],
+  "prerequisites": "A Sellercloud account, the REST API endpoint of your Sellercloud server (from https://api.sellercloud.com/api/server-by-team/?team=<team name>), and the username and password of a Sellercloud employee with the permissions for the data to read.",
+  "instructions": "## Sellercloud\nSellercloud is the US e-commerce operations platform for multichannel sellers: orders from Amazon, eBay, Walmart, Shopify and other channels, the product catalog, inventory across warehouses, purchasing from vendors, returns (RMAs) and warehouse work. This connector uses the Sellercloud REST API and is read-only.\n\n## Setup\n1. `SELLERCLOUD_API_URL`: the REST API endpoint of your Sellercloud server. Open `https://api.sellercloud.com/api/server-by-team/?team=<your team name>` in a browser (the team name is the one you sign in to Sellercloud with) and copy the `RestApiEndpoint` value, e.g. `https://xx.api.sellercloud.com/rest` or `https://xxxxxxx.api.sellercloud.us/rest`, without a trailing slash.\n2. `SELLERCLOUD_USERNAME` and `SELLERCLOUD_PASSWORD`: a Sellercloud employee (user) login. Sellercloud recommends a separate employee for each integration; give it the Delta permissions for the data the AI should read (orders, products, inventory, purchasing, customers).\n\nThe connector signs in with `POST /api/token` and sends the returned `access_token` as `Authorization: Bearer` on every call. A token lasts 30 to 60 minutes; the connector signs in again by itself before it expires and after a 401.\n\n## Start here\n- Orders: `sellercloud_list_orders` with `order_status=[2]` (InProcess) and `shipping_status=1` (Unshipped) for open orders, or `created_range=1` for today's orders; then `sellercloud_get_order`, `sellercloud_get_order_notes` and `sellercloud_list_order_packages` for tracking.\n- Saved views: `sellercloud_list_order_views` and `sellercloud_list_orders_by_view` return exactly what a view in Sellercloud shows.\n- Stock: `sellercloud_get_inventory` for one SKU, `sellercloud_get_inventory_by_warehouse` for its quantity per warehouse, `sellercloud_list_inventory` with `physical_qty_to=0` for products out of stock.\n- Purchasing: `sellercloud_list_purchase_orders` with `statuses=[1]` (Ordered) and `received_statuses=[0,1]`, then `sellercloud_get_purchase_order_items`.\n- Returns: `sellercloud_list_rmas` with `statuses=[0]`, then `sellercloud_get_rma_items`.\n\n## Ids, statuses, dates\nOrders, purchase orders, RMAs, customers, vendors, companies and warehouses have integer ids; products are identified by their product id (SKU) string. Statuses and channels are integer codes listed in each parameter (e.g. order status 1 ShoppingCart, 2 InProcess, 3 Completed, 100 ProblemOrder, 200 OnHold, 300 Quote, 999 Void, -1 Cancelled); answers carry the same codes. The full enumerations are under Resources in the Sellercloud API docs. Dates are sent as `MM/DD/YYYY HH:MM`. Amounts of international orders are converted to USD when the order is created; see CurrencyRateFromUSD in the order.\n\n## Pages\nLists return `Items` (or `Results`) and `TotalResults`. `page_size` is 10 by default and at most 50; raise `page_number` for the next page.\n\n## Limits\n10,800 requests per hour per user and IP address. Over the limit Sellercloud answers \"Too many requests.\" with a `RateLimitResetTime`; wait until then.\n\n## Writes\nNone. Creating or updating orders, products, inventory, purchase orders and RMAs is not part of this connector.",
+  "requiredEnvVars": [
+    "SELLERCLOUD_API_URL",
+    "SELLERCLOUD_USERNAME",
+    "SELLERCLOUD_PASSWORD"
+  ],
+  "envVarMeta": {
+    "SELLERCLOUD_API_URL": {
+      "label": "REST API endpoint",
+      "kind": "address",
+      "help": "Open https://api.sellercloud.com/api/server-by-team/?team=<your team name> and copy the RestApiEndpoint value, ending in /rest, without a trailing slash.",
+      "example": "https://xx.api.sellercloud.com/rest",
+      "link": "https://developer.sellercloud.com/dev-article/rest-services-overview/",
+      "pattern": "^https://[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.sellercloud\\.(com|us)/rest$",
+      "patternMessage": "The RestApiEndpoint of your server, e.g. https://xx.api.sellercloud.com/rest, without a trailing slash."
+    },
+    "SELLERCLOUD_USERNAME": {
+      "label": "Username",
+      "kind": "credential",
+      "help": "Username (usually the e-mail address) of the Sellercloud employee the connector signs in as. Prefer a dedicated employee for this integration.",
+      "link": "https://developer.sellercloud.com/dev-article/authentication/"
+    },
+    "SELLERCLOUD_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "help": "That employee's Sellercloud password.",
+      "link": "https://developer.sellercloud.com/dev-article/authentication/"
+    }
+  },
+  "verifyHints": {
+    "400": "Sellercloud refused the sign-in. Check the username and password, and that the API URL is the RestApiEndpoint of your own server.",
+    "401": "Sellercloud rejected the sign-in or the token. Check the username, password and API URL.",
+    "403": "The Sellercloud employee lacks the permission for this data. Grant the matching Delta permissions to that employee.",
+    "404": "No Sellercloud REST API at this address. Copy the RestApiEndpoint from https://api.sellercloud.com/api/server-by-team/?team=<team name>; it ends in /rest.",
+    "rate_limited": "Sellercloud allows 10,800 requests per hour per user and IP address. Wait until the RateLimitResetTime in the answer and try again."
+  },
+  "probe": {
+    "tool": "sellercloud_list_warehouses",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "connector": {
+    "name": "Sellercloud REST API",
+    "type": "REST",
+    "baseUrl": "{{SELLERCLOUD_API_URL}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{SELLERCLOUD_API_URL}}/api/token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "Username": "${username}",
+        "Password": "${password}"
+      },
+      "username": "{{SELLERCLOUD_USERNAME}}",
+      "password": "{{SELLERCLOUD_PASSWORD}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 1800,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/Warehouses?model.pageSize=1"
+  },
+  "tools": [
+    {
+      "name": "sellercloud_list_orders",
+      "description": "Search sales orders with filters: status, payment and shipping status, company, channel, SKU, customer, warehouse, channel order id, tracking number, keyword, creation or update dates. Returns Items (status, dates, customer, totals, carrier, tracking and order lines) and TotalResults, up to 50 per page. Each row is cut to the fields an agent needs (Sellercloud returns about 70 per order and 200 per line, addresses and payments included); call sellercloud_get_order for every field of one record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Sellercloud order ids to fetch."
+          },
+          "order_status": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                -1,
+                1,
+                2,
+                3,
+                100,
+                200,
+                300,
+                999
+              ]
+            },
+            "description": "Order status codes: 1 ShoppingCart, 2 InProcess, 3 Completed, 100 ProblemOrder, 200 OnHold, 300 Quote, 999 Void, -1 Cancelled."
+          },
+          "payment_status": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                10,
+                11,
+                20,
+                30,
+                40,
+                50,
+                60,
+                61,
+                70,
+                71,
+                80,
+                81,
+                99,
+                711,
+                713
+              ]
+            },
+            "description": "Payment status codes: 10 NoPayment, 11 NoPayment or partial, 20 Authorized, 30 Charged, 40 Uncleared, 50 PartialRefund, 60 FullRefund, 61 Partial or full refund, 70 PartiallyPaid, 71 Charged or partial refund, 99 PaymentError, 711 Charged or partially paid, 713 Charged or authorized."
+          },
+          "shipping_status": {
+            "type": "integer",
+            "description": "Shipping status: 0 Unknown, 1 Unshipped, 2 PartiallyShipped, 3 FullyShipped, 4 ReadyForPickup.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "company_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Company ids (from sellercloud_list_companies)."
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Channel (order source) ids, e.g. 0 Local_Store, 1 eBay, 4 Amazon, 6 Website, 20 FBA, 21 Wholesale, 24 Etsy, 42 Walmart. Full list: https://developer.sellercloud.com/dev-article/channels/"
+          },
+          "channel_order_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Order ids as the channel knows them (e.g. Amazon order numbers)."
+          },
+          "customer_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Sellercloud customer ids (from sellercloud_list_customers)."
+          },
+          "warehouse_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Warehouse ids the order items ship from."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Only orders that contain this product id (SKU)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Only the order with this package tracking number."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Global search term, as in the Sellercloud search box (order id, customer name, e-mail and more)."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Last updated on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Last updated on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "created_range": {
+            "type": "integer",
+            "description": "Order date range. Preset range instead of from/to dates: 1 Today, 20 Yesterday, 2 This week, 3 Last week, 10 Last 7 days, 4 Last 31 days, 32 This month, 22 Last month, 28 Month to date, 21 Last 90 days, 7 This calendar year, 23 Last 12 months, 9 All dates.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              101,
+              180
+            ]
+          },
+          "order_by": {
+            "type": "integer",
+            "description": "Sort field: 0 OrderID, 1 OrderDate, 2 OrderStatus, 3 ShipDate, 4 ShippingStatus.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "ascending": {
+            "type": "boolean",
+            "description": "true for ascending order, false for newest or highest first."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Orders",
+        "queryParams": {
+          "model.orderIDs": "$order_ids",
+          "model.orderStatus": "$order_status",
+          "model.paymentStatus": "$payment_status",
+          "model.shippingStatus": "$shipping_status",
+          "model.companyID": "$company_ids",
+          "model.channel": "$channels",
+          "model.orderSourceOrderIDList": "$channel_order_ids",
+          "model.userID": "$customer_ids",
+          "model.warehouseID": "$warehouse_ids",
+          "model.sKU": "$sku",
+          "model.trackingNumber": "$tracking_number",
+          "model.keyword": "$keyword",
+          "model.createdOnFrom": "$created_from",
+          "model.createdOnTo": "$created_to",
+          "model.lastUpdatedFrom": "$updated_from",
+          "model.lastUpdatedTo": "$updated_to",
+          "model.dateRange": "$created_range",
+          "model.orderBy": "$order_by",
+          "model.isAscending": "$ascending",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "TotalResults": "$.TotalResults",
+            "Items": {
+              "$from": "$.Items[*]",
+              "$select": {
+                "ID": "$.ID",
+                "OrderSource": "$.OrderSource",
+                "OrderSourceOrderID": "$.OrderSourceOrderID",
+                "StatusCode": "$.StatusCode",
+                "PaymentStatus": "$.PaymentStatus",
+                "ShippingStatus": "$.ShippingStatus",
+                "TimeOfOrder": "$.TimeOfOrder",
+                "CreatedOn": "$.CreatedOn",
+                "LastUpdated": "$.LastUpdated",
+                "ShipDate": "$.ShipDate",
+                "OrderShippingPromiseDate": "$.OrderShippingPromiseDate",
+                "EstimatedDeliveryDate": "$.EstimatedDeliveryDate",
+                "CompanyID": "$.CompanyID",
+                "CompanyName": "$.CompanyName",
+                "UserID": "$.UserID",
+                "FirstName": "$.FirstName",
+                "LastName": "$.LastName",
+                "CustomerEmail": "$.CustomerEmail",
+                "GrandTotal": "$.GrandTotal",
+                "TaxTotal": "$.TaxTotal",
+                "ShippingTotal": "$.ShippingTotal",
+                "OrderDiscountsTotal": "$.OrderDiscountsTotal",
+                "OrderCurrencyCode": "$.OrderCurrencyCode",
+                "ShippingCarrier": "$.ShippingCarrier",
+                "ShippingService": "$.ShippingService",
+                "TrackingNumber": "$.TrackingNumber",
+                "ShippingState": "$.ShippingState",
+                "ShippingCountry": "$.ShippingCountry",
+                "bRushOrder": "$.bRushOrder",
+                "Dropship": "$.Dropship",
+                "CustomerServiceStatus": "$.CustomerServiceStatus",
+                "Items": {
+                  "$from": "$.Items[*]",
+                  "$select": {
+                    "ID": "$.ID",
+                    "ProductID": "$.ProductID",
+                    "ProductName": "$.ProductName",
+                    "DisplayName": "$.DisplayName",
+                    "Qty": "$.Qty",
+                    "QtyShipped": "$.QtyShipped",
+                    "QtyReturned": "$.QtyReturned",
+                    "SitePrice": "$.SitePrice",
+                    "AdjustedSitePrice": "$.AdjustedSitePrice",
+                    "LineTotal": "$.LineTotal",
+                    "LineTaxTotal": "$.LineTaxTotal",
+                    "DiscountTotal": "$.DiscountTotal",
+                    "StatusCode": "$.StatusCode",
+                    "ItemShippingStatus": "$.ItemShippingStatus",
+                    "ShipFromWarehouseName": "$.ShipFromWarehouseName",
+                    "IsBackOrder": "$.IsBackOrder",
+                    "IsDropShipped": "$.IsDropShipped"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sellercloud_get_order",
+      "description": "Get one sales order by Sellercloud order id: details, statuses, items with quantities and prices, totals, shipping details and packages, shipping and billing address, payments, profit and loss, related orders and custom columns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Sellercloud order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Orders/{order_id}"
+      }
+    },
+    {
+      "name": "sellercloud_get_order_notes",
+      "description": "Get the notes of one sales order: note text, category, author, date and whether the note is pinned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Sellercloud order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Orders/Notes",
+        "queryParams": {
+          "id": "$order_id"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_list_order_packages",
+      "description": "List the shipped packages of one sales order: tracking number and link, weight and dimensions, shipping cost, estimated and actual delivery date, delivery status and the items in each package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Sellercloud order id."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Orders/Packages",
+        "queryParams": {
+          "id": "$order_id",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_list_order_views",
+      "description": "List the saved order views (filters saved in the Sellercloud Manage Orders page) with id and name, to use with sellercloud_list_orders_by_view.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Orders/Views"
+      }
+    },
+    {
+      "name": "sellercloud_list_orders_by_view",
+      "description": "List the sales orders that match a saved order view, exactly as the view filters them in Sellercloud. Returns Items and TotalResults, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "view_id": {
+            "type": "integer",
+            "description": "Saved view id from sellercloud_list_order_views."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          }
+        },
+        "required": [
+          "view_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Orders/GetAllByView",
+        "queryParams": {
+          "viewID": "$view_id",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_list_products",
+      "description": "Search the product catalog by SKU, UPC, keyword, company, vendor, vendor SKU, brand, warehouse, physical quantity, active status, kit or shadow type, creation or update date. Returns product data with names, identifiers, prices, average cost, quantities and units sold, up to 50 per page. Each row is cut to the fields an agent needs (Sellercloud returns about 200 per product).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Product id (SKU); several separated by commas."
+          },
+          "upc": {
+            "type": "string",
+            "description": "UPC barcode."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Global search term, as in the Sellercloud catalog search box."
+          },
+          "company_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Company ids the products belong to."
+          },
+          "vendor_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Vendor ids the products are linked to."
+          },
+          "vendor_skus": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Vendor SKUs (the vendor's own part numbers)."
+          },
+          "brand_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Brand ids (from sellercloud_list_brands)."
+          },
+          "warehouse_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Warehouse ids that hold the products."
+          },
+          "active_status": {
+            "type": "integer",
+            "description": "1 active only, 0 inactive only, -1 all.",
+            "enum": [
+              -1,
+              0,
+              1
+            ]
+          },
+          "physical_qty_from": {
+            "type": "integer",
+            "description": "Minimum physical quantity on hand."
+          },
+          "physical_qty_to": {
+            "type": "integer",
+            "description": "Maximum physical quantity on hand."
+          },
+          "kits": {
+            "type": "integer",
+            "description": "Kit filter: 0 not a kit parent or component, 1 kit parent, 2 kit component, 3 not a kit parent, 4 not a kit component.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "shadows": {
+            "type": "integer",
+            "description": "Shadow filter: 0 non-shadows only, 1 shadows only, 2 shadow parents, 3 not a shadow or shadow parent.",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Last updated on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Last updated on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Catalog",
+        "queryParams": {
+          "model.sKU": "$sku",
+          "model.uPC": "$upc",
+          "model.keyword": "$keyword",
+          "model.companyID": "$company_ids",
+          "model.vendorID": "$vendor_ids",
+          "model.vendorSKU": "$vendor_skus",
+          "model.brandIds": "$brand_ids",
+          "model.warehouse": "$warehouse_ids",
+          "model.activeStatus": "$active_status",
+          "model.physicalQtyFrom": "$physical_qty_from",
+          "model.physicalQtyTo": "$physical_qty_to",
+          "model.selectedKits": "$kits",
+          "model.displayShadows": "$shadows",
+          "model.dateCreatedFrom": "$created_from",
+          "model.dateCreatedTo": "$created_to",
+          "model.lastUpdatedFrom": "$updated_from",
+          "model.lastUpdatedTo": "$updated_to",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "TotalResults": "$.TotalResults",
+            "Items": {
+              "$from": "$.Items[*]",
+              "$select": {
+                "ID": "$.ID",
+                "ProductName": "$.ProductName",
+                "ProductType": "$.ProductType",
+                "BrandName": "$.BrandName",
+                "ManufacturerSKU": "$.ManufacturerSKU",
+                "UPC": "$.UPC",
+                "GTIN": "$.GTIN",
+                "ASIN": "$.ASIN",
+                "CompanyID": "$.CompanyID",
+                "CompanyName": "$.CompanyName",
+                "DefaultVendor": "$.DefaultVendor",
+                "DefaultVendorSKU": "$.DefaultVendorSKU",
+                "ActiveStatus": "$.ActiveStatus",
+                "Status": "$.Status",
+                "IsKit": "$.IsKit",
+                "SitePrice": "$.SitePrice",
+                "SiteCost": "$.SiteCost",
+                "ListPrice": "$.ListPrice",
+                "SalePrice": "$.SalePrice",
+                "StorePrice": "$.StorePrice",
+                "WholeSalePrice": "$.WholeSalePrice",
+                "MAPPrice": "$.MAPPrice",
+                "AverageCost": "$.AverageCost",
+                "LastCost": "$.LastCost",
+                "PhysicalQty": "$.PhysicalQty",
+                "ReservedQty": "$.ReservedQty",
+                "AggregateQty": "$.AggregateQty",
+                "AggregatePhysicalQty": "$.AggregatePhysicalQty",
+                "InventoryAvailableQty": "$.InventoryAvailableQty",
+                "OnOrder": "$.OnOrder",
+                "OnBackOrder": "$.OnBackOrder",
+                "QtySold30": "$.QtySold30",
+                "QtySold90": "$.QtySold90",
+                "QtySold365": "$.QtySold365",
+                "WarehouseName": "$.WarehouseName",
+                "ImageUrl": "$.ImageUrl",
+                "DateCreated": "$.DateCreated",
+                "LastModifiedDate": "$.LastModifiedDate"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sellercloud_get_product_prices",
+      "description": "Get the prices of one product by SKU: site price, stop-loss price and the price set for each sales channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (SKU), exactly as in Sellercloud."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Catalog/Prices",
+        "queryParams": {
+          "productID": "$product_id"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_list_inventory",
+      "description": "Search inventory by SKU, EAN, UPC, keyword, company, vendor, brand, warehouse, physical quantity or update date. Returns per product the physical, reserved and aggregate quantities, per-warehouse stock, average cost and units sold in the last 15 to 365 days, up to 50 per page. Each row is cut to the fields an agent needs (Sellercloud returns 70 to 200 per row); call sellercloud_get_inventory for every field of one record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Product id (SKU); several separated by commas."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN barcode; several separated by commas."
+          },
+          "upc": {
+            "type": "string",
+            "description": "UPC barcode."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Global search term, as in the Sellercloud inventory search box."
+          },
+          "company_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Company ids the products belong to."
+          },
+          "vendor_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Vendor ids the products are linked to."
+          },
+          "brand_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Brand ids (from sellercloud_list_brands)."
+          },
+          "warehouse_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Warehouse ids (from sellercloud_list_warehouses)."
+          },
+          "physical_qty_from": {
+            "type": "integer",
+            "description": "Minimum physical quantity on hand, e.g. 1 to skip products out of stock."
+          },
+          "physical_qty_to": {
+            "type": "integer",
+            "description": "Maximum physical quantity on hand, e.g. 0 for products out of stock."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Last updated on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Last updated on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Inventory",
+        "queryParams": {
+          "model.inventoryID": "$sku",
+          "model.eAN": "$ean",
+          "model.uPC": "$upc",
+          "model.keyword": "$keyword",
+          "model.companyID": "$company_ids",
+          "model.vendorID": "$vendor_ids",
+          "model.brandIds": "$brand_ids",
+          "model.warehouse": "$warehouse_ids",
+          "model.physicalQtyFrom": "$physical_qty_from",
+          "model.physicalQtyTo": "$physical_qty_to",
+          "model.lastUpdatedFrom": "$updated_from",
+          "model.lastUpdatedTo": "$updated_to",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "TotalResults": "$.TotalResults",
+            "Items": {
+              "$from": "$.Items[*]",
+              "$select": {
+                "ID": "$.ID",
+                "ProductName": "$.ProductName",
+                "ProductType": "$.ProductType",
+                "BrandName": "$.BrandName",
+                "ManufacturerSKU": "$.ManufacturerSKU",
+                "UPC": "$.UPC",
+                "EAN": "$.EAN",
+                "CompanyID": "$.CompanyID",
+                "CompanyName": "$.CompanyName",
+                "DefaultVendor": "$.DefaultVendor",
+                "DefaultVendorSKU": "$.DefaultVendorSKU",
+                "ActiveStatus": "$.ActiveStatus",
+                "IsKit": "$.IsKit",
+                "PhysicalQty": "$.PhysicalQty",
+                "ReservedQty": "$.ReservedQty",
+                "AggregateQty": "$.AggregateQty",
+                "AggregatedQty": "$.AggregatedQty",
+                "InventoryAvailableQty": "$.InventoryAvailableQty",
+                "OnOrder": "$.OnOrder",
+                "OnBackOrder": "$.OnBackOrder",
+                "ExpectedDeliveryDate": "$.ExpectedDeliveryDate",
+                "WarehouseName": "$.WarehouseName",
+                "WarehouseCount": "$.WarehouseCount",
+                "QtySold30": "$.QtySold30",
+                "QtySold90": "$.QtySold90",
+                "SiteCost": "$.SiteCost",
+                "AverageCost": "$.AverageCost",
+                "LastCost": "$.LastCost",
+                "LastModifiedDate": "$.LastModifiedDate"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sellercloud_get_inventory",
+      "description": "Get the full inventory record of one product by SKU: general data, identifiers (UPC, EAN, ASIN), sales metrics, inventory quantities, pricing, kit components, images and custom columns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (SKU), exactly as in Sellercloud."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Inventory/Details",
+        "queryParams": {
+          "productID": "$product_id"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_get_inventory_by_warehouse",
+      "description": "Get the stock of one product per warehouse: physical and available quantity in each warehouse, or in one warehouse only when warehouse_id is given.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (SKU), exactly as in Sellercloud."
+          },
+          "warehouse_id": {
+            "type": "integer",
+            "description": "Only this warehouse (id from sellercloud_list_warehouses)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Inventory/Warehouses",
+        "queryParams": {
+          "productID": "$product_id",
+          "warehouseID": "$warehouse_id"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_list_customers",
+      "description": "Search customers by e-mail, name, business name, phone, city, ZIP code, type, channel, company, keyword or creation and change dates. Returns customer records, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sellercloud customer ids."
+          },
+          "email": {
+            "type": "string",
+            "description": "Customer e-mail address."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "Customer first name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Customer last name."
+          },
+          "business_name": {
+            "type": "string",
+            "description": "Business (corporate) name of the customer."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Customer phone number."
+          },
+          "city": {
+            "type": "string",
+            "description": "Customer city."
+          },
+          "zip_code": {
+            "type": "string",
+            "description": "Customer ZIP or postal code."
+          },
+          "customer_type": {
+            "type": "integer",
+            "description": "0 Retail, 1 Wholesale.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "channel": {
+            "type": "integer",
+            "description": "Channel the customer came from, e.g. 0 Local_Store, 1 eBay, 4 Amazon, 6 Website, 42 Walmart."
+          },
+          "company_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Company ids the customers belong to."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Global search term, as in the Sellercloud customer search box."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "modified_from": {
+            "type": "string",
+            "description": "Modified on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "modified_to": {
+            "type": "string",
+            "description": "Modified on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Customers",
+        "queryParams": {
+          "model.customerIds": "$customer_ids",
+          "model.email": "$email",
+          "model.firstName": "$first_name",
+          "model.lastName": "$last_name",
+          "model.corporateName": "$business_name",
+          "model.phoneNumber": "$phone",
+          "model.city": "$city",
+          "model.zipCode": "$zip_code",
+          "model.customerType": "$customer_type",
+          "model.channel": "$channel",
+          "model.companyIds": "$company_ids",
+          "model.keyword": "$keyword",
+          "model.createdOnFrom": "$created_from",
+          "model.createdOnTo": "$created_to",
+          "model.modifiedOnFrom": "$modified_from",
+          "model.modifiedOnTo": "$modified_to",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_get_customer",
+      "description": "Get one customer by Sellercloud customer id: general and personal data, addresses, order and wholesale options, customer groups and custom columns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Sellercloud customer id."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Customers/{customer_id}"
+      }
+    },
+    {
+      "name": "sellercloud_list_companies",
+      "description": "List the companies (business units or stores) of the Sellercloud account with id, name, default and disabled flags and enabled channels. Company ids filter most other tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Company ids to fetch."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Search term for the company name."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Companies",
+        "queryParams": {
+          "model.companyID": "$company_ids",
+          "model.keyword": "$keyword",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_list_purchase_orders",
+      "description": "Search purchase orders by id, company, status, receiving warehouse, shipping and receiving status, keyword or created, received and updated dates. Returns PO headers with vendor, totals and statuses, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "po_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Purchase order ids."
+          },
+          "company_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Company ids the purchase orders belong to."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            },
+            "description": "PO status: 0 Saved, 1 Ordered, 2 Pending, 3 Received, 4 Cancelled, 5 Completed."
+          },
+          "shipping_statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2
+              ]
+            },
+            "description": "Vendor shipping status: 0 None, 1 PartiallyShipped, 2 FullyShipped."
+          },
+          "received_statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2
+              ]
+            },
+            "description": "Receiving status: 0 None, 1 PartiallyReceived, 2 FullyReceived."
+          },
+          "warehouse_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Receiving warehouse ids."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Global search term, as in the Sellercloud purchase order search box."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "received_from": {
+            "type": "string",
+            "description": "Received on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "received_to": {
+            "type": "string",
+            "description": "Received on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Updated on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Updated on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/PurchaseOrders",
+        "queryParams": {
+          "model.pOIds": "$po_ids",
+          "model.companyIDList": "$company_ids",
+          "model.pOStatuses": "$statuses",
+          "model.shippingStatuses": "$shipping_statuses",
+          "model.receivedStatuses": "$received_statuses",
+          "model.receiveWarehouseID": "$warehouse_ids",
+          "model.keyword": "$keyword",
+          "model.createDateFrom": "$created_from",
+          "model.createDateTo": "$created_to",
+          "model.receiveDateFrom": "$received_from",
+          "model.receiveDateTo": "$received_to",
+          "model.updatedDateFrom": "$updated_from",
+          "model.updatedDateTo": "$updated_to",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_get_purchase_order",
+      "description": "Get one purchase order by id: purchase details, vendor and invoice, items, totals, statuses, related items and custom columns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "po_id": {
+            "type": "integer",
+            "description": "Purchase order id."
+          }
+        },
+        "required": [
+          "po_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/PurchaseOrders/{po_id}"
+      }
+    },
+    {
+      "name": "sellercloud_get_purchase_order_items",
+      "description": "Get the line items of one purchase order: product, vendor SKU, quantities ordered and received, unit cost and line totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "po_id": {
+            "type": "integer",
+            "description": "Purchase order id."
+          }
+        },
+        "required": [
+          "po_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/PurchaseOrders/{po_id}/Items"
+      }
+    },
+    {
+      "name": "sellercloud_list_vendors",
+      "description": "List vendors (suppliers) with id, name, e-mail and whether default; filter by vendor ids, names, e-mail or active status. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Vendor ids to fetch."
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Vendor names."
+          },
+          "email": {
+            "type": "string",
+            "description": "Vendor e-mail address."
+          },
+          "active_status": {
+            "type": "integer",
+            "description": "1 active vendors only, 0 inactive only."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Vendors",
+        "queryParams": {
+          "model.vendorIDs": "$vendor_ids",
+          "model.names": "$names",
+          "model.email": "$email",
+          "model.activeStatus": "$active_status",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_get_vendor",
+      "description": "Get one vendor by id: name, alias, account number, e-mail and CC address, website, and whether active and default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_id": {
+            "type": "integer",
+            "description": "Vendor id from sellercloud_list_vendors."
+          }
+        },
+        "required": [
+          "vendor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Vendors/{vendor_id}"
+      }
+    },
+    {
+      "name": "sellercloud_list_vendor_products",
+      "description": "List the products a vendor supplies: Sellercloud SKU, vendor SKU, product name, vendor price, price and quantity per case, quantity and availability. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_id": {
+            "type": "integer",
+            "description": "Vendor id from sellercloud_list_vendors."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Only this Sellercloud product id (SKU)."
+          },
+          "vendor_sku": {
+            "type": "string",
+            "description": "Only this vendor SKU."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "vendor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Vendors/{vendor_id}/products",
+        "queryParams": {
+          "model.productSKU": "$sku",
+          "model.vendorSKU": "$vendor_sku",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_list_rmas",
+      "description": "Search returns (RMAs) by RMA or order id, company, product, status, channel, channel order or RMA id, tracking number, or created, received, closed and updated dates. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rma_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "RMA ids."
+          },
+          "order_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Sellercloud order ids the returns belong to."
+          },
+          "company_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Company ids the returns belong to."
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Product ids (SKUs) in the returns."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2,
+                3
+              ]
+            },
+            "description": "RMA status: 0 Open, 1 On_Hold, 2 Processing, 3 Closed."
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Channel ids of the original orders, e.g. 1 eBay, 4 Amazon, 6 Website, 42 Walmart."
+          },
+          "channel_order_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Order ids as the channel knows them."
+          },
+          "channel_rma_id": {
+            "type": "string",
+            "description": "Return id as the channel knows it."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Return shipment tracking number."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "RMA created on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "RMA created on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "received_from": {
+            "type": "string",
+            "description": "Items received on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "received_to": {
+            "type": "string",
+            "description": "Items received on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "closed_from": {
+            "type": "string",
+            "description": "Closed on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "closed_to": {
+            "type": "string",
+            "description": "Closed on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Last updated on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Last updated on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Rma",
+        "queryParams": {
+          "model.rMAIDs": "$rma_ids",
+          "model.orderIDs": "$order_ids",
+          "model.companyIDList": "$company_ids",
+          "model.productID": "$product_ids",
+          "model.rmaStatuses": "$statuses",
+          "model.orderSources": "$channels",
+          "model.orderSourceOrderIDs": "$channel_order_ids",
+          "model.orderSourceRMAID": "$channel_rma_id",
+          "model.trackingNumber": "$tracking_number",
+          "model.dateFrom": "$created_from",
+          "model.dateTo": "$created_to",
+          "model.returnedOnFrom": "$received_from",
+          "model.returnedOnTo": "$received_to",
+          "model.closedOnFrom": "$closed_from",
+          "model.closedOnTo": "$closed_to",
+          "model.lastUpdatedOnFrom": "$updated_from",
+          "model.lastUpdatedOnTo": "$updated_to",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_get_rma",
+      "description": "Get one return (RMA) by id: customer, company, original order and total, status and approval, replacement order, tracking number, credit memo, items and change history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rma_id": {
+            "type": "integer",
+            "description": "RMA id."
+          }
+        },
+        "required": [
+          "rma_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Rma/{rma_id}"
+      }
+    },
+    {
+      "name": "sellercloud_get_rma_items",
+      "description": "Get the items of one return (RMA): SKU, quantities ordered, returned and received, return reason, resolution, refund amount, problem description, approval status and serial numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rma_id": {
+            "type": "integer",
+            "description": "RMA id."
+          }
+        },
+        "required": [
+          "rma_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Rma/{rma_id}/Items"
+      }
+    },
+    {
+      "name": "sellercloud_list_warehouses",
+      "description": "List warehouses with id, name, type (normal, FBA, dropship, WFS and others), address, whether default and sellable; filter by ids, name, type, default or sellable. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Warehouse ids to fetch."
+          },
+          "name": {
+            "type": "string",
+            "description": "Warehouse name."
+          },
+          "warehouse_type": {
+            "type": "integer",
+            "description": "0 Normal, 1 FBA, 2 Un_Tested, 3 Interim, 4 DropShip, 5 NewEgg, 6 Cdiscount, 7 WFS, 8 AWD.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
+          },
+          "is_default": {
+            "type": "integer",
+            "description": "0 all, 1 default warehouse only, 2 non-default only.",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          },
+          "is_sellable": {
+            "type": "integer",
+            "description": "0 all, 1 sellable warehouses only, 2 non-sellable only.",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Warehouses",
+        "queryParams": {
+          "model.warehouseIds": "$warehouse_ids",
+          "model.name": "$name",
+          "model.warehouseType": "$warehouse_type",
+          "model.isDefault": "$is_default",
+          "model.isSellable": "$is_sellable",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_list_warehouse_transfers",
+      "description": "List warehouse inventory transfers (WITR) between warehouses with status, company, source, interim and destination warehouse; filter by ids, status, warehouses or company. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transfer_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Transfer ids."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2,
+                3,
+                10,
+                15,
+                20,
+                88,
+                99
+              ]
+            },
+            "description": "Transfer status: 0 Pending, 1 Requested, 2 Shipped, 3 Received, 10 PartiallyPicked, 15 FullyPicked, 20 PartiallyReceived, 88 Rejected, 99 Cancelled."
+          },
+          "from_warehouse_id": {
+            "type": "integer",
+            "description": "Source warehouse id."
+          },
+          "to_warehouse_id": {
+            "type": "integer",
+            "description": "Destination warehouse id."
+          },
+          "company_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Company ids."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/WarehouseInventoryTransfers",
+        "queryParams": {
+          "model.transferIdList": "$transfer_ids",
+          "model.statuses": "$statuses",
+          "model.fromWarehouseId": "$from_warehouse_id",
+          "model.toWarehouseId": "$to_warehouse_id",
+          "model.companyIds": "$company_ids",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_list_picklists",
+      "description": "List picklists with id, title, warehouse, status and generation date; filter by ids, title, product, order, warehouse, status or generation date. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "picklist_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Picklist ids."
+          },
+          "titles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Picklist titles."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Only picklists that contain this product id (SKU)."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Only picklists that contain this Sellercloud order id."
+          },
+          "warehouse_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Warehouse ids."
+          },
+          "status": {
+            "type": "integer",
+            "description": "0 Open, 1 Closed, -1 All.",
+            "enum": [
+              -1,
+              0,
+              1
+            ]
+          },
+          "generated_from": {
+            "type": "string",
+            "description": "Generated on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "generated_to": {
+            "type": "string",
+            "description": "Generated on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Picklists",
+        "queryParams": {
+          "model.picklistID": "$picklist_ids",
+          "model.title": "$titles",
+          "model.productID": "$sku",
+          "model.orderID": "$order_id",
+          "model.warehouse": "$warehouse_ids",
+          "model.status": "$status",
+          "model.generatedFrom": "$generated_from",
+          "model.generatedTo": "$generated_to",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_list_queued_jobs",
+      "description": "List queued jobs (imports, exports, bulk updates) with type, status, priority, submitter and dates; filter by job id, status, company or submission date. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "Queued job id."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10
+              ]
+            },
+            "description": "Job status: 0 Submitted, 1 Processing, 3 Completed, 4 Failed, 5 PartialSuccess, 6 OnHold, 7 Cancelled, 8 Cancelled (service restarted), 9 Aborted (too much time), 10 Cancelled while running."
+          },
+          "company_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Company ids."
+          },
+          "submitted_from": {
+            "type": "string",
+            "description": "Submitted on or after. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "submitted_to": {
+            "type": "string",
+            "description": "Submitted on or before. Date and time in the format MM/DD/YYYY HH:MM, e.g. 10/01/2026 00:00."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 50 (Sellercloud default 10, maximum 50).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/QueuedJobs",
+        "queryParams": {
+          "model.jobID": "$job_id",
+          "model.jobStatuses": "$statuses",
+          "model.companyIDList": "$company_ids",
+          "model.submittedFrom": "$submitted_from",
+          "model.submittedTo": "$submitted_to",
+          "model.pageNumber": "$page_number",
+          "model.pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "sellercloud_get_queued_job",
+      "description": "Get one queued job by id: type, status and submitter, phase and record progress, succeeded and failed counts, input and output file. Use it to check whether an import or export has finished.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "Queued job id."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/QueuedJobs/{job_id}"
+      }
+    },
+    {
+      "name": "sellercloud_list_brands",
+      "description": "List the brands defined in Sellercloud with id and name, to resolve brand ids in products or to filter products and inventory by brand.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Settings/Brands"
+      }
+    },
+    {
+      "name": "sellercloud_list_manufacturers",
+      "description": "List the manufacturers defined for one company with id and name, to resolve manufacturer ids in product data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sellercloud_list_companies."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Settings/Manufacturers",
+        "queryParams": {
+          "companyId": "$company_id"
+        }
+      }
+    }
+  ]
+}

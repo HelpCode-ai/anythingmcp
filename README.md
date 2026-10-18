@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 477 connectors, 20 of them with no API key." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 484 connectors, 21 of them with no API key." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: self-hosted MCP gateway</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP is an open-source, self-hosted MCP gateway that turns any REST/OpenAPI, SOAP, GraphQL, OData or SQL system into MCP tools for Claude, ChatGPT and Copilot, without writing an MCP server.</strong><br/>
-  It ships 477 ready connectors, among them SAP, Etsy, weclapp and Amazon Seller, and 20 of them need no API key.
+  It ships 484 ready connectors, among them SAP, Etsy, weclapp and Amazon Seller, and 21 of them need no API key.
 </p>
 
 <p align="center">
@@ -103,7 +103,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-477 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+484 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Examples |
 |---|---|
