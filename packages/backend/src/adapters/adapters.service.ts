@@ -10,6 +10,7 @@ import { encrypt } from '../common/crypto/encryption.util';
 import { ConfigService } from '@nestjs/config';
 import { listAdapters, getAdapter, AdapterMeta, AdapterDefinition } from './catalog';
 import { hashInstructions } from './catalog-fingerprint';
+import { SerializedBody, serializeWithEtag, toAdapterSummary } from './catalog-summary';
 import { getRequiredSecret } from '../common/secrets.util';
 import {
   withOperatorProvided,
@@ -48,6 +49,7 @@ import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 export class AdaptersService {
   private readonly logger = new Logger(AdaptersService.name);
   private readonly encryptionKey: string;
+  private readonly publicCatalogCache = new Map<string, SerializedBody>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -73,6 +75,30 @@ export class AdaptersService {
           setupKind: full ? setupKind({ ...full, requiredEnvVars }) : undefined,
         };
       });
+  }
+
+  /**
+   * The public catalog as a ready-to-send body: the full list (`full`, what
+   * the connector store loads) or the website's slim one (`slim`, see
+   * AdapterSummary). The catalog only changes with a release, so each view is
+   * built and serialised once per process (per deployment mode) instead of
+   * per request.
+   */
+  publicCatalog(view: 'full' | 'slim'): SerializedBody {
+    const key = `${view}|${this.configService.get<string>('DEPLOYMENT_MODE') ?? ''}`;
+    let entry = this.publicCatalogCache.get(key);
+    if (!entry) {
+      const all = this.listAll();
+      entry = serializeWithEtag(view === 'slim' ? all.map(toAdapterSummary) : all);
+      this.publicCatalogCache.set(key, entry);
+    }
+    return entry;
+  }
+
+  /** Setup instructions of one listed adapter, for its marketplace page. */
+  publicInstructions(slug: string): { slug: string; instructions: string | null } {
+    const adapter = this.getBySlug(slug);
+    return { slug: adapter.slug, instructions: adapter.instructions ?? null };
   }
 
   /**

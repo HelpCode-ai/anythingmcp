@@ -10,8 +10,13 @@ import {
   BadRequestException,
   HttpCode,
   HttpException,
+  Headers,
+  Query,
+  Res,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
+import type { Response } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { AdaptersService } from './adapters.service';
 import { LicenseGuardService } from '../license/license-guard.service';
@@ -19,8 +24,27 @@ import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { ProductEventService, ProductEvents, scrubProviderMessage } from '../audit/product-event.service';
 import { STARTER_PACK_MAX_INSTALL } from './starter-pack';
 
-// Public endpoints (no auth required) — used by the marketing website
+// Public endpoints (no auth required) — used by the marketing website.
+//
+// Not rate limited. The catalog is the same for every caller and changes only
+// with a release: each view is serialised once per process and sent with a
+// strong ETag (a revalidation is a 304) and a Cache-Control that lets the
+// caller keep it for a while. Every render of the website goes through one
+// droplet IP, so the global 100/min per-IP bucket answered its bursts with 429
+// and the site fell back to a static list of half the catalog. Exempting the
+// website's IP instead would hard-code our infrastructure in the app and break
+// on the next droplet move; the endpoint is cheap enough to leave open.
+const PUBLIC_CATALOG_CACHE_CONTROL = 'public, max-age=300, stale-while-revalidate=3600';
+
+/** If-None-Match (a list, `*`, weak or strong tags) names this ETag. */
+export function etagMatches(ifNoneMatch: string | undefined, etag: string): boolean {
+  if (!ifNoneMatch) return false;
+  const bare = (t: string) => t.trim().replace(/^W\//, '');
+  return ifNoneMatch.split(',').some((t) => t.trim() === '*' || bare(t) === bare(etag));
+}
+
 @ApiTags('Adapters')
+@SkipThrottle()
 @Controller('api/adapters')
 export class AdaptersPublicController {
   constructor(private readonly adaptersService: AdaptersService) {}
@@ -29,10 +53,42 @@ export class AdaptersPublicController {
   @ApiOperation({
     summary: 'List all available built-in adapters',
     description:
-      'Returns metadata for all pre-configured adapters. This endpoint is public so the marketing website can render the marketplace dynamically.',
+      'Returns metadata for all pre-configured adapters. This endpoint is public so the marketing website can render the marketplace dynamically. ' +
+      'With `?fields=slim` each adapter carries only what a catalog page shows (no setup instructions, variable help or prerequisites), ' +
+      'plus an `enriched` flag; the instructions of one adapter are at `/api/adapters/:slug/instructions`.',
   })
-  list() {
-    return this.adaptersService.listAll();
+  @ApiQuery({ name: 'fields', required: false, enum: ['slim'] })
+  list(
+    @Query('fields') fields: string | undefined,
+    @Headers('if-none-match') ifNoneMatch: string | undefined,
+    @Res() res: Response,
+  ) {
+    if (fields !== undefined && fields !== 'slim' && fields !== 'full') {
+      throw new BadRequestException('fields must be "slim" (or omitted for the full list)');
+    }
+    const { body, etag } = this.adaptersService.publicCatalog(
+      fields === 'slim' ? 'slim' : 'full',
+    );
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', PUBLIC_CATALOG_CACHE_CONTROL);
+    if (etagMatches(ifNoneMatch, etag)) {
+      res.status(304).end();
+      return;
+    }
+    res.type('application/json').send(body);
+  }
+
+  // Two path segments, so the authenticated `GET :slug` never sees it.
+  @Get(':slug/instructions')
+  @ApiOperation({
+    summary: "One adapter's setup instructions",
+    description:
+      'The Markdown setup instructions of a listed adapter (null when it has none), for its marketplace page. Public.',
+  })
+  instructions(@Param('slug') slug: string, @Res({ passthrough: true }) res: Response) {
+    const result = this.adaptersService.publicInstructions(slug);
+    res.setHeader('Cache-Control', PUBLIC_CATALOG_CACHE_CONTROL);
+    return result;
   }
 }
 

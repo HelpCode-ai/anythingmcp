@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { AttributionClickId, clickIdFromAttribution, sanitizeSignupAttribution } from './signup-attribution';
+import { CHECKOUT_SOURCES } from '../license/license-checkout';
 
 /**
  * Product-usage events the UI reports so the activation funnel can be read
@@ -267,10 +268,13 @@ export class ProductEventService {
 // `status`, `toolName`, `error`: why a setup check or sign-in failed (the
 // provider's message, passed through scrubProviderMessage by the server);
 // `verified`: whether a completed setup made a successful call.
+// `source`: the entry point that led to /start-trial (start_trial_viewed,
+// start_trial_checkout_started); only the CHECKOUT_SOURCES values are kept.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
-  'status', 'toolName', 'error', 'verified', 'cardTrialOffered',
+  'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source',
 ] as const;
+const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;
 /** The values of `match` (see catalog-search.ts). */
 const SEARCH_MATCH_KINDS = new Set(['direct', 'fuzzy', 'partial']);
@@ -286,7 +290,9 @@ function boundMetadata(
         ? sanitizeSearchQuery(metadata[key])
         : key === 'match'
           ? (SEARCH_MATCH_KINDS.has(metadata[key] as string) ? metadata[key] : null)
-          : metadata[key];
+          : key === 'source'
+            ? (KNOWN_CHECKOUT_SOURCES.has(metadata[key] as string) ? metadata[key] : null)
+            : metadata[key];
     if (typeof v === 'string') entries.push([key, v.slice(0, 200)]);
     else if (typeof v === 'number' || typeof v === 'boolean') entries.push([key, v]);
   }

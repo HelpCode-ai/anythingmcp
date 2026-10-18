@@ -348,9 +348,25 @@ export function withSecretsNotice(message: string, res: unknown): string {
   return parts.filter(Boolean).join(' ');
 }
 
+export interface Connector {
+  id: string;
+  name: string;
+  type: string;
+  slug?: string;
+  baseUrl?: string;
+  isActive?: boolean;
+  authType?: string;
+  icon?: string | null;
+  setupStatus?: string;
+  missingVariables?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  [key: string]: unknown;
+}
+
 export const connectors = {
   list: (token: string) =>
-    request<any[]>('/api/connectors', { token }),
+    request<Connector[]>('/api/connectors', { token }),
   proxyAvailability: (token: string) =>
     request<{ available: boolean }>('/api/connectors/proxy-availability', { token }),
   /**
@@ -1505,10 +1521,25 @@ export const license = {
     }>('/api/license/usage', { token }),
 };
 
+export interface McpServer {
+  id: string;
+  name: string;
+  slug?: string;
+  description?: string;
+  instructions?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  usage?: { calls30d: number; lastCallAt: string | null };
+  _count?: { connectors: number; apiKeys: number };
+  connectors?: Array<{ connector: { name: string } }>;
+  [key: string]: unknown;
+}
+
 // MCP Servers
 export const mcpServers = {
   list: (token: string) =>
-    request<any[]>('/api/mcp-servers', { token }),
+    request<McpServer[]>('/api/mcp-servers', { token }),
   get: (id: string, token: string) =>
     request<any>(`/api/mcp-servers/${id}`, { token }),
   /** Calls in the last 30 days and the last one's time (the connect page's live check). */

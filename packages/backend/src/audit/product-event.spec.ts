@@ -64,6 +64,33 @@ describe('POST /api/product-events — catalog searches', () => {
   });
 });
 
+describe('POST /api/product-events — /start-trial funnel', () => {
+  it('keeps the source the page was opened from on both events', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, {
+      event: 'start_trial_viewed',
+      metadata: { source: 'first_success_banner', kind: 'trial' },
+    });
+    await controller.record(req, {
+      event: 'start_trial_checkout_started',
+      metadata: { source: 'trial_ended_wall', kind: 'pay' },
+    });
+    expect(stored().map((e: any) => [e.event, e.metadata])).toEqual([
+      ['start_trial_viewed', { kind: 'trial', source: 'first_success_banner' }],
+      ['start_trial_checkout_started', { kind: 'pay', source: 'trial_ended_wall' }],
+    ]);
+  });
+
+  it('drops a source that is not a known checkout entry point', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, {
+      event: 'start_trial_viewed',
+      metadata: { source: 'me@corp.de', kind: 'trial' },
+    });
+    expect(stored()[0].metadata).toEqual({ kind: 'trial' });
+  });
+});
+
 describe('scrubProviderMessage', () => {
   it('drops query strings, masks given secrets and token-like runs, caps the length', () => {
     expect(scrubProviderMessage('GET https://x.example/api?appid=abc failed', [])).toBe('GET https://x.example/api failed');

@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { useTheme } from '@/lib/theme-context';
 import { AppSidebar } from '@/components/app-sidebar';
+import { CommandPalette, isMacPlatform } from '@/components/command-palette';
 import { Footer } from '@/components/footer';
 import { TrialBanner } from '@/components/trial-banner';
 import { SubscriptionBanner } from '@/components/subscription-banner';
@@ -77,13 +78,22 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
+
+  const isMac = useSyncExternalStore(
+    () => () => {},
+    () => isMacPlatform(),
+    () => true
+  );
+  const shortcutLabel = isMac ? '⌘K' : 'Ctrl K';
 
   const headerTitle = title ?? breadcrumbs?.[breadcrumbs.length - 1]?.label;
 
   return (
     <div className="flex h-dvh items-stretch overflow-hidden">
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <AppSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -130,12 +140,39 @@ export function AppShell({
                 <div className="mt-px hidden truncate text-[12.5px] text-[var(--text-3)] md:block">{subtitle}</div>
               )}
             </div>
-            {/* Phones: the theme toggle rides the title row, so the second row
+            {/* Phones: the search button and theme toggle ride the title row, so the second row
                 belongs entirely to the page's own actions. */}
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              aria-label="Open command palette"
+              title={`Command palette (${shortcutLabel})`}
+              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)] md:hidden"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+            </button>
             <ThemeToggle isDark={isDark} setTheme={setTheme} className="md:hidden" />
           </div>
 
           <div className="flex items-center gap-2.5 max-md:contents">
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              aria-label={`Search (${shortcutLabel})`}
+              className="flex h-9 items-center gap-2 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-2.5 text-[13px] text-[var(--text-3)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] max-md:hidden"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+              <span className="text-[13px] text-[var(--text-2)]">Search...</span>
+              <kbd className="ml-1 rounded border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-3)]">
+                {shortcutLabel}
+              </kbd>
+            </button>
             <ThemeToggle isDark={isDark} setTheme={setTheme} className="max-md:hidden" />
             {actions && (
               <div className="flex min-w-0 flex-wrap items-center gap-2 max-md:grow max-md:justify-start md:justify-end">
