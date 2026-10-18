@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, tools, withSecretsNotice, isMachineGrant, type ToolTestResult, type CatalogDiff, type OAuthGrant } from '@/lib/api';
+import { connectors, tools, withSecretsNotice, withImportNotice, isMachineGrant, type ToolTestResult, type CatalogDiff, type OAuthGrant } from '@/lib/api';
 import { findDemoByTool } from '@/lib/demo-connectors';
 import { ToolEditor } from '@/components/tool-editor';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -617,7 +617,7 @@ export default function ConnectorDetailPage() {
     setMsg('Importing specification...');
     try {
       const result = await connectors.importSpec(id, token);
-      setMsg(withSecretsNotice(result.message, result));
+      setMsg(withImportNotice(result.message, result));
       fetchConnector();
       promptMcpAssignIfNeeded();
     } catch (err: any) {
@@ -675,7 +675,7 @@ export default function ConnectorDetailPage() {
       if (result.error) {
         setMsg(result.error);
       } else {
-        setMsg(withSecretsNotice(result.message, result));
+        setMsg(withImportNotice(result.message, result));
         setShowImport(false);
         setImportContent('');
         setImportUrl('');
@@ -901,7 +901,7 @@ export default function ConnectorDetailPage() {
       if (result.error) {
         setMsg(result.error);
       } else {
-        setMsg(withSecretsNotice(result.message, result));
+        setMsg(withImportNotice(result.message, result));
         fetchConnector();
       }
     } catch (err: any) {
