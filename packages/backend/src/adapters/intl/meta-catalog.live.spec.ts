@@ -61,7 +61,7 @@ const a = adapter as unknown as {
   connector: {
     baseUrl: string;
     authType: string;
-    authConfig: Record<string, string>;
+    authConfig: Record<string, unknown>;
     headers: Record<string, string>;
     healthcheckPath: string;
   };
@@ -106,7 +106,12 @@ describe('meta-catalog adapter: static spec conformance', () => {
 
   it('sends the token as a bearer header to the Graph API version Meta Ads uses', async () => {
     expect(a.connector.authType).toBe('BEARER_TOKEN');
-    expect(a.connector.authConfig).toEqual({ token: '{{META_CATALOG_ACCESS_TOKEN}}' });
+    // A pasted user token is renewed like Meta Ads' (META_APP_ID / META_APP_SECRET).
+    expect(a.connector.authConfig).toEqual({
+      token: '{{META_CATALOG_ACCESS_TOKEN}}',
+      tokenRenewal: (metaAds as { connector: { authConfig: { tokenRenewal: unknown } } }).connector.authConfig.tokenRenewal,
+    });
+    expect((a as unknown as { optionalEnvVars: string[] }).optionalEnvVars).toEqual(['META_APP_ID', 'META_APP_SECRET']);
     expect(a.connector.baseUrl).toBe(BASE);
     expect(a.connector.baseUrl).toBe((metaAds as { connector: { baseUrl: string } }).connector.baseUrl);
     expect(a.instructions).toContain('v26.0');
