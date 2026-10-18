@@ -18,7 +18,7 @@ const USER = {
 
 const DIRECTORY_URL = 'https://claude.ai/directory/anythingmcp';
 
-async function openServerPage(page: Page, deploymentMode: 'cloud' | 'self-hosted') {
+async function openServerPage(page: Page, deploymentMode: 'cloud' | 'self-hosted', mcpAuthMode = 'oauth2', slug = 'search') {
   const origin = test.info().project.use.baseURL ?? 'http://localhost:3100';
   await page.context().addCookies([{ name: 'amcp_token', value: 'test-token', url: origin }]);
   await page.addInitScript((user) => {
@@ -35,10 +35,10 @@ async function openServerPage(page: Page, deploymentMode: 'cloud' | 'self-hosted
 
     if (p === '/health/server-info') {
       serverInfoServed = true;
-      return json({ deploymentMode, mcpAuthMode: 'oauth2', hasUsers: true, registrationEnabled: true, ssoProviders: [] });
+      return json({ deploymentMode, mcpAuthMode, hasUsers: true, registrationEnabled: true, ssoProviders: [] });
     }
     if (p.endsWith('/mcp-servers/s1')) {
-      return json({ id: 's1', name: 'Search', slug: 'search', isActive: true, apiKeys: [], connectors: [] });
+      return json({ id: 's1', name: 'Search', slug, isActive: true, apiKeys: [], connectors: [] });
     }
     if (p.endsWith('/users/me/onboarding-state')) return json({ onboardingCompletedAt: '2026-01-01T00:00:00Z' });
     if (p.endsWith('/users/me')) return json(USER);
@@ -114,4 +114,113 @@ test.describe('MCP server Quick Connect', () => {
       await expect(modal).toContainText('X-API-Key');
     });
   }
+});
+
+test.describe('MCP server Share card', () => {
+  test('copies README badges with https install links and loads nothing third-party', async ({ page, context }) => {
+    const origin = test.info().project.use.baseURL ?? 'http://localhost:3100';
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+    const foreign: string[] = [];
+    const appHost = new URL(origin).hostname;
+    page.on('request', (req) => {
+      const host = new URL(req.url()).hostname;
+      if (!req.url().startsWith('data:') && host !== appHost && host !== 'localhost' && host !== '127.0.0.1') {
+        foreign.push(req.url());
+      }
+    });
+
+    await openServerPage(page, 'self-hosted');
+    const card = page.getByTestId('share-server');
+    await expect(card.getByText('Share this server')).toBeVisible();
+    await expect(card.getByTestId('share-preview').getByRole('link')).toHaveCount(2);
+    await expect(card.locator('img')).toHaveCount(0);
+    await expect(card.getByRole('button', { name: /copy/i })).toHaveCount(2);
+
+    const endpoint = (await page.locator('code', { hasText: /\/mcp\/s1$/ }).first().textContent())!.trim();
+    // The dev server runs on localhost, so the warning must show.
+    await expect(card.getByTestId('share-localhost-warning')).toBeVisible();
+
+    await card.getByRole('button', { name: 'Copy Markdown' }).click();
+    await expect(card.getByRole('button', { name: 'Copied!' })).toBeVisible();
+    const md = await page.evaluate(() => navigator.clipboard.readText());
+
+    expect(md).not.toMatch(/cursor:\/\/|vscode:|X-API-Key|token|cookie/i);
+    const links = [...md.matchAll(/\]\((https:\/\/[^)\s]+)\)/g)].map((m) => m[1]);
+    const cursorUrl = new URL(links.find((l) => l.startsWith('https://cursor.com/en/install-mcp'))!);
+    const vscodeUrl = new URL(links.find((l) => l.startsWith('https://vscode.dev/redirect/mcp/install'))!);
+    expect(cursorUrl.searchParams.get('name')).toBe('search');
+    expect(JSON.parse(Buffer.from(cursorUrl.searchParams.get('config')!, 'base64').toString())).toEqual({ url: endpoint });
+    expect(JSON.parse(vscodeUrl.searchParams.get('config')!)).toEqual({ name: 'search', type: 'http', url: endpoint });
+
+    const previewHrefs = await card.getByTestId('share-preview').getByRole('link').evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+    expect(previewHrefs).toEqual([
+      links.find((l) => l.startsWith('https://cursor.com/en/install-mcp')),
+      links.find((l) => l.startsWith('https://vscode.dev/redirect/mcp/install')),
+    ]);
+
+    await card.getByRole('button', { name: 'Copy HTML' }).click();
+    const html = await page.evaluate(() => navigator.clipboard.readText());
+    expect(html).toContain('<a href="https://cursor.com/en/install-mcp?');
+    expect(html).toContain('<a href="https://vscode.dev/redirect/mcp/install?');
+    expect(html).not.toMatch(/cursor:\/\/|vscode:|X-API-Key/);
+
+    await card.screenshot({ path: process.env.SHARE_SCREENSHOT || test.info().outputPath('share-preview.png') });
+    expect(foreign).toEqual([]);
+  });
+
+  test('parentheses in the slug cannot break out of the Markdown badge link', async ({ page, context }) => {
+    const origin = test.info().project.use.baseURL ?? 'http://localhost:3100';
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+    const slug = "x)(www.evil.example!*'";
+    await openServerPage(page, 'self-hosted', 'oauth2', slug);
+    const card = page.getByTestId('share-server');
+    await card.getByRole('button', { name: 'Copy Markdown' }).click();
+    const md = await page.evaluate(() => navigator.clipboard.readText());
+
+    const links = [...md.matchAll(/\]\((https:\/\/[^)\s]+)\)/g)].map((m) => m[1]);
+    expect(links).toHaveLength(4); // 2 images + 2 install links
+    const installLinks = links.filter((l) => /install-mcp|mcp\/install/.test(l));
+    expect(installLinks).toHaveLength(2);
+    for (const link of installLinks) {
+      expect(link).not.toMatch(/[()!*']/);
+      expect(md).toContain(`(${link})`);
+    }
+    const cursorUrl = new URL(installLinks.find((l) => l.startsWith('https://cursor.com/en/install-mcp'))!);
+    const vscodeUrl = new URL(installLinks.find((l) => l.startsWith('https://vscode.dev/redirect/mcp/install'))!);
+    expect(cursorUrl.searchParams.get('name')).toBe(slug);
+    expect(vscodeUrl.searchParams.get('name')).toBe(slug);
+    expect(JSON.parse(vscodeUrl.searchParams.get('config')!).name).toBe(slug);
+
+    // Preview badges link to the same https URLs that get shared.
+    const previewHrefs = await card.getByTestId('share-preview').getByRole('link').evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+    expect(previewHrefs).toEqual(installLinks);
+  });
+
+  test('hides the Share card until the auth mode is known', async ({ page }) => {
+    await openServerPage(page, 'self-hosted', '');
+    await expect(page.getByTestId('share-server')).toHaveCount(0);
+  });
+
+  test('in-app Cursor and VS Code buttons keep their deep links', async ({ page }) => {
+    await openServerPage(page, 'self-hosted');
+    await openClient(page, 'Cursor');
+    const href = await page.getByRole('link', { name: 'Open in Cursor' }).getAttribute('href');
+    const endpoint = (await page.locator('code', { hasText: /\/mcp\/s1$/ }).first().textContent())!.trim();
+    expect(href).toBe(`cursor://anysphere.cursor-deeplink/mcp/install?name=search&config=${btoa(JSON.stringify({ url: endpoint }))}`);
+    await page.keyboard.press('Escape');
+    await page.goto('/mcp-server/s1');
+    await openClient(page, 'VS Code');
+    await expect(page.getByRole('link', { name: 'Open in VS Code' })).toHaveAttribute(
+      'href',
+      `vscode:mcp/install?${encodeURIComponent(JSON.stringify({ name: 'search', type: 'http', url: endpoint }))}`,
+    );
+  });
+
+  test('explains that badges need OAuth in legacy mode', async ({ page }) => {
+    await openServerPage(page, 'self-hosted', 'legacy');
+    const card = page.getByTestId('share-server');
+    await expect(card.getByTestId('share-oauth-required')).toContainText('MCP_AUTH_MODE=oauth2');
+    await expect(card.getByRole('button', { name: 'Copy Markdown' })).toHaveCount(0);
+    await expect(card.getByTestId('share-preview')).toHaveCount(0);
+  });
 });
