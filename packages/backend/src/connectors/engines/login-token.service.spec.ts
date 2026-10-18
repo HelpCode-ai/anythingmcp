@@ -9,6 +9,7 @@ import {
   extractAllSetCookies,
   extractLoginRefusal,
   LoginTokenAuthConfig,
+  proactiveRefreshWindowMs,
 } from './login-token.service';
 import { injectLoginTokenHeaders } from './rest.engine';
 import signavio from '../../adapters/intl/sap-signavio.json';
@@ -292,6 +293,165 @@ describe('LoginTokenService', () => {
     await expect(service.getToken(baseAuth, 'conn-9')).rejects.toThrow(
       /token not found at "data.signIn.token"/,
     );
+  });
+});
+
+describe('proactiveRefreshWindowMs', () => {
+  const HOUR = 60 * 60 * 1000;
+  const DAY = 24 * HOUR;
+  const at = (lifetimeMs: number) => ({ obtainedAt: 1_000, expiresAt: 1_000 + lifetimeMs });
+
+  it('takes a fifth of a one-hour token, not the 24h default', () => {
+    expect(proactiveRefreshWindowMs(at(HOUR))).toBe(12 * 60 * 1000);
+  });
+
+  it('keeps the configured window when it is already shorter', () => {
+    expect(proactiveRefreshWindowMs(at(HOUR), 300)).toBe(300 * 1000);
+  });
+
+  it('caps a configured window as long as the token itself', () => {
+    expect(proactiveRefreshWindowMs(at(HOUR), 3600)).toBe(12 * 60 * 1000);
+  });
+
+  it('keeps the 24h default for tokens that live five days or more', () => {
+    expect(proactiveRefreshWindowMs(at(30 * DAY))).toBe(DAY);
+    expect(proactiveRefreshWindowMs(at(5 * DAY))).toBe(DAY);
+  });
+
+  it('never goes under 30 s, or half the lifetime of a token under a minute', () => {
+    expect(proactiveRefreshWindowMs(at(2 * 60 * 1000))).toBe(30 * 1000);
+    expect(proactiveRefreshWindowMs(at(20 * 1000))).toBe(10 * 1000);
+  });
+
+  it('falls back to the configured window when the lifetime is unknown', () => {
+    expect(proactiveRefreshWindowMs({ expiresAt: 5 * HOUR })).toBe(DAY);
+    expect(proactiveRefreshWindowMs({ expiresAt: 5 * HOUR }, 120)).toBe(120 * 1000);
+  });
+});
+
+/**
+ * Supabase's password grant hands out one-hour access tokens. With the 24h
+ * default refresh window every cached token counted as about to expire, and
+ * the 1885Data connector logged in before each of ~91k calls in 72h; Supabase
+ * answered a third of those logins with 429.
+ */
+describe('LoginTokenService — short-lived tokens (Supabase password grant)', () => {
+  const encryptionKey = 'test-encryption-key-32-chars-ok!';
+  const supabaseAuth: LoginTokenAuthConfig = {
+    loginUrl: 'https://project.supabase.co/auth/v1/token?grant_type=password',
+    loginMethod: 'POST',
+    loginBody: { email: '${username}', password: '${password}' },
+    username: 'mcp@example.com',
+    password: 'pw',
+    tokenJsonPath: 'access_token',
+    tokenTTLSeconds: 3600,
+    refreshOn401: true,
+  };
+
+  let service: LoginTokenService;
+  let mockPrisma: any;
+  let now: number;
+  let logins: number;
+  let loginMock: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    now = Date.UTC(2026, 9, 18, 8, 0, 0);
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    mockPrisma = {
+      connectorAuthCache: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const config = { get: jest.fn().mockReturnValue(encryptionKey) } as any;
+    service = new LoginTokenService(mockPrisma, config);
+    logins = 0;
+    loginMock = mockedAxios as unknown as jest.Mock;
+    loginMock.mockImplementation(async () => {
+      logins++;
+      // Let concurrent callers pile up while the login is on the wire.
+      await new Promise((r) => setImmediate(r));
+      return { data: { access_token: `jwt-${logins}`, expires_in: 3600 } };
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('reuses a one-hour token across many calls', async () => {
+    for (let i = 0; i < 200; i++) {
+      const bundle = await service.getToken(supabaseAuth, 'conn-supabase');
+      expect(bundle.token).toBe('jwt-1');
+      now += 10 * 1000; // a call every 10 s: 200 calls span 33 minutes
+    }
+    expect(logins).toBe(1);
+  });
+
+  it('logs in again once the token is near expiry, and keeps the new one', async () => {
+    await service.getToken(supabaseAuth, 'conn-supabase');
+    now += 47 * 60 * 1000; // 13 min left: outside the 12 min window
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-1');
+    now += 2 * 60 * 1000; // 11 min left: inside it
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-2');
+    now += 60 * 1000;
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-2');
+    expect(logins).toBe(2);
+  });
+
+  it('logs in once for a burst of parallel calls on a cold cache', async () => {
+    const bundles = await Promise.all(
+      Array.from({ length: 25 }, () => service.getToken(supabaseAuth, 'conn-supabase')),
+    );
+    expect(new Set(bundles.map((b) => b.token))).toEqual(new Set(['jwt-1']));
+    expect(logins).toBe(1);
+    expect(mockPrisma.connectorAuthCache.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs in once for a burst of parallel calls on a token due for renewal', async () => {
+    await service.getToken(supabaseAuth, 'conn-supabase');
+    now += 55 * 60 * 1000;
+    const bundles = await Promise.all(
+      Array.from({ length: 25 }, () => service.getToken(supabaseAuth, 'conn-supabase')),
+    );
+    expect(new Set(bundles.map((b) => b.token))).toEqual(new Set(['jwt-2']));
+    expect(logins).toBe(2);
+  });
+
+  it('reuses a one-hour token loaded from the DB after a restart', async () => {
+    mockPrisma.connectorAuthCache.findUnique.mockResolvedValue({
+      token: encrypt('persisted-jwt', encryptionKey),
+      metadata: null,
+      expiresAt: new Date(now + 50 * 60 * 1000),
+      updatedAt: new Date(now - 10 * 60 * 1000),
+    });
+    for (let i = 0; i < 5; i++) {
+      expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('persisted-jwt');
+    }
+    expect(logins).toBe(0);
+  });
+
+  it('keeps serving the current token when the early re-login is refused, and backs off', async () => {
+    await service.getToken(supabaseAuth, 'conn-supabase');
+    now += 55 * 60 * 1000; // due for renewal, 5 min still valid
+    loginMock.mockImplementation(async () => {
+      logins++;
+      throw new Error('Request failed with status code 429');
+    });
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-1');
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-1');
+    expect(logins).toBe(2); // the first login plus one refused retry, not one per call
+    now += 31 * 1000; // backoff over: try again
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-1');
+    expect(logins).toBe(3);
+  });
+
+  it('fails once the token has actually expired and the login is still refused', async () => {
+    await service.getToken(supabaseAuth, 'conn-supabase');
+    now += 61 * 60 * 1000;
+    loginMock.mockRejectedValue(new Error('Request failed with status code 429'));
+    await expect(service.getToken(supabaseAuth, 'conn-supabase')).rejects.toThrow(/429/);
   });
 });
 

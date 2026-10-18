@@ -9,7 +9,6 @@ import { GraphqlEngine } from './engines/graphql.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { ODataEngine } from './engines/odata.engine';
-import { LoginTokenService } from './engines/login-token.service';
 import { GraphqlSchemaService } from './engines/graphql-schema.service';
 import { OpenApiParser } from './parsers/openapi.parser';
 import { WsdlParser } from './parsers/wsdl.parser';
@@ -39,6 +38,9 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
 // app. A second one here had its own token cache and refresh mutex, so a
 // Test connection and a tool call could refresh with the same refresh token
 // at once, and a provider that rotates it revoked the connector's token.
+// LoginTokenService comes from there too, for the same reason: one token cache
+// and one login mutex per connector, so a Test connection and tool calls do
+// not each log in.
 @Module({
   imports: [McpServerModule, McpServersModule, LicenseModule],
   controllers: [ConnectorsController, McpOAuthCallbackController, ToolsController],
@@ -47,7 +49,6 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
     McpOAuthService,
     CatalogResyncService,
     CatalogReconciler,
-    LoginTokenService,
     GraphqlSchemaService,
     ...ENGINES,
     ...PARSERS,
@@ -56,7 +57,6 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
     ConnectorsService,
     McpOAuthService,
     CatalogResyncService,
-    LoginTokenService,
     GraphqlSchemaService,
     ...ENGINES,
   ],
