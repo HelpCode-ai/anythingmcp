@@ -1,10 +1,11 @@
-import { ConnectorsService, credentialsChanged } from './connectors.service';
+import { ConnectorsService } from './connectors.service';
 import { encrypt } from '../common/crypto/encryption.util';
+import { authCredentialRef, credentialRef } from './engines/connector-auth-status.service';
 
 /**
  * A recorded credential status (connector-auth-status.service.ts) belongs to
  * the credential that was refused. A new authorization or a new token clears
- * it; an edit that leaves the credential as it was does not, or the same
+ * it; an edit that leaves the credential as it was keeps it, or the same
  * refused token would start a new incident and a second email.
  */
 describe('ConnectorsService: credential status after an edit', () => {
@@ -39,30 +40,31 @@ describe('ConnectorsService: credential status after an edit', () => {
     );
   });
 
-  it('clears the status when a new authorization stores a new refresh token', async () => {
+  it('a new authorization clears what was recorded against the old refresh token', async () => {
     await service.updateAuthConfigMerge('conn-gsc', { refreshToken: 'rt-new', authorizedAt: 'now' });
-    expect(authStatus.clear).toHaveBeenCalledWith('conn-gsc');
+    expect(authStatus.clear).toHaveBeenCalledWith('conn-gsc', { exceptRef: credentialRef('rt-new') });
   });
 
-  it('keeps it when only static settings change', async () => {
+  it('an edit of static settings keeps the status of the refresh token still stored', async () => {
     await service.updateAuthConfigMerge('conn-gsc', { scopes: 'b' });
-    expect(authStatus.clear).not.toHaveBeenCalled();
+    expect(authStatus.clear).toHaveBeenCalledWith('conn-gsc', { exceptRef: credentialRef('rt-dead') });
   });
 
   it('starts the bearer renewal over on any edit, since the app id and secret are variables', async () => {
     await service.update('conn-gsc', { envVars: { META_APP_ID: '1' } });
     expect(bearer.forget).toHaveBeenCalledWith('conn-gsc');
-    expect(authStatus.clear).not.toHaveBeenCalled();
-    await service.update('conn-gsc', { authConfig: { ...stored, refreshToken: 'pasted' } });
-    expect(authStatus.clear).toHaveBeenCalledWith('conn-gsc');
+    expect(authStatus.clear).toHaveBeenLastCalledWith('conn-gsc', { exceptRef: credentialRef('rt-dead') });
+    await service.update('conn-gsc', { authConfig: { token: 'EAApasted' } });
+    expect(authStatus.clear).toHaveBeenLastCalledWith('conn-gsc', { exceptRef: credentialRef('EAApasted') });
   });
 });
 
-describe('credentialsChanged', () => {
-  it('looks at the credential, not at the settings around it', () => {
-    expect(credentialsChanged({ token: 'a', tokenRenewal: { provider: 'meta' } }, { token: 'a' })).toBe(false);
-    expect(credentialsChanged({ token: 'a' }, { token: 'b' })).toBe(true);
-    expect(credentialsChanged({ refreshToken: 'a', scopes: 'x' }, { refreshToken: 'a', scopes: 'y' })).toBe(false);
-    expect(credentialsChanged({ clientSecret: 'a' }, { clientSecret: 'b' })).toBe(true);
+describe('authCredentialRef', () => {
+  it('names the refresh token of an OAuth connector, else the pasted token', () => {
+    expect(authCredentialRef({ refreshToken: 'rt', token: 'x' })).toBe(credentialRef('rt'));
+    expect(authCredentialRef({ token: 'EAA' })).toBe(credentialRef('EAA'));
+    expect(authCredentialRef({})).toBeUndefined();
+    expect(credentialRef('rt')).toMatch(/^[0-9a-f]{16}$/);
+    expect(credentialRef('rt')).not.toBe(credentialRef('rt2'));
   });
 });

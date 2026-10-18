@@ -1,5 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { createHash } from 'crypto';
+import { pbkdf2Sync } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
 import { EmailService } from '../../settings/email.service';
 
@@ -34,10 +34,27 @@ export interface AuthIssue {
   ref?: string;
 }
 
-/** A short, non-reversible handle on a credential, to tell one from another. */
+/** Memo of credentialRef: it runs on every call of a renewable bearer connector. */
+const refMemo = new Map<string, string>();
+const REF_MEMO_MAX = 5_000;
+
+/**
+ * A short, non-reversible handle on a credential, to tell one from another
+ * (PBKDF2, so the stored handle is no shortcut to guessing the credential).
+ */
 export function credentialRef(value: unknown): string | undefined {
   if (typeof value !== 'string' || !value) return undefined;
-  return createHash('sha256').update(value).digest('hex').slice(0, 16);
+  const known = refMemo.get(value);
+  if (known) return known;
+  const ref = pbkdf2Sync(value, 'amcp:credential-ref', 1_000, 8, 'sha256').toString('hex');
+  if (refMemo.size >= REF_MEMO_MAX) refMemo.clear();
+  refMemo.set(value, ref);
+  return ref;
+}
+
+/** The credential a status is recorded against: the refresh token, else the pasted token. */
+export function authCredentialRef(authConfig: Record<string, unknown> | undefined): string | undefined {
+  return credentialRef(authConfig?.refreshToken) ?? credentialRef(authConfig?.token);
 }
 
 @Injectable()
