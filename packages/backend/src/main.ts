@@ -50,7 +50,17 @@ async function bootstrap() {
   // body-parser's default `type` matches only application/json, so without
   // this every SCIM POST/PATCH would arrive as an empty body and fail in ways
   // that look nothing like a content-type problem.
-  app.use(json({ limit: '10mb', type: ['application/json', 'application/scim+json'] }));
+  // `verify` keeps the raw bytes of signed webhooks, whose HMAC must be
+  // computed over the body exactly as sent.
+  app.use(
+    json({
+      limit: '10mb',
+      type: ['application/json', 'application/scim+json'],
+      verify: (req: any, _res, buf) => {
+        if (req.url?.startsWith('/api/support/webhook')) req.rawBody = buf;
+      },
+    }),
+  );
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   const configService = app.get(ConfigService);
