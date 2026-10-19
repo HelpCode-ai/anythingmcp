@@ -1,6 +1,6 @@
 import { Controller, Get, Headers, NotFoundException } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
-import { timingSafeEqual } from 'node:crypto';
+import { sameSecret } from '../common/secrets.util';
 
 /**
  * Throws a deliberate error so an operator can confirm, end to end, that
@@ -22,10 +22,4 @@ export class SentryVerifyController {
     }
     throw new Error('Sentry verification (backend)');
   }
-}
-
-function sameSecret(a: string, b: string): boolean {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
 }

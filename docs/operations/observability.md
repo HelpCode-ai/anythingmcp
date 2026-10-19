@@ -176,6 +176,41 @@ Use the *raw* request body, not a re-serialized JSON object, since re-serializin
 
 The webhook URL is validated with the same guard (`SSRF_GUARD`, private/loopback/metadata-address blocking) used for every other outbound call this app makes on a user's behalf, both when it's saved and again on every dispatch, and redirects are not followed. On AnythingMCP Cloud the URL must use `https`, and it ignores both the env (`SSRF_ALLOWED_HOSTS`) and the admin-editable SSRF allowlist, which name hosts only the platform may reach. On a self-hosted instance the operator's allowlist applies, so an internal Mattermost or Slack proxy can receive alerts.
 
+## 6. Prometheus metrics (opt-in)
+
+Off unless `METRICS_ENABLED=true`. When on, the backend starts a **second, separate `node:http` listener** for `/metrics` — it never shares the main app's port 4000, because `/health*` is proxied publicly on both Cloud and self-hosted (`deploy/cloud/Caddyfile`, [deployment.md](../deployment.md)), and `/metrics` must not be.
+
+| Env | Default | |
+|---|---|---|
+| `METRICS_ENABLED` | `false` | Starts the listener. |
+| `METRICS_PORT` | `9464` | Metrics listener port. |
+| `METRICS_HOST` | `0.0.0.0` | Metrics listener bind host — a Prometheus container needs to reach it over the compose network, so the port is deliberately **not** published in `docker-compose.yml`. |
+| `METRICS_TOKEN` | unset | Required `Authorization: Bearer` token, compared with `timingSafeEqual`. **Required on Cloud** — without it the listener refuses to start and logs an error. Optional on self-hosted. |
+| `METRICS_TOOL_LABELS` | `false` | Adds `connector_id` (cuid, not name) and `tool` labels to the tool-call metrics. Self-hosted only — **always ignored on Cloud**, even if set, so no series can carry a connector or tool identity across tenant workspaces. |
+
+### Metrics (prefix `anythingmcp_`)
+
+- `tool_calls_total{connector_type,status}` — counter, `status` is `success` or `error`.
+- `tool_call_duration_seconds{connector_type,status}` — histogram, buckets from 0.05 s to 60 s (tool calls can run 20 s or more).
+- `tool_call_upstream_errors_total{connector_type,upstream_status_class}` — `upstream_status_class` is `4xx`, `5xx` or `none`.
+- `tool_calls_in_flight`, `mcp_requests_in_flight`, `registered_tools` — gauges mirrored from the in-process `processGauges` singleton at scrape time (not polled on an interval).
+- The standard `prom-client` Node runtime metrics (`collectDefaultMetrics()`: event loop lag, heap, GC, etc.).
+
+### Sample Prometheus scrape config
+
+```yaml
+scrape_configs:
+  - job_name: anythingmcp
+    scheme: http
+    bearer_token: '<METRICS_TOKEN>'
+    static_configs:
+      - targets: ['anythingmcp-backend:9464']
+```
+
+### Cloud vs self-hosted
+
+On Cloud, metrics are instance-wide only: no series may carry an organization id, connector name, tool name or user, which is why `METRICS_TOOL_LABELS` has no effect there and `METRICS_TOKEN` is mandatory. Per-organization usage already exists in the database (`AuditService.getBreakdowns`) and is unaffected by this endpoint. On self-hosted, the operator who sets `METRICS_TOOL_LABELS=true` is the only consumer of their own instance's metrics, so per-connector/per-tool labels are allowed.
+
 ## Fatal crash reports (always on in the Docker image)
 
 A fatal V8 error, such as an out-of-memory abort, ends the backend before any JavaScript handler runs, so the log has no stack. `start.sh` therefore starts the backend with `--report-on-fatalerror`: on such a crash Node writes a diagnostic report (`report.<date>.<time>.<pid>...json`) with the native stack, heap spaces and resource usage, plus the JavaScript stack when V8 can still produce one. It goes to `HEAP_SNAPSHOT_DIR` (`/app/diagnostics` in the image, a volume on AnythingMCP Cloud), next to the heap snapshots. Environment variables are left out of the report (`--report-exclude-env`); a Node older than 22.13 cannot do that, so on such a build the report stays off. Self-hosted and Cloud behave the same; to keep the reports across container recreation on a self-hosted install, mount a volume at `/app/diagnostics`.

@@ -33,6 +33,7 @@ import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
 import { processGauges } from '../common/process-vitals';
+import { recordToolCall } from '../common/metrics';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
@@ -152,6 +153,14 @@ export class DynamicMcpTools {
     upstreamStatus?: number,
   ): void {
     const resultBytes = renderedText ? Buffer.byteLength(renderedText) : 0;
+    recordToolCall({
+      connectorType: tool.connectorType,
+      status: status === 'SUCCESS' ? 'success' : 'error',
+      durationMs,
+      upstreamStatus,
+      connectorId: tool.connectorId,
+      tool: tool.name,
+    });
     const line = {
       msg: 'tool_call',
       toolName: tool.name,
