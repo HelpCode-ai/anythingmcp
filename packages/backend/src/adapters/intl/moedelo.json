@@ -1,0 +1,1610 @@
+{
+  "slug": "moedelo",
+  "name": "Moedelo",
+  "aliases": [
+    "Моё Дело",
+    "Мое Дело",
+    "Moe Delo",
+    "moedelo.org"
+  ],
+  "description": "Connect Moedelo (Моё Дело), the Russian online accounting service, to Claude or ChatGPT: counterparties and contracts, sales bills, acts, waybills, VAT invoices and UPDs, purchase documents, the bank and cash register, warehouses and goods, chart of accounts, employees and the tax calendar. Writes ship switched off.",
+  "instructions": "## Moedelo\nThis connector uses the **Moedelo REST API** (`https://restapi.moedelo.org`) of Моё Дело, the Russian online accounting service for small companies and sole traders: counterparties, contracts, sales bills, acts, waybills, VAT invoices and UPDs, purchase documents, the bank and cash register, warehouses and goods, the chart of accounts, employees and the tax calendar.\n\n**Setup (about 3 minutes)**\n1. Sign in to Moedelo, open **Настройки > Интеграция с партнерами**, turn the integration on and copy the API key it shows. If your account has no such option, request API access on moedelo.org (Моё Дело API page) or from apisupport@moedelo.org. The key looks like a GUID, `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`.\n2. Paste it into `MOEDELO_API_KEY`. The connector sends it in the `md-api-key` header. The key opens the data of one company; for a second company, install the connector again with that company's key.\n\n**How the data is organised**\n- Counterparties (контрагенты) are both customers and suppliers. Their numeric `id` is the `kontragentId` filter of every document list.\n- Sales documents: bills (счета), acts (акты), waybills (накладные, ТОРГ-12), VAT invoices (счета-фактуры, regular and advance) and UPDs. A bill's linked documents show the acts, waybills and payments that close it. Purchase documents mirror them for suppliers.\n- Document lists filter by `number`, document date (`docAfterDate` / `docBeforeDate`, `YYYY-MM-DD`), change date (`afterDate` / `beforeDate`) and counterparty, and page with `pageNo` (from 1) and `pageSize`. Lists return `ResourceList` with the records, plus totals.\n- Money: `moedelo_list_money_operations` is the register of all bank and cash operations for a period; read one in full with `moedelo_get_bank_operation` or `moedelo_get_cash_operation` by its `documentBaseId`.\n- Amounts are in roubles; VAT types: -1 no VAT, 0, 10 or 20 percent.\n\n**Writing**: creating and changing counterparties and creating sales bills are installed **switched off**. A bill only records what is owed: the connector never makes, registers or deletes payments. Turn a tool on only when the assistant should change Moedelo, and confirm each change with the user.\n\n**Personal data**: employee lists and counterparties that are people (форма FL, IP) are personal data under 152-FZ. Share them only with people allowed to see them.\n\n**Errors**: 401 or 403 means the key is wrong, revoked or belongs to another company; 404 on a detail tool means a wrong id; an empty `ResourceList` means nothing matched the filters.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "moedelo",
+  "docsUrl": "https://restapi.moedelo.org/",
+  "prerequisites": "A Moedelo (moedelo.org) account and the API key of your company, from Настройки > Интеграция с партнерами or from Moedelo support (apisupport@moedelo.org). One key covers one company.",
+  "requiredEnvVars": [
+    "MOEDELO_API_KEY"
+  ],
+  "envVarMeta": {
+    "MOEDELO_API_KEY": {
+      "label": "Moedelo API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Moedelo > Настройки > Интеграция с партнерами: turn it on and copy the key (or ask apisupport@moedelo.org). It is a GUID; one key opens one company.",
+      "example": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The key is a GUID: 8-4-4-4-12 hexadecimal characters, without quotes or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Moedelo refused the API key: it is wrong or was revoked. Copy the key again from Настройки > Интеграция с партнерами or ask apisupport@moedelo.org.",
+    "403": "The key works but may not read this, or belongs to another company. Check that the key is the one of the company you want."
+  },
+  "probe": {
+    "tool": "moedelo_list_kontragents",
+    "params": {
+      "pageSize": 1
+    }
+  },
+  "connector": {
+    "name": "Moedelo",
+    "type": "REST",
+    "baseUrl": "https://restapi.moedelo.org",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "md-api-key",
+      "apiKey": "{{MOEDELO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "moedelo_list_kontragents",
+      "description": "List counterparties (контрагенты: customers and suppliers) with id, INN, KPP, OGRN, name, type (buyer, supplier, both) and legal form. Search by INN or name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "inn": {
+            "type": "string",
+            "description": "Filter by INN (tax id)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Filter by name (part of it)."
+          },
+          "isArchived": {
+            "type": "boolean",
+            "description": "true for archived counterparties only, false for active only."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kontragents/api/v1/kontragent",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "inn": "$inn",
+          "name": "$name",
+          "isArchived": "$isArchived"
+        }
+      }
+    },
+    {
+      "name": "moedelo_get_kontragent",
+      "description": "Read one counterparty in full: INN, KPP, OGRN, OKPO, names, legal and postal address, signer and legal form.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the counterparty."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kontragents/api/v1/kontragent/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_kontragent_bank_accounts",
+      "description": "List the bank accounts (расчётные счета) of a counterparty: bank, BIK, account and correspondent account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kontragentId": {
+            "type": "integer",
+            "description": "Numeric id of the counterparty."
+          }
+        },
+        "required": [
+          "kontragentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kontragents/api/v1/kontragent/{kontragentId}/account",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_kontragent_contacts",
+      "description": "List the contact persons of a counterparty with their position, phone and email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kontragentId": {
+            "type": "integer",
+            "description": "Numeric id of the counterparty."
+          }
+        },
+        "required": [
+          "kontragentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kontragents/api/v1/kontragent/{kontragentId}/contact",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_contracts",
+      "description": "List contracts (договоры) with number, date, counterparty, subject and status. The contract id is the projectId of bills.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "kontragentId": {
+            "type": "integer",
+            "description": "Only the contracts of this counterparty."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contract/api/v1/contract",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "kontragentId": "$kontragentId"
+        }
+      }
+    },
+    {
+      "name": "moedelo_get_contract",
+      "description": "Read one contract (договор) in full: number, date, counterparty, subject, amounts and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the contract."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contract/api/v1/contract/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_bills",
+      "description": "List sales bills (счета на оплату) with number, date, counterparty, contract, sum, status (4 unpaid, 5 partly paid, 6 paid) and positions. Filters by number, document date, change date and counterparty; pages of pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "number": {
+            "type": "string",
+            "description": "Only documents whose number contains this text."
+          },
+          "docAfterDate": {
+            "type": "string",
+            "description": "Only documents dated on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "docBeforeDate": {
+            "type": "string",
+            "description": "Only documents dated on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "afterDate": {
+            "type": "string",
+            "description": "Only documents created or changed after this moment, ISO 8601 (for syncing changes)."
+          },
+          "beforeDate": {
+            "type": "string",
+            "description": "Only documents created or changed before this moment, ISO 8601."
+          },
+          "kontragentId": {
+            "type": "integer",
+            "description": "Only documents of this counterparty (numeric id from moedelo_list_kontragents)."
+          },
+          "projectId": {
+            "type": "integer",
+            "description": "Only bills under this contract (contract id)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/bill",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "number": "$number",
+          "docAfterDate": "$docAfterDate",
+          "docBeforeDate": "$docBeforeDate",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate",
+          "kontragentId": "$kontragentId",
+          "projectId": "$projectId"
+        }
+      }
+    },
+    {
+      "name": "moedelo_get_bill",
+      "description": "Read one sales bill (счёт) with its positions, VAT, payment status and contract.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the bill."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/bill/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_bill_linked_documents",
+      "description": "List the documents linked to a sales bill: acts, waybills, UPDs, invoices and the payments that settle it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the bill."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/bill/{id}/LinkedDocuments",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_sales_acts",
+      "description": "List sales acts (акты выполненных работ) with number, date, counterparty, sum and positions. Filters by number, document date, change date and counterparty; pages of pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "number": {
+            "type": "string",
+            "description": "Only documents whose number contains this text."
+          },
+          "docAfterDate": {
+            "type": "string",
+            "description": "Only documents dated on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "docBeforeDate": {
+            "type": "string",
+            "description": "Only documents dated on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "afterDate": {
+            "type": "string",
+            "description": "Only documents created or changed after this moment, ISO 8601 (for syncing changes)."
+          },
+          "beforeDate": {
+            "type": "string",
+            "description": "Only documents created or changed before this moment, ISO 8601."
+          },
+          "kontragentId": {
+            "type": "integer",
+            "description": "Only documents of this counterparty (numeric id from moedelo_list_kontragents)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/act",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "number": "$number",
+          "docAfterDate": "$docAfterDate",
+          "docBeforeDate": "$docBeforeDate",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate",
+          "kontragentId": "$kontragentId"
+        }
+      }
+    },
+    {
+      "name": "moedelo_get_sales_act",
+      "description": "Read one sales act (акт выполненных работ) with its positions, VAT, counterparty and linked bill.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the act."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/act/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_sales_waybills",
+      "description": "List sales waybills (товарные накладные, ТОРГ-12) with number, date, counterparty, warehouse, sum and positions. Filters by number, document date, change date and counterparty; pages of pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "number": {
+            "type": "string",
+            "description": "Only documents whose number contains this text."
+          },
+          "docAfterDate": {
+            "type": "string",
+            "description": "Only documents dated on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "docBeforeDate": {
+            "type": "string",
+            "description": "Only documents dated on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "afterDate": {
+            "type": "string",
+            "description": "Only documents created or changed after this moment, ISO 8601 (for syncing changes)."
+          },
+          "beforeDate": {
+            "type": "string",
+            "description": "Only documents created or changed before this moment, ISO 8601."
+          },
+          "kontragentId": {
+            "type": "integer",
+            "description": "Only documents of this counterparty (numeric id from moedelo_list_kontragents)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/waybill",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "number": "$number",
+          "docAfterDate": "$docAfterDate",
+          "docBeforeDate": "$docBeforeDate",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate",
+          "kontragentId": "$kontragentId"
+        }
+      }
+    },
+    {
+      "name": "moedelo_get_sales_waybill",
+      "description": "Read one sales waybill (накладная) with its goods, quantities, prices and VAT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the waybill."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/waybill/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_sales_invoices",
+      "description": "List issued VAT invoices (счета-фактуры, regular) with number, date, counterparty and VAT sums. Filters by number, document date, change date and counterparty; pages of pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "number": {
+            "type": "string",
+            "description": "Only documents whose number contains this text."
+          },
+          "docAfterDate": {
+            "type": "string",
+            "description": "Only documents dated on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "docBeforeDate": {
+            "type": "string",
+            "description": "Only documents dated on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "afterDate": {
+            "type": "string",
+            "description": "Only documents created or changed after this moment, ISO 8601 (for syncing changes)."
+          },
+          "beforeDate": {
+            "type": "string",
+            "description": "Only documents created or changed before this moment, ISO 8601."
+          },
+          "kontragentId": {
+            "type": "integer",
+            "description": "Only documents of this counterparty (numeric id from moedelo_list_kontragents)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/invoice/common",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "number": "$number",
+          "docAfterDate": "$docAfterDate",
+          "docBeforeDate": "$docBeforeDate",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate",
+          "kontragentId": "$kontragentId"
+        }
+      }
+    },
+    {
+      "name": "moedelo_get_sales_invoice",
+      "description": "Read one issued VAT invoice (счёт-фактура) with its positions and VAT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the VAT invoice."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/invoice/common/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_sales_advance_invoices",
+      "description": "List issued advance VAT invoices (авансовые счета-фактуры) for prepayments received. Filters by number, document date, change date and counterparty; pages of pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "number": {
+            "type": "string",
+            "description": "Only documents whose number contains this text."
+          },
+          "docAfterDate": {
+            "type": "string",
+            "description": "Only documents dated on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "docBeforeDate": {
+            "type": "string",
+            "description": "Only documents dated on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "afterDate": {
+            "type": "string",
+            "description": "Only documents created or changed after this moment, ISO 8601 (for syncing changes)."
+          },
+          "beforeDate": {
+            "type": "string",
+            "description": "Only documents created or changed before this moment, ISO 8601."
+          },
+          "kontragentId": {
+            "type": "integer",
+            "description": "Only documents of this counterparty (numeric id from moedelo_list_kontragents)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/invoice/advance",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "number": "$number",
+          "docAfterDate": "$docAfterDate",
+          "docBeforeDate": "$docBeforeDate",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate",
+          "kontragentId": "$kontragentId"
+        }
+      }
+    },
+    {
+      "name": "moedelo_get_sales_upd",
+      "description": "Read one sales UPD (универсальный передаточный документ) with its positions, VAT and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the UPD."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/docs/api/v1/Sales/Upd/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_sales_upd_linked_documents",
+      "description": "List the documents linked to a sales UPD: bills, payments and corrections.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the UPD."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/upds/api/v1/Sales/{id}/LinkedDocuments",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_retail_reports",
+      "description": "List retail sales reports (отчёты о розничной продаже) with number, date and sums. Filters by number and date; pages of pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "number": {
+            "type": "string",
+            "description": "Only documents whose number contains this text."
+          },
+          "docAfterDate": {
+            "type": "string",
+            "description": "Only documents dated on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "docBeforeDate": {
+            "type": "string",
+            "description": "Only documents dated on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "afterDate": {
+            "type": "string",
+            "description": "Only documents created or changed after this moment, ISO 8601 (for syncing changes)."
+          },
+          "beforeDate": {
+            "type": "string",
+            "description": "Only documents created or changed before this moment, ISO 8601."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/sales/retailreport",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "number": "$number",
+          "docAfterDate": "$docAfterDate",
+          "docBeforeDate": "$docBeforeDate",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate"
+        }
+      }
+    },
+    {
+      "name": "moedelo_list_purchase_acts",
+      "description": "List received acts (акты от поставщиков) for services bought, with supplier, date and sum. Filters by number, document date, change date and counterparty; pages of pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "number": {
+            "type": "string",
+            "description": "Only documents whose number contains this text."
+          },
+          "docAfterDate": {
+            "type": "string",
+            "description": "Only documents dated on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "docBeforeDate": {
+            "type": "string",
+            "description": "Only documents dated on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "afterDate": {
+            "type": "string",
+            "description": "Only documents created or changed after this moment, ISO 8601 (for syncing changes)."
+          },
+          "beforeDate": {
+            "type": "string",
+            "description": "Only documents created or changed before this moment, ISO 8601."
+          },
+          "kontragentId": {
+            "type": "integer",
+            "description": "Only documents of this counterparty (numeric id from moedelo_list_kontragents)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/purchases/act",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "number": "$number",
+          "docAfterDate": "$docAfterDate",
+          "docBeforeDate": "$docBeforeDate",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate",
+          "kontragentId": "$kontragentId"
+        }
+      }
+    },
+    {
+      "name": "moedelo_list_purchase_waybills",
+      "description": "List received waybills (накладные от поставщиков) for goods bought, with supplier, warehouse, date and sum. Filters by number, document date, change date and counterparty; pages of pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "number": {
+            "type": "string",
+            "description": "Only documents whose number contains this text."
+          },
+          "docAfterDate": {
+            "type": "string",
+            "description": "Only documents dated on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "docBeforeDate": {
+            "type": "string",
+            "description": "Only documents dated on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "afterDate": {
+            "type": "string",
+            "description": "Only documents created or changed after this moment, ISO 8601 (for syncing changes)."
+          },
+          "beforeDate": {
+            "type": "string",
+            "description": "Only documents created or changed before this moment, ISO 8601."
+          },
+          "kontragentId": {
+            "type": "integer",
+            "description": "Only documents of this counterparty (numeric id from moedelo_list_kontragents)."
+          },
+          "stockId": {
+            "type": "integer",
+            "description": "Only waybills to this warehouse (id from moedelo_list_warehouses)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/purchases/waybill",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "number": "$number",
+          "docAfterDate": "$docAfterDate",
+          "docBeforeDate": "$docBeforeDate",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate",
+          "kontragentId": "$kontragentId",
+          "stockId": "$stockId"
+        }
+      }
+    },
+    {
+      "name": "moedelo_list_purchase_invoices",
+      "description": "List received VAT invoices (счета-фактуры от поставщиков, regular) with supplier, date and VAT. Filters by number, document date, change date and counterparty; pages of pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "number": {
+            "type": "string",
+            "description": "Only documents whose number contains this text."
+          },
+          "docAfterDate": {
+            "type": "string",
+            "description": "Only documents dated on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "docBeforeDate": {
+            "type": "string",
+            "description": "Only documents dated on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "afterDate": {
+            "type": "string",
+            "description": "Only documents created or changed after this moment, ISO 8601 (for syncing changes)."
+          },
+          "beforeDate": {
+            "type": "string",
+            "description": "Only documents created or changed before this moment, ISO 8601."
+          },
+          "kontragentId": {
+            "type": "integer",
+            "description": "Only documents of this counterparty (numeric id from moedelo_list_kontragents)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/purchases/invoice/common",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "number": "$number",
+          "docAfterDate": "$docAfterDate",
+          "docBeforeDate": "$docBeforeDate",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate",
+          "kontragentId": "$kontragentId"
+        }
+      }
+    },
+    {
+      "name": "moedelo_get_purchase_upd",
+      "description": "Read one received UPD (универсальный передаточный документ от поставщика) with its positions and VAT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the UPD."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/docs/api/v1/Purchases/Upd/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_money_operations",
+      "description": "List money operations (реестр операций): bank and cash receipts and payments with date, number, counterparty, direction, sum and type, in one register.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Offset": {
+            "type": "integer",
+            "description": "Records to skip.",
+            "minimum": 0
+          },
+          "Limit": {
+            "type": "integer",
+            "description": "Records to return.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "StartDate": {
+            "type": "string",
+            "description": "Period start, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "EndDate": {
+            "type": "string",
+            "description": "Period end, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "AfterDate": {
+            "type": "string",
+            "description": "Only operations created or changed after this moment, ISO 8601."
+          },
+          "OperationSource": {
+            "type": "integer",
+            "description": "Source: 1 bank (settlement account), 2 cash desk, 3 electronic wallet."
+          },
+          "ContractorId": {
+            "type": "integer",
+            "description": "Only operations with this counterparty (id)."
+          },
+          "Query": {
+            "type": "string",
+            "description": "Search by document number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/money/api/v1/Registry",
+        "queryParams": {
+          "Offset": "$Offset",
+          "Limit": "$Limit",
+          "StartDate": "$StartDate",
+          "EndDate": "$EndDate",
+          "AfterDate": "$AfterDate",
+          "OperationSource": "$OperationSource",
+          "ContractorId": "$ContractorId",
+          "Query": "$Query"
+        }
+      }
+    },
+    {
+      "name": "moedelo_get_bank_operation",
+      "description": "Read one bank operation (Деньги / Банк) by its document id from moedelo_list_money_operations: type, counterparty, sum, purpose and linked documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentBaseId": {
+            "type": "integer",
+            "description": "Numeric id of the operation (documentBaseId)."
+          }
+        },
+        "required": [
+          "documentBaseId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/money/api/v1/PaymentOrders/{documentBaseId}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_get_cash_operation",
+      "description": "Read one cash desk operation (Деньги / Касса) by its document id from moedelo_list_money_operations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentBaseId": {
+            "type": "integer",
+            "description": "Numeric id of the operation (documentBaseId)."
+          }
+        },
+        "required": [
+          "documentBaseId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/money/api/v1/CashOrders/{documentBaseId}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_settlement_accounts",
+      "description": "List the company's own bank accounts (расчётные счета): bank, BIK, account number and currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/requisites/api/v1/SettlementAccount",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "moedelo_list_cash_desks",
+      "description": "List the company's cash desks (кассы) with their ids and names, for cash operations and balances.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/cashier"
+      }
+    },
+    {
+      "name": "moedelo_get_cash_balance",
+      "description": "Get the balance of every cash desk of the company on a given date (остаток по кассам на дату).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "onDate": {
+            "type": "string",
+            "description": "Date, YYYY-MM-DD.",
+            "format": "date"
+          }
+        },
+        "required": [
+          "onDate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/cashier/GetCashBalance/{onDate}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_warehouses",
+      "description": "List warehouses (склады) with their ids, names and type, for stock and purchase waybill filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "includeCommissionAgentStocks": {
+            "type": "boolean",
+            "description": "true to include warehouses held by commission agents."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/api/v1/stock",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "includeCommissionAgentStocks": "$includeCommissionAgentStocks"
+        }
+      }
+    },
+    {
+      "name": "moedelo_list_goods",
+      "description": "List goods and materials (товары) with id, name, article, unit, prices and VAT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "name": {
+            "type": "string",
+            "description": "Filter by product name (part of it)."
+          },
+          "afterDate": {
+            "type": "string",
+            "description": "Only products created or changed after this moment, ISO 8601."
+          },
+          "beforeDate": {
+            "type": "string",
+            "description": "Only products created or changed before this moment, ISO 8601."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/api/v1/good",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize",
+          "name": "$name",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate"
+        }
+      }
+    },
+    {
+      "name": "moedelo_get_good",
+      "description": "Read one product (товар) in full: name, article, unit, sale and purchase price, VAT and group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the product."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/api/v1/good/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_services",
+      "description": "List services (услуги) from the catalogue with name, unit, price and VAT. Search by name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to search in service names; leave out for all."
+          },
+          "count": {
+            "type": "integer",
+            "description": "How many services to return (Moedelo's default is 5).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/api/v1/services",
+        "queryParams": {
+          "query": "$query",
+          "count": "$count"
+        }
+      }
+    },
+    {
+      "name": "moedelo_list_chart_of_accounts",
+      "description": "List the chart of accounts (план счетов бухгалтерского учёта) with synthetic account codes and names.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accpostings/api/v1/SyntheticAccount"
+      }
+    },
+    {
+      "name": "moedelo_get_document_postings",
+      "description": "Get the accounting postings (проводки) Moedelo generated for one document, by its base document id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentBaseId": {
+            "type": "integer",
+            "description": "Numeric id of the document (documentBaseId)."
+          }
+        },
+        "required": [
+          "documentBaseId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accpostingsapi/api/v1/Postings/{documentBaseId}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "moedelo_list_employees",
+      "description": "List employees (сотрудники) with name, position, department and hiring dates. Payroll data is personal: share it only with people allowed to see it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNo": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per page (Moedelo's default is 50).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payroll/api/v1/Employee",
+        "queryParams": {
+          "pageNo": "$pageNo",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "moedelo_list_tax_calendar",
+      "description": "List the events of the tax calendar (налоговый календарь): report and payment deadlines for the company.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/requisites/api/v1/calendar/event"
+      }
+    },
+    {
+      "name": "moedelo_create_kontragent",
+      "description": "Create a counterparty (контрагент) with its requisites. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": {
+            "type": "string",
+            "description": "Full name of the organisation, or the person's full name."
+          },
+          "ShortName": {
+            "type": "string",
+            "description": "Short name."
+          },
+          "Inn": {
+            "type": "string",
+            "description": "INN."
+          },
+          "Kpp": {
+            "type": "string",
+            "description": "KPP."
+          },
+          "Ogrn": {
+            "type": "string",
+            "description": "OGRN or OGRNIP."
+          },
+          "Okpo": {
+            "type": "string",
+            "description": "OKPO."
+          },
+          "Type": {
+            "type": "string",
+            "description": "Kontragent (buyer and supplier), Client, Partner or Other.",
+            "enum": [
+              "Kontragent",
+              "Client",
+              "Partner",
+              "Other"
+            ]
+          },
+          "Form": {
+            "type": "string",
+            "description": "Legal form: UL company, IP sole trader, FL person, NR non-resident.",
+            "enum": [
+              "UL",
+              "IP",
+              "FL",
+              "NR"
+            ]
+          },
+          "LegalAddress": {
+            "type": "string",
+            "description": "Legal address."
+          },
+          "ActualAddress": {
+            "type": "string",
+            "description": "Postal address."
+          },
+          "SignerFio": {
+            "type": "string",
+            "description": "Signer's name."
+          },
+          "Position": {
+            "type": "string",
+            "description": "Signer's position."
+          },
+          "InReason": {
+            "type": "string",
+            "description": "Signer acts on the basis of (устав, доверенность)."
+          },
+          "TaxpayerNumber": {
+            "type": "string",
+            "description": "Taxpayer number, non-residents only."
+          }
+        },
+        "required": [
+          "Name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/kontragents/api/v1/kontragent",
+        "bodyMapping": {
+          "Name": "$Name",
+          "ShortName": "$ShortName",
+          "Inn": "$Inn",
+          "Kpp": "$Kpp",
+          "Ogrn": "$Ogrn",
+          "Okpo": "$Okpo",
+          "Type": "$Type",
+          "Form": "$Form",
+          "LegalAddress": "$LegalAddress",
+          "ActualAddress": "$ActualAddress",
+          "SignerFio": "$SignerFio",
+          "Position": "$Position",
+          "InReason": "$InReason",
+          "TaxpayerNumber": "$TaxpayerNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "moedelo_update_kontragent",
+      "description": "Save changes to a counterparty. Moedelo replaces the record: send every field to keep, not only the changed ones. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric id of the counterparty."
+          },
+          "Name": {
+            "type": "string",
+            "description": "Full name of the organisation, or the person's full name."
+          },
+          "ShortName": {
+            "type": "string",
+            "description": "Short name."
+          },
+          "Inn": {
+            "type": "string",
+            "description": "INN."
+          },
+          "Kpp": {
+            "type": "string",
+            "description": "KPP."
+          },
+          "Ogrn": {
+            "type": "string",
+            "description": "OGRN or OGRNIP."
+          },
+          "Okpo": {
+            "type": "string",
+            "description": "OKPO."
+          },
+          "Type": {
+            "type": "string",
+            "description": "Kontragent (buyer and supplier), Client, Partner or Other.",
+            "enum": [
+              "Kontragent",
+              "Client",
+              "Partner",
+              "Other"
+            ]
+          },
+          "Form": {
+            "type": "string",
+            "description": "Legal form: UL company, IP sole trader, FL person, NR non-resident.",
+            "enum": [
+              "UL",
+              "IP",
+              "FL",
+              "NR"
+            ]
+          },
+          "LegalAddress": {
+            "type": "string",
+            "description": "Legal address."
+          },
+          "ActualAddress": {
+            "type": "string",
+            "description": "Postal address."
+          },
+          "SignerFio": {
+            "type": "string",
+            "description": "Signer's name."
+          },
+          "Position": {
+            "type": "string",
+            "description": "Signer's position."
+          },
+          "InReason": {
+            "type": "string",
+            "description": "Signer acts on the basis of (устав, доверенность)."
+          },
+          "TaxpayerNumber": {
+            "type": "string",
+            "description": "Taxpayer number, non-residents only."
+          }
+        },
+        "required": [
+          "id",
+          "Name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/kontragents/api/v1/kontragent/{id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "Name": "$Name",
+          "ShortName": "$ShortName",
+          "Inn": "$Inn",
+          "Kpp": "$Kpp",
+          "Ogrn": "$Ogrn",
+          "Okpo": "$Okpo",
+          "Type": "$Type",
+          "Form": "$Form",
+          "LegalAddress": "$LegalAddress",
+          "ActualAddress": "$ActualAddress",
+          "SignerFio": "$SignerFio",
+          "Position": "$Position",
+          "InReason": "$InReason",
+          "TaxpayerNumber": "$TaxpayerNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "moedelo_create_bill",
+      "description": "Create a sales bill (счёт на оплату) for a counterparty. It records the bill only: no payment is made or registered. Installed switched off: confirm the counterparty, positions and VAT with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "KontragentId": {
+            "type": "integer",
+            "description": "Counterparty id."
+          },
+          "DocDate": {
+            "type": "string",
+            "description": "Bill date, YYYY-MM-DD."
+          },
+          "Type": {
+            "type": "integer",
+            "description": "1 regular bill, 2 bill-contract.",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "Number": {
+            "type": "string",
+            "description": "Bill number; leave out to number it automatically."
+          },
+          "ProjectId": {
+            "type": "integer",
+            "description": "Contract id, or -1 for the main contract."
+          },
+          "StockId": {
+            "type": "integer",
+            "description": "Warehouse id for goods."
+          },
+          "SettlementAccountId": {
+            "type": "integer",
+            "description": "Own bank account id to show on the bill."
+          },
+          "DeadLine": {
+            "type": "string",
+            "description": "Valid until, YYYY-MM-DD."
+          },
+          "NdsPositionType": {
+            "type": "integer",
+            "description": "VAT: 1 none, 2 on top of prices, 3 included in prices.",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          },
+          "Comment": {
+            "type": "string",
+            "description": "Comment."
+          },
+          "AdditionalInfo": {
+            "type": "string",
+            "description": "Additional information printed on the bill."
+          },
+          "Items": {
+            "type": "array",
+            "description": "Positions: [{\"Type\": 2, \"Name\": \"Консультация\", \"Count\": 1, \"Unit\": \"усл.\", \"Price\": 10000, \"NdsType\": 20}]. Type 1 goods (with StockProductId), 2 service. NdsType -1 no VAT, 0, 10 or 20 percent.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "KontragentId",
+          "DocDate",
+          "Type",
+          "Items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounting/api/v1/sales/bill",
+        "bodyMapping": {
+          "KontragentId": "$KontragentId",
+          "DocDate": "$DocDate",
+          "Type": "$Type",
+          "Number": "$Number",
+          "ProjectId": "$ProjectId",
+          "StockId": "$StockId",
+          "SettlementAccountId": "$SettlementAccountId",
+          "DeadLine": "$DeadLine",
+          "NdsPositionType": "$NdsPositionType",
+          "Comment": "$Comment",
+          "AdditionalInfo": "$AdditionalInfo",
+          "Items": "$Items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

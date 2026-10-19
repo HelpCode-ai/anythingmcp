@@ -1,0 +1,612 @@
+{
+  "slug": "the-odds-api",
+  "name": "The Odds API",
+  "description": "The Odds API (the-odds-api.com) v4: betting odds from US, UK, EU and Australian bookmakers for soccer, NFL, NBA, MLB, NHL, tennis and more, event odds with player props, live scores, participants and historical odds. Not the odds-api.io service.",
+  "instructions": "## The Odds API\nThis connector reads The Odds API v4 (`https://api.the-odds-api.com/v4`, the-odds-api.com): betting odds from many bookmakers in the US, UK, EU and Australia for soccer, American football, basketball, baseball, ice hockey, tennis, cricket, MMA and more, plus scores and historical odds. Every tool only reads. It is a different service from the **Odds API** connector (`odds-api`, odds-api.io): use this one when your key comes from the-odds-api.com.\n\n**Setup.** Get a key at https://the-odds-api.com (a free plan with 500 credits a month exists) and paste it into `THE_ODDS_API_KEY`. It is sent as the `apiKey` query parameter and is never a tool argument.\n\n**Credits.** Most calls spend credits from the monthly quota, and every answer reports the balance in `_headers`: `x-requests-remaining`, `x-requests-used` and `x-requests-last` (the cost of that call). Read it and tell the user when it runs low.\n- Free: `the_odds_api_list_sports`, `the_odds_api_list_events`.\n- 1 credit: `the_odds_api_get_scores` (2 with `days_from`), `the_odds_api_get_event_markets`, `the_odds_api_list_participants`, `the_odds_api_get_historical_events`.\n- Odds: markets times regions. One market in one region costs 1; `h2h,spreads,totals` in `us,eu` costs 6. Ten bookmakers in `bookmakers` count as one region. Start with one market and one region.\n- Historical odds (paid plans only): 10 credits per market per region. Ask the user before calling them.\n\n**Workflow.**\n1. `the_odds_api_list_sports` for the sport key (`soccer_epl`, `basketball_nba`, `americanfootball_nfl` ...).\n2. `the_odds_api_list_events` for event ids and start times (free).\n3. `the_odds_api_get_odds` for a whole sport, or `the_odds_api_get_event_markets` then `the_odds_api_get_event_odds` for one game, including player props.\n4. `the_odds_api_get_scores` for live scores and recent results.\n\n**Reading the data.** Times are ISO 8601 in UTC. Odds are decimal unless `odds_format` is american. Each bookmaker has `last_update`; prices change constantly, so quote the time. Soccer `h2h` has three outcomes including Draw. Implied probability = 1 / decimal odds.\n\n**Errors.** 401: key missing, wrong or out of credits. 422: an invalid parameter, such as an unknown market or region, or a historical call on a plan without history. 429: too many requests at once; wait a second and retry. 404 on an event: it has started or finished and is no longer listed.",
+  "region": "intl",
+  "category": "sports",
+  "icon": "the-odds-api",
+  "docsUrl": "https://the-odds-api.com/liveapi/guides/v4/",
+  "aliases": [
+    "the-odds-api.com",
+    "TheOddsAPI"
+  ],
+  "prerequisites": "An API key from the-odds-api.com (free plan: 500 credits a month). Historical odds need a paid plan.",
+  "requiredEnvVars": [
+    "THE_ODDS_API_KEY"
+  ],
+  "envVarMeta": {
+    "THE_ODDS_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Sign up at the-odds-api.com; the key arrives by e-mail and is shown on your account page.",
+      "link": "https://the-odds-api.com/#get-access",
+      "pattern": "^[a-f0-9]{32}$",
+      "patternMessage": "A key from the-odds-api.com is 32 lowercase hex characters."
+    }
+  },
+  "verifyHints": {
+    "401": "The Odds API refused the key: it is wrong, or the monthly credits are used up. Check the key on your the-odds-api.com account page.",
+    "429": "Too many requests at once. Wait a second and try again."
+  },
+  "probe": {
+    "tool": "the_odds_api_list_sports"
+  },
+  "connector": {
+    "name": "The Odds API",
+    "type": "REST",
+    "baseUrl": "https://api.the-odds-api.com/v4",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "apiKey": "{{THE_ODDS_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/sports"
+  },
+  "tools": [
+    {
+      "name": "the_odds_api_list_sports",
+      "description": "Sports and competitions The Odds API covers, with the sport key the other tools need, group, title, whether it is in season and whether it has outright (futures) markets. Free: costs no credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": "boolean",
+            "description": "true to also list competitions that are out of season."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sports",
+        "queryParams": {
+          "all": "$all"
+        },
+        "exposeHeaders": [
+          "x-requests-remaining",
+          "x-requests-used",
+          "x-requests-last"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "the_odds_api_list_events",
+      "description": "Upcoming and live events of a sport with event id, teams and start time, without odds. Free: costs no credits. Use it to find the event id for the event tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "description": "Sport key from the_odds_api_list_sports, e.g. soccer_epl, soccer_germany_bundesliga, americanfootball_nfl, basketball_nba, baseball_mlb, icehockey_nhl, tennis_atp_paris. upcoming covers the next games across all sports (odds only)."
+          },
+          "commence_time_from": {
+            "type": "string",
+            "description": "Only events starting at or after this time, ISO 8601 UTC such as 2026-10-20T00:00:00Z."
+          },
+          "commence_time_to": {
+            "type": "string",
+            "description": "Only events starting at or before this time, ISO 8601 UTC."
+          },
+          "event_ids": {
+            "type": "string",
+            "description": "Comma separated event ids to narrow the list."
+          }
+        },
+        "required": [
+          "sport"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sports/{sport}/events",
+        "queryParams": {
+          "commenceTimeFrom": "$commence_time_from",
+          "commenceTimeTo": "$commence_time_to",
+          "eventIds": "$event_ids",
+          "dateFormat": "iso"
+        },
+        "exposeHeaders": [
+          "x-requests-remaining",
+          "x-requests-used",
+          "x-requests-last"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "the_odds_api_get_odds",
+      "description": "Odds for the upcoming and live games of a sport from many bookmakers, per market (h2h, spreads, totals, outrights). Costs credits: number of markets times number of regions (1 for one market in one region). Keep to one region and one market unless more are needed; narrow with event_ids or a time window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "description": "Sport key from the_odds_api_list_sports, e.g. soccer_epl, soccer_germany_bundesliga, americanfootball_nfl, basketball_nba, baseball_mlb, icehockey_nhl, tennis_atp_paris. upcoming covers the next games across all sports (odds only)."
+          },
+          "regions": {
+            "type": "string",
+            "default": "eu",
+            "description": "Bookmaker region(s), comma separated: us, us2, uk, eu, au. Each region costs credits; default eu. Leave regions out only when you pass bookmakers."
+          },
+          "markets": {
+            "type": "string",
+            "default": "h2h",
+            "description": "Market(s), comma separated: h2h (match winner, 1X2 for soccer), spreads (handicap), totals (over/under), outrights (futures), h2h_lay. Each market costs credits; default h2h."
+          },
+          "bookmakers": {
+            "type": "string",
+            "description": "Bookmaker keys, comma separated, e.g. pinnacle,bet365,williamhill. Overrides regions; every 10 bookmakers count as one region."
+          },
+          "odds_format": {
+            "type": "string",
+            "enum": [
+              "decimal",
+              "american"
+            ],
+            "default": "decimal",
+            "description": "decimal (default) or american."
+          },
+          "event_ids": {
+            "type": "string",
+            "description": "Comma separated event ids to narrow the list."
+          },
+          "commence_time_from": {
+            "type": "string",
+            "description": "Only events starting at or after this time, ISO 8601 UTC such as 2026-10-20T00:00:00Z."
+          },
+          "commence_time_to": {
+            "type": "string",
+            "description": "Only events starting at or before this time, ISO 8601 UTC."
+          }
+        },
+        "required": [
+          "sport"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sports/{sport}/odds",
+        "queryParams": {
+          "regions": "$regions",
+          "markets": "$markets",
+          "bookmakers": "$bookmakers",
+          "oddsFormat": "$odds_format",
+          "eventIds": "$event_ids",
+          "commenceTimeFrom": "$commence_time_from",
+          "commenceTimeTo": "$commence_time_to",
+          "dateFormat": "iso"
+        },
+        "exposeHeaders": [
+          "x-requests-remaining",
+          "x-requests-used",
+          "x-requests-last"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "the_odds_api_get_scores",
+      "description": "Live scores and, with days_from, results of games completed in the last 1 to 3 days for a sport. Costs 1 credit, 2 with days_from. Covers the major leagues; not every sport has scores.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "description": "Sport key from the_odds_api_list_sports, e.g. soccer_epl, soccer_germany_bundesliga, americanfootball_nfl, basketball_nba, baseball_mlb, icehockey_nhl, tennis_atp_paris. upcoming covers the next games across all sports (odds only)."
+          },
+          "days_from": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3,
+            "description": "Also return games completed in the last 1 to 3 days (2 credits instead of 1)."
+          },
+          "event_ids": {
+            "type": "string",
+            "description": "Comma separated event ids to narrow the list."
+          }
+        },
+        "required": [
+          "sport"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sports/{sport}/scores",
+        "queryParams": {
+          "daysFrom": "$days_from",
+          "eventIds": "$event_ids",
+          "dateFormat": "iso"
+        },
+        "exposeHeaders": [
+          "x-requests-remaining",
+          "x-requests-used",
+          "x-requests-last"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "the_odds_api_get_event_odds",
+      "description": "Odds of one event in any market the bookmakers offer, including player props, alternate lines and period markets (e.g. player_pass_tds, alternate_spreads, h2h_q1, btts, draw_no_bet). Costs credits: markets returned times regions. Call the_odds_api_get_event_markets first to see which markets exist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "description": "Sport key from the_odds_api_list_sports, e.g. soccer_epl, soccer_germany_bundesliga, americanfootball_nfl, basketball_nba, baseball_mlb, icehockey_nhl, tennis_atp_paris. upcoming covers the next games across all sports (odds only)."
+          },
+          "event_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$",
+            "description": "Event id (32 hex characters) from the_odds_api_list_events or an odds list."
+          },
+          "regions": {
+            "type": "string",
+            "default": "eu",
+            "description": "Bookmaker region(s), comma separated: us, us2, uk, eu, au. Each region costs credits; default eu. Leave regions out only when you pass bookmakers."
+          },
+          "markets": {
+            "type": "string",
+            "default": "h2h",
+            "description": "Market(s), comma separated: h2h (match winner, 1X2 for soccer), spreads (handicap), totals (over/under), outrights (futures), h2h_lay. Each market costs credits; default h2h."
+          },
+          "bookmakers": {
+            "type": "string",
+            "description": "Bookmaker keys, comma separated, e.g. pinnacle,bet365,williamhill. Overrides regions; every 10 bookmakers count as one region."
+          },
+          "odds_format": {
+            "type": "string",
+            "enum": [
+              "decimal",
+              "american"
+            ],
+            "default": "decimal",
+            "description": "decimal (default) or american."
+          }
+        },
+        "required": [
+          "sport",
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sports/{sport}/events/{event_id}/odds",
+        "queryParams": {
+          "regions": "$regions",
+          "markets": "$markets",
+          "bookmakers": "$bookmakers",
+          "oddsFormat": "$odds_format",
+          "dateFormat": "iso"
+        },
+        "exposeHeaders": [
+          "x-requests-remaining",
+          "x-requests-used",
+          "x-requests-last"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "the_odds_api_get_event_markets",
+      "description": "Which market keys each bookmaker currently offers for one event, to pick markets for the_odds_api_get_event_odds. Costs 1 credit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "description": "Sport key from the_odds_api_list_sports, e.g. soccer_epl, soccer_germany_bundesliga, americanfootball_nfl, basketball_nba, baseball_mlb, icehockey_nhl, tennis_atp_paris. upcoming covers the next games across all sports (odds only)."
+          },
+          "event_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$",
+            "description": "Event id (32 hex characters) from the_odds_api_list_events or an odds list."
+          },
+          "regions": {
+            "type": "string",
+            "default": "eu",
+            "description": "Bookmaker region(s), comma separated: us, us2, uk, eu, au. Each region costs credits; default eu. Leave regions out only when you pass bookmakers."
+          },
+          "bookmakers": {
+            "type": "string",
+            "description": "Bookmaker keys, comma separated, e.g. pinnacle,bet365,williamhill. Overrides regions; every 10 bookmakers count as one region."
+          }
+        },
+        "required": [
+          "sport",
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sports/{sport}/events/{event_id}/markets",
+        "queryParams": {
+          "regions": "$regions",
+          "bookmakers": "$bookmakers",
+          "dateFormat": "iso"
+        },
+        "exposeHeaders": [
+          "x-requests-remaining",
+          "x-requests-used",
+          "x-requests-last"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "the_odds_api_list_participants",
+      "description": "Teams or players of a sport with their participant id, as The Odds API names them. Costs 1 credit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "description": "Sport key from the_odds_api_list_sports, e.g. soccer_epl, soccer_germany_bundesliga, americanfootball_nfl, basketball_nba, baseball_mlb, icehockey_nhl, tennis_atp_paris. upcoming covers the next games across all sports (odds only)."
+          }
+        },
+        "required": [
+          "sport"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sports/{sport}/participants",
+        "exposeHeaders": [
+          "x-requests-remaining",
+          "x-requests-used",
+          "x-requests-last"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "the_odds_api_get_historical_odds",
+      "description": "Odds of a sport as they were at a past moment (snapshots since June 2020). Paid plans only. Costs 10 credits per market per region: ask the user before calling, with one market and one region.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "description": "Sport key from the_odds_api_list_sports, e.g. soccer_epl, soccer_germany_bundesliga, americanfootball_nfl, basketball_nba, baseball_mlb, icehockey_nhl, tennis_atp_paris. upcoming covers the next games across all sports (odds only)."
+          },
+          "date": {
+            "type": "string",
+            "description": "Snapshot time, ISO 8601 UTC such as 2025-10-18T12:00:00Z. The closest snapshot at or before it is returned (every 5 minutes since September 2022, every 10 minutes from June 2020)."
+          },
+          "regions": {
+            "type": "string",
+            "default": "eu",
+            "description": "Bookmaker region(s), comma separated: us, us2, uk, eu, au. Each region costs credits; default eu. Leave regions out only when you pass bookmakers."
+          },
+          "markets": {
+            "type": "string",
+            "default": "h2h",
+            "description": "Market(s), comma separated: h2h (match winner, 1X2 for soccer), spreads (handicap), totals (over/under), outrights (futures), h2h_lay. Each market costs credits; default h2h."
+          },
+          "bookmakers": {
+            "type": "string",
+            "description": "Bookmaker keys, comma separated, e.g. pinnacle,bet365,williamhill. Overrides regions; every 10 bookmakers count as one region."
+          },
+          "odds_format": {
+            "type": "string",
+            "enum": [
+              "decimal",
+              "american"
+            ],
+            "default": "decimal",
+            "description": "decimal (default) or american."
+          },
+          "event_ids": {
+            "type": "string",
+            "description": "Comma separated event ids to narrow the list."
+          }
+        },
+        "required": [
+          "sport",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/historical/sports/{sport}/odds",
+        "queryParams": {
+          "date": "$date",
+          "regions": "$regions",
+          "markets": "$markets",
+          "bookmakers": "$bookmakers",
+          "oddsFormat": "$odds_format",
+          "eventIds": "$event_ids",
+          "dateFormat": "iso"
+        },
+        "exposeHeaders": [
+          "x-requests-remaining",
+          "x-requests-used",
+          "x-requests-last"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "the_odds_api_get_historical_events",
+      "description": "Events of a sport as listed at a past moment, with their event ids, for the historical event odds tool. Paid plans only. Costs 1 credit (nothing when no events are found).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "description": "Sport key from the_odds_api_list_sports, e.g. soccer_epl, soccer_germany_bundesliga, americanfootball_nfl, basketball_nba, baseball_mlb, icehockey_nhl, tennis_atp_paris. upcoming covers the next games across all sports (odds only)."
+          },
+          "date": {
+            "type": "string",
+            "description": "Snapshot time, ISO 8601 UTC such as 2025-10-18T12:00:00Z. The closest snapshot at or before it is returned (every 5 minutes since September 2022, every 10 minutes from June 2020)."
+          },
+          "commence_time_from": {
+            "type": "string",
+            "description": "Only events starting at or after this time, ISO 8601 UTC such as 2026-10-20T00:00:00Z."
+          },
+          "commence_time_to": {
+            "type": "string",
+            "description": "Only events starting at or before this time, ISO 8601 UTC."
+          },
+          "event_ids": {
+            "type": "string",
+            "description": "Comma separated event ids to narrow the list."
+          }
+        },
+        "required": [
+          "sport",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/historical/sports/{sport}/events",
+        "queryParams": {
+          "date": "$date",
+          "commenceTimeFrom": "$commence_time_from",
+          "commenceTimeTo": "$commence_time_to",
+          "eventIds": "$event_ids",
+          "dateFormat": "iso"
+        },
+        "exposeHeaders": [
+          "x-requests-remaining",
+          "x-requests-used",
+          "x-requests-last"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "the_odds_api_get_historical_event_odds",
+      "description": "Odds of one event in any market as they were at a past moment (props and extra markets from May 2023). Paid plans only. Costs 10 credits per market returned per region: ask the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "description": "Sport key from the_odds_api_list_sports, e.g. soccer_epl, soccer_germany_bundesliga, americanfootball_nfl, basketball_nba, baseball_mlb, icehockey_nhl, tennis_atp_paris. upcoming covers the next games across all sports (odds only)."
+          },
+          "event_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$",
+            "description": "Event id (32 hex characters) from the_odds_api_list_events or an odds list."
+          },
+          "date": {
+            "type": "string",
+            "description": "Snapshot time, ISO 8601 UTC such as 2025-10-18T12:00:00Z. The closest snapshot at or before it is returned (every 5 minutes since September 2022, every 10 minutes from June 2020)."
+          },
+          "regions": {
+            "type": "string",
+            "default": "eu",
+            "description": "Bookmaker region(s), comma separated: us, us2, uk, eu, au. Each region costs credits; default eu. Leave regions out only when you pass bookmakers."
+          },
+          "markets": {
+            "type": "string",
+            "default": "h2h",
+            "description": "Market(s), comma separated: h2h (match winner, 1X2 for soccer), spreads (handicap), totals (over/under), outrights (futures), h2h_lay. Each market costs credits; default h2h."
+          },
+          "bookmakers": {
+            "type": "string",
+            "description": "Bookmaker keys, comma separated, e.g. pinnacle,bet365,williamhill. Overrides regions; every 10 bookmakers count as one region."
+          },
+          "odds_format": {
+            "type": "string",
+            "enum": [
+              "decimal",
+              "american"
+            ],
+            "default": "decimal",
+            "description": "decimal (default) or american."
+          }
+        },
+        "required": [
+          "sport",
+          "event_id",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/historical/sports/{sport}/events/{event_id}/odds",
+        "queryParams": {
+          "date": "$date",
+          "regions": "$regions",
+          "markets": "$markets",
+          "bookmakers": "$bookmakers",
+          "oddsFormat": "$odds_format",
+          "dateFormat": "iso"
+        },
+        "exposeHeaders": [
+          "x-requests-remaining",
+          "x-requests-used",
+          "x-requests-last"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

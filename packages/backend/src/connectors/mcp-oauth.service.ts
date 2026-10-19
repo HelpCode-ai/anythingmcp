@@ -80,6 +80,11 @@ export interface PendingOAuthFlow {
    * next authorization registers a fresh one.
    */
   dynamicClient?: boolean;
+  /**
+   * Set on a Shopee shop authorization (shopee-auth.controller.ts), which is
+   * completed by its own endpoint; unset on every OAuth flow.
+   */
+  provider?: 'shopee';
   createdAt: number;
 }
 

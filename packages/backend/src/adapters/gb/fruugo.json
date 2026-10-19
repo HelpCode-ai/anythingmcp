@@ -1,0 +1,215 @@
+{
+  "slug": "fruugo",
+  "name": "Fruugo",
+  "aliases": [
+    "Fruugo Retailer",
+    "Fruugo Marketplace",
+    "Fruugo Order API"
+  ],
+  "description": "Sell on the Fruugo marketplace from an AI agent: download orders with lines, customer pricing, shipping address and shipments, and read the availability and stock of your SKUs. Confirming and shipping orders is included, installed switched off.",
+  "region": "gb",
+  "category": "e-commerce",
+  "icon": "fruugo",
+  "docsUrl": "https://fruugo.atlassian.net/wiki/spaces/RR/pages/66158675/Requests+Calls",
+  "instructions": "## Fruugo\nThis connector uses the **Fruugo Order API and Stock Status API** on `https://www.fruugo.com`, the retailer API of the Fruugo global marketplace: download orders with lines, customer pricing, shipping address and shipments, and read the availability and stock Fruugo holds for your SKUs. Confirming and shipping orders is included but installed switched off.\n\n**Setup (about 2 minutes)**\n1. Fruugo signs the API with **HTTP Basic** and the credentials of your **Fruugo Retailer Portal** account (https://retailer.fruugo.com). Fruugo recommends a separate portal user for the integration.\n2. Put the portal user name into `FRUUGO_USERNAME` and its password into `FRUUGO_PASSWORD`.\n3. Install and run `fruugo_download_orders` with a `from` date of the last few days.\n\n**Answers are XML.** Fruugo returns `application/xml`; the connector turns it into JSON and drops the `o:` namespace prefix, so an order reads as `orders.order` (a single object when there is one order, a list when there are several) with `orderId`, `customerOrderId`, `orderDate`, `orderReleaseDate`, `orderStatus`, `customerLanguageCode`, `shippingAddress`, `shippingMethod`, `shippingCostInclVAT`, `orderLines.orderLine` and, once shipped, `shipments`. Values arrive as text.\n\n**Orders**: `fruugo_download_orders` returns the orders **released to you** (after Fruugo's fraud checks) between `from` and `to`, ISO 8601 dates or date-times. The window may be at most **60 days**; a longer one answers 400 \"Time range specified is too long\". `orderStatus` is PENDING (new, to process), PROCESSED (at least partly handled) or EXCEPTION (needs manual handling by Fruugo, not through the API). Each line has `fruugoProductId`, `fruugoSkuId`, your `productId` and `skuId`, prices in your currency, the customer's local prices (`customer`), VAT and the item counters `pendingItems`, `confirmedItems`, `shippedItems`, `cancelledItems`, `returnAnnouncedItems`, `returnedItems`, `itemsWithException`. When Fruugo collected the tax, `fruugoTaxID` and `fruugoEORI` are the ids for the customs declaration.\n\n**Stock**: `fruugo_list_stock` lists your live SKUs with Fruugo SKU id, your product and SKU id, title, `availability` (INSTOCK, OUTOFSTOCK, NOTAVAILABLE) and `itemsInStock` when your feed provides it. The connector always asks for one page of 1,000 SKUs (about 200 KB), starting with `page` 0; `skus` carries `totalNumberOfSkus`, `numberOfPages` and `currentPage`, so continue with the next page only when the user needs more. (Without paging Fruugo would send every SKU in one answer, up to 30,000.) Stock changes come from your product feed, not from this connector.\n\n**Order workflow (switched off)**: a PENDING order is confirmed with `fruugo_confirm_order` (optionally with an estimated shipping date) and, once dispatched, marked shipped with `fruugo_ship_order` with the tracking code and the tracking URL or at least the courier name, which Fruugo passes on to the customer. Without `item` the whole order is confirmed or shipped; with `item` (`fruugoProductId,fruugoSkuId,quantity`) only that part. Both act on real customer orders and are installed switched off; an admin turns them on deliberately. Before each call show the user the order and what will change, and wait for a yes. Cancelling and marking returns refund the customer, so they are not part of this connector; do them in the Retailer Portal.\n\n**Errors**: 401 means a wrong portal user name or password. 400 explains the problem in plain text, e.g. a date window over 60 days or an order that is not in the right state.",
+  "prerequisites": "A Fruugo retailer account and a Retailer Portal user (user name and password) for the API.",
+  "requiredEnvVars": [
+    "FRUUGO_USERNAME",
+    "FRUUGO_PASSWORD"
+  ],
+  "envVarMeta": {
+    "FRUUGO_USERNAME": {
+      "label": "Retailer Portal user name",
+      "kind": "credential",
+      "help": "The user name of your Fruugo Retailer Portal account (retailer.fruugo.com), ideally a separate user for the integration.",
+      "link": "https://retailer.fruugo.com/"
+    },
+    "FRUUGO_PASSWORD": {
+      "label": "Retailer Portal password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that Retailer Portal user.",
+      "link": "https://retailer.fruugo.com/"
+    }
+  },
+  "verifyHints": {
+    "401": "Fruugo refused the user name or password. Check them by signing in to retailer.fruugo.com.",
+    "400": "Fruugo refused the request; the text says why, e.g. a date window over 60 days."
+  },
+  "probe": {
+    "tool": "fruugo_list_stock",
+    "params": {
+      "page": 0
+    }
+  },
+  "connector": {
+    "name": "Fruugo Retailer API",
+    "type": "REST",
+    "baseUrl": "https://www.fruugo.com",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{FRUUGO_USERNAME}}",
+      "password": "{{FRUUGO_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/xml"
+    }
+  },
+  "tools": [
+    {
+      "name": "fruugo_download_orders",
+      "description": "Download the Fruugo orders released to you between from and to (at most 60 days apart): order and customer order id, dates, status PENDING, PROCESSED or EXCEPTION, customer language, shipping address and method, shipping cost, order lines with Fruugo and own product and SKU ids, prices, customer currency pricing, VAT and item counters, shipments and Fruugo tax ids. Order XML turned into JSON.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start, ISO 8601 date or date-time, e.g. 2026-10-01 or 2026-10-01T00:00:00Z."
+          },
+          "to": {
+            "type": "string",
+            "description": "End, ISO 8601; at most 60 days after from. Omit for up to now."
+          }
+        },
+        "required": [
+          "from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/download/v2",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "fruugo_list_stock",
+      "description": "List your live SKUs on Fruugo with Fruugo SKU id, your product and SKU id, product title, availability (INSTOCK, OUTOFSTOCK, NOTAVAILABLE) and items in stock when your feed provides it. 1,000 SKUs per page (about 200 KB), page from 0.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number from 0, 1,000 SKUs per page; the answer's skus element carries totalNumberOfSkus, numberOfPages and currentPage."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockstatus-api",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "fruugo_confirm_order",
+      "description": "Confirm a Fruugo order (all items, or one item with fruugoProductId,fruugoSkuId,quantity), optionally with an estimated shipping date and messages to the customer and to Fruugo. Returns the updated order XML. Installed switched off; acts on a real customer order: show the user the order and get a yes first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "orderId from fruugo_download_orders."
+          },
+          "item": {
+            "type": "string",
+            "description": "Only this item: fruugoProductId,fruugoSkuId,quantity. Omit to confirm every item."
+          },
+          "estimated_shipping_date": {
+            "type": "string",
+            "description": "Estimated shipping date, YYYY-MM-DD."
+          },
+          "message_to_customer": {
+            "type": "string",
+            "description": "Message passed to the customer."
+          },
+          "message_to_fruugo": {
+            "type": "string",
+            "description": "Message passed to Fruugo."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/confirm",
+        "bodyMapping": {
+          "orderId": "$order_id",
+          "item": "$item",
+          "estimatedShippingDate": "$estimated_shipping_date",
+          "messageToCustomer": "$message_to_customer",
+          "messageToFruugo": "$message_to_fruugo"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "fruugo_ship_order",
+      "description": "Mark a Fruugo order shipped (all items, or one item with fruugoProductId,fruugoSkuId,quantity) with the tracking code and the courier's tracking URL or at least the courier name, which Fruugo passes to the customer. Returns the updated order XML. Installed switched off; show the user the order and tracking and get a yes first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "orderId from fruugo_download_orders."
+          },
+          "item": {
+            "type": "string",
+            "description": "Only this item: fruugoProductId,fruugoSkuId,quantity. Omit to ship every item."
+          },
+          "tracking_code": {
+            "type": "string",
+            "description": "Tracking code of the parcel."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Courier tracking URL, or at least the courier name."
+          },
+          "message_to_customer": {
+            "type": "string",
+            "description": "Message passed to the customer."
+          },
+          "message_to_fruugo": {
+            "type": "string",
+            "description": "Message passed to Fruugo."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/ship",
+        "bodyMapping": {
+          "orderId": "$order_id",
+          "item": "$item",
+          "trackingCode": "$tracking_code",
+          "trackingUrl": "$tracking_url",
+          "messageToCustomer": "$message_to_customer",
+          "messageToFruugo": "$message_to_fruugo"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

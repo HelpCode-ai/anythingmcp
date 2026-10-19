@@ -696,6 +696,7 @@
       },
       "responseMapping": {
         "transform": {
+          "expression": "@",
           "maxBytes": 150000
         }
       }

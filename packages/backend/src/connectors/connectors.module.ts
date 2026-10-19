@@ -18,6 +18,7 @@ import { CurlParser } from './parsers/curl.parser';
 import { HarParser } from './parsers/har.parser';
 import { McpOAuthService } from './mcp-oauth.service';
 import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
+import { ShopeeAuthController } from './shopee-auth.controller';
 import { CatalogResyncService } from './catalog-resync.service';
 import { CatalogReconciler } from './catalog-reconciler.service';
 import { LicenseModule } from '../license/license.module';
@@ -43,7 +44,7 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
 // not each log in.
 @Module({
   imports: [McpServerModule, McpServersModule, LicenseModule],
-  controllers: [ConnectorsController, McpOAuthCallbackController, ToolsController],
+  controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, ToolsController],
   providers: [
     ConnectorsService,
     McpOAuthService,

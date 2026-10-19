@@ -1,4 +1,5 @@
 import { ScimError } from './scim.errors';
+import { normalizeEmail } from '../../common/email.util';
 import { SCIM_ENTERPRISE_USER_SCHEMA, SCIM_PATCH_SCHEMA } from './scim.schemas';
 
 /**
@@ -163,7 +164,7 @@ export function pickEmail(emails: unknown): string | undefined {
     entries.find((e) => e.primary === true || e.primary === 'true') ??
     entries.find((e) => String(e.type ?? '').toLowerCase() === 'work') ??
     entries[0];
-  return chosen ? String(chosen.value).trim().toLowerCase() : undefined;
+  return chosen ? normalizeEmail(String(chosen.value)) : undefined;
 }
 
 /** A display name for the `users.name` column, from whatever Entra sent. */

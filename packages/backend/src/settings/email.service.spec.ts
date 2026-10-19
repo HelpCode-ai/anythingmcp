@@ -13,11 +13,16 @@ describe('EmailService', () => {
   const sendMail = jest.fn().mockResolvedValue({});
   const ENV = { ...process.env };
 
-  function make(opts: { cloud?: boolean; stats?: any; user?: { id: string } | null } = {}) {
+  function make(opts: { cloud?: boolean; stats?: any; user?: { id: string; email: string } | null } = {}) {
     const siteSettings = { getSmtpConfig: jest.fn().mockResolvedValue(null), get: jest.fn() };
     const orgSettings = { getJson: jest.fn().mockResolvedValue(null) };
     const prisma = {
-      user: { findUnique: jest.fn().mockResolvedValue(opts.user === undefined ? { id: 'user-1' } : opts.user) },
+      // Stored with capitals: the recipient is looked up in any case.
+      user: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue(opts.user === undefined ? [{ id: 'user-1', email: 'A@b.com' }] : opts.user ? [opts.user] : []),
+      },
       license: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const cloud = opts.cloud ?? true;

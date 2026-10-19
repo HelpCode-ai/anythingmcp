@@ -1,0 +1,160 @@
+{
+  "slug": "droppery",
+  "name": "Droppery",
+  "aliases": [
+    "Droppery.io",
+    "Droppery dropshipping"
+  ],
+  "description": "Droppery dropshipping from an AI agent: the supplier products connected to your webshop with purchase and retail prices, stock and delivery times, shipping rates per country, and orders with payment status, supplier shipping status and track and trace. Read-only.",
+  "region": "nl",
+  "category": "e-commerce",
+  "icon": "droppery",
+  "docsUrl": "https://droppery.io/en/rest-api-integration/",
+  "instructions": "## Droppery\nThis connector uses the **Droppery webshop API** (`https://platform.droppery.io/api/v1/webshop`) of Droppery, the European dropshipping platform that connects webshops with suppliers: the supplier products connected to your shop with prices, stock and delivery times, a product's shipping rates per country, and your dropshipping orders with payment status and, per supplier, the shipping status, carrier and track and trace. Read-only.\n\n**Setup (about 2 minutes)**\n1. Sign in to the Droppery platform (platform.droppery.io) with your webshop account.\n2. Open **API token** in the menu, create a token and copy it right away (it is shown once). Paste it into `DROPPERY_API_TOKEN`; it is sent as a Bearer token.\n3. Install and run `droppery_browse_products`.\n\n**Products**: `droppery_browse_products` lists the products of your connected suppliers, `size` per page (at most 100, Droppery refuses more with 422) starting at row `start` (0 for the first page); `total` is the number of products. Each row is cut to the fields an agent needs: id, name, brand, supplier, SKU, EAN, stock, supplier purchase price excluding VAT and the suggested retail price including VAT (both also as discounted price), tax rate, delivery days, visibility and pause flags, categories, attributes and variants. Droppery cannot search or filter this list; page through it. `droppery_get_product` reads one product by its Droppery id with the full description, images, dimensions and `shipping_rates` per country.\n\n**Orders**: `droppery_get_order_details` reads one order by its **Droppery order id**, the number Droppery shows in its order list (e.g. 102057). It is not the webshop or marketplace order number (`order_id` in the answer); with that number Droppery answers 404 `No query results for model [App\\Models\\Core\\Order]`. The answer has the order date, payment status (e.g. paid), shipping address, order lines (product id, customer price, quantity and refunded quantity, purchase price) and `order_suppliers`: per supplier the status (e.g. in_progress, shipped), carrier code, track and trace code and tracking link. The API has no order list: take the id from the Droppery platform or from the system that placed the order.\n\n**Prices**: `supplier_price_excl` is what Droppery charges you excluding VAT; `retail_price_incl` is the supplier's suggested consumer price including VAT. Dropshipping orders are placed by your webshop integration; this connector does not place orders or move money.\n\n**Errors**: 401 `Unauthenticated.` means a missing or revoked token. 404 means the id does not exist for your shop. 422 lists the invalid parameters (e.g. size over 100).",
+  "prerequisites": "A Droppery webshop account and an API token created under API token on platform.droppery.io.",
+  "requiredEnvVars": [
+    "DROPPERY_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "DROPPERY_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Droppery platform (platform.droppery.io) > API token: create a token and copy it; it is shown only once. Sent as a Bearer token.",
+      "link": "https://platform.droppery.io/webshop/token",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste the token alone, without Bearer, quotes or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Droppery answered Unauthenticated. Create a new token under API token on platform.droppery.io and paste it into DROPPERY_API_TOKEN.",
+    "404": "Droppery has no such product or order for your shop. Orders need the Droppery order id, not the webshop order number.",
+    "422": "Droppery refused a parameter, e.g. size over 100."
+  },
+  "probe": {
+    "tool": "droppery_browse_products",
+    "params": {
+      "size": 1
+    }
+  },
+  "connector": {
+    "name": "Droppery webshop API",
+    "type": "REST",
+    "baseUrl": "https://platform.droppery.io/api/v1/webshop",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{DROPPERY_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "droppery_browse_products",
+      "description": "List the supplier products connected to your Droppery shop, size per page (at most 100) from row start: id, name, brand, supplier, SKU, EAN, stock, purchase price excl. VAT and suggested retail price incl. VAT (also discounted), tax rate, delivery days, visibility, categories, attributes and variants; total is the product count. No search: page through.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Row to start at, 0 for the first page."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Products per page, 1 to 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product",
+        "queryParams": {
+          "start": "$start",
+          "size": "$size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "$.id",
+                "name": "$.name",
+                "brand": "$.brand",
+                "supplier": "$.supplier",
+                "sku": "$.sku",
+                "ean": "$.ean",
+                "stock": "$.stock",
+                "supplier_price_excl": "$.supplier_price_excl",
+                "supplier_price_excl_discounted": "$.supplier_price_excl_discounted",
+                "retail_price_incl": "$.retail_price_incl",
+                "retail_price_incl_discounted": "$.retail_price_incl_discounted",
+                "tax_rate": "$.tax_rate",
+                "delivery_timeframe": "$.delivery_timeframe",
+                "delivery_min_days": "$.delivery_min_days",
+                "delivery_max_days": "$.delivery_max_days",
+                "is_visible": "$.is_visible",
+                "is_paused": "$.is_paused",
+                "parent_product_id": "$.parent_product_id",
+                "order_quantity_multiple": "$.order_quantity_multiple",
+                "country_of_origin": "$.country_of_origin",
+                "categories": "$.categories",
+                "attributes": "$.attributes",
+                "variants": "$.variants"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "droppery_get_product",
+      "description": "Get one Droppery product by its id: name, brand, supplier, SKU, EAN, HS code, full and long description, dimensions and weight, prices, tax rate, delivery time, country of origin, stock, images, categories, attributes, variants and shipping_rates per country (cost type, price excl. VAT, tax rate, rules).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Droppery product id from droppery_browse_products."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/{product_id}"
+      }
+    },
+    {
+      "name": "droppery_get_order_details",
+      "description": "Get one Droppery order by its Droppery order id (the number Droppery shows, e.g. 102057; not the webshop or marketplace order number): order date, payment status, shipping address, order lines with price and quantities, and per supplier the status (in_progress, shipped), carrier code, track and trace code and tracking link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Droppery order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/{order_id}"
+      }
+    }
+  ]
+}
