@@ -19,8 +19,8 @@ export const TRIAGE_CATEGORIES = [
 export type TriageCategory = (typeof TRIAGE_CATEGORIES)[number];
 
 /**
- * Categories the AI assistant may answer on its own. Billing, bugs, feature
- * requests and sales always go to a person.
+ * Categories the AI assistant may answer on its own, enterprise customers
+ * included. Billing, bugs, feature requests and sales always go to a person.
  */
 export const AI_HANDLED_CATEGORIES: readonly TriageCategory[] = [
   'connector-setup',
@@ -162,18 +162,21 @@ export class SupportTriageService {
   ) {
     const enterprise = isEnterprise(attrs);
     const assistant = this.aiAssistantUserId();
-    const toAssistant = routeToAssistant(r, attrs, channel, assistant);
+    const toAssistant = routeToAssistant(r, channel, assistant);
     const tags = [r.category, ...segmentTags(attrs), 'ai-triaged'];
     if (toAssistant) tags.push('ai-assistant');
+    let teamId: number | undefined;
     const steps: Array<[string, () => Promise<unknown>]> = [
       ['tags', () => desk.addTags(uuid, tags)],
       ['priority', () => desk.setPriority(uuid, r.priority)],
       // Team first: Libredesk clears the user assignee when the team changes.
       ['team', async () => {
-        const id = await this.teamId(desk, enterprise ? 'Enterprise' : 'Support');
-        if (id) await desk.assignTeam(uuid, id);
+        teamId = await this.teamId(desk, enterprise ? 'Enterprise' : 'Support');
+        if (teamId) await desk.assignTeam(uuid, teamId);
       }],
-      ['note', () => desk.addPrivateNote(uuid, triageNote(r, attrs))],
+      // Mentioning the Enterprise team notifies its members at once, even
+      // when the assistant answers first.
+      ['note', () => desk.addPrivateNote(uuid, triageNote(r, attrs), enterprise && teamId ? [{ type: 'team', id: teamId }] : [])],
     ];
     if (toAssistant && assistant) {
       // Assigning the assistant starts its reply; it hands back to the
@@ -235,17 +238,15 @@ export function normaliseAttrs(raw: unknown): Record<string, string> {
   return out;
 }
 
-/** Live chat, a category the assistant handles, and never enterprise. */
+/** Live chat in a category the assistant handles. */
 export function routeToAssistant(
   r: TriageResult,
-  attrs: Record<string, string>,
   channel: string | undefined,
   assistantUserId: number | null,
 ): boolean {
   return (
     !!assistantUserId &&
     channel === 'livechat' &&
-    !isEnterprise(attrs) &&
     AI_HANDLED_CATEGORIES.includes(r.category)
   );
 }
