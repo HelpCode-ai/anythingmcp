@@ -362,7 +362,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `METRICS_ENABLED` | No | Start a second, separate `/metrics` listener for Prometheus (default: `false`) — see [observability.md](operations/observability.md) |
 | `METRICS_PORT` | No | Port for the metrics listener (default: `9464`) |
 | `METRICS_HOST` | No | Bind host for the metrics listener (default: `0.0.0.0`) |
-| `METRICS_TOKEN` | No on self-hosted, **required on Cloud** | Bearer token required to scrape `/metrics`, compared with `timingSafeEqual` |
+| `METRICS_TOKEN` | **Required when `METRICS_ENABLED=true`** | Bearer token required to scrape `/metrics`, compared with `timingSafeEqual` |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
 
 ---

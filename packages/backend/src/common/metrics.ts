@@ -9,10 +9,14 @@
  * 4000 — because /metrics must never be reachable through the public port
  * that /health* is proxied on (deploy/cloud/Caddyfile, docs/deployment.md).
  *
- * On Cloud (DEPLOYMENT_MODE=cloud) the listener refuses to start without
- * METRICS_TOKEN, and per-tool/per-connector labels are always dropped, even
- * if METRICS_TOOL_LABELS=true — no series may carry a connector id or tool
- * name across thousands of tenant workspaces.
+ * METRICS_TOKEN is required whenever METRICS_ENABLED=true, on Cloud and
+ * self-hosted alike (mirrors SENTRY_VERIFY_TOKEN): the listener's default
+ * bind host is 0.0.0.0, so an unauthenticated self-hosted instance would
+ * serve /metrics to anyone who can reach the host.
+ *
+ * On Cloud (DEPLOYMENT_MODE=cloud), per-tool/per-connector labels are always
+ * dropped, even if METRICS_TOOL_LABELS=true — no series may carry a
+ * connector id or tool name across thousands of tenant workspaces.
  *
  * Uses its own Registry rather than prom-client's global default: the
  * "disabled means nothing collected" guarantee would otherwise depend on
@@ -59,11 +63,11 @@ export interface RecordToolCallInput {
   tool?: string;
 }
 
-function upstreamStatusClass(upstreamStatus?: number): '4xx' | '5xx' | 'none' {
-  if (upstreamStatus == null) return 'none';
+function upstreamStatusClass(upstreamStatus?: number): '4xx' | '5xx' | null {
+  if (upstreamStatus == null) return null;
   if (upstreamStatus >= 500) return '5xx';
   if (upstreamStatus >= 400) return '4xx';
-  return 'none';
+  return null;
 }
 
 /** No-op until startMetricsServer() has actually created the registry. */
@@ -80,11 +84,17 @@ export function recordToolCall(input: RecordToolCallInput): void {
     { connector_type: input.connectorType, status: input.status, ...extra },
     input.durationMs / 1000,
   );
-  upstreamErrorsTotal.inc({
-    connector_type: input.connectorType,
-    upstream_status_class: upstreamStatusClass(input.upstreamStatus),
-    ...extra,
-  });
+
+  // Only an actual upstream error moves this counter — a successful call
+  // (or one with no upstream status at all) never increments it.
+  const statusClass = upstreamStatusClass(input.upstreamStatus);
+  if (statusClass) {
+    upstreamErrorsTotal.inc({
+      connector_type: input.connectorType,
+      upstream_status_class: statusClass,
+      ...extra,
+    });
+  }
 }
 
 function sendMetrics(reg: Registry, res: http.ServerResponse): void {
@@ -109,8 +119,8 @@ export function startMetricsServer(): http.Server | null {
   if (process.env.METRICS_ENABLED !== 'true') return null;
 
   const token = process.env.METRICS_TOKEN;
-  if (isCloud() && !token) {
-    logger.error('[metrics] DEPLOYMENT_MODE=cloud requires METRICS_TOKEN to be set; metrics stay off.');
+  if (!token) {
+    logger.error('[metrics] METRICS_TOKEN must be set when METRICS_ENABLED=true; metrics stay off.');
     return null;
   }
 
@@ -142,7 +152,7 @@ export function startMetricsServer(): http.Server | null {
   });
   upstreamErrorsTotal = new Counter({
     name: 'anythingmcp_tool_call_upstream_errors_total',
-    help: 'Tool calls whose upstream response was an error, by status class.',
+    help: 'Tool calls whose upstream response was a 4xx or 5xx, by status class. Never incremented for a successful call.',
     labelNames: withIdentityLabels ? ['connector_type', 'upstream_status_class', 'connector_id', 'tool'] : ['connector_type', 'upstream_status_class'],
     registers: [registry],
   });
@@ -170,16 +180,26 @@ export function startMetricsServer(): http.Server | null {
       res.end();
       return;
     }
-    if (token) {
-      const header = req.headers.authorization || '';
-      const presented = header.startsWith('Bearer ') ? header.slice(7) : '';
-      if (!presented || !sameSecret(presented, token)) {
-        res.writeHead(401);
-        res.end();
-        return;
-      }
+    const header = req.headers.authorization || '';
+    const presented = header.startsWith('Bearer ') ? header.slice(7) : '';
+    if (!presented || !sameSecret(presented, token)) {
+      res.writeHead(401);
+      res.end();
+      return;
     }
     sendMetrics(reg, res);
+  });
+
+  // listen() emits 'error' instead of throwing (e.g. EADDRINUSE) — without a
+  // handler that's an uncaught exception that takes the whole backend down,
+  // not just the metrics listener.
+  server.on('error', (err) => {
+    logger.error(`[metrics] listener failed, metrics stay off: ${err}`);
+    server = null;
+    registry = null;
+    toolCallsTotal = null;
+    toolCallDuration = null;
+    upstreamErrorsTotal = null;
   });
 
   server.listen(port, host, () => {

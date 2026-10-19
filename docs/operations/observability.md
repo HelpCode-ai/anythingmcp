@@ -185,14 +185,14 @@ Off unless `METRICS_ENABLED=true`. When on, the backend starts a **second, separ
 | `METRICS_ENABLED` | `false` | Starts the listener. |
 | `METRICS_PORT` | `9464` | Metrics listener port. |
 | `METRICS_HOST` | `0.0.0.0` | Metrics listener bind host — a Prometheus container needs to reach it over the compose network, so the port is deliberately **not** published in `docker-compose.yml`. |
-| `METRICS_TOKEN` | unset | Required `Authorization: Bearer` token, compared with `timingSafeEqual`. **Required on Cloud** — without it the listener refuses to start and logs an error. Optional on self-hosted. |
+| `METRICS_TOKEN` | unset | **Required** `Authorization: Bearer` token, compared with `timingSafeEqual`, whenever `METRICS_ENABLED=true` — on Cloud and self-hosted alike. Without it the listener refuses to start and logs an error; the default bind host `0.0.0.0` would otherwise serve `/metrics` to anyone who can reach the host. |
 | `METRICS_TOOL_LABELS` | `false` | Adds `connector_id` (cuid, not name) and `tool` labels to the tool-call metrics. Self-hosted only — **always ignored on Cloud**, even if set, so no series can carry a connector or tool identity across tenant workspaces. |
 
 ### Metrics (prefix `anythingmcp_`)
 
 - `tool_calls_total{connector_type,status}` — counter, `status` is `success` or `error`.
 - `tool_call_duration_seconds{connector_type,status}` — histogram, buckets from 0.05 s to 60 s (tool calls can run 20 s or more).
-- `tool_call_upstream_errors_total{connector_type,upstream_status_class}` — `upstream_status_class` is `4xx`, `5xx` or `none`.
+- `tool_call_upstream_errors_total{connector_type,upstream_status_class}` — only incremented for an actual upstream error; `upstream_status_class` is `4xx` or `5xx`.
 - `tool_calls_in_flight`, `mcp_requests_in_flight`, `registered_tools` — gauges mirrored from the in-process `processGauges` singleton at scrape time (not polled on an interval).
 - The standard `prom-client` Node runtime metrics (`collectDefaultMetrics()`: event loop lag, heap, GC, etc.).
 
@@ -204,12 +204,12 @@ scrape_configs:
     scheme: http
     bearer_token: '<METRICS_TOKEN>'
     static_configs:
-      - targets: ['anythingmcp-backend:9464']
+      - targets: ['app:9464']
 ```
 
 ### Cloud vs self-hosted
 
-On Cloud, metrics are instance-wide only: no series may carry an organization id, connector name, tool name or user, which is why `METRICS_TOOL_LABELS` has no effect there and `METRICS_TOKEN` is mandatory. Per-organization usage already exists in the database (`AuditService.getBreakdowns`) and is unaffected by this endpoint. On self-hosted, the operator who sets `METRICS_TOOL_LABELS=true` is the only consumer of their own instance's metrics, so per-connector/per-tool labels are allowed.
+On Cloud, metrics are instance-wide only: no series may carry an organization id, connector name, tool name or user, which is why `METRICS_TOOL_LABELS` has no effect there. Per-organization usage already exists in the database (`AuditService.getBreakdowns`) and is unaffected by this endpoint. On self-hosted, the operator who sets `METRICS_TOOL_LABELS=true` is the only consumer of their own instance's metrics, so per-connector/per-tool labels are allowed. `METRICS_TOKEN` is required on both: the listener's default bind host is `0.0.0.0`.
 
 ## Fatal crash reports (always on in the Docker image)
 
