@@ -27,16 +27,21 @@ CREATE INDEX "kg_skill_versions_organization_id_idx" ON "kg_skill_versions"("org
 
 ALTER TABLE "kg_skill_versions" ADD CONSTRAINT "kg_skill_versions_skill_id_fkey" FOREIGN KEY ("skill_id") REFERENCES "kg_skill_suggestions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- `auto` switches to an index above 6,000 characters of applied skills. Keep
--- today's behaviour (full text) on servers already above it, so nothing
--- changes until an admin picks a mode. Counts the server's own skills; the
--- 6000 must match SKILLS_INLINE_BUDGET in kg-skill.service.ts.
+-- `auto` switches to an index once the skills text passes 6,000 characters.
+-- Keep today's behaviour (full text) on every server that receives applied
+-- skills today, its own or its connectors', so no existing server changes
+-- until an admin picks a mode. New servers start on `auto`.
 UPDATE "mcp_server_configs" AS s
 SET "skills_delivery" = 'inline'
-WHERE s."id" IN (
-    SELECT k."mcp_server_id"
+WHERE EXISTS (
+    SELECT 1
     FROM "kg_skill_suggestions" AS k
-    WHERE k."status" = 'applied' AND k."mcp_server_id" IS NOT NULL
-    GROUP BY k."mcp_server_id"
-    HAVING SUM(length(k."title") + length(k."when_to_use") + length(k."instruction")) > 6000
+    WHERE k."status" = 'applied'
+      AND k."organization_id" = s."organization_id"
+      AND (
+        k."mcp_server_id" = s."id"
+        OR k."connector_id" IN (
+            SELECT c."connector_id" FROM "mcp_server_connectors" AS c WHERE c."mcp_server_id" = s."id"
+        )
+      )
 );
