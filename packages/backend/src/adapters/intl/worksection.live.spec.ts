@@ -32,6 +32,10 @@ describe('worksection adapter: static spec conformance', () => {
     });
   });
 
+  it('renews at /oauth2/refresh: /oauth2/token answers a refresh without an access_token', () => {
+    expect(a.connector.authConfig.refreshUrl).toBe('https://worksection.com/oauth2/refresh');
+  });
+
   it('every tool calls /api/oauth2 with a fixed action', () => {
     for (const t of a.tools) {
       expect(t.endpointMapping.path).toBe('/api/oauth2');

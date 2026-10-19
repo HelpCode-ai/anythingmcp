@@ -552,9 +552,16 @@ export class OAuth2TokenService {
         }
       }
 
-      await assertSafeOutboundUrl(tokenUrl);
+      // A few providers renew at their own endpoint: Worksection issues
+      // tokens at /oauth2/token but only refreshes at /oauth2/refresh, and
+      // answers a refresh sent to /oauth2/token without an access_token.
+      const postUrl =
+        !isMachineGrant(grant) && typeof authConfig.refreshUrl === 'string' && authConfig.refreshUrl
+          ? authConfig.refreshUrl
+          : tokenUrl;
+      await assertSafeOutboundUrl(postUrl);
       const response = await axios.post(
-        tokenUrl,
+        postUrl,
         new URLSearchParams(body).toString(),
         {
           headers,
