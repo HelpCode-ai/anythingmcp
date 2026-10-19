@@ -387,6 +387,7 @@ import * as serply from './intl/serply.json';
 import * as servicenow from './intl/servicenow.json';
 import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
+import * as shopee from './intl/shopee.json';
 import * as shopify from './intl/shopify.json';
 import * as shortcut from './intl/shortcut.json';
 import * as signwell from './intl/signwell.json';
@@ -1107,6 +1108,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   servicenow as unknown as AdapterDefinition,
   shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
+  shopee as unknown as AdapterDefinition,
   shopify as unknown as AdapterDefinition,
   shortcut as unknown as AdapterDefinition,
   signwell as unknown as AdapterDefinition,

@@ -1,0 +1,960 @@
+{
+  "slug": "shopee",
+  "name": "Shopee Seller",
+  "aliases": [
+    "Shopee Open Platform",
+    "Shopee Partner API"
+  ],
+  "description": "Let your AI work with your Shopee shop: listings and variations, orders, shipping and tracking, returns, order income, discounts and Ads figures, with stock and price updates available on request.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "shopee",
+  "docsUrl": "https://open.shopee.com/developer-guide/16",
+  "instructions": "## Shopee Seller\nThis connector calls the **Shopee Open Platform API v2** for one Shopee shop: shop details, listings and their variations, orders, shipping and tracking, returns, order income, discount promotions and Shopee Ads figures. Stock and price updates are included but installed switched off.\n\n**What you need**: a Shopee Open Platform developer account and an app of your own, with its **Partner ID** and **Partner Key**, and the seller account of the shop. About 15 minutes the first time, longer if Shopee still has to approve the app.\n\n**Setup**\n1. Sign in at https://open.shopee.com, complete the developer registration, then in the **Console** open **App List** and create an app for your own shop (for example the Seller In House System type). Shopee reviews new apps before they can go live.\n2. On the app's edit page, declare the **Test Redirect URL Domain** and the **Live Redirect URL Domain**: the address of your AnythingMCP backend, `https://cloud.anythingmcp.com` on AnythingMCP Cloud, or your own `SERVER_URL` when self-hosted. Shopee refuses an authorization whose redirect is on another domain. AnythingMCP sends Shopee back to `<that address>/api/shopee/callback/...`.\n3. Copy the app's **Partner ID** into `SHOPEE_PARTNER_ID` and its **Partner Key** into `SHOPEE_PARTNER_KEY`. Live and test keys are different: use the pair that matches `SHOPEE_HOST`.\n4. Set `SHOPEE_HOST`: `https://partner.shopeemobile.com` for live shops (Southeast Asia, Taiwan, Latin America and the other markets), `https://openplatform.shopee.com.br` if your app is served from Brazil, `https://openplatform.shopee.cn` for apps of developers in China mainland, and `https://openplatform.sandbox.test-stable.shopee.sg` (or `https://partner.test-stable.shopeemobile.com`) with the test keys and a sandbox test shop.\n5. Install the connector, open it in AnythingMCP and click **Authorize with Provider**. Shopee asks you to sign in: use the **shop account** (a main or merchant account is not supported), pick the shop and how long the authorization lasts (up to 365 days), and confirm. You come back to AnythingMCP and the connector is ready.\n\n**How it signs**: every call carries `partner_id`, `timestamp`, `access_token`, `shop_id` and `sign` in the query, where `sign` is an HMAC-SHA256 over the partner id, the API path, the timestamp, the access token and the shop id, keyed with the partner key. The partner key itself never leaves AnythingMCP. A signature is only valid for 5 minutes, so a host clock that is off gives `error_sign` or a timestamp error.\n\n**Tokens**: the access token lasts about 4 hours and is renewed automatically before it expires; the refresh token rotates on every renewal and is stored encrypted on the connector. If the connector is not used for 30 days, or the shop's authorization ends or is cancelled in Shopee Seller Centre, Shopee refuses the refresh token: the connector then shows that it needs a new authorization, its owner gets one email, and calls stop until someone clicks **Authorize with Provider** again. `shopee_get_shop_info` shows when the current authorization expires (`expire_time`).\n\n**Where to start**: `shopee_get_shop_info` checks everything at once. Listings: `shopee_list_items` or `shopee_search_items` give item ids, `shopee_get_items` the details, `shopee_get_item_models` the variations with their own price and stock, `shopee_get_items_extra_info` sales and views. Orders: `shopee_list_orders` (a window of at most 15 days, Unix seconds), then `shopee_get_order_details` for up to 50 order numbers; `shopee_list_orders_to_ship` lists what still has to go out. Shipping: `shopee_get_shipping_parameter`, `shopee_get_tracking_number`, `shopee_get_tracking_info`, `shopee_list_logistics_channels`. After-sales: `shopee_list_returns` and `shopee_get_return`. Money in: `shopee_get_order_income`. Marketing: `shopee_list_discounts`, `shopee_get_ads_balance`, `shopee_get_ads_daily_performance`.\n\n**Times and paging**: times are Unix seconds and windows are limited (15 days for orders and returns). Lists page with `offset`/`next_offset`, `cursor`/`next_cursor` or `page_no`, each tool says which; keep going while `has_next_page` or `more` is true.\n\n**Errors**: Shopee answers with an `error` code and a `message`. `error_sign` or `invalid_partner_id`: the partner id, key or host do not belong together (live keys on the sandbox host, or the reverse). `error_permission`: the app lacks the permission for that API (Ads, for example). `error_param`: a parameter is wrong or a time window is too long. `error_rate_limit` or HTTP 429: wait and try again. If your app declares an IP allowlist in the Console, calls from AnythingMCP's address fail with `source_ip_undeclared`.\n\n**Writes**: `shopee_update_stock` and `shopee_update_price` change the live shop and are installed switched off; turn them on per connector if you want the AI to make such changes, and confirm every change with the user first. Nothing here moves money, ships, cancels or answers buyers.",
+  "prerequisites": "A Shopee Open Platform app of your own (Partner ID and Partner Key) whose Redirect URL Domain is your AnythingMCP address, and the seller account of the shop to authorize. About 15 minutes, plus Shopee's review of a new app.",
+  "appRegistrationUrl": "https://open.shopee.com/console",
+  "requiredEnvVars": [
+    "SHOPEE_HOST",
+    "SHOPEE_PARTNER_ID",
+    "SHOPEE_PARTNER_KEY"
+  ],
+  "envVarMeta": {
+    "SHOPEE_HOST": {
+      "label": "Shopee API host",
+      "kind": "address",
+      "help": "https://partner.shopeemobile.com for live shops; https://openplatform.shopee.com.br (Brazil) or https://openplatform.shopee.cn (China mainland developers) when your app is served there; https://openplatform.sandbox.test-stable.shopee.sg for the sandbox with test keys.",
+      "example": "https://partner.shopeemobile.com",
+      "pattern": "^https://(partner\\.shopeemobile\\.com|partner\\.test-stable\\.shopeemobile\\.com|openplatform\\.shopee\\.(cn|com\\.br)|openplatform\\.(sandbox\\.)?test-stable\\.shopee\\.(sg|cn))$",
+      "patternMessage": "Use one of the Shopee API hosts, with https:// and without a path, e.g. https://partner.shopeemobile.com."
+    },
+    "SHOPEE_PARTNER_ID": {
+      "label": "Partner ID",
+      "kind": "setting",
+      "help": "Shopee Open Platform Console, App List, your app: the Partner ID (a number). Live and test apps have different ids.",
+      "example": "2001887",
+      "link": "https://open.shopee.com/console",
+      "pattern": "^[0-9]{1,12}$",
+      "patternMessage": "The Partner ID is a number."
+    },
+    "SHOPEE_PARTNER_KEY": {
+      "label": "Partner Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page as the Partner ID: the Partner Key (live or test, matching the host). It signs every request and is never sent.",
+      "link": "https://open.shopee.com/console",
+      "pattern": "^\\S{16,256}$",
+      "patternMessage": "Paste the Partner Key alone, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Shopee refused the signature or the shop authorization. Check that SHOPEE_PARTNER_ID and SHOPEE_PARTNER_KEY belong to the same app and match SHOPEE_HOST (live keys on the live host, test keys on the sandbox), then click Authorize with Provider again.",
+    "429": "Shopee is rate limiting this app. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "shopee_get_shop_info"
+  },
+  "connector": {
+    "name": "Shopee Open Platform v2",
+    "type": "REST",
+    "baseUrl": "{{SHOPEE_HOST}}",
+    "authType": "HMAC",
+    "authConfig": {
+      "tokenProvider": "shopee",
+      "partnerId": "{{SHOPEE_PARTNER_ID}}",
+      "signature": {
+        "algorithm": "sha256",
+        "encoding": "hex",
+        "secret": "{{SHOPEE_PARTNER_KEY}}",
+        "placement": "query",
+        "paramName": "sign",
+        "timestampParam": "timestamp",
+        "queryParams": {
+          "partner_id": "{{SHOPEE_PARTNER_ID}}"
+        },
+        "template": "${query.partner_id}${pathname}${timestamp}${query.access_token}${query.shop_id}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/v2/shop/get_shop_info",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error",
+          "matches": "^(invalid_ac+e+s+_token|error_auth|error_sign|invalid_partner_id|shop_access_expired|shop_no_linked|refresh_token_expired|error_shop_refresh_token|shop_banned)$",
+          "messagePath": [
+            "error",
+            "message"
+          ],
+          "status": 401
+        },
+        {
+          "path": "error",
+          "matches": "^(error_permission|source_ip_undeclared)$",
+          "messagePath": [
+            "error",
+            "message"
+          ],
+          "status": 403
+        },
+        {
+          "path": "error",
+          "matches": "^(error_rate_limit|error_limit|ads\\.rate_limit\\..+)$",
+          "messagePath": [
+            "error",
+            "message"
+          ],
+          "status": 429
+        },
+        {
+          "path": "error",
+          "matches": ".+",
+          "messagePath": [
+            "error",
+            "message"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "shopee_get_shop_info",
+      "description": "Read the authorized shop: shop_name, region, status (NORMAL, BANNED, FROZEN), whether it is cross-border (is_cb), auth_time and expire_time of the authorization (Unix seconds). No parameters; the lightest call, and the check that the partner key, the host and the shop authorization line up.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/shop/get_shop_info"
+      }
+    },
+    {
+      "name": "shopee_get_shop_profile",
+      "description": "Read the shop's public profile: name, logo, description and invoice issuer.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/shop/get_profile"
+      }
+    },
+    {
+      "name": "shopee_list_items",
+      "description": "List the shop's listings (item ids with status and update_time), 100 per page at most. Page with offset: pass next_offset from the answer while has_next_page is true. Then read details with shopee_get_items and variations with shopee_get_item_models.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Where to start, 0 for the first page; then next_offset from the previous answer.",
+            "default": 0,
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "item_status": {
+            "type": "array",
+            "description": "Listing statuses to include; several are allowed. NORMAL is live, UNLIST is hidden by the seller.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "NORMAL",
+                "BANNED",
+                "UNLIST",
+                "REVIEWING",
+                "SELLER_DELETE",
+                "SHOPEE_DELETE"
+              ]
+            },
+            "default": [
+              "NORMAL"
+            ]
+          },
+          "update_time_from": {
+            "type": "integer",
+            "description": "Only items updated at or after this time. Unix time in seconds."
+          },
+          "update_time_to": {
+            "type": "integer",
+            "description": "Only items updated at or before this time. Unix time in seconds."
+          }
+        },
+        "required": [
+          "offset",
+          "page_size",
+          "item_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/product/get_item_list",
+        "queryParams": {
+          "offset": "$offset",
+          "page_size": "$page_size",
+          "item_status": "$item_status",
+          "update_time_from": "$update_time_from",
+          "update_time_to": "$update_time_to"
+        }
+      }
+    },
+    {
+      "name": "shopee_search_items",
+      "description": "Search the shop's listings by name or SKU (an SKU match wins over a name match), or find listings missing attributes. Returns item ids; read them with shopee_get_items. Page with offset (a string) from next_offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_name": {
+            "type": "string",
+            "description": "Words in the listing name."
+          },
+          "item_sku": {
+            "type": "string",
+            "description": "Parent SKU of the listing."
+          },
+          "item_status": {
+            "type": "array",
+            "description": "Listing statuses to include.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "NORMAL",
+                "BANNED",
+                "UNLIST",
+                "REVIEWING",
+                "SELLER_DELETE",
+                "SHOPEE_DELETE"
+              ]
+            }
+          },
+          "attribute_status": {
+            "type": "integer",
+            "description": "1: listings missing required attributes, 2: listings missing optional attributes.",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "string",
+            "description": "Leave out for the first page; then next_offset from the previous answer."
+          }
+        },
+        "required": [
+          "page_size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/product/search_item",
+        "queryParams": {
+          "item_name": "$item_name",
+          "item_sku": "$item_sku",
+          "item_status": "$item_status",
+          "attribute_status": "$attribute_status",
+          "page_size": "$page_size",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "shopee_get_items",
+      "description": "Read up to 50 listings by item id: name, SKU, category, status, price info, stock info (when the listing has no variations), images, weight and dimensions, logistics, and has_model. For a listing with variations, prices and stock are per model: use shopee_get_item_models.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id_list": {
+            "type": "array",
+            "description": "Item ids, 1 to 50, from shopee_list_items or shopee_search_items.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          },
+          "need_tax_info": {
+            "type": "boolean",
+            "description": "Also return tax_info."
+          },
+          "need_complaint_policy": {
+            "type": "boolean",
+            "description": "Also return complaint_policy (PL only)."
+          }
+        },
+        "required": [
+          "item_id_list"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/product/get_item_base_info",
+        "queryParams": {
+          "item_id_list": "$item_id_list",
+          "need_tax_info": "$need_tax_info",
+          "need_complaint_policy": "$need_complaint_policy"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "shopee_get_items_extra_info",
+      "description": "Read performance figures for up to 50 listings: sales, views, likes, rating_star and comment_count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id_list": {
+            "type": "array",
+            "description": "Item ids, 1 to 50.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "item_id_list"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/product/get_item_extra_info",
+        "queryParams": {
+          "item_id_list": "$item_id_list"
+        }
+      }
+    },
+    {
+      "name": "shopee_get_item_models",
+      "description": "Read the variations (models) of one listing: tier_variation (the option names, e.g. colour and size) and each model with model_id, model_sku, price_info and stock_info_v2 (seller and Shopee stock). The model_id values are what shopee_update_stock and shopee_update_price take.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "description": "Item id of a listing with has_model true."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/product/get_model_list",
+        "queryParams": {
+          "item_id": "$item_id"
+        }
+      }
+    },
+    {
+      "name": "shopee_update_stock",
+      "description": "Set the seller stock of a listing or of its models (up to 50 entries). Overwrites the current figure; it cannot be lower than stock already reserved by orders. Installed switched off. Confirm with the user first, showing item, model and new stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "stock_list": {
+            "type": "array",
+            "description": "One entry per model; model_id 0 for a listing without variations.",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "properties": {
+                "model_id": {
+                  "type": "integer",
+                  "description": "Model id from shopee_get_item_models, 0 when the listing has no variations."
+                },
+                "seller_stock": {
+                  "type": "array",
+                  "description": "New stock; one entry, or one per warehouse location when the seller has several.",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "location_id": {
+                        "type": "string",
+                        "description": "Warehouse location id; leave out when the seller has no warehouses."
+                      },
+                      "stock": {
+                        "type": "integer",
+                        "description": "New stock quantity.",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "stock"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "seller_stock"
+              ]
+            }
+          }
+        },
+        "required": [
+          "item_id",
+          "stock_list"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/product/update_stock",
+        "bodyMapping": {
+          "item_id": "$item_id",
+          "stock_list": "$stock_list"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "shopee_update_price",
+      "description": "Set the original price of a listing or of its models (up to 50 entries), in the shop's currency. SG, MY, BR, MX, PL, ES and AR take two decimals, other markets whole numbers. Running promotions keep their own price. Installed switched off. Confirm with the user first, showing item, model, old and new price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "price_list": {
+            "type": "array",
+            "description": "One entry per model; model_id 0 for a listing without variations.",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "properties": {
+                "model_id": {
+                  "type": "integer",
+                  "description": "Model id from shopee_get_item_models, 0 when the listing has no variations."
+                },
+                "original_price": {
+                  "type": "number",
+                  "description": "New original price.",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "original_price"
+              ]
+            }
+          }
+        },
+        "required": [
+          "item_id",
+          "price_list"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/product/update_price",
+        "bodyMapping": {
+          "item_id": "$item_id",
+          "price_list": "$price_list"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "shopee_list_orders",
+      "description": "List orders created (or updated) in a time window of at most 15 days, newest first, up to 100 per page. Returns order_sn and order_status; read the orders with shopee_get_order_details. Page with cursor: pass next_cursor while more is true. For longer periods, call once per 15-day window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_range_field": {
+            "type": "string",
+            "description": "Which time the window applies to.",
+            "enum": [
+              "create_time",
+              "update_time"
+            ],
+            "default": "create_time"
+          },
+          "time_from": {
+            "type": "integer",
+            "description": "Start of the window. Unix time in seconds."
+          },
+          "time_to": {
+            "type": "integer",
+            "description": "End of the window, at most 15 days after time_from. Unix time in seconds."
+          },
+          "order_status": {
+            "type": "string",
+            "description": "Only orders in this status (one value).",
+            "enum": [
+              "UNPAID",
+              "READY_TO_SHIP",
+              "PROCESSED",
+              "SHIPPED",
+              "COMPLETED",
+              "IN_CANCEL",
+              "CANCELLED",
+              "INVOICE_PENDING"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Leave out for the first page; then next_cursor from the previous answer."
+          },
+          "response_optional_fields": {
+            "type": "string",
+            "description": "Extra fields per order; order_status is the only one.",
+            "default": "order_status"
+          }
+        },
+        "required": [
+          "time_range_field",
+          "time_from",
+          "time_to",
+          "page_size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/order/get_order_list",
+        "queryParams": {
+          "time_range_field": "$time_range_field",
+          "time_from": "$time_from",
+          "time_to": "$time_to",
+          "order_status": "$order_status",
+          "page_size": "$page_size",
+          "cursor": "$cursor",
+          "response_optional_fields": "$response_optional_fields"
+        }
+      }
+    },
+    {
+      "name": "shopee_get_order_details",
+      "description": "Read up to 50 orders: status, buyer, items, amounts, payment method, shipping carrier, packages, recipient address and cancellation details. The default response_optional_fields ask for all of these; Shopee returns only the base fields otherwise.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_sn_list": {
+            "type": "string",
+            "description": "Order numbers separated by commas, 1 to 50, e.g. 201214JASXYXY6,201214JAJXU6G7."
+          },
+          "response_optional_fields": {
+            "type": "string",
+            "description": "Comma-separated extra fields to return (Shopee names, e.g. item_list,total_amount,package_list).",
+            "default": "buyer_user_id,buyer_username,estimated_shipping_fee,recipient_address,actual_shipping_fee,note,item_list,pay_time,package_list,shipping_carrier,payment_method,total_amount,buyer_cancel_reason,cancel_by,cancel_reason,fulfillment_flag,pickup_done_time"
+          }
+        },
+        "required": [
+          "order_sn_list"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/order/get_order_detail",
+        "queryParams": {
+          "order_sn_list": "$order_sn_list",
+          "response_optional_fields": "$response_optional_fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "shopee_list_orders_to_ship",
+      "description": "List the orders waiting to be shipped (status READY_TO_SHIP with a shipping document to arrange), up to 100 per page. Page with cursor while more is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Leave out for the first page; then next_cursor from the previous answer."
+          }
+        },
+        "required": [
+          "page_size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/order/get_shipment_list",
+        "queryParams": {
+          "page_size": "$page_size",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "shopee_get_shipping_parameter",
+      "description": "Read how an order can be handed over: info_needed per method, the pickup addresses and time slots, and the drop-off branches. Read only; arranging the shipment is not offered by this connector.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_sn": {
+            "type": "string",
+            "description": "Order number (order_sn), e.g. 201214JASXYXY6, as returned by shopee_list_orders."
+          },
+          "package_number": {
+            "type": "string",
+            "description": "Package number, for an order split into several parcels (package_list in shopee_get_order_details). Leave it out for a single-parcel order."
+          }
+        },
+        "required": [
+          "order_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/logistics/get_shipping_parameter",
+        "queryParams": {
+          "order_sn": "$order_sn",
+          "package_number": "$package_number"
+        }
+      }
+    },
+    {
+      "name": "shopee_get_tracking_number",
+      "description": "Read the tracking number of a shipped order (available once the shipment is arranged), optionally with first and last mile numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_sn": {
+            "type": "string",
+            "description": "Order number (order_sn), e.g. 201214JASXYXY6, as returned by shopee_list_orders."
+          },
+          "package_number": {
+            "type": "string",
+            "description": "Package number, for an order split into several parcels (package_list in shopee_get_order_details). Leave it out for a single-parcel order."
+          },
+          "response_optional_fields": {
+            "type": "string",
+            "description": "Comma-separated extras: plp_number, first_mile_tracking_number, last_mile_tracking_number."
+          }
+        },
+        "required": [
+          "order_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/logistics/get_tracking_number",
+        "queryParams": {
+          "order_sn": "$order_sn",
+          "package_number": "$package_number",
+          "response_optional_fields": "$response_optional_fields"
+        }
+      }
+    },
+    {
+      "name": "shopee_get_tracking_info",
+      "description": "Read the logistics status and the tracking history (time, description) of an order or one of its packages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_sn": {
+            "type": "string",
+            "description": "Order number (order_sn), e.g. 201214JASXYXY6, as returned by shopee_list_orders."
+          },
+          "package_number": {
+            "type": "string",
+            "description": "Package number, for an order split into several parcels (package_list in shopee_get_order_details). Leave it out for a single-parcel order."
+          }
+        },
+        "required": [
+          "order_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/logistics/get_tracking_info",
+        "queryParams": {
+          "order_sn": "$order_sn",
+          "package_number": "$package_number"
+        }
+      }
+    },
+    {
+      "name": "shopee_list_logistics_channels",
+      "description": "List the shop's logistics channels: id, name, whether each is enabled, fee type, size and weight limits.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/logistics/get_channel_list"
+      }
+    },
+    {
+      "name": "shopee_list_returns",
+      "description": "List return and refund requests, newest first, up to 100 per page, optionally within a creation or update window of at most 15 days. Page with page_no while more is true. Read one with shopee_get_return.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_no": {
+            "type": "integer",
+            "description": "Page number, starting at 1 as in Shopee's own samples.",
+            "default": 1,
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Returns per page, up to 100.",
+            "default": 40,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "create_time_from": {
+            "type": "integer",
+            "description": "Only returns created at or after this time. Unix time in seconds."
+          },
+          "create_time_to": {
+            "type": "integer",
+            "description": "Only returns created at or before this time, at most 15 days after create_time_from. Unix time in seconds."
+          },
+          "update_time_from": {
+            "type": "integer",
+            "description": "Only returns updated at or after this time. Unix time in seconds."
+          },
+          "update_time_to": {
+            "type": "integer",
+            "description": "Only returns updated at or before this time, at most 15 days after update_time_from. Unix time in seconds."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only returns in this status.",
+            "enum": [
+              "REQUESTED",
+              "ACCEPTED",
+              "CANCELLED",
+              "JUDGING",
+              "CLOSED",
+              "PROCESSING",
+              "SELLER_DISPUTE"
+            ]
+          },
+          "seller_proof_status": {
+            "type": "string",
+            "description": "Only returns whose seller proof is in this state.",
+            "enum": [
+              "NOT_NEEDED",
+              "PENDING",
+              "UPLOADED",
+              "OVERDUE"
+            ]
+          }
+        },
+        "required": [
+          "page_no",
+          "page_size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/returns/get_return_list",
+        "queryParams": {
+          "page_no": "$page_no",
+          "page_size": "$page_size",
+          "create_time_from": "$create_time_from",
+          "create_time_to": "$create_time_to",
+          "update_time_from": "$update_time_from",
+          "update_time_to": "$update_time_to",
+          "status": "$status",
+          "seller_proof_status": "$seller_proof_status"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "shopee_get_return",
+      "description": "Read one return request: reason, buyer text and images, items, refund amount, status, due dates and the linked order_sn.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_sn": {
+            "type": "string",
+            "description": "Return number (return_sn) from shopee_list_returns."
+          }
+        },
+        "required": [
+          "return_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/returns/get_return_detail",
+        "queryParams": {
+          "return_sn": "$return_sn"
+        }
+      }
+    },
+    {
+      "name": "shopee_get_order_income",
+      "description": "Read what an order earns the seller (escrow detail): buyer payment, Shopee commission and service fees, shipping fee and rebates, vouchers, and the final escrow amount. Read only; final once the order is completed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_sn": {
+            "type": "string",
+            "description": "Order number (order_sn), e.g. 201214JASXYXY6, as returned by shopee_list_orders."
+          }
+        },
+        "required": [
+          "order_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/payment/get_escrow_detail",
+        "queryParams": {
+          "order_sn": "$order_sn"
+        }
+      }
+    },
+    {
+      "name": "shopee_list_discounts",
+      "description": "List the shop's discount promotions by status, with discount_id, name, start and end time. Page with page_no (from 1) while more is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "discount_status": {
+            "type": "string",
+            "description": "Which promotions to list.",
+            "enum": [
+              "upcoming",
+              "ongoing",
+              "expired",
+              "all"
+            ],
+            "default": "ongoing"
+          },
+          "page_no": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Promotions per page, up to 100.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "discount_status",
+          "page_no",
+          "page_size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/discount/get_discount_list",
+        "queryParams": {
+          "discount_status": "$discount_status",
+          "page_no": "$page_no",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shopee_get_ads_balance",
+      "description": "Read the shop's current Shopee Ads credit balance. Needs the Ads permission on the app.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/ads/get_total_balance"
+      }
+    },
+    {
+      "name": "shopee_get_ads_daily_performance",
+      "description": "Read the daily performance of all the shop's CPC ads: impressions, clicks, CTR, expense, orders, GMV and ROAS (direct and broad). At most one month per call, within the last 6 months, and start must differ from end. Needs the Ads permission on the app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "First day, DD-MM-YYYY (e.g. 01-10-2026).",
+            "pattern": "^\\d{2}-\\d{2}-\\d{4}$"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, DD-MM-YYYY, after start_date and at most one month later.",
+            "pattern": "^\\d{2}-\\d{2}-\\d{4}$"
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/ads/get_all_cpc_ads_daily_performance",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    }
+  ]
+}
