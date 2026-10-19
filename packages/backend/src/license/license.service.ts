@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import axios from 'axios';
 import * as crypto from 'crypto';
 import { PrismaService } from '../common/prisma.service';
+import { normalizeEmail } from '../common/email.util';
 import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
@@ -320,9 +321,11 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     const instanceId = await this.getInstanceId();
 
     try {
+      // Normalised: the licence site keys one licence per address, and
+      // `Name@Example.com` is the same inbox as `name@example.com`.
       await axios.post(
         `${this.apiBase}/api/license/register`,
-        { email, name, instanceId },
+        { email: normalizeEmail(email), name, instanceId },
         { timeout: 10000 },
       );
 
@@ -402,7 +405,9 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     const instanceId = await this.getInstanceId();
 
     try {
-      const data = await this.postTrialWithRetry({ email, name, instanceId });
+      // Normalised: the licence site grants one trial per address, and an
+      // account stored with capitals must not count as a different one.
+      const data = await this.postTrialWithRetry({ email: normalizeEmail(email), name, instanceId });
       if (!data?.licenseKey) {
         // The licence API hands the key back only to this server, by its
         // service token; anyone else is told it went by email. Without a key

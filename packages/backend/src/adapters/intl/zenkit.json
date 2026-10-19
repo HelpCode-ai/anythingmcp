@@ -78,6 +78,7 @@
       },
       "responseMapping": {
         "transform": {
+          "expression": "@",
           "maxBytes": 150000
         }
       }
@@ -188,6 +189,7 @@
       },
       "responseMapping": {
         "transform": {
+          "expression": "@",
           "maxBytes": 150000
         }
       }
@@ -239,6 +241,7 @@
       },
       "responseMapping": {
         "transform": {
+          "expression": "@",
           "maxBytes": 150000
         }
       },
@@ -282,6 +285,7 @@
       },
       "responseMapping": {
         "transform": {
+          "expression": "@",
           "maxBytes": 150000
         }
       }
@@ -364,6 +368,7 @@
       },
       "responseMapping": {
         "transform": {
+          "expression": "@",
           "maxBytes": 150000
         }
       }
@@ -415,6 +420,7 @@
       },
       "responseMapping": {
         "transform": {
+          "expression": "@",
           "maxBytes": 150000
         }
       }

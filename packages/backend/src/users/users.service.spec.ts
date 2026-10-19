@@ -48,17 +48,36 @@ describe('UsersService', () => {
   });
 
   describe('findByEmail', () => {
-    it('should call findUnique with email', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
-      const result = await service.findByEmail('test@example.com');
+    it('looks the address up in any case', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([mockUser]);
+      const result = await service.findByEmail('Test@Example.com');
       expect(result).toBe(mockUser);
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
-        where: { email: 'test@example.com' },
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+        where: {
+          OR: [
+            { email: { in: ['Test@Example.com', 'test@example.com'] } },
+            { email: { equals: 'test@example.com', mode: 'insensitive' } },
+          ],
+        },
       });
     });
 
+    it('finds a row stored with capitals from the lower-case address', async () => {
+      const upper = { ...mockUser, email: 'TEST@EXAMPLE.COM' };
+      mockPrisma.user.findMany.mockResolvedValue([upper]);
+      expect(await service.findByEmail('test@example.com')).toBe(upper);
+    });
+
+    it('prefers the exact spelling when legacy duplicates exist', async () => {
+      const upper = { ...mockUser, id: 'upper', email: 'TEST@example.com', updatedAt: new Date('2026-01-01') };
+      const lower = { ...mockUser, id: 'lower', email: 'test@example.com', updatedAt: new Date('2026-02-01') };
+      mockPrisma.user.findMany.mockResolvedValue([upper, lower]);
+      expect((await service.findByEmail('TEST@example.com'))?.id).toBe('upper');
+      expect((await service.findByEmail('test@example.com'))?.id).toBe('lower');
+    });
+
     it('should return null when not found', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findMany.mockResolvedValue([]);
       const result = await service.findByEmail('nobody@example.com');
       expect(result).toBeNull();
     });
@@ -76,17 +95,17 @@ describe('UsersService', () => {
   });
 
   describe('create', () => {
-    it('should call create with provided data', async () => {
+    it('should call create with provided data, the address normalised', async () => {
       const data = {
-        email: 'new@example.com',
+        email: ' New@Example.com',
         passwordHash: 'hash',
         name: 'New User',
         organizationId: 'org-1',
       };
       mockPrisma.user.create.mockResolvedValue({ ...mockUser, ...data });
       const result = await service.create(data);
-      expect(mockPrisma.user.create).toHaveBeenCalledWith({ data });
-      expect(result.email).toBe('new@example.com');
+      expect(mockPrisma.user.create).toHaveBeenCalledWith({ data: { ...data, email: 'new@example.com' } });
+      expect(result.email).toBe(' New@Example.com');
     });
   });
 

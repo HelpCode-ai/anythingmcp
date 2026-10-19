@@ -1,0 +1,595 @@
+{
+  "slug": "aymakan",
+  "name": "Aymakan",
+  "aliases": [
+    "Aymakan Express",
+    "أي مكان"
+  ],
+  "description": "Aymakan courier (Saudi Arabia) from an AI agent: track shipments by tracking number or order reference, list your shipments, AWB label links, pickup requests and time slots, cities, PUDO points, warehouses and saved addresses. Creating and cancelling shipments and pickups is included, installed switched off.",
+  "region": "intl",
+  "category": "logistics",
+  "icon": "aymakan",
+  "docsUrl": "https://developer.aymakan.com.sa/docs/aymakan-v2/overview",
+  "instructions": "## Aymakan\nThis connector uses the **Aymakan API v2** (`https://api.aymakan.net/v2`) of the Saudi courier Aymakan: tracking and full shipment details by tracking number or by your order reference, your shipment list, AWB label links, pickup requests, cities, PUDO points, warehouses and the collection addresses of your account. Creating and cancelling shipments and pickups is included but installed switched off.\n\n**Setup (about 2 minutes)**\n1. Sign in to the Aymakan customer dashboard.\n2. Open **Technical** > **AyMakan API** and copy the API key (security code). Paste it into `AYMAKAN_API_KEY`. It is sent as is in the `Authorization` header, without `Bearer`.\n3. Install and run `aymakan_ping`: `logged_in` must be `Yes`.\n\nUse the **production** key. A key from Aymakan's development environment answers `Invalid Credentials` here; regenerating the key in the dashboard invalidates the old one, so update every other integration that uses it.\n\n**Tracking**: `aymakan_get_tracking` takes one or more tracking numbers (comma-separated, no spaces, e.g. `AY2866494373,AY2866494374`) and `aymakan_get_shipments_by_reference` one or more of your own order references. Both return the full shipment: delivery and collection details, COD amount, weight and pieces, `status` and `status_label`, and `tracking_info`, the history of status codes (`AY-0001` created, then pickup, hub, out for delivery, delivered, returned and so on) with English and Arabic descriptions. Only shipments of your own account are found; a reference that does not exist answers 422 `No Shipments Found`. Shipments created without a reference cannot be fetched by reference.\n\n**Your shipments**: `aymakan_list_shipments` lists every shipment of the account with tracking number, reference, receiver, COD amount, delivery attempts, `status_code` and `status_label` and the main dates, 100 per page (fixed, about 110 KB); page with `page` and follow `last_page`. For one shipment prefer `aymakan_get_tracking`.\n\n**Labels (AWB)**: `aymakan_get_awb_label` returns a link to the PDF label of one shipment and `aymakan_get_bulk_awb_labels` one PDF for several. Aymakan only returns the link while the shipment is still in `AY-0001` (created, not yet picked up).\n\n**Pickups**: `aymakan_list_pickup_requests` lists your pickup requests with status, date, time slot and number of shipments; `aymakan_list_pickup_cities` the cities where pickups are possible and `aymakan_get_time_slots` the slots for a date (today or later, YYYY-MM-DD).\n\n**Reference data**: `aymakan_list_cities` lists the cities Aymakan delivers to in English and Arabic (use the English name exactly in a shipment), `aymakan_list_pudo_locations` pickup and drop-off points (lockers and shops, optionally for one city, the `id` goes into `pudo_location_id` for service `LOC`), `aymakan_list_dropoff_locations` Aymakan's warehouses and `aymakan_list_addresses` the collection addresses saved on your account.\n\n**Writes (switched off)**: `aymakan_create_shipment`, `aymakan_cancel_shipment`, `aymakan_create_pickup_request` and `aymakan_cancel_pickup_request` book or cancel real courier work and are installed switched off; an admin turns them on deliberately. Before each call show the user the shipment (receiver, city, COD amount, pieces) or the tracking number or pickup request and get a yes. A shipment can only be cancelled while in `AY-0001`, a pickup request while pending or processing.\n\n**Errors**: 401 `Invalid Credentials` means a wrong, old or development key. 422 carries the reason in `message` (not found, validation errors per field in `errors`). Without the `Accept: application/json` header, which the connector always sends, Aymakan would answer in HTML.",
+  "prerequisites": "An Aymakan customer account; the production API key is under Technical > AyMakan API in the customer dashboard.",
+  "requiredEnvVars": [
+    "AYMAKAN_API_KEY"
+  ],
+  "envVarMeta": {
+    "AYMAKAN_API_KEY": {
+      "label": "API key (security code)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Aymakan customer dashboard > Technical > AyMakan API. Use the production key; it is sent as is in the Authorization header.",
+      "link": "https://developer.aymakan.com.sa/docs/aymakan-v2/structure",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the API key alone, without Bearer, quotes or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Aymakan answered Invalid Credentials. Copy the production key again from Technical > AyMakan API; a development key or an old key after regeneration does not work.",
+    "422": "Aymakan found nothing for this request (wrong tracking number or reference, or a label for a shipment past AY-0001)."
+  },
+  "probe": {
+    "tool": "aymakan_ping"
+  },
+  "connector": {
+    "name": "Aymakan API v2",
+    "type": "REST",
+    "baseUrl": "https://api.aymakan.net/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{AYMAKAN_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "aymakan_ping",
+      "description": "Check the Aymakan API status and the API key: returns status, environment (production) and logged_in Yes or No. Costs nothing; use it to test the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ping"
+      }
+    },
+    {
+      "name": "aymakan_get_tracking",
+      "description": "Track one or more Aymakan shipments by tracking number: full shipment data with delivery and collection details, COD amount, weight and pieces, current status and status_label, and tracking_info with every status code (AY-0001 and later), description in English and Arabic and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_numbers": {
+            "type": "string",
+            "description": "One or more tracking numbers, comma-separated without spaces, e.g. AY2866494373,AY2866494374."
+          }
+        },
+        "required": [
+          "tracking_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/track/{tracking_numbers}"
+      }
+    },
+    {
+      "name": "aymakan_get_shipments_by_reference",
+      "description": "Get Aymakan shipments by your own order reference (the reference given when the shipment was created): full shipment data, tracking_info and the AWB label URL. Several references comma-separated. A reference that does not exist answers 422 No Shipments Found.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "references": {
+            "type": "string",
+            "description": "One or more order references, comma-separated without spaces."
+          }
+        },
+        "required": [
+          "references"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/by_reference/{references}"
+      }
+    },
+    {
+      "name": "aymakan_list_shipments",
+      "description": "List every shipment of the account, 100 per page (fixed by Aymakan): tracking number, reference, service type, COD flag and amount, pieces, delivery name, city, address and phone, collection city, attempts, status_code and status_label, and the submission, pickup, delivery and update times. Page with page up to last_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customer/shipments",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "aymakan_get_awb_label",
+      "description": "Get the link to the PDF AWB label of one shipment by tracking number. Aymakan returns the link only while the shipment is in status AY-0001 (created, not yet picked up); otherwise 422 Not found.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number, e.g. AY2866494373."
+          }
+        },
+        "required": [
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/awb/tracking/{tracking_number}"
+      }
+    },
+    {
+      "name": "aymakan_get_bulk_awb_labels",
+      "description": "Get one PDF link with the AWB labels of several shipments. Every shipment must be in status AY-0001; otherwise 422 lists the tracking numbers that were not found.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_numbers": {
+            "type": "string",
+            "description": "Tracking numbers, comma-separated without spaces."
+          }
+        },
+        "required": [
+          "tracking_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/bulk_awb/trackings/{tracking_numbers}"
+      }
+    },
+    {
+      "name": "aymakan_list_pickup_requests",
+      "description": "List the pickup requests of the account with id, pickup code, type, contact, city and address, number of shipments and picked shipments, time slot, pickup date, warehouse and status (pending, processing, completed, cancelled). 20 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pickup_request/list",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "aymakan_list_pickup_cities",
+      "description": "List the cities where Aymakan accepts pickup requests, in English and Arabic. Use the English name in aymakan_create_pickup_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pickup_request/cities"
+      }
+    },
+    {
+      "name": "aymakan_get_time_slots",
+      "description": "Get the pickup time slots available to the account on a date (e.g. morning, afternoon, evening with their hours). The date must be today or later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_date": {
+            "type": "string",
+            "description": "Pickup date, YYYY-MM-DD, today or later."
+          }
+        },
+        "required": [
+          "pickup_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time_slots/{pickup_date}"
+      }
+    },
+    {
+      "name": "aymakan_list_cities",
+      "description": "List the cities Aymakan delivers to, in English (city_en) and Arabic (city_ar). Use city_en exactly as delivery_city or collection_city of a shipment. Public list; read it once per conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cities"
+      }
+    },
+    {
+      "name": "aymakan_list_pudo_locations",
+      "description": "List PUDO (pickup and drop-off) points such as lockers and partner shops with id, name in English and Arabic, address, city, coordinates, provider, type and opening hours per weekday. The id is the pudo_location_id of a shipment with service LOC.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "Only points in this city, English name, e.g. Riyadh."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pudo/locations",
+        "queryParams": {
+          "city": "$city"
+        }
+      }
+    },
+    {
+      "name": "aymakan_list_dropoff_locations",
+      "description": "List Aymakan's warehouses where shipments can be dropped off: name, city, address, manager, phone, e-mail and coordinates.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dropoff_locations"
+      }
+    },
+    {
+      "name": "aymakan_list_addresses",
+      "description": "List the collection addresses saved on the Aymakan account: id, title, name, e-mail, city, address, postcode, neighbourhood, phone, country and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/address/list"
+      }
+    },
+    {
+      "name": "aymakan_create_shipment",
+      "description": "Create a new Aymakan shipment. Required: requested_by, declared_value, delivery_name, delivery_city (from aymakan_list_cities), delivery_address, delivery_country, delivery_phone, collection_name, collection_city, collection_address, collection_country, collection_phone and pieces; for cash on delivery is_cod 1 and cod_amount. Returns the tracking number. Installed switched off; books a real shipment: show the user every field and get a yes first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment": {
+            "type": "object",
+            "description": "Shipment fields as Aymakan names them.",
+            "properties": {
+              "requested_by": {
+                "type": "string",
+                "description": "Name of the person creating the shipment."
+              },
+              "reference": {
+                "type": "string",
+                "description": "Your order reference, unique per shipment."
+              },
+              "service_type": {
+                "type": "string",
+                "enum": [
+                  "ONP",
+                  "DOC",
+                  "SDD",
+                  "RVP",
+                  "EXH",
+                  "LOC",
+                  "BLK",
+                  "PLT",
+                  "IPX",
+                  "EPX",
+                  "CLD"
+                ],
+                "description": "Service: ONP e-commerce (default), DOC documents, SDD same day, RVP reverse pickup, EXH exchange, LOC lockers, BLK heavy and bulky, PLT pallet, IPX import express, EPX export express, CLD cold."
+              },
+              "pudo_location_id": {
+                "type": "integer",
+                "description": "Required for service LOC: id from aymakan_list_pudo_locations."
+              },
+              "declared_value": {
+                "type": "number",
+                "description": "Order value, not printed on the label."
+              },
+              "declared_value_currency": {
+                "type": "string",
+                "enum": [
+                  "SAR",
+                  "USD",
+                  "AED"
+                ],
+                "description": "Currency of the declared value, SAR by default."
+              },
+              "is_cod": {
+                "type": "integer",
+                "enum": [
+                  0,
+                  1
+                ],
+                "description": "1 for cash on delivery."
+              },
+              "cod_amount": {
+                "type": "number",
+                "description": "Amount to collect, required when is_cod is 1."
+              },
+              "currency": {
+                "type": "string",
+                "description": "Currency of the COD amount, SAR by default."
+              },
+              "delivery_name": {
+                "type": "string"
+              },
+              "delivery_email": {
+                "type": "string"
+              },
+              "delivery_city": {
+                "type": "string",
+                "description": "English city name from aymakan_list_cities."
+              },
+              "delivery_address": {
+                "type": "string"
+              },
+              "delivery_neighbourhood": {
+                "type": "string"
+              },
+              "delivery_postcode": {
+                "type": "string"
+              },
+              "delivery_country": {
+                "type": "string",
+                "description": "ISO country code, SA by default."
+              },
+              "delivery_phone": {
+                "type": "string",
+                "description": "Digits only."
+              },
+              "delivery_description": {
+                "type": "string"
+              },
+              "collection_name": {
+                "type": "string"
+              },
+              "collection_email": {
+                "type": "string"
+              },
+              "collection_city": {
+                "type": "string"
+              },
+              "collection_address": {
+                "type": "string"
+              },
+              "collection_neighbourhood": {
+                "type": "string"
+              },
+              "collection_postcode": {
+                "type": "string"
+              },
+              "collection_country": {
+                "type": "string"
+              },
+              "collection_phone": {
+                "type": "string",
+                "description": "Digits only."
+              },
+              "collection_description": {
+                "type": "string"
+              },
+              "weight": {
+                "type": "number",
+                "description": "Weight in kg."
+              },
+              "length": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              },
+              "pieces": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Number of cartons."
+              },
+              "items_count": {
+                "type": "integer",
+                "description": "Number of physical items."
+              },
+              "is_insured": {
+                "type": "integer",
+                "enum": [
+                  0,
+                  1
+                ]
+              }
+            },
+            "required": [
+              "requested_by",
+              "declared_value",
+              "delivery_name",
+              "delivery_city",
+              "delivery_address",
+              "delivery_country",
+              "delivery_phone",
+              "collection_name",
+              "collection_city",
+              "collection_address",
+              "collection_country",
+              "collection_phone",
+              "pieces"
+            ]
+          }
+        },
+        "required": [
+          "shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipping/create",
+        "bodyMapping": {
+          "__merge": "$shipment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "aymakan_cancel_shipment",
+      "description": "Cancel an Aymakan shipment by tracking number. Only possible while the shipment is in status AY-0001 (created); otherwise 422 This shipping can not be cancelled. Installed switched off; get a yes from the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the shipment to cancel."
+          }
+        },
+        "required": [
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipping/cancel",
+        "bodyMapping": {
+          "tracking": "$tracking_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "aymakan_create_pickup_request",
+      "description": "Book a courier pickup: date (today or later), time slot from aymakan_get_time_slots, city from aymakan_list_pickup_cities, contact name and phone, address and number of shipments. Aymakan limits pickup requests per customer and day. Installed switched off; get a yes from the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD."
+          },
+          "time_slot": {
+            "type": "string",
+            "description": "Slot key from aymakan_get_time_slots, e.g. morning."
+          },
+          "city": {
+            "type": "string",
+            "description": "English city name from aymakan_list_pickup_cities."
+          },
+          "contact_name": {
+            "type": "string",
+            "description": "Name of the contact at the pickup address."
+          },
+          "contact_phone": {
+            "type": "string",
+            "description": "Phone of that contact."
+          },
+          "address": {
+            "type": "string",
+            "description": "Pickup address."
+          },
+          "shipments": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of shipments to pick up."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Tracking number of the shipment, required when shipments is 1."
+          }
+        },
+        "required": [
+          "pickup_date",
+          "time_slot",
+          "city",
+          "contact_name",
+          "contact_phone",
+          "address",
+          "shipments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pickup_request/create",
+        "bodyMapping": {
+          "pickup_date": "$pickup_date",
+          "time_slot": "$time_slot",
+          "city": "$city",
+          "contact_name": "$contact_name",
+          "contact_phone": "$contact_phone",
+          "address": "$address",
+          "shipments": "$shipments",
+          "reference": "$reference"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "aymakan_cancel_pickup_request",
+      "description": "Cancel a pickup request by its id (from aymakan_list_pickup_requests). Only pending or processing requests can be cancelled. Installed switched off; get a yes from the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_request_id": {
+            "type": "integer",
+            "description": "Pickup request id."
+          }
+        },
+        "required": [
+          "pickup_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pickup_request/cancel",
+        "bodyMapping": {
+          "pickup_request": "$pickup_request_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

@@ -131,6 +131,16 @@ describe('LicenseService — trial acquisition', () => {
     const [, payload] = mockedAxios.post.mock.calls[0] as any[];
     expect(payload).toEqual({ email: 'user@example.com', name: 'User', instanceId: 'instance-1' });
   });
+
+  it('sends the address normalised, so a case variant is not a new address to the licence site', async () => {
+    mockedAxios.post.mockResolvedValue({ data: TRIAL_RESPONSE } as any);
+    const { svc } = makeService();
+
+    await svc.requestTrialLicense(' User@Example.COM', 'User', 'org-1');
+
+    const [, payload] = mockedAxios.post.mock.calls[0] as any[];
+    expect(payload.email).toBe('user@example.com');
+  });
 });
 
 describe('LicenseService — a trial answer without a key', () => {

@@ -26,6 +26,7 @@ const INVOCATION_FULL_PAYLOADS_PER_HOUR = envInt('INVOCATION_FULL_PAYLOADS_PER_H
 const INVOCATION_LOG_VOLUME_EXCERPT_BYTES = 512;
 const REPEAT_KEYS_MAX = 10_000;
 import { PrismaService } from '../common/prisma.service';
+import { findUserByEmail, normalizeEmail } from '../common/email.util';
 import { InvocationStatus, Prisma } from '../generated/prisma/client';
 import { AdsActivationService } from './ads-activation.service';
 import { FirstSuccessService } from './first-success.service';
@@ -296,14 +297,11 @@ export class AuditService implements OnModuleDestroy {
     }
 
     if (!userEmail) return undefined;
-    const key = userEmail.toLowerCase();
+    const key = normalizeEmail(userEmail);
     const cached = this.emailToIdCache.get(key);
     if (cached) return cached;
 
-    const byEmail = await this.prisma.user.findUnique({
-      where: { email: key },
-      select: { id: true },
-    });
+    const byEmail = await findUserByEmail<{ id: string; email: string }>(this.prisma, userEmail, { id: true });
     if (!byEmail) return undefined;
 
     this.emailToIdCache.set(key, byEmail.id);
