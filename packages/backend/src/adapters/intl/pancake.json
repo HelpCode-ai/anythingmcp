@@ -1,0 +1,860 @@
+{
+  "slug": "pancake",
+  "name": "Pancake",
+  "aliases": ["pages.fm", "Pancake Chat", "Pancake.vn", "Pancake.biz"],
+  "description": "Work your Pancake social-commerce inbox from your AI: list and read Facebook, Instagram, Zalo, WhatsApp and TikTok conversations of a page, tag and assign them, mark them read, look up customers, add notes, list posts and staff, and read page, staff and tag statistics. Replies are installed switched off.",
+  "instructions": "## Pancake\nThis connector calls the **Pancake public API** (`https://pages.fm/api/public_api`) for one Pancake page with that page's **page access token**: conversations and their messages, conversation tags, assignment and read state, page customers and notes, posts, staff and the page, staff and tag statistics. Pancake (pages.fm, pancake.vn, pancake.biz) gathers a page's Facebook, Instagram, Zalo, WhatsApp, TikTok and other channels in one inbox; every page connected in Pancake has its own id and token, so add the connector once per page.\n\n**Writes need a yes.** Before `pancake_update_customer` tell the user what will change and wait for their confirmation. Tagging, assigning, marking read or unread and adding a note (`pancake_tag_conversation`, `pancake_assign_conversation`, `pancake_mark_conversation_read`, `pancake_mark_conversation_unread`, `pancake_add_customer_note`) only change the shared inbox, the customer does not see them; do them when the user asked for them. The three tools that write to the customer, `pancake_send_message`, `pancake_reply_comment` and `pancake_send_private_reply`, are installed switched off: an admin turns them on deliberately, and even then show the exact text and wait for a yes before sending.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://pages.fm, open the page and go to **Settings, Tools** (Cai dat, Cong cu). Copy the **Page Access Token** into `PANCAKE_PAGE_ACCESS_TOKEN`. It does not expire until it is deleted or regenerated, and it only works for this page.\n2. Put the page's id into `PANCAKE_PAGE_ID`: the number in the page's Pancake address (`https://pages.fm/<page id>`), or the id with its channel prefix for non-Facebook pages, such as `waba_102952029333366`.\nThe token travels as the `page_access_token` query parameter, the only way Pancake accepts it, and only to pages.fm.\n\n**IDs**\n- Conversations: `id` from `pancake_list_conversations`. Inbox threads look like `<page id>_<customer id>`, comment threads like `<post id>_<comment id>`.\n- Tags: numeric `id` from `pancake_list_tags`. Staff: `id` (a UUID) from `pancake_list_staff`. Customers: `id` from `pancake_list_customers`.\n\n**Times**: `since` and `until` are Unix timestamps in **seconds** (UTC); several endpoints accept at most about one month between them. `date_range` (`pancake_staff_statistics`) is `DD/MM/YYYY HH:MM:SS - DD/MM/YYYY HH:MM:SS` in the **page's own time zone** (UTC+7 for a page in Vietnam). Times in responses are UTC without an offset.\n\n**Workflow**\n- Triage the inbox: `pancake_list_conversations` (60 at a time, newest first; pass the last `id` as `last_conversation_id` for the next 60), then `pancake_get_messages`.\n- Label and route: `pancake_list_tags`, then `pancake_tag_conversation` with `action` `add` or `remove`; `pancake_list_staff`, then `pancake_assign_conversation`; `pancake_mark_conversation_read` or `pancake_mark_conversation_unread`.\n- Customers: `pancake_list_customers`, `pancake_update_customer`, `pancake_add_customer_note`.\n- Content and reports: `pancake_list_posts`, `pancake_page_statistics`, `pancake_staff_statistics`, `pancake_tag_statistics`.\n- Replies (when switched on): `pancake_send_message` in an inbox thread, `pancake_reply_comment` under a comment, `pancake_send_private_reply` to message the author of a comment privately (Facebook, up to 7 days after the comment). Platform rules apply: Facebook and Instagram only allow free replies within 24 hours of the customer's last message.\n\n**Rate limit**: 5 requests per second per page. A 429 means slow down and retry after a moment.\n\n**Common errors**: Pancake answers most errors with HTTP 200 and `success: false`; the connector turns them into errors. `Invalid access_token` (error 102) means the page token is wrong, was regenerated, or belongs to another page than `PANCAKE_PAGE_ID`. Statistics need a token whose page role may view reports.\n\n**Out of scope here**: listing the pages of an account and generating page tokens (they use a personal user token that expires), uploading media and sending images, WhatsApp template messages, editing or deleting notes, round-robin settings, ads, call logs and data exports, the chat plugin, webhooks, and Pancake POS (orders, products and stock live in the separate POS API).",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "pancake",
+  "docsUrl": "https://developer.pancake.biz/",
+  "prerequisites": "A Pancake account with access to the page, and the page's Page Access Token from Settings, Tools in Pancake. About 2 minutes.",
+  "requiredEnvVars": ["PANCAKE_PAGE_ID", "PANCAKE_PAGE_ACCESS_TOKEN"],
+  "envVarMeta": {
+    "PANCAKE_PAGE_ID": {
+      "label": "Page ID",
+      "kind": "setting",
+      "help": "The id of the page in Pancake: the part after pages.fm/ in the page's address. Pages of other channels keep their prefix, e.g. waba_102952029333366.",
+      "example": "256469571178082",
+      "pattern": "^[A-Za-z0-9_.-]{3,80}$",
+      "patternMessage": "Enter only the page id, e.g. 256469571178082 or waba_102952029333366, without https://pages.fm/."
+    },
+    "PANCAKE_PAGE_ACCESS_TOKEN": {
+      "label": "Page access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "pages.fm, open the page, Settings, Tools: Page Access Token. It belongs to this one page and stays valid until it is regenerated.",
+      "link": "https://pages.fm",
+      "pattern": "^[^\\s=&?]{20,}$",
+      "patternMessage": "Paste only the token, without spaces and without page_access_token=."
+    }
+  },
+  "verifyHints": {
+    "401": "Pancake refused the page access token (Invalid access_token). Copy it again from the page's Settings, Tools in pages.fm, and check that PANCAKE_PAGE_ID is the page the token belongs to.",
+    "403": "Pancake refused the request for this page. Check that your role on the page allows this action or report.",
+    "429": "Pancake is rate limiting this page (5 requests per second). Wait a moment and verify again."
+  },
+  "probe": {
+    "tool": "pancake_list_tags",
+    "params": {}
+  },
+  "connector": {
+    "name": "Pancake Public API",
+    "type": "REST",
+    "baseUrl": "https://pages.fm/api",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "page_access_token": "{{PANCAKE_PAGE_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/tags",
+    "config": {
+      "errorWhen": [
+        { "path": "error_code", "in": [102], "messagePath": "message", "status": 401 },
+        { "path": "success", "equals": false, "messagePath": ["message", "message_code"], "status": 400 }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "pancake_list_conversations",
+      "description": "List the page's conversations, 60 at a time, most recently updated first: id, channel type (INBOX, COMMENT, LIVESTREAM), snippet, seen, message count, customer (from), tag ids, assigned staff, last sender, phone numbers and times. The tag and assignment history and the messages themselves are left out: read a thread in full with pancake_get_messages. Filter by tags, type, time or unread first; page on with last_conversation_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "last_conversation_id": {
+            "type": "string",
+            "description": "For the next page: the id of the last conversation of the previous call. Leave empty for the newest 60."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Only conversations with these tag ids, comma-separated (from pancake_list_tags), e.g. '3,7'."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["INBOX", "COMMENT", "COMMENT_LIVESTREAM"],
+            "description": "Only one kind of conversation: INBOX (private messages), COMMENT (comments under posts) or COMMENT_LIVESTREAM."
+          },
+          "since": {
+            "type": "integer",
+            "description": "Only conversations active from this Unix time in seconds (UTC)."
+          },
+          "until": {
+            "type": "integer",
+            "description": "Only conversations active up to this Unix time in seconds (UTC)."
+          },
+          "unread_first": {
+            "type": "boolean",
+            "description": "true lists unread conversations first."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": ["updated_at", "inserted_at"],
+            "description": "Sort by last activity (updated_at) or by creation (inserted_at)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public_api/v2/pages/{{PANCAKE_PAGE_ID}}/conversations",
+        "queryParams": {
+          "last_conversation_id": "$last_conversation_id",
+          "tags": "$tags",
+          "type": "$type",
+          "since": "$since",
+          "until": "$until",
+          "unread_first": "$unread_first",
+          "order_by": "$order_by"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "success": "$.success",
+            "conversations": {
+              "$from": "$.conversations[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "tags": "tags",
+                "seen": "seen",
+                "from": "from",
+                "snippet": "snippet",
+                "inserted_at": "inserted_at",
+                "updated_at": "updated_at",
+                "message_count": "message_count",
+                "assignee_ids": "assignee_ids",
+                "customer_id": "customer_id",
+                "last_sent_by": "last_sent_by",
+                "has_phone": "has_phone",
+                "recent_phone_numbers": "recent_phone_numbers",
+                "post_id": "post_id"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "pancake_get_messages",
+      "description": "Read the messages of one conversation, 30 at a time, newest first: id, type, text, sender (customer or staff name), time, attachments and whether it was removed, plus the customer's name and recent phone numbers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from pancake_list_conversations."
+          },
+          "current_count": {
+            "type": "integer",
+            "description": "For older messages: how many you already have; the call returns the 30 messages before that position."
+          }
+        },
+        "required": ["conversation_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/conversations/{conversation_id}/messages",
+        "queryParams": {
+          "current_count": "$current_count"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "conversationId": "$.conversation_id",
+            "messages": {
+              "$from": "$.messages[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "text": "original_message",
+                "fromId": "from.id",
+                "fromName": "from.name",
+                "staffName": "from.admin_name",
+                "insertedAt": "inserted_at",
+                "seen": "seen",
+                "isRemoved": "is_removed",
+                "attachments": "attachments"
+              }
+            },
+            "customers": {
+              "$from": "$.customers[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "phones": "recent_phone_numbers",
+                "orderCount": "order_count"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "pancake_tag_conversation",
+      "description": "Add a tag to a conversation or remove it, the way staff label threads in the Pancake inbox. Tags are internal: the customer does not see them. Take the tag id from pancake_list_tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from pancake_list_conversations."
+          },
+          "action": {
+            "type": "string",
+            "enum": ["add", "remove"],
+            "description": "add puts the tag on the conversation, remove takes it off."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id from pancake_list_tags, e.g. '3'."
+          }
+        },
+        "required": ["conversation_id", "action", "tag_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/conversations/{conversation_id}/tags",
+        "bodyMapping": {
+          "action": "$action",
+          "tag_id": "$tag_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "success": "$.success",
+            "tags": "$.data"
+          },
+          "maxBytes": 10000
+        }
+      }
+    },
+    {
+      "name": "pancake_assign_conversation",
+      "description": "Assign a conversation to one or more staff members, replacing the current assignment, so it shows in their Pancake inbox. Take the staff ids from pancake_list_staff. Internal: the customer does not see it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from pancake_list_conversations."
+          },
+          "assignee_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Staff user ids (UUIDs) from pancake_list_staff."
+          }
+        },
+        "required": ["conversation_id", "assignee_ids"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/conversations/{conversation_id}/assign",
+        "bodyMapping": {
+          "assignee_ids": "$assignee_ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "success": "$.success",
+            "assigneeIds": "$.assignee_ids",
+            "assigneeGroupId": "$.assignee_group_id"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "pancake_mark_conversation_read",
+      "description": "Mark a conversation as read in the Pancake inbox, for example after the AI has handled it. Changes only the inbox state, not what the customer sees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from pancake_list_conversations."
+          }
+        },
+        "required": ["conversation_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/conversations/{conversation_id}/read"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": { "success": "$.success" },
+          "maxBytes": 2000
+        }
+      }
+    },
+    {
+      "name": "pancake_mark_conversation_unread",
+      "description": "Mark a conversation as unread in the Pancake inbox so staff pick it up again. Changes only the inbox state, not what the customer sees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from pancake_list_conversations."
+          }
+        },
+        "required": ["conversation_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/conversations/{conversation_id}/unread"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": { "success": "$.success" },
+          "maxBytes": 2000
+        }
+      }
+    },
+    {
+      "name": "pancake_send_message",
+      "description": "Send a text message to the customer in an inbox conversation (Messenger, Instagram, Zalo, WhatsApp, TikTok and other channels of the page). The customer receives it immediately: show the text and confirm with the user first. Channel rules apply, e.g. Facebook allows free replies only within 24 hours of the customer's last message. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Inbox conversation id from pancake_list_conversations (type INBOX)."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text to send."
+          },
+          "reply_message_id": {
+            "type": "string",
+            "description": "Optional: id of a message (from pancake_get_messages) to quote as the one being answered."
+          },
+          "sender_id": {
+            "type": "string",
+            "description": "Optional: staff user id (from pancake_list_staff) to send as. Needs a Pancake plan and role that allow it."
+          }
+        },
+        "required": ["conversation_id", "message"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/conversations/{conversation_id}/messages",
+        "bodyMapping": {
+          "action": "reply_inbox",
+          "message": "$message",
+          "reply_message_id": "$reply_message_id",
+          "sender_id": "$sender_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "success": "$.success",
+            "id": "$.id",
+            "message": "$.message",
+            "messageCode": "$.message_code"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "pancake_reply_comment",
+      "description": "Reply publicly under a customer's comment on one of the page's posts. Everyone who sees the post can read it: show the text and confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Comment conversation id from pancake_list_conversations (type COMMENT)."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Id of the comment to reply to, from pancake_get_messages."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text of the public reply."
+          }
+        },
+        "required": ["conversation_id", "message_id", "message"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/conversations/{conversation_id}/messages",
+        "bodyMapping": {
+          "action": "reply_comment",
+          "message_id": "$message_id",
+          "message": "$message"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "success": "$.success",
+            "id": "$.id",
+            "message": "$.message",
+            "messageCode": "$.message_code"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "pancake_send_private_reply",
+      "description": "Send a private message to the author of a comment (Facebook private reply), allowed up to 7 days after the comment. The customer receives it in Messenger: show the text and confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Comment conversation id from pancake_list_conversations (type COMMENT)."
+          },
+          "post_id": {
+            "type": "string",
+            "description": "Id of the post the comment is on (postId in pancake_list_conversations)."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Id of the comment, from pancake_get_messages."
+          },
+          "from_id": {
+            "type": "string",
+            "description": "Id of the comment's author (fromId of the comment in pancake_get_messages)."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text of the private message."
+          }
+        },
+        "required": ["conversation_id", "post_id", "message_id", "from_id", "message"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/conversations/{conversation_id}/messages",
+        "bodyMapping": {
+          "action": "private_replies",
+          "post_id": "$post_id",
+          "message_id": "$message_id",
+          "from_id": "$from_id",
+          "message": "$message"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "success": "$.success",
+            "id": "$.id",
+            "message": "$.message",
+            "messageCode": "$.message_code"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "pancake_list_tags",
+      "description": "List the tags set up on the page: numeric id, text and colour. Use the id with pancake_tag_conversation or as a filter in pancake_list_conversations. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/tags"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "tags": {
+              "$from": "$.tags[*]",
+              "$select": {
+                "id": "id",
+                "text": "text",
+                "color": "color"
+              }
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "pancake_list_staff",
+      "description": "List the page's staff: id (UUID), name, availability status, whether they are online and their status on the page, plus the round-robin lists for inbox and comments. Use the ids with pancake_assign_conversation. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/users"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "users": {
+              "$from": "$.users[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "status": "status",
+                "isOnline": "is_online",
+                "statusInPage": "status_in_page"
+              }
+            },
+            "roundRobinUsers": "$.round_robin_users"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "pancake_list_customers",
+      "description": "List the page's customers created or updated in a time window, newest first, page by page: id, name, page-scoped id (psid), gender, birthday, phone numbers, emails, notes and times. since, until and page_number are required. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "integer",
+            "description": "Start of the window, Unix time in seconds (UTC)."
+          },
+          "until": {
+            "type": "integer",
+            "description": "End of the window, Unix time in seconds (UTC)."
+          },
+          "page_number": {
+            "type": "integer",
+            "default": 1,
+            "description": "Page of results, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "default": 50,
+            "description": "Customers per page, at most 100."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": ["inserted_at", "updated_at"],
+            "description": "Sort by creation (inserted_at, the default) or last change (updated_at), newest first."
+          }
+        },
+        "required": ["since", "until"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/page_customers",
+        "queryParams": {
+          "since": "$since",
+          "until": "$until",
+          "page_number": "$page_number",
+          "page_size": "$page_size",
+          "order_by": "$order_by"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "customers": {
+              "$from": "$.customers[*]",
+              "$select": {
+                "id": "id",
+                "customerId": "customer_id",
+                "psid": "psid",
+                "name": "name",
+                "gender": "gender",
+                "birthday": "birthday",
+                "livesIn": "lives_in",
+                "phoneNumbers": "phone_numbers",
+                "emails": "emails",
+                "canInbox": "can_inbox",
+                "notes": "notes",
+                "insertedAt": "inserted_at",
+                "updatedAt": "updated_at"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "pancake_update_customer",
+      "description": "Change a page customer's name, gender, birthday or phone numbers in Pancake. Only the fields you pass change; phone_numbers replaces the list. Tell the user what will change and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_customer_id": {
+            "type": "string",
+            "description": "Customer id (id) from pancake_list_customers."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "gender": {
+            "type": "string",
+            "enum": ["male", "female", "unknown"],
+            "description": "New gender."
+          },
+          "birthday": {
+            "type": "string",
+            "description": "Birthday as YYYY-MM-DD."
+          },
+          "phone_numbers": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "The complete new list of phone numbers."
+          }
+        },
+        "required": ["page_customer_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/page_customers/{page_customer_id}",
+        "bodyMapping": {
+          "changes": {
+            "name": "$name",
+            "gender": "$gender",
+            "birthday": "$birthday",
+            "phone_numbers": "$phone_numbers"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": { "success": "$.success" },
+          "maxBytes": 2000
+        }
+      }
+    },
+    {
+      "name": "pancake_add_customer_note",
+      "description": "Add a text note to a page customer, visible to the page's staff in Pancake and not to the customer. Use it to record what was agreed or asked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_customer_id": {
+            "type": "string",
+            "description": "Customer id (id) from pancake_list_customers."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text of the note."
+          }
+        },
+        "required": ["page_customer_id", "message"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/page_customers/{page_customer_id}/notes",
+        "bodyMapping": {
+          "message": "$message"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": { "success": "$.success" },
+          "maxBytes": 2000
+        }
+      }
+    },
+    {
+      "name": "pancake_list_posts",
+      "description": "List the page's posts published in a time window: id, type, text, time, comment count, phone numbers collected and likes. Use a post id to find its comment conversations. since and until are required. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "integer",
+            "description": "Start of the window, Unix time in seconds (UTC)."
+          },
+          "until": {
+            "type": "integer",
+            "description": "End of the window, Unix time in seconds (UTC)."
+          },
+          "page_number": {
+            "type": "integer",
+            "default": 1,
+            "description": "Page of results, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "default": 30,
+            "description": "Posts per page, at most 30."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["video", "photo", "text", "livestream"],
+            "description": "Only posts of this type."
+          }
+        },
+        "required": ["since", "until"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/posts",
+        "queryParams": {
+          "since": "$since",
+          "until": "$until",
+          "page_number": "$page_number",
+          "page_size": "$page_size",
+          "type": "$type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "posts": {
+              "$from": "$.posts[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "message": "message",
+                "insertedAt": "inserted_at",
+                "commentCount": "comment_count",
+                "phoneNumberCount": "phone_number_count",
+                "likeCount": "reactions.like_count"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "pancake_page_statistics",
+      "description": "Page activity per hour in a time window: new customers, new inbox threads, customer and page inbox messages and comments, phone numbers collected and website referrals. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "integer",
+            "description": "Start, Unix time in seconds (UTC)."
+          },
+          "until": {
+            "type": "integer",
+            "description": "End, Unix time in seconds (UTC)."
+          }
+        },
+        "required": ["since", "until"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/statistics/pages",
+        "queryParams": {
+          "since": "$since",
+          "until": "$until"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": { "data": "$.data" },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "pancake_staff_statistics",
+      "description": "Staff performance on the page in a date range: the page totals and the figures per staff member that Pancake's staff report shows (statistics and users). date_range is in the page's own time zone. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_range": {
+            "type": "string",
+            "description": "'DD/MM/YYYY HH:MM:SS - DD/MM/YYYY HH:MM:SS' in the page's time zone, e.g. '01/10/2026 00:00:00 - 07/10/2026 23:59:59'."
+          }
+        },
+        "required": ["date_range"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/statistics/users",
+        "queryParams": {
+          "date_range": "$date_range"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": { "data": "$.data" },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "pancake_tag_statistics",
+      "description": "How often each tag was used on the page in a time window, as a series per tag, plus today's counts and the tag list (id and text) to read the series by. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "integer",
+            "description": "Start, Unix time in seconds (UTC)."
+          },
+          "until": {
+            "type": "integer",
+            "description": "End, Unix time in seconds (UTC)."
+          }
+        },
+        "required": ["since", "until"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public_api/v1/pages/{{PANCAKE_PAGE_ID}}/statistics/tags",
+        "queryParams": {
+          "since": "$since",
+          "until": "$until"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "tags": {
+              "$from": "$.tags[*]",
+              "$select": {
+                "id": "id",
+                "text": "text"
+              }
+            },
+            "data": "$.data",
+            "today": "$.data_today"
+          },
+          "maxBytes": 80000
+        }
+      }
+    }
+  ]
+}

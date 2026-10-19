@@ -7,6 +7,7 @@ import { encrypt, decrypt } from '../../common/crypto/encryption.util';
 import { getRequiredSecret } from '../../common/secrets.util';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
+import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 
 const DEFAULT_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const DEFAULT_PROACTIVE_REFRESH_SECONDS = 24 * 60 * 60; // 1 day
@@ -19,6 +20,16 @@ const MIN_PROACTIVE_REFRESH_MS = 30 * 1000;
 // After a proactive re-login fails, keep serving the still-valid token for this
 // long before trying again, instead of hitting the vendor's login on every call.
 const PROACTIVE_RETRY_BACKOFF_MS = 30 * 1000;
+
+/**
+ * How the login request travels. A tool routed through the connector proxy
+ * (`use_proxy`) passes its proxy here, so the login leaves from the same
+ * address as the call it authorises: a vendor that blocks the server's IP
+ * (Playtomic answers its login with a 403 page) blocks the login as well.
+ */
+export interface LoginRequestOptions {
+  proxyUrl?: string;
+}
 
 /**
  * How long before `expiresAt` a token counts as due for renewal.
@@ -160,6 +171,7 @@ export class LoginTokenService {
   async getToken(
     authConfig: LoginTokenAuthConfig,
     connectorId?: string,
+    request: LoginRequestOptions = {},
   ): Promise<LoginTokenBundle> {
     const key = this.cacheKey(authConfig, connectorId);
     const cached = this.cache.get(key);
@@ -175,7 +187,7 @@ export class LoginTokenService {
     const pending = this.resolving.get(key);
     if (pending) return pending;
 
-    const p = this.resolveToken(authConfig, connectorId, cached).finally(() => {
+    const p = this.resolveToken(authConfig, connectorId, cached, request).finally(() => {
       this.resolving.delete(key);
     });
     this.resolving.set(key, p);
@@ -186,6 +198,7 @@ export class LoginTokenService {
     authConfig: LoginTokenAuthConfig,
     connectorId: string | undefined,
     cached: LoginTokenBundle | undefined,
+    request: LoginRequestOptions,
   ): Promise<LoginTokenBundle> {
     const key = this.cacheKey(authConfig, connectorId);
     let current = cached;
@@ -199,7 +212,7 @@ export class LoginTokenService {
     }
 
     try {
-      return await this.loginWithMutex(authConfig, connectorId);
+      return await this.loginWithMutex(authConfig, connectorId, request);
     } catch (err) {
       // A proactive refresh that fails (the vendor's login is rate-limited or
       // briefly down) must not fail a call the current token can still serve.
@@ -232,21 +245,23 @@ export class LoginTokenService {
   async forceRelogin(
     authConfig: LoginTokenAuthConfig,
     connectorId?: string,
+    request: LoginRequestOptions = {},
   ): Promise<LoginTokenBundle> {
     const key = this.cacheKey(authConfig, connectorId);
     this.cache.delete(key);
-    return this.loginWithMutex(authConfig, connectorId);
+    return this.loginWithMutex(authConfig, connectorId, request);
   }
 
   private async loginWithMutex(
     authConfig: LoginTokenAuthConfig,
-    connectorId?: string,
+    connectorId: string | undefined,
+    request: LoginRequestOptions,
   ): Promise<LoginTokenBundle> {
     const key = this.cacheKey(authConfig, connectorId);
     const existing = this.inFlight.get(key);
     if (existing) return existing;
 
-    const p = this.performLogin(authConfig, connectorId).finally(() => {
+    const p = this.performLogin(authConfig, connectorId, request).finally(() => {
       this.inFlight.delete(key);
     });
     this.inFlight.set(key, p);
@@ -255,7 +270,8 @@ export class LoginTokenService {
 
   private async performLogin(
     authConfig: LoginTokenAuthConfig,
-    connectorId?: string,
+    connectorId: string | undefined,
+    request: LoginRequestOptions,
   ): Promise<LoginTokenBundle> {
     this.requireString(authConfig.loginUrl, 'loginUrl');
     this.requireString(authConfig.username, 'username');
@@ -264,7 +280,7 @@ export class LoginTokenService {
       this.requireString(authConfig.tokenJsonPath, 'tokenJsonPath');
     }
 
-    const passwordToSend = await this.preparePassword(authConfig);
+    const passwordToSend = await this.preparePassword(authConfig, request);
 
     const templateParams: Record<string, string> = {
       username: authConfig.username,
@@ -303,7 +319,9 @@ export class LoginTokenService {
       data = templateParams;
     }
 
-    this.logger.debug(`LOGIN_TOKEN: logging in via ${method} ${url}`);
+    this.logger.debug(
+      `LOGIN_TOKEN: logging in via ${method} ${url}${request.proxyUrl ? ' (via proxy)' : ''}`,
+    );
     const response = await axios({
       method,
       url,
@@ -315,6 +333,7 @@ export class LoginTokenService {
         credentialHeaders: Object.keys(authConfig.loginHeaders || {}),
         credentialsInBody: true,
       }),
+      ...proxyAgents(request),
     });
 
     let token: unknown;
@@ -387,6 +406,7 @@ export class LoginTokenService {
 
   private async preparePassword(
     authConfig: LoginTokenAuthConfig,
+    request: LoginRequestOptions,
   ): Promise<string> {
     const hashing = authConfig.passwordHashing;
     if (!hashing || hashing.scheme === 'none') return authConfig.password;
@@ -396,7 +416,7 @@ export class LoginTokenService {
       );
     }
 
-    const salt = await this.resolveSalt(authConfig);
+    const salt = await this.resolveSalt(authConfig, request);
     if (!salt) {
       throw new Error(
         'LOGIN_TOKEN: passwordHashing.scheme=bcrypt requires a non-empty salt',
@@ -407,6 +427,7 @@ export class LoginTokenService {
 
   private async resolveSalt(
     authConfig: LoginTokenAuthConfig,
+    request: LoginRequestOptions,
   ): Promise<string | null> {
     const src = authConfig.passwordHashing?.saltSource;
     if (!src) return null;
@@ -430,6 +451,7 @@ export class LoginTokenService {
       headers: src.headers,
       timeout: 10000,
       ...outboundAxiosOptions({ credentialHeaders: Object.keys(src.headers || {}) }),
+      ...proxyAgents(request),
     });
 
     const path = src.responsePath || 'salt';
@@ -745,4 +767,14 @@ export function extractLoginRefusal(body: unknown): string | null {
     return null;
   };
   return walk(body, 0);
+}
+
+/**
+ * Agents for a login that goes through the connector proxy, set after the
+ * outbound spread as the tool calls do (see rest.engine). Empty without one.
+ */
+function proxyAgents(request: LoginRequestOptions) {
+  if (!request.proxyUrl) return {};
+  const agent = createUnblockerProxyAgent(request.proxyUrl);
+  return { httpAgent: agent, httpsAgent: agent, proxy: false as const };
 }

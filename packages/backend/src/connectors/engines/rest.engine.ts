@@ -528,6 +528,7 @@ export class RestEngine {
         const bundle = await this.loginTokenService.forceRelogin(
           authConfig,
           config.connectorId,
+          { proxyUrl: config.proxyUrl },
         );
         injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
         rebuildBody(axiosConfig, buildBody);
@@ -698,6 +699,7 @@ export class RestEngine {
       authType: string;
       authConfig?: Record<string, unknown>;
       connectorId?: string;
+      proxyUrl?: string;
     },
   ): Promise<void> {
     if (!config.authConfig) return;
@@ -781,6 +783,7 @@ export class RestEngine {
         const bundle = await this.loginTokenService.getToken(
           config.authConfig as unknown as LoginTokenAuthConfig,
           config.connectorId,
+          { proxyUrl: config.proxyUrl },
         );
         injectLoginTokenHeaders(
           axiosConfig,

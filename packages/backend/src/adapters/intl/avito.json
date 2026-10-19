@@ -1,0 +1,1197 @@
+{
+  "slug": "avito",
+  "name": "Avito",
+  "aliases": [
+    "Авито",
+    "Avito.ru",
+    "Avito Pro"
+  ],
+  "description": "Let your AI work with your Avito business account: list your ads and change their prices, read views, contacts and calls statistics, check autoload uploads and their errors, the feed format and your wallet, and read Avito Messenger chats. Sending messages and changing autoload settings are optional and off by default.",
+  "instructions": "## Avito\nThis connector works with **Avito**, Russia's classifieds marketplace, through the **Avito API for business** (`https://api.avito.ru`) on behalf of one Avito account: the account and its wallet, its ads and their prices, statistics of views, contacts and calls, autoload (bulk upload from a feed file) settings, uploads and reports, and Avito Messenger chats. It signs in with the account's own `client_id` and `client_secret` (OAuth2 client credentials); there is no browser sign-in.\n\n**Setup (about 5 minutes)**\n1. Sign in to Avito with the business account the AI should work with (the main company account, not an employee).\n2. Open **Для профессионалов, API интеграции** (https://www.avito.ru/professionals/api; in the profile menu it is under the professional tools and settings) and copy **Client ID** and **Client secret**. Avito issues one pair per account; generating a new secret invalidates the old one.\n3. Paste them into `AVITO_CLIENT_ID` and `AVITO_CLIENT_SECRET` and install. AnythingMCP requests an access token from `https://api.avito.ru/token` and renews it after 24 hours.\n\n**Access depends on the Avito tariff.** The API works with what the account itself may do. Messenger API is available only on the **Максимальный** subscription for goods and jobs, and on **Расширенный** or **Максимальный** for services; without it the chat tools answer 403. Autoload tools need autoload set up in the account.\n\n**user_id**: call `avito_get_self` first. Its `id` is the account's user id, which every tool with a `user_id` parameter needs; it does not change, so reuse it within the conversation.\n\n**Writes: confirm first.** `avito_update_item_price` is on, because it is the most common task: before changing a price, tell the user the ad, the old price and the new one, and wait for a yes. A price is public at once. If the ad comes from an autoload feed, the next upload can bring back the feed's price: change it in the feed too.\n**Switched off at install**: `avito_send_message`, `avito_mark_chat_read`, `avito_update_autoload_profile` and `avito_start_autoload_upload`. An admin turns them on deliberately. Even then, show the user the exact message text, or the exact settings change, and wait for confirmation. `avito_update_autoload_profile` replaces the whole profile: read it with `avito_get_autoload_profile`, change one field, send everything back. `avito_start_autoload_upload` publishes every ad in the feed at once, ignoring the schedule's limits, which can cost listing fees; once per hour at most.\n\n**Personal data**: chats contain buyers' names and messages. Use them only to serve those buyers, do not copy them elsewhere, and never message people who did not write first.\n\n**Which tool**\n- Account: `avito_get_self`, `avito_get_balance`, `avito_get_operations_history` (wallet charges, at most one week per call).\n- Ads: `avito_list_items` (filter by status, category, update date), `avito_get_item` (status and paid services), `avito_update_item_price`.\n- Statistics: `avito_get_item_stats` (unique views, contacts and favourites of up to 200 ads, 270 days back), `avito_get_calls_stats`.\n- Autoload settings: `avito_get_autoload_profile`, `avito_update_autoload_profile`, `avito_start_autoload_upload`.\n- Autoload reports: `avito_list_autoload_uploads`, `avito_get_current_autoload_upload`, `avito_list_current_autoload_upload_items`, `avito_get_last_successful_autoload_upload`, `avito_list_last_successful_autoload_upload_items` (errors and warnings per ad).\n- Feed format: `avito_get_autoload_category_tree`, then `avito_get_autoload_category_fields` with a slug.\n- Ids: an ad has an Avito id (`avito_id`, the number in its URL) and, when it comes from a feed, the feed's own id (`ad_id`). `avito_get_feed_ids_by_avito_ids` and `avito_get_avito_ids_by_feed_ids` translate.\n- Messenger: `avito_list_chats` (use `unread_only` for new conversations), `avito_get_chat`, `avito_list_messages`, `avito_mark_chat_read`, `avito_send_message`.\n\n**Formats**: prices are whole rubles. Dates are `YYYY-MM-DD`; upload filters take RFC 3339 (`2026-10-01T00:00:00Z`); `avito_get_operations_history` takes `YYYY-MM-DDTHH:MM:SS`. Messenger times are Unix seconds. Avito works in Moscow time (UTC+3); convert before quoting a time to the user. Messages in Avito's answers are in Russian; translate them for the user when needed.\n\n**Paging**: `avito_list_items` pages with `page` and `per_page` (stop when a page has fewer ads than `per_page`); uploads and their items return `meta.pages`; chats and messages use `limit` and `offset` (at most 1000).\n\n**Rate limits**: listing ads at most 25 requests a minute, price changes 150 a minute, reading one ad 500 a minute. On 429 wait a minute before retrying.\n\n**Common errors** (`{\"result\": {\"status\": false, \"message\": ...}}` or `{\"error\": {\"code\", \"message\"}}`)\n- 401 \"Bad bearer token\" or 403 \"invalid access token\": the token is missing or no longer valid; check the client ID and secret (a regenerated secret makes the old one fail).\n- 403 otherwise: the tariff does not include this API (Messenger above all), or the user_id is not this account.\n- 404: the ad, chat or upload does not exist or belongs to another account; the autoload report tools answer 404 when there is no matching upload yet.\n- 400: a parameter is wrong, e.g. a price in a category that does not allow changing it here, or an operations window longer than a week.\n- 429: rate limit.\n\n**Out of scope here**: promotion services (VAS) and their prices, ads campaigns, CPA and call tracking, delivery and orders, ratings and reviews, Avito Jobs (vacancies and CVs), short-term rentals, the account hierarchy of employees, webhooks, sending images or voice messages, and creating or editing ad content (that goes through the autoload feed).",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "avito",
+  "docsUrl": "https://developers.avito.ru/api-catalog",
+  "prerequisites": "An Avito business account and its API Client ID and Client secret from Для профессионалов, API интеграции (avito.ru/professionals/api). Messenger API needs the Максимальный tariff (Расширенный or Максимальный for services). About 5 minutes.",
+  "appRegistrationUrl": "https://www.avito.ru/professionals/api",
+  "requiredEnvVars": [
+    "AVITO_CLIENT_ID",
+    "AVITO_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "AVITO_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Avito, Для профессионалов, API интеграции: Client ID of the account.",
+      "link": "https://www.avito.ru/professionals/api",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the Client ID without spaces."
+    },
+    "AVITO_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page: Client secret. Generating a new one there makes the old one stop working.",
+      "link": "https://www.avito.ru/professionals/api",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Avito did not issue a token or refused it: check the Client ID and Client secret on avito.ru/professionals/api (a newly generated secret replaces the old one).",
+    "403": "Avito refused the token (invalid access token) or the account's tariff does not include this API. Check the credentials, then the tariff.",
+    "429": "Avito is rate limiting the account. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "avito_get_self"
+  },
+  "connector": {
+    "name": "Avito API for business",
+    "type": "REST",
+    "baseUrl": "https://api.avito.ru",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{AVITO_CLIENT_ID}}",
+      "clientSecret": "{{AVITO_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.avito.ru/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/core/v1/accounts/self"
+  },
+  "tools": [
+    {
+      "name": "avito_get_self",
+      "description": "Read the Avito account the credentials belong to: its user id, name, email and profile URL. Call it first: every tool that takes user_id needs this id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/core/v1/accounts/self"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "email": "$.email",
+            "profile_url": "$.profile_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "avito_get_balance",
+      "description": "Read the Avito wallet balance of the account: real money (real) and bonus funds (bonus), in rubles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Your Avito user (account) id: the id returned by avito_get_self."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/core/v1/accounts/{user_id}/balance/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "real": "$.real",
+            "bonus": "$.bonus"
+          }
+        }
+      }
+    },
+    {
+      "name": "avito_get_operations_history",
+      "description": "Read the wallet operations of the account (charges for listings and promotion services, top-ups, refunds) between two moments: amount in rubles and bonuses, operation type, service and item id. The window may be at most one week long and at most one year back. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dateTimeFrom": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$",
+            "description": "Start, as YYYY-MM-DDTHH:MM:SS (Moscow time), e.g. 2026-10-01T00:00:00."
+          },
+          "dateTimeTo": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$",
+            "description": "End, at most 7 days after dateTimeFrom, same format."
+          }
+        },
+        "required": [
+          "dateTimeFrom",
+          "dateTimeTo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/core/v1/accounts/operations_history/",
+        "bodyMapping": {
+          "dateTimeFrom": "$dateTimeFrom",
+          "dateTimeTo": "$dateTimeTo"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "operations": "$.result.operations"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "avito_list_items",
+      "description": "List the account's ads (items): id, title, price in rubles (null when none is set), status, category, address and URL. Active ads by default; status takes several values separated by commas. Ads of employee sub-accounts are not listed. At most 25 requests a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "pattern": "^(active|removed|old|blocked|rejected)(,(active|removed|old|blocked|rejected))*$",
+            "default": "active",
+            "description": "Ad status, one or several separated by commas: active (default), removed, old (expired), blocked, rejected."
+          },
+          "category": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional Avito category id to filter by, from Avito's category catalogue (catalog-categories.xml)."
+          },
+          "updatedAtFrom": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Optional: only ads updated or edited on or after this day, YYYY-MM-DD."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 25,
+            "description": "Ads per page (default 25, below 100)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. When a page returns fewer ads than per_page it is the last."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/core/v1/items",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page",
+          "status": "$status",
+          "updatedAtFrom": "$updatedAtFrom",
+          "category": "$category"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meta": "$.meta",
+            "resources": {
+              "$from": "$.resources[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "price": "price",
+                "status": "status",
+                "category": "category",
+                "address": "address",
+                "url": "url"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "avito_get_item",
+      "description": "Read one ad of the account: status, URL, start and finish time, the autoload id from the feed file, and the paid promotion services applied (vip, highlight, pushup, premium, xl) with their end dates. For views and contacts use avito_get_item_stats.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Your Avito user (account) id: the id returned by avito_get_self."
+          },
+          "item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Avito item (ad) id, the number at the end of the ad's URL and the id in avito_list_items."
+          }
+        },
+        "required": [
+          "user_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/core/v1/accounts/{user_id}/items/{item_id}/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "status": "$.status",
+            "url": "$.url",
+            "start_time": "$.start_time",
+            "finish_time": "$.finish_time",
+            "autoload_item_id": "$.autoload_item_id",
+            "vas": "$.vas"
+          }
+        }
+      }
+    },
+    {
+      "name": "avito_update_item_price",
+      "description": "Change the price of one Avito ad, in whole rubles. Works for goods, spare parts, cars and real estate (not short-term rentals). The new price is public at once. Before calling, tell the user the ad, the old price and the new one and wait for their confirmation. If the ad comes from an autoload feed, the next upload may set the feed's price again. At most 150 requests a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Avito item (ad) id, the number at the end of the ad's URL and the id in avito_list_items."
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "New price in whole rubles, e.g. 15000."
+          }
+        },
+        "required": [
+          "item_id",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/core/v1/items/{item_id}/update_price",
+        "bodyMapping": {
+          "price": "$price"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "success": "$.result.success"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "avito_get_item_stats",
+      "description": "Read views, contacts and favourites of up to 200 of the account's ads per day, week or month: uniqViews (unique viewers), uniqContacts (unique users who asked for the phone or wrote) and uniqFavorites. At most 270 days back. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Your Avito user (account) id: the id returned by avito_get_self."
+          },
+          "itemIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Ad ids, at most 200, e.g. [123456789, 987654321]."
+          },
+          "dateFrom": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD, at most 270 days ago."
+          },
+          "dateTo": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD (inclusive)."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "uniqViews",
+                "uniqContacts",
+                "uniqFavorites"
+              ]
+            },
+            "default": [
+              "uniqViews",
+              "uniqContacts",
+              "uniqFavorites"
+            ],
+            "description": "Counters to return; default all three."
+          },
+          "periodGrouping": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Sum per day (default), week (date is the first day of the week) or month."
+          }
+        },
+        "required": [
+          "user_id",
+          "itemIds",
+          "dateFrom",
+          "dateTo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stats/v1/accounts/{user_id}/items",
+        "bodyMapping": {
+          "itemIds": "$itemIds",
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "fields": "$fields",
+          "periodGrouping": "$periodGrouping"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": "$.result.items",
+            "errors": "$.errors"
+          },
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "avito_get_calls_stats",
+      "description": "Read call statistics of the account per ad and per day: calls, answered, new and newAnswered calls, optionally only for some ads. itemId 0 means a call not attributed to an ad. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Your Avito user (account) id: the id returned by avito_get_self."
+          },
+          "dateFrom": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "dateTo": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "itemIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Optional ad ids; leave out for all ads."
+          }
+        },
+        "required": [
+          "user_id",
+          "dateFrom",
+          "dateTo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/core/v1/accounts/{user_id}/calls/stats/",
+        "bodyMapping": {
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "itemIds": "$itemIds"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": "$.result.items"
+          },
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "avito_get_autoload_profile",
+      "description": "Read the account's autoload (bulk upload) settings: whether autoload is on, the feed files and their URLs, the report email and the upload schedule (weekdays 0 Monday to 6 Sunday, hour slots 0 to 23, ads per slot).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoload/v2/profile"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "autoload_enabled": "$.autoload_enabled",
+            "feeds_data": "$.feeds_data",
+            "report_email": "$.report_email",
+            "schedule": "$.schedule"
+          }
+        }
+      }
+    },
+    {
+      "name": "avito_update_autoload_profile",
+      "description": "Replace the account's autoload settings: on or off, feed files, report email and schedule. Every field is replaced, so read avito_get_autoload_profile first and send it back with only the requested change. Switching autoload off or changing a feed URL changes what Avito publishes. Switched off at install; tell the user exactly what will change and wait for their confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "autoload_enabled": {
+            "type": "boolean",
+            "description": "true to keep regular uploads running, false to stop them."
+          },
+          "feeds_data": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "feed_name": {
+                  "type": "string",
+                  "description": "Name of the feed, shown in the reports."
+                },
+                "feed_url": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "URL of the feed file, starting with http or https."
+                }
+              },
+              "required": [
+                "feed_name",
+                "feed_url"
+              ]
+            },
+            "description": "Feed files, each {feed_name, feed_url}."
+          },
+          "report_email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email that receives the upload reports."
+          },
+          "schedule": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rate": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Ads to upload in each slot."
+                },
+                "time_slots": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 23
+                  },
+                  "description": "Hour slots, 0 (00:00 to 01:00) to 23."
+                },
+                "weekdays": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 6
+                  },
+                  "description": "Days, 0 Monday to 6 Sunday."
+                }
+              },
+              "required": [
+                "rate",
+                "time_slots",
+                "weekdays"
+              ]
+            },
+            "description": "Upload schedule, as returned by avito_get_autoload_profile."
+          },
+          "agreement": {
+            "type": "boolean",
+            "description": "Acceptance of Avito's autoload rules; required by Avito when the profile is created."
+          }
+        },
+        "required": [
+          "autoload_enabled",
+          "feeds_data",
+          "report_email",
+          "schedule"
+        ]
+      },
+      "enabled": false,
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/autoload/v2/profile",
+        "bodyMapping": {
+          "autoload_enabled": "$autoload_enabled",
+          "feeds_data": "$feeds_data",
+          "report_email": "$report_email",
+          "schedule": "$schedule",
+          "agreement": "$agreement"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "avito_start_autoload_upload",
+      "description": "Start an upload of the feed file configured in the autoload settings now. Every ad in the file that can be published or activated will be, ignoring the per-slot limits of the schedule, which can cost listing fees. Only one such upload per hour. Switched off at install; tell the user what will happen and wait for their confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "enabled": false,
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/autoload/v1/upload"
+      }
+    },
+    {
+      "name": "avito_list_autoload_uploads",
+      "description": "List past autoload uploads, newest first: upload id, status (processing, success, success_warning, error and others), source (Url, Email, Web, Api), start time, feed files, events and the count of ads per report section.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dateFrom": {
+            "type": "string",
+            "description": "Optional: uploads from this moment, RFC 3339, e.g. 2026-10-01T00:00:00Z."
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "Optional: uploads up to this moment, RFC 3339."
+          },
+          "perPage": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Uploads per page (default 10, at most 50)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1; meta.pages says how many there are."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoload/v4/uploads",
+        "queryParams": {
+          "perPage": "$perPage",
+          "page": "$page",
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "uploads": "$.uploads",
+            "meta": "$.meta"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "avito_get_current_autoload_upload",
+      "description": "Read the current autoload upload: the latest one that processed at least one ad. Its numbers can still change while it runs; for stable results use avito_get_last_successful_autoload_upload. Returns status, start time, feed files, events and ad counts per report section.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoload/v4/uploads/current"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "upload_id": "$.upload_id",
+            "status": "$.status",
+            "source": "$.source",
+            "started_at": "$.started_at",
+            "feed_urls": "$.feed_urls",
+            "events": "$.events",
+            "stats": "$.stats"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "avito_list_current_autoload_upload_items",
+      "description": "List the ads of the current autoload upload with their feed id (ad_id), Avito id, status on Avito, URL, report section and messages (errors, warnings). Filter by feed ids or report sections. 404 when there is no such upload.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Optional: only these ads, as ids from your feed file (the Id field) separated by commas or |."
+          },
+          "sections": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Optional: only these report sections, as section slugs separated by commas (the slugs come from the upload's stats)."
+          },
+          "perPage": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Ads per page (default 20, at most 100)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1; meta.pages says how many there are."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoload/v4/uploads/current/items",
+        "queryParams": {
+          "query": "$query",
+          "sections": "$sections",
+          "perPage": "$perPage",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "ad_id": "ad_id",
+                "avito_id": "avito_id",
+                "avito_status": "avito_status",
+                "avito_date_end": "avito_date_end",
+                "url": "url",
+                "feed_name": "feed_name",
+                "section": "section",
+                "messages": "messages"
+              }
+            },
+            "meta": "$.meta"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "avito_get_last_successful_autoload_upload",
+      "description": "Read the last autoload upload that processed every ad of the feed: status, start time, feed files, events and ad counts per report section. 404 when there is none yet.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoload/v4/uploads/last_successful"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "upload_id": "$.upload_id",
+            "status": "$.status",
+            "source": "$.source",
+            "started_at": "$.started_at",
+            "feed_urls": "$.feed_urls",
+            "events": "$.events",
+            "stats": "$.stats"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "avito_list_last_successful_autoload_upload_items",
+      "description": "List the ads of the last completed autoload upload with their feed id (ad_id), Avito id, status on Avito, URL, report section and messages (errors, warnings). Filter by feed ids or report sections. 404 when there is no such upload.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Optional: only these ads, as ids from your feed file (the Id field) separated by commas or |."
+          },
+          "sections": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Optional: only these report sections, as section slugs separated by commas (the slugs come from the upload's stats)."
+          },
+          "perPage": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Ads per page (default 20, at most 100)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1; meta.pages says how many there are."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoload/v4/uploads/last_successful/items",
+        "queryParams": {
+          "query": "$query",
+          "sections": "$sections",
+          "perPage": "$perPage",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "ad_id": "ad_id",
+                "avito_id": "avito_id",
+                "avito_status": "avito_status",
+                "avito_date_end": "avito_date_end",
+                "url": "url",
+                "feed_name": "feed_name",
+                "section": "section",
+                "messages": "messages"
+              }
+            },
+            "meta": "$.meta"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "avito_get_autoload_category_tree",
+      "description": "Read Avito's category tree for autoload feeds: category names, nested subcategories and the slug of each leaf, which avito_get_autoload_category_fields takes. Large; the answer is cut at about 100 KB.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoload/v1/user-docs/tree"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "categories": "$.categories"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "avito_get_autoload_category_fields",
+      "description": "Read the feed fields of one Avito category: each tag with its label, whether it is required (also depending on other fields), data type, allowed values or links to value catalogues, and warnings. Use it to build or fix a feed file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node_slug": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,200}$",
+            "description": "Category slug from avito_get_autoload_category_tree."
+          }
+        },
+        "required": [
+          "node_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoload/v1/user-docs/node/{node_slug}/fields"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "node": "$.node",
+            "alert": "$.alert",
+            "fields": "$.fields"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "avito_get_feed_ids_by_avito_ids",
+      "description": "Translate Avito ad ids into the ids the ads have in the autoload feed file (the Id field). Returns pairs of avito_id and ad_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "pattern": "^\\d+([,|]\\d+)*$",
+            "description": "Avito ad ids separated by commas or |, e.g. 2841234567,2841234568."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoload/v2/items/ad_ids",
+        "queryParams": {
+          "query": "$query"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": "$.items"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "avito_get_avito_ids_by_feed_ids",
+      "description": "Translate ids from the autoload feed file (the Id field) into Avito ad ids. Returns pairs of ad_id and avito_id; avito_id is missing for ads not published yet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "Feed ids separated by commas or |, e.g. sku-1001,sku-1002."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoload/v2/items/avito_ids",
+        "queryParams": {
+          "query": "$query"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": "$.items"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "avito_list_chats",
+      "description": "List the account's Avito Messenger chats, newest activity first: chat id, the ad it is about (title, price, URL), the other user's name, and the last message with its direction (in or out) and time (Unix seconds). Filter by ads or unread chats. Needs a tariff with Messenger API access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Your Avito user (account) id: the id returned by avito_get_self."
+          },
+          "item_ids": {
+            "type": "string",
+            "pattern": "^\\d+(,\\d+)*$",
+            "description": "Optional: only chats about these ad ids, separated by commas."
+          },
+          "unread_only": {
+            "type": "boolean",
+            "description": "true for unread chats only."
+          },
+          "chat_types": {
+            "type": "string",
+            "pattern": "^(u2i|u2u|a2u)(,(u2i|u2u|a2u))*$",
+            "description": "Optional chat types separated by commas: u2i about ads (Avito's default), u2u between users, a2u from Avito."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Chats per page (default 20 here, at most 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Chats to skip, for the next page (at most 1000)."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messenger/v2/accounts/{user_id}/chats",
+        "queryParams": {
+          "item_ids": "$item_ids",
+          "unread_only": "$unread_only",
+          "chat_types": "$chat_types",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "chats[*].{id: id, created: created, updated: updated, context_type: context.type, item_id: context.value.id, item_title: context.value.title, item_price: context.value.price_string, item_url: context.value.url, users: users[*].{id: id, name: name}, last_message: {id: last_message.id, author_id: last_message.author_id, direction: last_message.direction, type: last_message.type, created: last_message.created, text: last_message.content.text}}",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "avito_get_chat",
+      "description": "Read one Avito Messenger chat: the ad it is about (title, price, URL, status), the users and the last message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Your Avito user (account) id: the id returned by avito_get_self."
+          },
+          "chat_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Chat id as returned by avito_list_chats, e.g. u2i-AbCdEf123."
+          }
+        },
+        "required": [
+          "user_id",
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messenger/v2/accounts/{user_id}/chats/{chat_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "created": "$.created",
+            "updated": "$.updated",
+            "context": "$.context",
+            "users": {
+              "$from": "$.users[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "profile_url": "public_user_profile.url"
+              }
+            },
+            "last_message": "$.last_message"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "avito_list_messages",
+      "description": "Read the messages of one Avito Messenger chat, newest first: id, author id, direction (in from the buyer, out from the account), type (text, image, link, item, location, call, voice, system, deleted), time (Unix seconds), whether it was read, and the content. Reading does not mark the chat as read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Your Avito user (account) id: the id returned by avito_get_self."
+          },
+          "chat_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Chat id as returned by avito_list_chats, e.g. u2i-AbCdEf123."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Messages per page (default 50 here, at most 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Messages to skip, for older ones (at most 1000)."
+          }
+        },
+        "required": [
+          "user_id",
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messenger/v3/accounts/{user_id}/chats/{chat_id}/messages/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "(messages || @)[*].{id: id, author_id: author_id, direction: direction, type: type, created: created, is_read: is_read, read: read, content: content, quote: quote.content.text}",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "avito_mark_chat_read",
+      "description": "Mark an Avito Messenger chat as read, as if the seller had opened it. The unread badge disappears for the people working in the account, so they may miss the message. Switched off at install; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Your Avito user (account) id: the id returned by avito_get_self."
+          },
+          "chat_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Chat id as returned by avito_list_chats, e.g. u2i-AbCdEf123."
+          }
+        },
+        "required": [
+          "user_id",
+          "chat_id"
+        ]
+      },
+      "enabled": false,
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messenger/v1/accounts/{user_id}/chats/{chat_id}/read"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "ok": "$.ok"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "avito_send_message",
+      "description": "Send a text message (at most 1,000 characters) in an Avito Messenger chat, on behalf of the account. The buyer receives it at once and it cannot be unsent here. Switched off at install; show the user the exact text and the chat and wait for their confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Your Avito user (account) id: the id returned by avito_get_self."
+          },
+          "chat_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Chat id as returned by avito_list_chats, e.g. u2i-AbCdEf123."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Message text, at most 1,000 characters."
+          }
+        },
+        "required": [
+          "user_id",
+          "chat_id",
+          "text"
+        ]
+      },
+      "enabled": false,
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messenger/v1/accounts/{user_id}/chats/{chat_id}/messages",
+        "bodyMapping": {
+          "message": {
+            "text": "$text"
+          },
+          "type": "text"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "created": "$.created",
+            "direction": "$.direction",
+            "type": "$.type",
+            "content": "$.content"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

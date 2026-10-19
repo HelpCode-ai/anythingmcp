@@ -98,6 +98,7 @@ import * as atera from './intl/atera.json';
 import * as atlassian from './intl/atlassian.json';
 import * as attio from './intl/attio.json';
 import * as autotask from './intl/autotask.json';
+import * as avito from './intl/avito.json';
 import * as bamboohr from './intl/bamboohr.json';
 import * as basecamp from './intl/basecamp.json';
 import * as baselinker from './intl/baselinker.json';
@@ -106,6 +107,7 @@ import * as beehiiv from './intl/beehiiv.json';
 import * as bigcommerce from './intl/bigcommerce.json';
 import * as bigquery from './intl/bigquery.json';
 import * as billCom from './intl/bill-com.json';
+import * as binance from './intl/binance.json';
 import * as bingWebmaster from './intl/bing-webmaster.json';
 import * as bitbucket from './intl/bitbucket.json';
 import * as bitrix24 from './intl/bitrix24.json';
@@ -231,6 +233,7 @@ import * as helium10 from './intl/helium10.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
 import * as heygen from './intl/heygen.json';
+import * as higgsfield from './intl/higgsfield.json';
 import * as hubspot from './intl/hubspot.json';
 import * as huggingface from './intl/huggingface.json';
 import * as hunter from './intl/hunter.json';
@@ -275,6 +278,7 @@ import * as medium from './intl/medium.json';
 import * as mercury from './intl/mercury.json';
 import * as messagebird from './intl/messagebird.json';
 import * as metaAds from './intl/meta-ads.json';
+import * as metaCatalog from './intl/meta-catalog.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
 import * as microsoftExcel from './intl/microsoft-excel.json';
 import * as microsoftOnedrive from './intl/microsoft-onedrive.json';
@@ -321,6 +325,7 @@ import * as otter from './intl/otter.json';
 import * as outreach from './intl/outreach.json';
 import * as ozon from './intl/ozon.json';
 import * as pagerduty from './intl/pagerduty.json';
+import * as pancake from './intl/pancake.json';
 import * as pandadoc from './intl/pandadoc.json';
 import * as paypal from './intl/paypal.json';
 import * as pcloud from './intl/pcloud.json';
@@ -373,6 +378,7 @@ import * as savvycal from './intl/savvycal.json';
 import * as sealSubscriptions from './intl/seal-subscriptions.json';
 import * as seamlessAi from './intl/seamless-ai.json';
 import * as segment from './intl/segment.json';
+import * as sellercloud from './intl/sellercloud.json';
 import * as semrush from './intl/semrush.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
@@ -431,6 +437,7 @@ import * as vinted from './intl/vinted.json';
 import * as vk from './intl/vk.json';
 import * as wanotifier from './intl/wanotifier.json';
 import * as wassenger from './intl/wassenger.json';
+import * as wati from './intl/wati.json';
 import * as waveAccounting from './intl/wave-accounting.json';
 import * as webex from './intl/webex.json';
 import * as webflow from './intl/webflow.json';
@@ -811,6 +818,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   atlassian as unknown as AdapterDefinition,
   attio as unknown as AdapterDefinition,
   autotask as unknown as AdapterDefinition,
+  avito as unknown as AdapterDefinition,
   bamboohr as unknown as AdapterDefinition,
   basecamp as unknown as AdapterDefinition,
   baselinker as unknown as AdapterDefinition,
@@ -819,6 +827,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   bigcommerce as unknown as AdapterDefinition,
   bigquery as unknown as AdapterDefinition,
   billCom as unknown as AdapterDefinition,
+  binance as unknown as AdapterDefinition,
   bingWebmaster as unknown as AdapterDefinition,
   bitbucket as unknown as AdapterDefinition,
   bitrix24 as unknown as AdapterDefinition,
@@ -944,6 +953,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   helpScout as unknown as AdapterDefinition,
   hetznerCloud as unknown as AdapterDefinition,
   heygen as unknown as AdapterDefinition,
+  higgsfield as unknown as AdapterDefinition,
   hubspot as unknown as AdapterDefinition,
   huggingface as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
@@ -988,6 +998,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mercury as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
   metaAds as unknown as AdapterDefinition,
+  metaCatalog as unknown as AdapterDefinition,
   microsoftBookings as unknown as AdapterDefinition,
   microsoftExcel as unknown as AdapterDefinition,
   microsoftOnedrive as unknown as AdapterDefinition,
@@ -1034,6 +1045,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   outreach as unknown as AdapterDefinition,
   ozon as unknown as AdapterDefinition,
   pagerduty as unknown as AdapterDefinition,
+  pancake as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
   paypal as unknown as AdapterDefinition,
   pcloud as unknown as AdapterDefinition,
@@ -1086,6 +1098,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sealSubscriptions as unknown as AdapterDefinition,
   seamlessAi as unknown as AdapterDefinition,
   segment as unknown as AdapterDefinition,
+  sellercloud as unknown as AdapterDefinition,
   semrush as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sentry as unknown as AdapterDefinition,
@@ -1144,6 +1157,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   vk as unknown as AdapterDefinition,
   wanotifier as unknown as AdapterDefinition,
   wassenger as unknown as AdapterDefinition,
+  wati as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
   webex as unknown as AdapterDefinition,
   webflow as unknown as AdapterDefinition,
