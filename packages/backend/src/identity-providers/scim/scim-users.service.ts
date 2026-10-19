@@ -20,6 +20,7 @@ import {
   ScimFilter,
 } from './scim.parser';
 import { SCIM_LIST_SCHEMA, SCIM_USER_SCHEMA } from './scim.schemas';
+import { emailLookupWhere, findUserByEmail, findUsersByEmail, normalizeEmail } from '../../common/email.util';
 import type { ScimProvider } from './scim-auth.guard';
 
 export interface ScimCtx {
@@ -144,16 +145,13 @@ export class ScimUsersService {
       throw new ScimError(409, 'User already provisioned', 'uniqueness');
     }
 
-    const email = parsed.primaryEmail ?? parsed.userName.toLowerCase();
+    const email = parsed.primaryEmail ?? normalizeEmail(parsed.userName);
 
     // The same anti-takeover rule as JIT provisioning: a local account that
-    // owns this address is never claimed by a directory. Binding this
-    // provider's object id to it would let whoever controls the tenant sign
-    // in as that person everywhere they are a member.
-    const collision = await this.prisma.user.findUnique({
-      where: { email },
-      select: { id: true },
-    });
+    // owns this address, in any case, is never claimed by a directory.
+    // Binding this provider's object id to it would let whoever controls the
+    // tenant sign in as that person everywhere they are a member.
+    const collision = await findUserByEmail(this.prisma, email, { id: true });
     if (collision) {
       throw new ScimError(
         409,
@@ -222,7 +220,7 @@ export class ScimUsersService {
     const changes: UserChanges = {
       // PUT with `active` absent must not silently reactivate.
       ...(body && typeof (body as any).active !== 'undefined' ? { active: parsed.active } : {}),
-      email: parsed.primaryEmail ?? parsed.userName.toLowerCase(),
+      email: parsed.primaryEmail ?? normalizeEmail(parsed.userName),
       name: displayNameOf(parsed),
       externalId: parsed.externalId,
     };
@@ -268,7 +266,9 @@ export class ScimUsersService {
     switch (filter.attr) {
       case 'userName':
       case 'emails.value':
-        return { user: { email: filter.value.toLowerCase() } };
+        // In any case: a row written before addresses were normalised keeps
+        // its capitals, and Entra looks users up by what it holds.
+        return { user: emailLookupWhere(filter.value) };
       case 'externalId':
         return { externalSubject: filter.value };
       case 'id':
@@ -294,12 +294,12 @@ export class ScimUsersService {
       if (lower === 'active') {
         c.active = op.op === 'remove' ? false : coerceActive(op.value);
       } else if (lower === 'username') {
-        if (typeof op.value === 'string' && op.value.trim()) c.email = op.value.trim().toLowerCase();
+        if (typeof op.value === 'string' && op.value.trim()) c.email = normalizeEmail(op.value);
       } else if (lower === 'emails') {
         const e = pickEmail(op.value);
         if (e) c.email = e;
       } else if (/^emails\[.*\]\.value$/i.test(path)) {
-        if (typeof op.value === 'string' && op.value.trim()) c.email = op.value.trim().toLowerCase();
+        if (typeof op.value === 'string' && op.value.trim()) c.email = normalizeEmail(op.value);
       } else if (lower === 'externalid') {
         if (typeof op.value === 'string') c.externalId = op.value;
       } else if (lower === 'displayname') {
@@ -370,11 +370,15 @@ export class ScimUsersService {
       // other workspace, and the address unclaimed. Otherwise keep the old
       // address and carry on — a deactivation in the same request must never
       // be blocked by an email conflict.
+      // The conflict check ignores case and this user's own row, so a change
+      // that only lower-cases the stored address goes through.
       const skipped = row.user.passwordHash
         ? 'has_password'
         : row.user.memberships.some((m) => m.organizationId !== orgId)
           ? 'multi_org'
-          : (await this.prisma.user.findUnique({ where: { email: changes.email }, select: { id: true } }))
+          : (await findUsersByEmail<{ id: string; email: string }>(this.prisma, changes.email, { id: true })).some(
+                (u) => u.id !== row.userId,
+              )
             ? 'conflict'
             : null;
       if (skipped) metadata.emailChangeSkipped = skipped;
