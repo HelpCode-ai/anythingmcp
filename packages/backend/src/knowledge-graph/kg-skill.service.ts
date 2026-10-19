@@ -9,6 +9,87 @@ const MAX_INTENTS = 200;
 /** Where a skill came from; generation only ever replaces its own `llm` rows. */
 export type SkillSource = 'manual' | 'llm' | 'finder';
 
+/** Longest procedure (`body`) a skill can carry. Served by skill_get only. */
+export const SKILL_BODY_MAX = 20_000;
+
+/** How applied skills reach the model on initialize (per MCP server). */
+export const SKILLS_DELIVERY_MODES = ['auto', 'inline', 'index'] as const;
+export type SkillsDelivery = (typeof SKILLS_DELIVERY_MODES)[number];
+
+/**
+ * `auto` keeps the full text up to this many characters, then switches to the
+ * index. The skills_v2 migration pins servers already above it to `inline`;
+ * keep both numbers equal.
+ */
+export const SKILLS_INLINE_BUDGET = 6_000;
+/** The index stops listing entries past this size and points to skills_list. */
+const SKILLS_INDEX_BUDGET = 8_000;
+const INDEX_WHEN_MAX = 200;
+
+/** Built-in MCP tool names (per-server endpoint). */
+export const SKILLS_LIST_TOOL = 'skills_list';
+export const SKILL_GET_TOOL = 'skill_get';
+
+interface SkillRow {
+  id: string;
+  title: string;
+  whenToUse: string;
+  instruction: string;
+  body: string | null;
+  version: number;
+}
+
+/** The skills a caller may see: the server's own and its visible connectors'. */
+function visibleWhere(organizationId: string, serverIds: string[], connectorIds: string[]) {
+  return {
+    // Re-stated rather than trusted from the ids, so a stray id can never
+    // pull another workspace's skills in.
+    organizationId,
+    status: 'applied',
+    OR: [
+      { mcpServerId: { in: serverIds.length ? serverIds : ['__none__'] } },
+      { connectorId: { in: connectorIds.length ? connectorIds : ['__none__'] } },
+    ],
+  };
+}
+
+function oneLine(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+function inlineText(rows: SkillRow[], withBodies: boolean): string {
+  const body = rows
+    .map((s) => {
+      const head = `- ${s.title}${s.whenToUse ? ` (when: ${s.whenToUse})` : ''}: ${s.instruction}`;
+      if (!s.body) return head;
+      return withBodies
+        ? `${head}\n\n${s.body}\n`
+        : `${head} (full procedure: ${SKILL_GET_TOOL} "${s.id}")`;
+    })
+    .join('\n');
+  return `## Workspace skills\n${body}`;
+}
+
+function indexText(rows: SkillRow[]): string {
+  const head =
+    `## Workspace skills\n` +
+    `This workspace has ${rows.length} skill${rows.length === 1 ? '' : 's'}: its procedures and rules. ` +
+    `Before a task that matches one, call \`${SKILL_GET_TOOL}\` with its id and follow it. ` +
+    `\`${SKILLS_LIST_TOOL}\` searches them all.`;
+  const lines: string[] = [];
+  let size = head.length;
+  for (const s of rows) {
+    const line = `- \`${s.id}\` ${s.title}${s.whenToUse ? `: ${oneLine(s.whenToUse, INDEX_WHEN_MAX)}` : ''}`;
+    if (size + line.length + 1 > SKILLS_INDEX_BUDGET) break;
+    lines.push(line);
+    size += line.length + 1;
+  }
+  const rest = rows.length - lines.length;
+  if (rest > 0) lines.push(`- …and ${rest} more: call \`${SKILLS_LIST_TOOL}\`.`);
+  return `${head}\n${lines.join('\n')}`;
+}
+
 /** Auto-apply a generated skill only when at/above this confidence. */
 export const SKILL_AUTO_APPLY_MIN = 0.9;
 
@@ -320,9 +401,11 @@ export class KgSkillService {
       }
     }
 
+    // Skills with a procedure are left out: the merge works on the short
+    // rules only and would drop the procedure.
     const where = mcpServerId
-      ? { organizationId, status: 'applied', mcpServerId }
-      : { organizationId, status: 'applied', mcpServerId: null };
+      ? { organizationId, status: 'applied', mcpServerId, body: null }
+      : { organizationId, status: 'applied', mcpServerId: null, body: null };
     const current = await this.prisma.kgSkillSuggestion.findMany({
       where,
       select: {
@@ -391,32 +474,135 @@ export class KgSkillService {
     return { before: current.length, after, model: cfg.model, usage };
   }
 
-  /** Active skills composed into an MCP server's instructions at serve time. */
+  /**
+   * Applied skills as instruction text. `inline` is the full text (procedures
+   * referenced, not pasted), `index` lists titles for skill_get, `auto` picks
+   * inline while it fits SKILLS_INLINE_BUDGET, `full` pastes the procedures
+   * too (the shared /mcp guide, which has no skill_get).
+   */
   async activeSkillsText(
     organizationId: string,
     serverId: string | string[],
     connectorIds: string[],
+    mode: SkillsDelivery | 'full' = 'inline',
   ): Promise<string | null> {
     const serverIds = Array.isArray(serverId) ? serverId : [serverId];
-    const skills = await this.prisma.kgSkillSuggestion.findMany({
-      where: {
-        // Re-stated rather than trusted from the ids, so a stray id can never
-        // pull another workspace's skills into these instructions.
-        organizationId,
-        status: 'applied',
-        OR: [
-          { mcpServerId: { in: serverIds.length ? serverIds : ['__none__'] } },
-          { connectorId: { in: connectorIds.length ? connectorIds : ['__none__'] } },
-        ],
-      },
-      select: { title: true, whenToUse: true, instruction: true },
+    const rows: SkillRow[] = await this.prisma.kgSkillSuggestion.findMany({
+      where: visibleWhere(organizationId, serverIds, connectorIds),
+      select: { id: true, title: true, whenToUse: true, instruction: true, body: true, version: true },
       orderBy: { confidence: 'desc' },
     });
-    if (!skills.length) return null;
-    const body = skills
-      .map((s) => `- ${s.title}${s.whenToUse ? ` (when: ${s.whenToUse})` : ''}: ${s.instruction}`)
-      .join('\n');
-    return `## Workspace skills\n${body}`;
+    if (!rows.length) return null;
+    if (mode === 'full') return inlineText(rows, true);
+    if (mode === 'index') return indexText(rows);
+    const inline = inlineText(rows, false);
+    if (mode === 'inline' || inline.length <= SKILLS_INLINE_BUDGET) return inline;
+    return indexText(rows);
+  }
+
+  /** Whether a caller sees at least one applied skill (offers the skill tools). */
+  async hasVisible(organizationId: string, serverId: string, connectorIds: string[]): Promise<boolean> {
+    const n = await this.prisma.kgSkillSuggestion.count({
+      where: visibleWhere(organizationId, [serverId], connectorIds),
+    });
+    return n > 0;
+  }
+
+  /** skills_list: the caller's visible skills, optionally filtered. */
+  async listForCaller(
+    organizationId: string,
+    serverId: string,
+    connectorIds: string[],
+    query?: string,
+  ) {
+    const q = (query ?? '').trim();
+    const rows = await this.prisma.kgSkillSuggestion.findMany({
+      where: {
+        AND: [
+          visibleWhere(organizationId, [serverId], connectorIds),
+          ...(q
+            ? [
+                {
+                  OR: [
+                    { title: { contains: q, mode: 'insensitive' as const } },
+                    { whenToUse: { contains: q, mode: 'insensitive' as const } },
+                    { instruction: { contains: q, mode: 'insensitive' as const } },
+                  ],
+                },
+              ]
+            : []),
+        ],
+      },
+      select: { id: true, title: true, whenToUse: true, body: true, version: true },
+      orderBy: { confidence: 'desc' },
+      take: 100,
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      whenToUse: r.whenToUse,
+      version: r.version,
+      hasProcedure: !!r.body,
+    }));
+  }
+
+  /**
+   * skill_get: one visible skill by id or exact title (case-insensitive).
+   * Counts the use. Null when the caller cannot see it, the same answer as
+   * for a skill that does not exist.
+   */
+  async getForCaller(
+    organizationId: string,
+    serverId: string,
+    connectorIds: string[],
+    ref: string,
+  ) {
+    const key = (ref ?? '').trim();
+    if (!key) return null;
+    const skill = await this.prisma.kgSkillSuggestion.findFirst({
+      where: {
+        AND: [
+          visibleWhere(organizationId, [serverId], connectorIds),
+          { OR: [{ id: key }, { title: { equals: key, mode: 'insensitive' as const } }] },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        whenToUse: true,
+        instruction: true,
+        body: true,
+        version: true,
+        updatedAt: true,
+      },
+    });
+    if (!skill) return null;
+    // Best effort: a failed counter must never fail the read.
+    this.prisma.kgSkillSuggestion
+      .update({
+        where: { id: skill.id },
+        data: { useCount: { increment: 1 }, lastUsedAt: new Date() },
+      })
+      .catch((e: any) => this.logger.warn(`skill use count failed: ${e?.message ?? e}`));
+    return skill;
+  }
+
+  /** Earlier versions of one skill, newest first. */
+  async versions(organizationId: string, id: string) {
+    await this.owned(organizationId, id);
+    return this.prisma.kgSkillVersion.findMany({
+      where: { skillId: id, organizationId },
+      orderBy: { version: 'desc' },
+      select: {
+        version: true,
+        title: true,
+        whenToUse: true,
+        instruction: true,
+        body: true,
+        editedByUserId: true,
+        createdAt: true,
+      },
+    });
   }
 
   /**
@@ -434,6 +620,7 @@ export class KgSkillService {
       mcpServerId?: string | null;
       status?: string;
       source?: SkillSource;
+      body?: string | null;
     },
   ) {
     const title = (body.title || '').trim().slice(0, 160);
@@ -479,6 +666,7 @@ export class KgSkillService {
         evidenceCount: 0,
         status,
         source: body.source === 'finder' ? 'finder' : 'manual',
+        body: normalizeBody(body.body),
       },
     });
   }
@@ -499,20 +687,57 @@ export class KgSkillService {
     return this.prisma.kgSkillSuggestion.update({ where: { id }, data: { status: 'dismissed' } });
   }
 
+  /**
+   * Edit a skill. A change to its content (title, when, instruction, body)
+   * keeps the previous content as a version and increments `version`; a
+   * status-only change does not.
+   */
   async update(
     organizationId: string,
     id: string,
-    patch: { title?: string; whenToUse?: string; instruction?: string; status?: string },
+    patch: {
+      title?: string;
+      whenToUse?: string;
+      instruction?: string;
+      body?: string | null;
+      status?: string;
+    },
+    editedByUserId?: string,
   ) {
-    await this.owned(organizationId, id);
+    const current = await this.owned(organizationId, id);
     const data: Record<string, unknown> = {};
     if (typeof patch.title === 'string') data.title = patch.title.slice(0, 160);
     if (typeof patch.whenToUse === 'string') data.whenToUse = patch.whenToUse.slice(0, 1000);
     if (typeof patch.instruction === 'string') data.instruction = patch.instruction.slice(0, 2000);
+    if (patch.body !== undefined) data.body = normalizeBody(patch.body);
     if (patch.status && ['pending', 'applied', 'dismissed'].includes(patch.status)) {
       data.status = patch.status;
     }
-    return this.prisma.kgSkillSuggestion.update({ where: { id }, data });
+
+    const changed = (['title', 'whenToUse', 'instruction', 'body'] as const).some(
+      (k) => k in data && data[k] !== (current as any)[k],
+    );
+    if (!changed) {
+      return this.prisma.kgSkillSuggestion.update({ where: { id }, data });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.kgSkillVersion.create({
+        data: {
+          skillId: id,
+          organizationId,
+          version: current.version,
+          title: current.title,
+          whenToUse: current.whenToUse,
+          instruction: current.instruction,
+          body: current.body,
+          editedByUserId: editedByUserId ?? null,
+        },
+      });
+      return tx.kgSkillSuggestion.update({
+        where: { id },
+        data: { ...data, version: { increment: 1 } },
+      });
+    });
   }
 
   async remove(organizationId: string, id: string) {
@@ -520,4 +745,11 @@ export class KgSkillService {
     await this.prisma.kgSkillSuggestion.delete({ where: { id } });
     return { ok: true };
   }
+}
+
+/** Trimmed, capped procedure; empty means none. */
+function normalizeBody(body: string | null | undefined): string | null {
+  if (typeof body !== 'string') return null;
+  const trimmed = body.trim();
+  return trimmed ? trimmed.slice(0, SKILL_BODY_MAX) : null;
 }

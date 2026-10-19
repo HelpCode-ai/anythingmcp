@@ -133,22 +133,48 @@ security event log as `LEARNING_CHANGED`. Settings belong to the workspace
 membership, so the same person can have different settings in two workspaces.
 Cloud and self-hosted behave the same.
 
-### Skills are instructions, not extra tools
+### How skills reach the AI client
 
-> **Important:** applied skills do **not** add tool calls to your MCP surface.
-> All applied skills for a server (its own server-scoped skills plus the
-> connector-scoped ones for its connectors) are concatenated into a single
-> `## Workspace skills` block inside the server's `instructions`. The agent reads
-> them as guidance — the tool list is unchanged.
+A server's applied skills (its own server-scoped skills plus the
+connector-scoped ones of the connectors the caller can use) reach the client in
+two ways:
+
+- **In the instructions** sent on connect, as a `## Workspace skills` block.
+  Each MCP server chooses how (MCP server page → *Workspace skills on connect*):
+  - **Automatic** (default): the full text while it fits in about 6,000
+    characters, otherwise an index of ids, titles and *when to use*.
+  - **Always the full text.**
+  - **Always a list** (the index).
+- **On demand**, with two built-in tools that appear on `/mcp/<serverId>` when
+  the caller can see at least one applied skill:
+  - `skills_list(query?)` lists or searches the skills;
+  - `skill_get(skill)` returns one skill in full, by id or exact title.
+
+  Both read the current version at call time and only return skills the caller
+  can see on that server.
+
+Each skill is also offered as an **MCP prompt**, so clients with a prompt
+picker (slash commands) can start one by hand.
+
+A skill has a short **instruction** (up to 2,000 characters) and an optional
+**procedure** (markdown, up to 20,000 characters) for the full steps of a
+workflow. The procedure is never pasted into the instructions: the full-text
+mode mentions it with its id, and `skill_get` returns it. The Agent Skills
+Finder's `skills_save_to_workspace` can file a procedure too.
+
+The shared `/mcp` endpoint keeps its fixed toolset: its workspace guide
+(`anythingmcp_get_workspace_guide`) returns the skills as text, procedures
+included.
+
+**Versions and usage.** Editing a skill's title, *when to use*, instruction or
+procedure keeps the previous content as a version (see *History* on the skill)
+and increments its version number. Each `skill_get` or prompt use is counted, so
+the Skills page shows how often a skill was opened and when. Consolidate with
+AI leaves skills that have a procedure untouched.
 
 Because composition is dynamic, editing or deleting a skill takes effect on the
-next request — there's no blob to clean up.
-
-> **Scaling note.** Applied skills are concatenated verbatim into the server's
-> instruction block, so with many active skills that block grows and consumes
-> context on every session. Keep the applied set tight: scope skills to the
-> right server/connector, dismiss duplicates, and use **Consolidate with AI** to
-> merge overlapping active skills into fewer rules.
+next request (a stateful session keeps the instructions it started with; the
+tools always read the current version).
 
 ---
 

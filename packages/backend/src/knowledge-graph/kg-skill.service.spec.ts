@@ -281,3 +281,148 @@ describe('KgSkillService.activeSkillsText', () => {
     );
   });
 });
+
+describe('KgSkillService delivery modes', () => {
+  const ORG = 'org-A';
+  const row = (i: number, extra: Partial<any> = {}) => ({
+    id: `s${i}`,
+    title: `Skill ${i}`,
+    whenToUse: `when ${i}`,
+    instruction: `rule ${i}`,
+    body: null,
+    version: 1,
+    ...extra,
+  });
+  const svcWith = (rows: any[]) =>
+    new KgSkillService({ kgSkillSuggestion: { findMany: jest.fn().mockResolvedValue(rows) } } as any, {} as any);
+
+  it('inline keeps the existing format for skills without a procedure', async () => {
+    const text = await svcWith([row(1)]).activeSkillsText(ORG, 'srv', [], 'inline');
+    expect(text).toBe('## Workspace skills\n- Skill 1 (when: when 1): rule 1');
+  });
+
+  it('inline references a procedure instead of pasting it', async () => {
+    const text = await svcWith([row(1, { body: 'STEP-BY-STEP' })]).activeSkillsText(ORG, 'srv', [], 'inline');
+    expect(text).toContain('skill_get "s1"');
+    expect(text).not.toContain('STEP-BY-STEP');
+  });
+
+  it('full pastes the procedure (shared guide)', async () => {
+    const text = await svcWith([row(1, { body: 'STEP-BY-STEP' })]).activeSkillsText(ORG, 'srv', [], 'full');
+    expect(text).toContain('STEP-BY-STEP');
+  });
+
+  it('auto stays inline while small and switches to the index when large', async () => {
+    const small = await svcWith([row(1)]).activeSkillsText(ORG, 'srv', [], 'auto');
+    expect(small).toContain('rule 1');
+
+    const big = Array.from({ length: 40 }, (_, i) => row(i, { instruction: 'x'.repeat(300) }));
+    const text = (await svcWith(big).activeSkillsText(ORG, 'srv', [], 'auto'))!;
+    expect(text).toContain('call `skill_get`');
+    expect(text).toContain('- `s0` Skill 0: when 0');
+    expect(text).not.toContain('x'.repeat(300));
+  });
+
+  it('index lists up to its budget and points to skills_list for the rest', async () => {
+    const many = Array.from({ length: 200 }, (_, i) => row(i, { whenToUse: 'w'.repeat(150) }));
+    const text = (await svcWith(many).activeSkillsText(ORG, 'srv', [], 'index'))!;
+    expect(text.length).toBeLessThan(8_200);
+    expect(text).toMatch(/…and \d+ more: call `skills_list`/);
+  });
+});
+
+describe('KgSkillService.getForCaller', () => {
+  it('reads only visible applied skills of the organization and counts the use', async () => {
+    const skill = { id: 's1', title: 'T', whenToUse: '', instruction: 'I', body: null, version: 2 };
+    const findFirst = jest.fn().mockResolvedValue(skill);
+    const update = jest.fn().mockResolvedValue({});
+    const svc = new KgSkillService({ kgSkillSuggestion: { findFirst, update } } as any, {} as any);
+
+    expect(await svc.getForCaller('org-A', 'srv-1', ['c-1'], 's1')).toBe(skill);
+    const where = findFirst.mock.calls[0][0].where;
+    expect(where.AND[0]).toEqual({
+      organizationId: 'org-A',
+      status: 'applied',
+      OR: [{ mcpServerId: { in: ['srv-1'] } }, { connectorId: { in: ['c-1'] } }],
+    });
+    expect(where.AND[1]).toEqual({ OR: [{ id: 's1' }, { title: { equals: 's1', mode: 'insensitive' } }] });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 's1' },
+      data: { useCount: { increment: 1 }, lastUsedAt: expect.any(Date) },
+    });
+  });
+
+  it('returns null without counting when the skill is not visible', async () => {
+    const update = jest.fn();
+    const svc = new KgSkillService(
+      { kgSkillSuggestion: { findFirst: jest.fn().mockResolvedValue(null), update } } as any,
+      {} as any,
+    );
+    expect(await svc.getForCaller('org-A', 'srv-1', [], 'other-org-skill')).toBeNull();
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('KgSkillService.update versions', () => {
+  const current = {
+    id: 's1',
+    organizationId: 'org-A',
+    title: 'Old',
+    whenToUse: 'w',
+    instruction: 'old rule',
+    body: null,
+    version: 3,
+  };
+
+  function make() {
+    const tx = {
+      kgSkillVersion: { create: jest.fn() },
+      kgSkillSuggestion: { update: jest.fn().mockResolvedValue({ id: 's1', version: 4 }) },
+    };
+    const prisma = {
+      kgSkillSuggestion: {
+        findUnique: jest.fn().mockResolvedValue(current),
+        update: jest.fn().mockResolvedValue({ id: 's1' }),
+      },
+      $transaction: jest.fn(async (fn: any) => fn(tx)),
+    };
+    return { svc: new KgSkillService(prisma as any, {} as any), prisma, tx };
+  }
+
+  it('keeps the previous content as a version and increments it on a content change', async () => {
+    const { svc, tx } = make();
+    await svc.update('org-A', 's1', { instruction: 'new rule', body: 'steps' }, 'u-1');
+    expect(tx.kgSkillVersion.create).toHaveBeenCalledWith({
+      data: {
+        skillId: 's1',
+        organizationId: 'org-A',
+        version: 3,
+        title: 'Old',
+        whenToUse: 'w',
+        instruction: 'old rule',
+        body: null,
+        editedByUserId: 'u-1',
+      },
+    });
+    expect(tx.kgSkillSuggestion.update).toHaveBeenCalledWith({
+      where: { id: 's1' },
+      data: { instruction: 'new rule', body: 'steps', version: { increment: 1 } },
+    });
+  });
+
+  it('does not version a status-only change', async () => {
+    const { svc, prisma } = make();
+    await svc.update('org-A', 's1', { status: 'dismissed' });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.kgSkillSuggestion.update).toHaveBeenCalledWith({
+      where: { id: 's1' },
+      data: { status: 'dismissed' },
+    });
+  });
+
+  it('refuses a skill of another organization', async () => {
+    const { svc, prisma } = make();
+    prisma.kgSkillSuggestion.findUnique.mockResolvedValue({ ...current, organizationId: 'org-B' });
+    await expect(svc.update('org-A', 's1', { title: 'x' })).rejects.toBeInstanceOf(NotFoundException);
+  });
+});

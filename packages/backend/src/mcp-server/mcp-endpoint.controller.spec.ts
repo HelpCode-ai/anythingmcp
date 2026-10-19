@@ -70,7 +70,7 @@ describe('McpEndpointController — tenant isolation', () => {
       kgService as any,
       sessionManager as any,
       grants as any,
-      { create: jest.fn() } as any,
+      { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
   });
 
@@ -335,7 +335,7 @@ describe('McpEndpointController — keys created for a server', () => {
       } as any,
       sessionManager,
       { resolve: jest.fn().mockResolvedValue(null) } as any,
-      { create: jest.fn() } as any,
+      { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
     (controller as any).serveStateless = jest.fn().mockResolvedValue(undefined);
   });
@@ -451,7 +451,7 @@ describe('McpEndpointController — structuredContent', () => {
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
       { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
       { resolve: jest.fn().mockResolvedValue(null) } as any,
-      { create: jest.fn() } as any,
+      { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
 
     const entries = (controller as any).planToolSet({
@@ -524,7 +524,7 @@ describe('McpEndpointController — structuredContent', () => {
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
       { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
       { resolve: jest.fn().mockResolvedValue(null) } as any,
-      { create: jest.fn() } as any,
+      { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
     const entries = (controller as any).planToolSet({
       serverTools: [TOOL],
@@ -590,7 +590,7 @@ describe('McpEndpointController — knowledge graph scope', () => {
       kgService as any,
       {} as any,
       {} as any,
-      { create: jest.fn() } as any,
+      { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
     return { controller: controller as any, kgService };
   }
@@ -957,7 +957,7 @@ describe('McpEndpointController — resources and instructions follow the tool p
       kgService,
       sessionManager as any,
       { resolve: jest.fn() } as any,
-      { create: jest.fn() } as any,
+      { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
     built = undefined;
     // Keep the server the request built instead of serving it over HTTP.
@@ -1062,6 +1062,51 @@ describe('McpEndpointController — resources and instructions follow the tool p
     const onTools = (await on.listTools()).tools.filter((t) => t.name === 'crm_get');
     expect(onTools[0].inputSchema.properties).toHaveProperty('_intent');
     await on.close();
+  });
+
+  it('offers skills_list, skill_get and skill prompts only when the caller sees a skill', async () => {
+    const none = await connect(null);
+    const noneNames = (await none.listTools()).tools.map((t) => t.name);
+    expect(noneNames).not.toContain('skill_get');
+    expect(noneNames).not.toContain('skills_list');
+    await none.close();
+
+    const skill = {
+      id: 'sk-1',
+      title: 'Angebot erstellen',
+      whenToUse: 'When the user asks for a quote',
+      instruction: 'Always draft first.',
+      body: 'STEP 1: draft_quote',
+      version: 2,
+    };
+    const kgSkills = (controller as any).kgSkills;
+    kgSkills.hasVisible = jest.fn().mockResolvedValue(true);
+    kgSkills.listForCaller = jest.fn().mockResolvedValue([
+      { id: 'sk-1', title: skill.title, whenToUse: skill.whenToUse, version: 2, hasProcedure: true },
+    ]);
+    kgSkills.getForCaller = jest.fn(async (_o: string, _s: string, _c: string[], ref: string) =>
+      ref === 'sk-1' ? skill : null,
+    );
+
+    const client = await connect(['crm_get']);
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).toEqual(expect.arrayContaining(['skills_list', 'skill_get']));
+    // Scoped to the server's organization and the caller's visible connectors.
+    expect(kgSkills.hasVisible).toHaveBeenCalledWith(ORG_A, 'srv-1', ['c-crm']);
+
+    const got: any = await client.callTool({ name: 'skill_get', arguments: { skill: 'sk-1' } });
+    expect(got.content[0].text).toContain('STEP 1: draft_quote');
+    expect(got.content[0].text).toContain('version 2');
+    expect(kgSkills.getForCaller).toHaveBeenCalledWith(ORG_A, 'srv-1', ['c-crm'], 'sk-1');
+
+    const missing: any = await client.callTool({ name: 'skill_get', arguments: { skill: 'nope' } });
+    expect(missing.isError).toBe(true);
+
+    const prompts = (await client.listPrompts()).prompts;
+    expect(prompts.map((p) => p.name)).toEqual(['angebot-erstellen']);
+    const prompt = await client.getPrompt({ name: 'angebot-erstellen' });
+    expect((prompt.messages[0].content as any).text).toContain('STEP 1: draft_quote');
+    await client.close();
   });
 
   it('a caller who sees everything keeps the full instructions', async () => {

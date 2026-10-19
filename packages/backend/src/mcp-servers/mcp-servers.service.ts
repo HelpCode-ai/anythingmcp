@@ -1,6 +1,10 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
-import { KgSkillService } from '../knowledge-graph/kg-skill.service';
+import {
+  KgSkillService,
+  SKILLS_DELIVERY_MODES,
+  type SkillsDelivery,
+} from '../knowledge-graph/kg-skill.service';
 import { McpSessionManager } from './mcp-session.manager';
 
 /** What the per-server endpoint may serve as text to one caller. */
@@ -163,7 +167,7 @@ export class McpServersService {
     );
   }
 
-  async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean }) {
+  async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: string }) {
     return this.withSlugConflict(data.slug, () =>
       this.prisma.mcpServerConfig.update({
         where: { id },
@@ -390,10 +394,12 @@ export class McpServersService {
     // skills with its own organization and only its own server/connector ids.
     const orgIds = [...new Set(connectors.map((c) => c.organizationId))];
     for (const orgId of orgIds) {
+      // No skill_get on the shared endpoint: procedures are returned in full.
       const skillsText = await this.kgSkills.activeSkillsText(
         orgId,
         servers.filter((s) => s.organizationId === orgId).map((s) => s.id),
         connectors.filter((c) => c.organizationId === orgId).map((c) => c.id),
+        'full',
       );
       if (skillsText) parts.push(skillsText);
     }
@@ -481,7 +487,7 @@ export class McpServersService {
     serverId: string,
     visibleConnectorIds: string[],
   ): Promise<{
-    server: { instructions: string | null; organizationId: string } | null;
+    server: { instructions: string | null; organizationId: string; skillsDelivery?: string } | null;
     serverConnectors: Array<{
       connectorId: string;
       connector: { id: string; name: string; instructions: string | null };
@@ -489,7 +495,7 @@ export class McpServersService {
   }> {
     const server = await this.prisma.mcpServerConfig.findUnique({
       where: { id: serverId },
-      select: { instructions: true, organizationId: true },
+      select: { instructions: true, organizationId: true, skillsDelivery: true },
     });
     const visible = [...new Set(visibleConnectorIds)];
     if (!server || visible.length === 0) return { server, serverConnectors: [] };
@@ -511,7 +517,7 @@ export class McpServersService {
 
   private async composeInstructions(
     serverId: string,
-    server: { instructions: string | null; organizationId: string } | null,
+    server: { instructions: string | null; organizationId: string; skillsDelivery?: string } | null,
     serverConnectors: Array<{
       connectorId: string;
       connector: { name: string; instructions: string | null };
@@ -537,6 +543,7 @@ export class McpServersService {
           server.organizationId,
           serverId,
           serverConnectors.map((sc) => sc.connectorId),
+          toDelivery(server.skillsDelivery),
         )
       : null;
     if (skillsText) parts.push(skillsText);
@@ -588,4 +595,10 @@ export class McpServersService {
       .replace(/^-|-$/g, '')
       || 'server';
   }
+}
+
+function toDelivery(value: string | undefined): SkillsDelivery {
+  return (SKILLS_DELIVERY_MODES as readonly string[]).includes(value ?? '')
+    ? (value as SkillsDelivery)
+    : 'auto';
 }

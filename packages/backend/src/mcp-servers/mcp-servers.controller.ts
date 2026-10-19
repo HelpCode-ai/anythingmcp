@@ -15,7 +15,8 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../common/pagination.dto';
 import { AuthGuard } from '@nestjs/passport';
-import { IsString, IsOptional, IsBoolean, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsArray, IsIn } from 'class-validator';
+import { SKILLS_DELIVERY_MODES, type SkillsDelivery } from '../knowledge-graph/kg-skill.service';
 import { McpServersService } from './mcp-servers.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { PrismaService } from '../common/prisma.service';
@@ -73,6 +74,15 @@ class UpdateMcpServerDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    enum: SKILLS_DELIVERY_MODES,
+    description:
+      'How applied skills reach AI clients on connect: auto (full text while small, else an index for skill_get), inline (always the full text), index (always the index).',
+  })
+  @IsOptional()
+  @IsIn(SKILLS_DELIVERY_MODES as unknown as string[])
+  skillsDelivery?: SkillsDelivery;
 }
 
 class AssignConnectorsDto {

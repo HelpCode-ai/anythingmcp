@@ -621,6 +621,10 @@ model McpServerConfig {
   version      String  @default("1.0.0")
   isActive     Boolean @default(true) @map("is_active")
   instructions String? @db.Text // custom instructions prepended to composed connector instructions
+  /// How applied skills reach the model on initialize: `auto` (full text
+  /// while small, else an index pointing to skill_get), `inline` (always the
+  /// full text) or `index` (always the index).
+  skillsDelivery String @default("auto") @map("skills_delivery")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1379,12 +1383,40 @@ model KgSkillSuggestion {
   // consolidated) | finder (skills_save_to_workspace). Generation only
   // replaces its own pending `llm` rows.
   source        String   @default("manual")
+  // Optional long procedure (markdown). Never pasted into the instructions:
+  // served on demand by skill_get.
+  body          String?  @db.Text
+  // Incremented on every edit of title / whenToUse / instruction / body; the
+  // previous content is kept in kg_skill_versions.
+  version       Int      @default(1)
+  useCount      Int      @default(0) @map("use_count")
+  lastUsedAt    DateTime? @map("last_used_at")
+  versions      KgSkillVersion[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([organizationId])
   @@map("kg_skill_suggestions")
+}
+
+// Earlier content of a workspace skill, written when an edit changes it.
+model KgSkillVersion {
+  id              String            @id @default(cuid())
+  skillId         String            @map("skill_id")
+  skill           KgSkillSuggestion @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  organizationId  String            @map("organization_id")
+  version         Int
+  title           String
+  whenToUse       String            @db.Text @map("when_to_use")
+  instruction     String            @db.Text
+  body            String?           @db.Text
+  editedByUserId  String?           @map("edited_by_user_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  @@unique([skillId, version])
+  @@index([organizationId])
+  @@map("kg_skill_versions")
 }
 
 // A submitted LLM batch job (cloud cron, cost-saver). Tracks the provider batch

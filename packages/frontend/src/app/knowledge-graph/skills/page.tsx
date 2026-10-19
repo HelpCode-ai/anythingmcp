@@ -8,6 +8,7 @@ import {
   mcpServers as mcpServersApi,
   connectors as connectorsApi,
   type KgSkill,
+  type KgSkillVersion,
 } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
@@ -212,9 +213,11 @@ export default function SkillsPage() {
       {/* The header already carries the way back to the graph, so this stays
           a description and nothing else. */}
       <p className="text-[13px] leading-relaxed text-[var(--text-2)] mb-4">
-        Rules inferred from the intents behind your tool calls, scoped to one connector or to a
-        whole MCP server. <span className="text-[var(--text)]">Active</span> skills are composed
-        into that server&apos;s instructions automatically.
+        Rules and procedures for recurring tasks, scoped to one connector or to a whole MCP
+        server. <span className="text-[var(--text)]">Active</span> skills reach that server&apos;s AI
+        clients on connect, as full text or as a list they open with{' '}
+        <code className="font-mono text-[12px]">skill_get</code> (set per server). Long procedures
+        are always opened on demand.
       </p>
       {status && <p className="text-[12px] text-[var(--text-3)] mb-3">{status}</p>}
 
@@ -349,7 +352,23 @@ function SkillCard({
   const [title, setTitle] = useState(s.title);
   const [whenToUse, setWhenToUse] = useState(s.whenToUse);
   const [instruction, setInstruction] = useState(s.instruction);
+  const [procedure, setProcedure] = useState(s.body ?? '');
   const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<KgSkillVersion[] | null>(null);
+  const [historyError, setHistoryError] = useState('');
+
+  const toggleHistory = async () => {
+    if (history) {
+      setHistory(null);
+      return;
+    }
+    setHistoryError('');
+    try {
+      setHistory(await knowledgeGraph.skills.versions(token, s.id));
+    } catch (e: any) {
+      setHistoryError(e.message || 'Could not load the history');
+    }
+  };
 
   const scope = s.mcpServer?.name
     ? `server: ${s.mcpServer.name}`
@@ -397,6 +416,14 @@ function SkillCard({
             className={cn(textareaCls, 'bg-[var(--surface-2)]')}
             placeholder="Instruction"
           />
+          <textarea
+            value={procedure}
+            onChange={(e) => setProcedure(e.target.value)}
+            rows={6}
+            maxLength={20000}
+            className={cn(textareaCls, 'bg-[var(--surface-2)] font-mono text-[12.5px]')}
+            placeholder="Full procedure (optional, markdown): steps, field rules, output format. Opened on demand with skill_get."
+          />
           <div className="flex gap-2">
             <Button
               variant="primary"
@@ -404,7 +431,12 @@ function SkillCard({
               disabled={busy}
               onClick={() =>
                 run(async () => {
-                  await knowledgeGraph.skills.update(token, s.id, { title, whenToUse, instruction });
+                  await knowledgeGraph.skills.update(token, s.id, {
+                    title,
+                    whenToUse,
+                    instruction,
+                    body: procedure.trim() ? procedure : null,
+                  });
                   setEditing(false);
                 })
               }
@@ -431,8 +463,13 @@ function SkillCard({
             </Badge>
           </div>
           <p className="text-[11.5px] text-[var(--text-3)]">
-            {scope} · confidence {s.confidence.toFixed(2)}
+            {scope} · {sourceLabel(s.source)} · v{s.version ?? 1}
+            {s.source === 'llm' ? ` · confidence ${s.confidence.toFixed(2)}` : ''}
             {s.evidenceCount ? ` · ${s.evidenceCount} example(s)` : ''}
+            {' · '}
+            {s.useCount
+              ? `opened ${s.useCount}×${s.lastUsedAt ? `, last ${new Date(s.lastUsedAt).toLocaleDateString()}` : ''}`
+              : 'not opened yet'}
           </p>
         </div>
         {isAdmin && (
@@ -483,8 +520,49 @@ function SkillCard({
       <p className="text-[13px] leading-[1.55] text-[var(--text)]">
         <span className="text-[var(--text-3)]">Do:</span> {s.instruction}
       </p>
+      {s.body && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[12.5px] text-[var(--text-2)]">
+            Procedure ({s.body.length.toLocaleString()} characters)
+          </summary>
+          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 font-mono text-[12px] leading-relaxed text-[var(--text)]">
+            {s.body}
+          </pre>
+        </details>
+      )}
+      {(s.version ?? 1) > 1 && (
+        <div className="mt-2">
+          <button onClick={toggleHistory} className="text-[12px] text-[var(--brand)] hover:underline">
+            {history ? 'Hide history' : `History (${(s.version ?? 1) - 1} earlier version${(s.version ?? 1) > 2 ? 's' : ''})`}
+          </button>
+          {historyError && <p className="text-[12px] text-[var(--danger)]">{historyError}</p>}
+          {history && (
+            <ol className="mt-2 flex flex-col gap-2">
+              {history.map((v) => (
+                <li key={v.version} className="rounded-[9px] border border-[var(--border)] p-3 text-[12.5px]">
+                  <p className="mb-1 text-[11.5px] text-[var(--text-3)]">
+                    v{v.version} · replaced {new Date(v.createdAt).toLocaleString()}
+                  </p>
+                  <p className="font-medium text-[var(--text)]">{v.title}</p>
+                  {v.whenToUse && <p className="text-[var(--text-2)]">When: {v.whenToUse}</p>}
+                  <p className="text-[var(--text-2)]">Do: {v.instruction}</p>
+                  {v.body && (
+                    <p className="text-[var(--text-3)]">Procedure: {v.body.length.toLocaleString()} characters</p>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
     </Card>
   );
+}
+
+function sourceLabel(source?: string): string {
+  if (source === 'llm') return 'AI-generated';
+  if (source === 'finder') return 'from Skills Finder';
+  return 'written by hand';
 }
 
 function NewSkillForm({
@@ -501,6 +579,7 @@ function NewSkillForm({
   const [title, setTitle] = useState('');
   const [whenToUse, setWhenToUse] = useState('');
   const [instruction, setInstruction] = useState('');
+  const [procedure, setProcedure] = useState('');
   const [scope, setScope] = useState(''); // "srv:<id>" | "con:<id>" | ""
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
@@ -512,6 +591,7 @@ function NewSkillForm({
     setSaving(true);
     setErr('');
     const body: any = { title, whenToUse, instruction };
+    if (procedure.trim()) body.body = procedure;
     if (scope.startsWith('srv:')) body.mcpServerId = scope.slice(4);
     else if (scope.startsWith('con:')) body.connectorId = scope.slice(4);
     try {
@@ -519,6 +599,7 @@ function NewSkillForm({
       setTitle('');
       setWhenToUse('');
       setInstruction('');
+      setProcedure('');
       setScope('');
       onCreated();
     } catch (e: any) {
@@ -550,6 +631,14 @@ function NewSkillForm({
           rows={3}
           placeholder="Instruction for the agent (imperative guidance)"
           className={textareaCls}
+        />
+        <textarea
+          value={procedure}
+          onChange={(e) => setProcedure(e.target.value)}
+          rows={5}
+          maxLength={20000}
+          placeholder="Full procedure (optional, markdown): steps, field rules, output format. The AI opens it with skill_get when the skill applies."
+          className={cn(textareaCls, 'font-mono text-[12.5px]')}
         />
         <select
           value={scope}

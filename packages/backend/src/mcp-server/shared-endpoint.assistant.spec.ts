@@ -36,7 +36,7 @@ function build(setup: unknown) {
       resolve: jest.fn().mockResolvedValue(null),
       clientRedirectUris: jest.fn(async (id?: string) => (id ? (REDIRECTS[id] ?? []) : [])),
     } as any,
-    { create: jest.fn() } as any,
+    { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     { get: () => setup } as any,
   );
   (controller as any).serveStateless = jest.fn(

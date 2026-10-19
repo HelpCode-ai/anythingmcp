@@ -690,8 +690,9 @@ export class KgService {
     if (skills.length) {
       out.push('', `## Workspace skills (${skills.length})`, '');
       for (const sk of skills) {
-        out.push(`- **${sk.title}**${sk.whenToUse ? `: ${oneLine(sk.whenToUse)}` : ''}`);
+        out.push(`- **${sk.title}** (\`${sk.id}\`)${sk.whenToUse ? `: ${oneLine(sk.whenToUse)}` : ''}`);
       }
+      out.push('', 'Read a skill in full with `skill_get` and its id.');
     }
     return out.join('\n');
   }
@@ -710,10 +711,10 @@ export class KgService {
         status: 'applied',
         ...(or.length ? { OR: or } : {}),
       },
-      select: { title: true, whenToUse: true },
+      select: { id: true, title: true, whenToUse: true },
       take: 25,
     });
-    return rows.map((r) => ({ title: r.title, whenToUse: r.whenToUse }));
+    return rows.map((r) => ({ id: r.id, title: r.title, whenToUse: r.whenToUse }));
   }
 
   async deleteEdge(organizationId: string, edgeId: string) {

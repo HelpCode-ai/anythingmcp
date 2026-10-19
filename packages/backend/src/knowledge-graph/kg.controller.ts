@@ -21,10 +21,11 @@ import {
   IsIn,
   IsOptional,
   IsString,
+  MaxLength,
 } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { KgService } from './kg.service';
-import { KgSkillService } from './kg-skill.service';
+import { KgSkillService, SKILL_BODY_MAX } from './kg-skill.service';
 import {
   KgLearningService,
   LEARNING_BULK_MAX,
@@ -44,9 +45,17 @@ class CreateSkillDto {
   @IsString()
   whenToUse?: string;
 
-  @ApiProperty({ description: 'The rule or procedure (stored up to 2000 characters).' })
+  @ApiProperty({ description: 'The rule (stored up to 2000 characters).' })
   @IsString()
   instruction: string;
+
+  @ApiPropertyOptional({
+    description: `Optional full procedure in markdown (up to ${SKILL_BODY_MAX} characters). Served by skill_get, never pasted into the instructions.`,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(SKILL_BODY_MAX)
+  body?: string | null;
 
   @ApiPropertyOptional({ description: 'Scope the skill to one connector of this workspace.' })
   @IsOptional()
@@ -79,6 +88,12 @@ class UpdateSkillDto {
   @IsOptional()
   @IsString()
   instruction?: string;
+
+  @ApiPropertyOptional({ description: 'Full procedure in markdown; empty string or null removes it.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(SKILL_BODY_MAX)
+  body?: string | null;
 
   @ApiPropertyOptional({ enum: SKILL_STATUSES })
   @IsOptional()
@@ -257,7 +272,14 @@ export class KgController {
     @Param('id') id: string,
     @Body() body: UpdateSkillDto,
   ) {
-    return this.skills.update(req.user.organizationId, id, body);
+    return this.skills.update(req.user.organizationId, id, body, req.user.sub);
+  }
+
+  @Get('skills/:id/versions')
+  @Roles('ADMIN', 'EDITOR')
+  @ApiOperation({ summary: 'Earlier versions of a skill, newest first' })
+  async skillVersions(@Req() req: any, @Param('id') id: string) {
+    return this.skills.versions(req.user.organizationId, id);
   }
 
   // ── Who contributes to skill learning ────────────────────────────────────

@@ -65,7 +65,12 @@ import { DynamicMcpTools } from './dynamic-mcp-tools';
 import { RolesService } from '../roles/roles.service';
 import { registerDemoTools } from './mcp-demo.tools';
 import { KgService } from '../knowledge-graph/kg.service';
-import { KgSkillService } from '../knowledge-graph/kg-skill.service';
+import {
+  KgSkillService,
+  SKILL_BODY_MAX,
+  SKILL_GET_TOOL,
+  SKILLS_LIST_TOOL,
+} from '../knowledge-graph/kg-skill.service';
 import { outputSchemaToZodShape } from '../connectors/output-schema.util';
 import {
   annotationsSignature,
@@ -177,6 +182,9 @@ interface ToolSetParams {
   /** Optional text appended as a trailing content block to every successful
    *  tool result (used by the public demo to say where the answer came from). */
   resultFooter?: string;
+  /** Set when the caller can see at least one applied workspace skill: offers
+   *  skills_list / skill_get, scoped to the server's organization. */
+  skills?: { organizationId: string };
 }
 
 interface InvocationContext {
@@ -1107,12 +1115,21 @@ export class McpEndpointController {
         ? await this.kgService.isEnabled(invocationContext.organizationId)
         : false;
 
+    // Workspace skills belong to the server's organization and follow the
+    // caller's visible connectors, like the instructions above.
+    const skillsVisible = await this.kgSkills.hasVisible(
+      mcpServerConfig.organizationId,
+      serverId,
+      visibleConnectorIds,
+    );
+
     const params: ToolSetParams = {
       serverTools,
       allowedToolIds,
       captureIntent,
       kgEnabled,
       invocationContext,
+      skills: skillsVisible ? { organizationId: mcpServerConfig.organizationId } : undefined,
     };
 
     // Register this server's tool surface onto the per-request McpServer.
@@ -1120,6 +1137,14 @@ export class McpEndpointController {
     const handles = this.registerAll(mcpServer, entries, serverId);
     const signature = this.aggregateSig(entries);
     this.registerKgResource(mcpServer, params);
+    if (skillsVisible) {
+      await this.registerSkillPrompts(
+        mcpServer,
+        mcpServerConfig.organizationId,
+        serverId,
+        visibleConnectorIds,
+      );
+    }
     this.registerServerResources(
       mcpServer,
       planServerResources({
@@ -1449,12 +1474,18 @@ export class McpEndpointController {
         );
       }
 
+      const skillsVisible = await this.kgSkills.hasVisible(
+        serverOrganizationId,
+        serverId,
+        callerConnectorIds(serverTools, allowedToolIds, connectorIds),
+      );
       const entries = this.planToolSet({
         serverTools,
         allowedToolIds,
         captureIntent,
         kgEnabled,
         invocationContext,
+        skills: skillsVisible ? { organizationId: serverOrganizationId } : undefined,
       });
       const signature = this.aggregateSig(entries);
       if (signature === session.signature) return; // nothing changed here
@@ -1682,6 +1713,76 @@ export class McpEndpointController {
       });
     }
 
+    // Workspace skills on demand. The instructions carry the skills as text
+    // or, when there are many or they hold long procedures, an index that
+    // points here. Both tools read at call time, so an edited skill is served
+    // fresh, and only skills the caller can see on this server.
+    if (params.skills && invocationContext.mcpServerId) {
+      const orgId = params.skills.organizationId;
+      const serverId = invocationContext.mcpServerId;
+      const scope = this.kgScopeConnectorIds(params);
+      if (!registeredNames.has(SKILLS_LIST_TOOL)) {
+        entries.push({
+          name: SKILLS_LIST_TOOL,
+          sig: `${SKILLS_LIST_TOOL}:v1`,
+          register: (mcpServer: McpServer) =>
+            mcpServer.registerTool(
+              SKILLS_LIST_TOOL,
+              {
+                description:
+                  "Lists this workspace's skills: its procedures and rules for recurring tasks. " +
+                  'Returns id, title and when to use each. Pass a query to search titles, ' +
+                  `"when to use" and rules. Then call ${SKILL_GET_TOOL} with the id of the one that fits.`,
+                inputSchema: {
+                  query: z.string().max(200).optional().describe('Words to search for, e.g. "quote" or "invoice".'),
+                },
+                annotations: { title: 'List workspace skills', readOnlyHint: true, openWorldHint: false },
+              },
+              async (args: { query?: string }) => {
+                const skills = await this.kgSkills.listForCaller(orgId, serverId, scope, args?.query);
+                return {
+                  content: [{ type: 'text' as const, text: JSON.stringify({ skills }, null, 2) }],
+                };
+              },
+            ) as unknown as ToolHandle,
+        });
+      }
+      if (!registeredNames.has(SKILL_GET_TOOL)) {
+        entries.push({
+          name: SKILL_GET_TOOL,
+          sig: `${SKILL_GET_TOOL}:v1`,
+          register: (mcpServer: McpServer) =>
+            mcpServer.registerTool(
+              SKILL_GET_TOOL,
+              {
+                description:
+                  'Returns one workspace skill in full: when to use it, its rule and, if it has one, ' +
+                  'the complete procedure. Call it before a task the skill covers and follow it.',
+                inputSchema: {
+                  skill: z.string().min(1).max(200).describe('The skill id, or its exact title.'),
+                },
+                annotations: { title: 'Get workspace skill', readOnlyHint: true, openWorldHint: false },
+              },
+              async (args: { skill: string }) => {
+                const found = await this.kgSkills.getForCaller(orgId, serverId, scope, args.skill);
+                if (!found) {
+                  return {
+                    isError: true,
+                    content: [
+                      {
+                        type: 'text' as const,
+                        text: `No skill "${args.skill}" on this server. Call ${SKILLS_LIST_TOOL} to see the available ones.`,
+                      },
+                    ],
+                  };
+                }
+                return { content: [{ type: 'text' as const, text: skillAsText(found) }] };
+              },
+            ) as unknown as ToolHandle,
+        });
+      }
+    }
+
     // Companion to the Agent Skills Finder connector: its tools find and read
     // a skill, this one files it as a *suggested* workspace skill. It lives
     // here rather than in the adapter because it writes to this workspace,
@@ -1730,6 +1831,14 @@ export class McpEndpointController {
                   .string()
                   .max(80)
                   .describe('SPDX id from skills_repo_info (e.g. "MIT", "Apache-2.0"), or "unknown".'),
+                procedure: z
+                  .string()
+                  .max(SKILL_BODY_MAX)
+                  .optional()
+                  .describe(
+                    'Optional: the full procedure in markdown (steps, templates, output format), in your own words. ' +
+                      `Served on demand by ${SKILL_GET_TOOL}, never pasted into the instructions.`,
+                  ),
               },
               annotations: {
                 title: 'Save skill to workspace',
@@ -1745,6 +1854,7 @@ export class McpEndpointController {
               instruction: string;
               sourceUrl: string;
               license: string;
+              procedure?: string;
             }) => {
               const saved = await this.kgSkills.create(orgId, {
                 title: args.title,
@@ -1753,6 +1863,7 @@ export class McpEndpointController {
                 mcpServerId: serverId,
                 status: 'pending',
                 source: 'finder',
+                body: args.procedure,
               });
               const result = {
                 saved: true,
@@ -1842,6 +1953,53 @@ export class McpEndpointController {
    * kg_how_to_obtain one entity at a time. Same scope as that tool. The content
    * is built when the resource is read, so it is never staler than the graph.
    */
+  /**
+   * Offers each skill the caller can see as an MCP prompt, so clients with a
+   * prompt picker (slash commands) can start one by hand. Built with the
+   * server like the resources; the text is read when the prompt is used.
+   */
+  private async registerSkillPrompts(
+    mcpServer: McpServer,
+    organizationId: string,
+    serverId: string,
+    visibleConnectorIds: string[],
+  ): Promise<void> {
+    const skills = await this.kgSkills.listForCaller(organizationId, serverId, visibleConnectorIds);
+    const used = new Set<string>();
+    for (const skill of skills) {
+      const name = uniquePromptName(skill.title, used);
+      try {
+        mcpServer.registerPrompt(
+          name,
+          { title: skill.title, description: skill.whenToUse || undefined },
+          async () => {
+            const found = await this.kgSkills.getForCaller(
+              organizationId,
+              serverId,
+              visibleConnectorIds,
+              skill.id,
+            );
+            return {
+              messages: [
+                {
+                  role: 'user' as const,
+                  content: {
+                    type: 'text' as const,
+                    text: found
+                      ? `Follow this workspace skill for my next request.\n\n${skillAsText(found)}`
+                      : 'This skill is no longer available.',
+                  },
+                },
+              ],
+            };
+          },
+        );
+      } catch (err: any) {
+        this.logger.warn(`Skill prompt "${name}" not registered: ${err?.message ?? err}`);
+      }
+    }
+  }
+
   private registerKgResource(mcpServer: McpServer, params: ToolSetParams): void {
     const { kgEnabled, invocationContext } = params;
     const orgId = invocationContext.organizationId;
@@ -1909,4 +2067,36 @@ export class McpEndpointController {
   ): Record<string, unknown> {
     return stripEnvVarParams(schema, envVars);
   }
+}
+
+/** One skill as the text a model reads (skill_get, prompts). */
+function skillAsText(skill: {
+  id: string;
+  title: string;
+  whenToUse: string;
+  instruction: string;
+  body: string | null;
+  version: number;
+}): string {
+  const parts = [`# ${skill.title}`, `id: ${skill.id} · version ${skill.version}`];
+  if (skill.whenToUse) parts.push(`When to use: ${skill.whenToUse}`);
+  parts.push(`Rule: ${skill.instruction}`);
+  if (skill.body) parts.push(`## Procedure\n${skill.body}`);
+  return parts.join('\n\n');
+}
+
+/** A prompt name from a skill title: lower-case slug, unique on the server. */
+function uniquePromptName(title: string, used: Set<string>): string {
+  const base =
+    title
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || 'skill';
+  let name = base;
+  for (let n = 2; used.has(name); n++) name = `${base}-${n}`;
+  used.add(name);
+  return name;
 }

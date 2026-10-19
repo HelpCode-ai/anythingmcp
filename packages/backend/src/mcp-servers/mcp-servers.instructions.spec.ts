@@ -46,7 +46,7 @@ describe('McpServersService — caller-scoped instructions and resources', () =>
     expect(text).toContain('Use the CRM.');
     expect(text).not.toContain('Ledger rules.');
     expect(text).not.toContain('Fibu');
-    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-A', 'srv-1', ['c-crm']);
+    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-A', 'srv-1', ['c-crm'], 'auto');
   });
 
   it('scopes the assignment query to the visible ids AND the server organization', async () => {
@@ -64,7 +64,7 @@ describe('McpServersService — caller-scoped instructions and resources', () =>
     const text = await service.getComposedInstructions('srv-1', []);
     expect(text).toBe('SERVER-GUIDANCE\n\n## Workspace skills\n- server-wide');
     expect(prisma.mcpServerConnector.findMany).not.toHaveBeenCalled();
-    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-A', 'srv-1', []);
+    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-A', 'srv-1', [], 'auto');
   });
 
   it('getVisibleContent returns the visible connectors with instructions and their stored rows', async () => {
@@ -139,8 +139,8 @@ describe('McpServersService — shared guide skills per workspace', () => {
     const text = await service.getSharedGuide({ connectorIds: ['c-a', 'c-b'], serverIds: ['srv-a'] });
 
     expect(kgSkills.activeSkillsText).toHaveBeenCalledTimes(2);
-    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-A', ['srv-a'], ['c-a']);
-    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-B', [], ['c-b']);
+    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-A', ['srv-a'], ['c-a'], 'full');
+    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-B', [], ['c-b'], 'full');
     expect(text).toContain('- org-A');
     expect(text).toContain('- org-B');
   });

@@ -98,7 +98,7 @@ function build(
       resolve: jest.fn().mockResolvedValue(opts.grant ?? null),
       clientRedirectUris: jest.fn(async (id?: string) => (id ? (REDIRECTS[id] ?? []) : [])),
     } as any,
-    { create: jest.fn() } as any,
+    { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
   );
 
   // Capture the per-request server instead of serving HTTP, then talk to it
