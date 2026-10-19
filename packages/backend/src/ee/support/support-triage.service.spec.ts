@@ -1,6 +1,7 @@
 import {
   SupportTriageService,
   fallbackTriage,
+  normaliseAttrs,
   parseTriage,
   segmentTags,
   triageNote,
@@ -57,6 +58,13 @@ describe('support triage helpers', () => {
     expect(parseTriage({ category: 'billing', priority: 'Low' }, {})?.priority).toBe('High');
     expect(parseTriage({ category: 'bug', priority: 'Low' }, { deployment: 'dedicated' })?.priority).toBe('High');
     expect(parseTriage(null, {})).toBeNull();
+  });
+
+  it('reads only the known contact attributes', () => {
+    const raw = JSON.parse('{"plan":"trial","__proto__":{"x":1},"constructor":"y","other":"z","connectors":3}');
+    const out = normaliseAttrs(raw);
+    expect(out).toEqual({ plan: 'trial', connectors: '3' });
+    expect(({} as any).x).toBeUndefined();
   });
 
   it('fallback keeps enterprise conversations at High', () => {

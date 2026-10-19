@@ -175,12 +175,31 @@ export class SupportTriageService {
   }
 }
 
-function normaliseAttrs(raw: unknown): Record<string, string> {
+/** The contact attributes SupportIdentityService sets; anything else is ignored. */
+const KNOWN_ATTRS = [
+  'organization_id',
+  'organization_name',
+  'instance',
+  'deployment',
+  'plan',
+  'license_status',
+  'trial_ends_at',
+  'role',
+  'connectors',
+  'connector_issues',
+  'signed_up_at',
+  'email_verified',
+] as const;
+
+export function normaliseAttrs(raw: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (!raw || typeof raw !== 'object') return out;
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+  const src = raw as Record<string, unknown>;
+  for (const key of KNOWN_ATTRS) {
+    if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
+    const v = src[key];
     if (v === null || v === undefined) continue;
-    out[k] = typeof v === 'string' ? v : JSON.stringify(v);
+    out[key] = (typeof v === 'string' ? v : JSON.stringify(v)).slice(0, 1000);
   }
   return out;
 }
