@@ -69,6 +69,15 @@ describe('support config', () => {
         LIBREDESK_WEBHOOK_SECRET: 'w',
       } as any)?.baseUrl,
     ).toBe('https://desk.test');
+    const triage = {
+      SUPPORT_CHAT_URL: 'https://desk.test',
+      LIBREDESK_API_KEY: 'k',
+      LIBREDESK_API_SECRET: 's',
+      LIBREDESK_WEBHOOK_SECRET: 'w',
+    } as any;
+    expect(supportTriageConfig(triage)?.aiAssistantUserId).toBeNull();
+    expect(supportTriageConfig({ ...triage, LIBREDESK_AI_ASSISTANT_USER_ID: '5' })?.aiAssistantUserId).toBe(5);
+    expect(supportTriageConfig({ ...triage, LIBREDESK_AI_ASSISTANT_USER_ID: 'x' })?.aiAssistantUserId).toBeNull();
   });
 
   it('instance host comes from FRONTEND_URL', () => {

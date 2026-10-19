@@ -61,6 +61,12 @@ export class LibredeskClient {
     });
   }
 
+  assignUser(uuid: string, userId: number) {
+    return this.call('PUT', `/api/v1/conversations/${encodeURIComponent(uuid)}/assignee/user`, {
+      assignee_id: userId,
+    });
+  }
+
   addPrivateNote(uuid: string, html: string) {
     return this.call('POST', `/api/v1/conversations/${encodeURIComponent(uuid)}/messages`, {
       message: html,

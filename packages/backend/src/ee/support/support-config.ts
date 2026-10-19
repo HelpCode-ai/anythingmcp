@@ -24,6 +24,12 @@ export interface SupportTriageConfig {
   apiKey: string;
   apiSecret: string;
   webhookSecret: string;
+  /**
+   * Libredesk user id of the AI assistant. When set, chats in categories it
+   * can handle are assigned to it so it answers from the knowledge base;
+   * the rest go straight to a human team.
+   */
+  aiAssistantUserId: number | null;
 }
 
 const trimUrl = (v: string | undefined) => (v || '').trim().replace(/\/+$/, '');
@@ -42,7 +48,14 @@ export function supportTriageConfig(env: NodeJS.ProcessEnv = process.env): Suppo
   const apiSecret = (env.LIBREDESK_API_SECRET || '').trim();
   const webhookSecret = (env.LIBREDESK_WEBHOOK_SECRET || '').trim();
   if (!baseUrl || !apiKey || !apiSecret || !webhookSecret) return null;
-  return { baseUrl, apiKey, apiSecret, webhookSecret };
+  const assistant = Number.parseInt(env.LIBREDESK_AI_ASSISTANT_USER_ID || '', 10);
+  return {
+    baseUrl,
+    apiKey,
+    apiSecret,
+    webhookSecret,
+    aiAssistantUserId: Number.isInteger(assistant) && assistant > 0 ? assistant : null,
+  };
 }
 
 export function supportModuleEnabled(env: NodeJS.ProcessEnv = process.env): boolean {

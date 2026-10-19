@@ -18,6 +18,18 @@ export const TRIAGE_CATEGORIES = [
 ] as const;
 export type TriageCategory = (typeof TRIAGE_CATEGORIES)[number];
 
+/**
+ * Categories the AI assistant may answer on its own. Billing, bugs, feature
+ * requests and sales always go to a person.
+ */
+export const AI_HANDLED_CATEGORIES: readonly TriageCategory[] = [
+  'connector-setup',
+  'connector-error',
+  'new-connector-request',
+  'account',
+  'other',
+];
+
 const PRIORITIES = ['Low', 'Medium', 'High'] as const;
 type Priority = (typeof PRIORITIES)[number];
 
@@ -81,6 +93,10 @@ export class SupportTriageService {
     return cfg ? new LibredeskClient(cfg) : null;
   }
 
+  protected aiAssistantUserId(): number | null {
+    return supportTriageConfig()?.aiAssistantUserId ?? null;
+  }
+
   protected llm(): LlmConfig | null {
     return resolveLlmConfig();
   }
@@ -108,7 +124,7 @@ export class SupportTriageService {
     if (!customerText) customerText = (conv.last_message || conv.subject || '').trim();
 
     const result = (await this.classify(customerText, attrs, conv.inbox_channel)) ?? fallbackTriage(attrs);
-    await this.apply(desk, conv.uuid, result, attrs);
+    await this.apply(desk, conv.uuid, result, attrs, conv.inbox_channel);
     return result;
   }
 
@@ -137,18 +153,33 @@ export class SupportTriageService {
     }
   }
 
-  private async apply(desk: LibredeskClient, uuid: string, r: TriageResult, attrs: Record<string, string>) {
+  private async apply(
+    desk: LibredeskClient,
+    uuid: string,
+    r: TriageResult,
+    attrs: Record<string, string>,
+    channel?: string,
+  ) {
     const enterprise = isEnterprise(attrs);
+    const assistant = this.aiAssistantUserId();
+    const toAssistant = routeToAssistant(r, attrs, channel, assistant);
     const tags = [r.category, ...segmentTags(attrs), 'ai-triaged'];
+    if (toAssistant) tags.push('ai-assistant');
     const steps: Array<[string, () => Promise<unknown>]> = [
       ['tags', () => desk.addTags(uuid, tags)],
       ['priority', () => desk.setPriority(uuid, r.priority)],
+      // Team first: Libredesk clears the user assignee when the team changes.
       ['team', async () => {
         const id = await this.teamId(desk, enterprise ? 'Enterprise' : 'Support');
         if (id) await desk.assignTeam(uuid, id);
       }],
       ['note', () => desk.addPrivateNote(uuid, triageNote(r, attrs))],
     ];
+    if (toAssistant && assistant) {
+      // Assigning the assistant starts its reply; it hands back to the
+      // Support team when it cannot help.
+      steps.push(['assistant', () => desk.assignUser(uuid, assistant)]);
+    }
     for (const [name, run] of steps) {
       try {
         await run();
@@ -202,6 +233,21 @@ export function normaliseAttrs(raw: unknown): Record<string, string> {
     out[key] = (typeof v === 'string' ? v : JSON.stringify(v)).slice(0, 1000);
   }
   return out;
+}
+
+/** Live chat, a category the assistant handles, and never enterprise. */
+export function routeToAssistant(
+  r: TriageResult,
+  attrs: Record<string, string>,
+  channel: string | undefined,
+  assistantUserId: number | null,
+): boolean {
+  return (
+    !!assistantUserId &&
+    channel === 'livechat' &&
+    !isEnterprise(attrs) &&
+    AI_HANDLED_CATEGORIES.includes(r.category)
+  );
 }
 
 export function isEnterprise(attrs: Record<string, string>): boolean {

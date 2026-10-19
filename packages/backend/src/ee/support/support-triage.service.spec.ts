@@ -15,6 +15,7 @@ function fakeDesk(messages: any[] = []) {
     addTags: jest.fn().mockResolvedValue(true),
     setPriority: jest.fn().mockResolvedValue(true),
     assignTeam: jest.fn().mockResolvedValue(true),
+    assignUser: jest.fn().mockResolvedValue(true),
     addPrivateNote: jest.fn().mockResolvedValue(true),
     teams: jest.fn().mockResolvedValue([
       { id: 1, name: 'Support' },
@@ -27,11 +28,15 @@ class TestTriage extends SupportTriageService {
   constructor(
     private readonly desk: any,
     private readonly llmCfg: any = { provider: 'anthropic', model: 'm', apiKey: 'k' },
+    private readonly assistantId: number | null = null,
   ) {
     super();
   }
   protected client() {
     return this.desk;
+  }
+  protected aiAssistantUserId() {
+    return this.assistantId;
   }
   protected llm() {
     return this.llmCfg;
@@ -144,6 +149,42 @@ describe('SupportTriageService', () => {
     await svc.triage({ uuid: 'c4' });
     await svc.triage({ uuid: 'c5', tags: ['ai-triaged'] });
     expect(desk.addTags).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands safe live chats to the AI assistant after the team, never billing or enterprise', async () => {
+    const msgs = [{ private: false, sender_type: 'contact', text_content: 'help' }];
+    const chat = jest.spyOn(llm, 'chatJson');
+
+    chat.mockResolvedValueOnce({ json: { category: 'connector-setup', priority: 'Medium' } });
+    const desk = fakeDesk(msgs);
+    await new TestTriage(desk, undefined, 5).triage({
+      uuid: 'a1',
+      inbox_channel: 'livechat',
+      contact: { custom_attributes: { deployment: 'cloud', plan: 'trial' } },
+    });
+    expect(desk.addTags).toHaveBeenCalledWith('a1', ['connector-setup', 'cloud', 'trial', 'ai-triaged', 'ai-assistant']);
+    expect(desk.assignUser).toHaveBeenCalledWith('a1', 5);
+    expect(desk.assignTeam.mock.invocationCallOrder[0]).toBeLessThan(desk.assignUser.mock.invocationCallOrder[0]);
+
+    chat.mockResolvedValueOnce({ json: { category: 'billing', priority: 'Low' } });
+    const billing = fakeDesk(msgs);
+    await new TestTriage(billing, undefined, 5).triage({ uuid: 'a2', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'cloud' } } });
+    expect(billing.assignUser).not.toHaveBeenCalled();
+
+    chat.mockResolvedValueOnce({ json: { category: 'connector-setup', priority: 'Low' } });
+    const ent = fakeDesk(msgs);
+    await new TestTriage(ent, undefined, 5).triage({ uuid: 'a3', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'dedicated' } } });
+    expect(ent.assignUser).not.toHaveBeenCalled();
+
+    chat.mockResolvedValueOnce({ json: { category: 'connector-setup', priority: 'Low' } });
+    const email = fakeDesk(msgs);
+    await new TestTriage(email, undefined, 5).triage({ uuid: 'a4', inbox_channel: 'email', contact: { custom_attributes: { deployment: 'cloud' } } });
+    expect(email.assignUser).not.toHaveBeenCalled();
+
+    chat.mockResolvedValueOnce({ json: { category: 'connector-setup', priority: 'Low' } });
+    const off = fakeDesk(msgs);
+    await new TestTriage(off).triage({ uuid: 'a5', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'cloud' } } });
+    expect(off.assignUser).not.toHaveBeenCalled();
   });
 
   it('a failing step does not stop the others', async () => {
