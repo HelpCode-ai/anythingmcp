@@ -1409,7 +1409,7 @@ model KgSkillSuggestion {
   versions      KgSkillVersion[]
   // Optional folder in the workspace's knowledge tree (shared with memory).
   folderId      String?          @map("folder_id")
-  folder        KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folder        KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: NoAction)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1497,7 +1497,7 @@ model MemoryItem {
   about            String?
   // Optional folder (organization items only; personal memory has none).
   folderId         String?          @map("folder_id")
-  folder           KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folder           KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: NoAction)
   createdByUserId  String?      @map("created_by_user_id")
   approvedByUserId String?      @map("approved_by_user_id")
   approvedAt       DateTime?    @map("approved_at")
@@ -1522,7 +1522,11 @@ model KnowledgeFolder {
   organizationId String            @map("organization_id")
   organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   parentId       String?           @map("parent_id")
-  parent         KnowledgeFolder?  @relation("KnowledgeFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  // NO ACTION, not cascade/set-null: a folder is only removed by the service,
+  // after moving its contents; a racing child or item makes the delete fail
+  // instead of silently reaching a wider audience. Workspace deletion still
+  // removes everything (all rows cascade from the organization).
+  parent         KnowledgeFolder?  @relation("KnowledgeFolderTree", fields: [parentId], references: [id], onDelete: NoAction)
   children       KnowledgeFolder[] @relation("KnowledgeFolderTree")
   name           String
   description    String?           @db.Text
