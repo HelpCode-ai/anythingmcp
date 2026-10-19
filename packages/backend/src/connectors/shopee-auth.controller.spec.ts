@@ -121,9 +121,14 @@ describe('ShopeeAuthController', () => {
     await expect(
       controller.complete({ user: { sub: 'user-2' } }, { state: s1, code: 'c', shopId: '14701711' }),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    // The link someone else started is dead now.
-    await expect(controller.complete(admin, { state: s1, code: 'c', shopId: '14701711' })).rejects.toBeInstanceOf(GoneException);
     expect(tokens.exchangeCode).not.toHaveBeenCalled();
+    // Another user's refusal does not burn the owner's authorization.
+    expect(await flows.getPendingFlow(s1)).toBeDefined();
+    await controller.complete(admin, { state: s1, code: 'c-1', shopId: '14701711' });
+    // Single use: the same state cannot complete twice.
+    await expect(controller.complete(admin, { state: s1, code: 'c-1', shopId: '14701711' })).rejects.toBeInstanceOf(GoneException);
+    (tokens.exchangeCode as jest.Mock).mockClear();
+    (mcpServer.reloadConnectorTools as jest.Mock).mockClear();
 
     const s2 = await start();
     expect(await controller.complete(admin, { state: s2, code: 'c-2', shopId: '14701711' })).toEqual({

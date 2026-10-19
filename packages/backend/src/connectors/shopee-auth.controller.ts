@@ -191,17 +191,25 @@ export class ShopeeAuthController {
     @Req() req: any,
     @Body() body: { state?: string; code?: string; shopId?: string },
   ): Promise<{ connectorId: string; toolsImported: number; returnTo?: string }> {
-    const record = await this.oauthFlows.takePendingFlow(String(body?.state || ''));
-    if (!record || record.flow.provider !== 'shopee') {
+    const state = String(body?.state || '');
+    // Check who started the flow before consuming it: another signed-in user
+    // holding the state must not be able to burn the owner's authorization.
+    const pending = await this.oauthFlows.getPendingFlow(state);
+    if (!pending || pending.flow.provider !== 'shopee') {
       throw new GoneException('This authorization expired or was already used. Start it again from the connector.');
     }
-    const { flow, returnTo } = record;
-    if (flow.userId !== req.user?.sub) {
-      this.logger.warn(`Refused Shopee completion: connector ${flow.connectorId} was authorized by another user`);
+    if (pending.flow.userId !== req.user?.sub) {
+      this.logger.warn(`Refused Shopee completion: connector ${pending.flow.connectorId} was authorized by another user`);
       throw new ForbiddenException(
         'This authorization was started by another account. Sign in as that account, or start it again yourself.',
       );
     }
+    // Single use: a second request racing this one finds nothing to take.
+    const record = await this.oauthFlows.takePendingFlow(state);
+    if (!record || record.flow.provider !== 'shopee' || record.flow.userId !== req.user?.sub) {
+      throw new GoneException('This authorization expired or was already used. Start it again from the connector.');
+    }
+    const { flow, returnTo } = record;
     const code = typeof body?.code === 'string' ? body.code : '';
     const shopId = typeof body?.shopId === 'string' ? body.shopId : '';
     if (!code || !/^\d{1,20}$/.test(shopId)) {
