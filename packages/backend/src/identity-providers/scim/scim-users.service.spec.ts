@@ -57,6 +57,7 @@ describe('ScimUsersService', () => {
       },
       user: {
         findUnique: jest.fn(async () => null),
+        findMany: jest.fn(async (): Promise<unknown[]> => []),
         create: jest.fn(async () => ({ id: 'u-new' })),
         update: jest.fn(async () => ({})),
         delete: jest.fn(),
@@ -123,11 +124,21 @@ describe('ScimUsersService', () => {
 
     // The same anti-takeover rule as JIT: a directory never claims a local account.
     it('refuses to adopt an existing unlinked local account', async () => {
-      prisma.user.findUnique.mockResolvedValue({ id: 'local' });
+      prisma.user.findMany.mockResolvedValue([{ id: 'local', email: 'anna.rossi@x.com' }]);
       const err = await service.create(provider, body, ctx).catch((e) => e);
       expect(err).toBeInstanceOf(ScimError);
       expect(err.status).toBe(409);
       expect(JSON.stringify(err.getResponse())).toContain('not linked to this identity provider');
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('treats a local account stored with capitals as owning the address', async () => {
+      prisma.user.findMany.mockResolvedValue([{ id: 'local', email: 'ANNA.ROSSI@X.COM' }]);
+      const err = await service.create(provider, body, ctx).catch((e) => e);
+      expect(err.status).toBe(409);
+      expect(prisma.user.findMany.mock.calls[0][0].where.OR).toContainEqual({
+        email: { equals: 'anna.rossi@x.com', mode: 'insensitive' },
+      });
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
@@ -251,13 +262,20 @@ describe('ScimUsersService', () => {
       it.each([
         ['has_password', { passwordHash: 'x' }, null],
         ['multi_org', { memberships: [{ organizationId: ORG, deactivatedAt: null }, { organizationId: 'org-2', deactivatedAt: null }] }, null],
-        ['conflict', {}, { id: 'someone' }],
+        ['conflict', {}, { id: 'someone', email: 'NEW@x.com' }],
       ])('is skipped (%s) but the request still succeeds', async (reason, userOver, owner) => {
         prisma.userIdentity.findUnique.mockResolvedValue(identity({}, userOver as any));
-        prisma.user.findUnique.mockResolvedValue(owner);
+        prisma.user.findMany.mockResolvedValue(owner ? [owner] : []);
         await service.patch(provider, 'u1', emailOp, ctx);
         expect(prisma.user.update).not.toHaveBeenCalled();
         expect(events[0].metadata.emailChangeSkipped).toBe(reason);
+      });
+
+      it('lower-cases an address stored with capitals: the only match is the user itself', async () => {
+        prisma.userIdentity.findUnique.mockResolvedValue(identity({}, { email: 'Anna@X.com' }));
+        prisma.user.findMany.mockResolvedValue([{ id: 'u1', email: 'Anna@X.com' }]);
+        await service.patch(provider, 'u1', patch([{ op: 'replace', path: 'userName', value: 'anna@x.com' }]), ctx);
+        expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: 'u1' }, data: { email: 'anna@x.com' } });
       });
 
       it('a deactivation in the same request is never blocked by an email conflict', async () => {
@@ -295,10 +313,18 @@ describe('ScimUsersService', () => {
       }));
     });
 
-    it('filters by lower-cased email within the provider', async () => {
+    it('filters by email in any case within the provider', async () => {
       await service.list(provider, { attr: 'userName', value: 'Anna@X.com' }, { startIndex: 1, count: 100 }, ctx);
       expect(prisma.userIdentity.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: { providerId: 'idp-1', user: { email: 'anna@x.com' } },
+        where: {
+          providerId: 'idp-1',
+          user: {
+            OR: [
+              { email: { in: ['Anna@X.com', 'anna@x.com'] } },
+              { email: { equals: 'anna@x.com', mode: 'insensitive' } },
+            ],
+          },
+        },
       }));
     });
 

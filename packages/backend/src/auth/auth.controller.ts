@@ -44,6 +44,7 @@ import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
 import { EditionService } from '../ee/licensing/edition.service';
 import { SignupAttributionDto } from './signup-attribution.dto';
 import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from './disposable-email.util';
+import { emailLookupWhere, normalizeEmail, sameEmail } from '../common/email.util';
 
 /**
  * Registration and password reset answer the same whether or not the address
@@ -259,7 +260,7 @@ export class AuthController {
     try {
       const payload = this.authService.verifyToken(header.slice(7).trim());
       const email = (payload as any)?.email;
-      return typeof email === 'string' ? email.toLowerCase() : null;
+      return typeof email === 'string' ? normalizeEmail(email) : null;
     } catch {
       return null;
     }
@@ -784,14 +785,19 @@ export class AuthController {
     // Reuse an existing pending invitation instead of rejecting: throwing a
     // 409 here left admins stuck with no way to get the link after a failed
     // email send (the response with the URL only comes with a NEW invite).
-    const existingInvite = await this.prisma.invitationToken.findFirst({
+    // Matched in any case: invitations written before addresses were
+    // normalised keep their original spelling.
+    const inviteEmail = normalizeEmail(dto.email);
+    const pendingInvites = await this.prisma.invitationToken.findMany({
       where: {
-        email: dto.email,
+        ...emailLookupWhere(inviteEmail),
         organizationId: req.user.organizationId,
         usedAt: null,
         expiresAt: { gt: new Date() },
       },
+      orderBy: { createdAt: 'desc' },
     });
+    const existingInvite = pendingInvites.find((i) => sameEmail(i.email, inviteEmail)) ?? null;
 
     const inviteToken = existingInvite
       ? existingInvite.token
@@ -807,7 +813,7 @@ export class AuthController {
       const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
       await this.prisma.invitationToken.create({
         data: {
-          email: dto.email,
+          email: inviteEmail,
           token: inviteToken,
           role: dto.role,
           mcpRoleId: invitedMcpRoleIds[0] ?? null,
@@ -844,7 +850,7 @@ export class AuthController {
 
     // Send email
     const emailResult = await this.emailService.sendInvitationEmail(
-      dto.email,
+      inviteEmail,
       inviteUrl,
       inviterName,
       roleName,
@@ -855,9 +861,9 @@ export class AuthController {
     return {
       message: emailResult.sent
         ? existingInvite
-          ? `${created} for ${dto.email} — the email was re-sent.`
-          : `Invitation sent to ${dto.email}`
-        : `${created} for ${dto.email}, but the email could not be sent. Share the link manually.`,
+          ? `${created} for ${inviteEmail} — the email was re-sent.`
+          : `Invitation sent to ${inviteEmail}`
+        : `${created} for ${inviteEmail}, but the email could not be sent. Share the link manually.`,
       inviteUrl,
       emailSent: emailResult.sent,
       ...(emailResult.error ? { emailError: emailResult.error } : {}),
@@ -918,8 +924,7 @@ export class AuthController {
       // workspace admin, i.e. every signed-up user) could take over an
       // arbitrary account by inviting it and accepting the invite themselves.
       const sessionEmail = this.sessionEmailFromRequest(req);
-      const provenBySession =
-        !!sessionEmail && sessionEmail === invite.email.toLowerCase();
+      const provenBySession = sameEmail(sessionEmail, invite.email);
       if (!provenBySession) {
         if (!existing.passwordHash) {
           throw new UnauthorizedException(

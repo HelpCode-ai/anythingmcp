@@ -1,5 +1,6 @@
 import { getAdapter } from '../adapters/catalog';
 import { isMachineGrant } from './oauth-grant.util';
+import { shopeeNeedsAuthorization } from './engines/shopee-token.service';
 import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 import { CALLER_CONTEXT_PREFIX } from '../common/caller-context.util';
 import {
@@ -133,6 +134,11 @@ export function computeSetupState(input: SetupStatusInput): SetupState {
   if (missing.length > 0) return { status: 'needs_input', missing };
 
   if (isBrowserOAuth && !hasRealValue(authConfig.refreshToken) && !hasRealValue(authConfig.accessToken)) {
+    return { status: 'needs_authorization', missing: [] };
+  }
+  // A Shopee shop (HMAC with tokenProvider "shopee") is authorized from the
+  // connector page too. False for every other connector.
+  if (shopeeNeedsAuthorization(input.authType, authConfig)) {
     return { status: 'needs_authorization', missing: [] };
   }
   return { status: 'ready', missing: [] };

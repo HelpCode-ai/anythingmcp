@@ -1,13 +1,15 @@
 {
   "slug": "line-messaging",
   "name": "LINE Messaging API",
-  "description": "Send push, reply and broadcast messages from a LINE Official Account — LINE is the dominant chat platform in Japan, Taiwan and Thailand. Free tier of 500 push messages per month, unlimited reply messages, channel access tokens require no KYC.",
-  "instructions": "This connector uses the LINE Messaging API v2.\n\n**Creating a channel**: log in to https://developers.line.biz/console → create a Provider → 'Create a new channel' → 'Messaging API'. Set up the LINE Official Account (auto-created with the channel), then under the channel's 'Messaging API' tab, scroll to 'Channel access token' → 'Issue' a long-lived token. Paste it as `LINE_CHANNEL_ACCESS_TOKEN`.\n\n**Authentication**: Bearer Token (the channel access token). Note: this token belongs to the channel, not to a user — anyone with the token can post as that Official Account, so keep it secret.\n\n**Message shape**: LINE messages are objects with a `type` field. Simplest example: `{\"type\": \"text\", \"text\": \"Hello\"}`. Other types: `sticker`, `image`, `video`, `audio`, `location`, `template`, `flex`. The `messages` parameter on every tool is an **array of up to 5** message objects.\n\n**`to` userId**: cannot be looked up cold — you only get a userId from webhook events when a user interacts with the Official Account. Store the userId on first webhook contact, then use it for push.\n\n**`replyToken`**: returned in webhook events. Valid for **~30 seconds** after the original user message. Use `line_reply_message` (free, unlimited) instead of `line_push_message` (counts against the 500/month free quota) whenever possible.\n\n**Broadcast**: sends to ALL friends of the Official Account. Counts heavily against the push quota — use sparingly.\n\n**Pricing**: free tier = 500 push messages/month. Paid tiers from JP¥5,000/month for higher quotas.",
+  "description": "Send push, reply and broadcast messages from a LINE Official Account, the main chat app in Japan, Taiwan and Thailand, and check the bot, its monthly message quota and user profiles. The free plan includes a monthly number of push messages (it varies by country); replies are free.",
+  "instructions": "This connector uses the LINE Messaging API v2.\n\n**Creating a channel**: log in to https://developers.line.biz/console → create a Provider → 'Create a new channel' → 'Messaging API'. Set up the LINE Official Account (auto-created with the channel), then under the channel's 'Messaging API' tab, scroll to 'Channel access token' → 'Issue' a long-lived token. Paste it as `LINE_CHANNEL_ACCESS_TOKEN`.\n\n**Authentication**: Bearer Token (the channel access token). Note: this token belongs to the channel, not to a user — anyone with the token can post as that Official Account, so keep it secret.\n\n**Message shape**: LINE messages are objects with a `type` field. Simplest example: `{\"type\": \"text\", \"text\": \"Hello\"}`. Other types: `sticker`, `image`, `video`, `audio`, `location`, `template`, `flex`. The `messages` parameter on every tool is an **array of up to 5** message objects.\n\n**`to` userId**: a userId is `U` followed by 32 hex characters. It comes from a webhook event (this connector does not receive webhooks, so the user has to give it to you) or, on verified and premium accounts, from `line_list_follower_ids`. A display name is not a userId, and a made-up one fails with \"The value for the 'userId' parameter is invalid\".\n\n**`replyToken`**: returned in webhook events, single-use, valid for about a minute after the user's message. Never call `line_reply_message` with a placeholder: LINE answers \"Invalid reply token\". Without a fresh token, push instead. Use `line_reply_message` (free, unlimited) instead of `line_push_message` (counts against the monthly quota) whenever possible.\n\n**Broadcast**: sends to ALL friends of the Official Account. Counts heavily against the push quota — use sparingly.\n\n**Pricing**: the free plan includes a monthly number of push and broadcast messages that depends on the country (for example 200 in Japan); paid plans raise it. `line_get_message_quota` returns the account's own limit.\n\n**Before sending**: `line_get_bot_info` checks the token, `line_get_message_quota` and `line_get_message_quota_consumption` show how much of the monthly push quota is left. Push and broadcast reach real people: show the message and the recipient and wait for the user's yes.",
   "region": "jp",
   "category": "messaging",
   "icon": "line",
   "docsUrl": "https://developers.line.biz/en/reference/messaging-api/",
-  "requiredEnvVars": ["LINE_CHANNEL_ACCESS_TOKEN"],
+  "requiredEnvVars": [
+    "LINE_CHANNEL_ACCESS_TOKEN"
+  ],
   "connector": {
     "name": "LINE Messaging API",
     "type": "REST",
@@ -19,25 +21,79 @@
   },
   "tools": [
     {
+      "name": "line_get_bot_info",
+      "description": "Basic information about the Official Account behind the token: its bot userId, basic id (@...), display name, picture, chat mode and whether messages are marked as read automatically. Free; a good first call to check the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bot/info"
+      }
+    },
+    {
       "name": "line_push_message",
-      "description": "Send a push message to a specific userId, groupId, or roomId. Counts against the monthly push quota (500/month free). Use line_reply_message instead whenever you have a fresh replyToken.",
+      "description": "Send a push message to a specific userId, groupId, or roomId. Counts against the monthly message quota (line_get_message_quota). Use line_reply_message instead whenever you have a fresh replyToken.",
       "parameters": {
         "type": "object",
         "properties": {
           "to": {
             "type": "string",
-            "description": "Destination — userId (from a webhook event), groupId, or roomId. Cannot be looked up; obtain from webhook."
+            "description": "Destination: a userId (U followed by 32 hex characters), groupId (C...) or roomId (R...) from a webhook event or from line_list_follower_ids. Never a display name, and never made up."
           },
           "messages": {
             "type": "array",
-            "description": "Array of 1–5 LINE message objects. Simplest text: [{\"type\": \"text\", \"text\": \"Hello\"}]. See https://developers.line.biz/en/reference/messaging-api/#message-objects for full schema."
+            "description": "Array of 1–5 LINE message objects. Simplest text: [{\"type\": \"text\", \"text\": \"Hello\"}]. See https://developers.line.biz/en/reference/messaging-api/#message-objects for full schema.",
+            "items": {
+              "type": "object",
+              "description": "One LINE message object. Every message needs a type; a text message is {\"type\": \"text\", \"text\": \"Hello\"}.",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "textV2",
+                    "sticker",
+                    "image",
+                    "video",
+                    "audio",
+                    "location",
+                    "imagemap",
+                    "template",
+                    "flex"
+                  ],
+                  "description": "Message type. Required on every message."
+                },
+                "text": {
+                  "type": "string",
+                  "description": "For type text: the text, up to 5000 characters."
+                },
+                "altText": {
+                  "type": "string",
+                  "description": "For template, imagemap and flex: the text shown in notifications and chat lists. Required for those types."
+                },
+                "contents": {
+                  "type": "object",
+                  "description": "For flex: a bubble or carousel container ({\"type\": \"bubble\", \"body\": {\"type\": \"box\", \"layout\": \"vertical\", \"contents\": [...]}}). Never empty."
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 5
           },
           "notificationDisabled": {
             "type": "boolean",
             "description": "If true, the user is not notified (silent push). Default false."
           }
         },
-        "required": ["to", "messages"]
+        "required": [
+          "to",
+          "messages"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -51,24 +107,66 @@
     },
     {
       "name": "line_reply_message",
-      "description": "Reply to a webhook-received message using its replyToken. FREE and unlimited (does not count against the push quota). The replyToken is valid for ~30 seconds after the user's message — call this synchronously from your webhook handler.",
+      "description": "Reply to a message a user just sent, using the replyToken from that webhook event. Free and unlimited (does not count against the push quota). The replyToken is single-use and expires about a minute after the user's message; this connector receives no webhooks, so only call this with a real token the user gave you. Never make one up: without a token use line_push_message.",
       "parameters": {
         "type": "object",
         "properties": {
           "replyToken": {
             "type": "string",
-            "description": "The replyToken from a webhook event. Single-use, expires after ~30 seconds."
+            "description": "The replyToken of a webhook event, exactly as received. Single-use and short-lived. Do not invent or use a placeholder."
           },
           "messages": {
             "type": "array",
-            "description": "Array of 1–5 LINE message objects."
+            "description": "Array of 1–5 LINE message objects.",
+            "items": {
+              "type": "object",
+              "description": "One LINE message object. Every message needs a type; a text message is {\"type\": \"text\", \"text\": \"Hello\"}.",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "textV2",
+                    "sticker",
+                    "image",
+                    "video",
+                    "audio",
+                    "location",
+                    "imagemap",
+                    "template",
+                    "flex"
+                  ],
+                  "description": "Message type. Required on every message."
+                },
+                "text": {
+                  "type": "string",
+                  "description": "For type text: the text, up to 5000 characters."
+                },
+                "altText": {
+                  "type": "string",
+                  "description": "For template, imagemap and flex: the text shown in notifications and chat lists. Required for those types."
+                },
+                "contents": {
+                  "type": "object",
+                  "description": "For flex: a bubble or carousel container ({\"type\": \"bubble\", \"body\": {\"type\": \"box\", \"layout\": \"vertical\", \"contents\": [...]}}). Never empty."
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 5
           },
           "notificationDisabled": {
             "type": "boolean",
             "description": "If true, the user is not notified (silent reply). Default false."
           }
         },
-        "required": ["replyToken", "messages"]
+        "required": [
+          "replyToken",
+          "messages"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -81,24 +179,6 @@
       }
     },
     {
-      "name": "line_get_profile",
-      "description": "Get a user's display name, profile picture URL, status message and BCP-47 language tag. Only works for users who have added the Official Account as a friend.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "userId": {
-            "type": "string",
-            "description": "LINE userId (from a webhook event)."
-          }
-        },
-        "required": ["userId"]
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/v2/bot/profile/{userId}"
-      }
-    },
-    {
       "name": "line_broadcast_message",
       "description": "Broadcast a message to ALL friends of the Official Account. Heavy on the monthly push quota (1 message × N friends = N counted pushes). Use sparingly. Returns 202 Accepted; delivery happens asynchronously.",
       "parameters": {
@@ -106,14 +186,55 @@
         "properties": {
           "messages": {
             "type": "array",
-            "description": "Array of 1–5 LINE message objects to broadcast."
+            "description": "Array of 1–5 LINE message objects to broadcast.",
+            "items": {
+              "type": "object",
+              "description": "One LINE message object. Every message needs a type; a text message is {\"type\": \"text\", \"text\": \"Hello\"}.",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "textV2",
+                    "sticker",
+                    "image",
+                    "video",
+                    "audio",
+                    "location",
+                    "imagemap",
+                    "template",
+                    "flex"
+                  ],
+                  "description": "Message type. Required on every message."
+                },
+                "text": {
+                  "type": "string",
+                  "description": "For type text: the text, up to 5000 characters."
+                },
+                "altText": {
+                  "type": "string",
+                  "description": "For template, imagemap and flex: the text shown in notifications and chat lists. Required for those types."
+                },
+                "contents": {
+                  "type": "object",
+                  "description": "For flex: a bubble or carousel container ({\"type\": \"bubble\", \"body\": {\"type\": \"box\", \"layout\": \"vertical\", \"contents\": [...]}}). Never empty."
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 5
           },
           "notificationDisabled": {
             "type": "boolean",
             "description": "If true, recipients are not notified. Default false."
           }
         },
-        "required": ["messages"]
+        "required": [
+          "messages"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -121,6 +242,78 @@
         "bodyMapping": {
           "messages": "$messages",
           "notificationDisabled": "$notificationDisabled"
+        }
+      }
+    },
+    {
+      "name": "line_get_profile",
+      "description": "Get a user's display name, profile picture URL, status message and language. Only for users who added the Official Account as a friend. Needs a real userId (U followed by 32 hex characters) from a webhook event or line_list_follower_ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "LINE userId, U followed by 32 hex characters, from a webhook event or line_list_follower_ids. Not a display name; do not guess one."
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bot/profile/{userId}"
+      }
+    },
+    {
+      "name": "line_get_message_quota",
+      "description": "The monthly limit of push and broadcast messages of the account: type (none for unlimited, limited) and value, the number of messages per month.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bot/message/quota"
+      }
+    },
+    {
+      "name": "line_get_message_quota_consumption",
+      "description": "How many push and broadcast messages the account has sent this month (totalUsage). Compare with line_get_message_quota before a push or broadcast. Reply messages are not counted.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bot/message/quota/consumption"
+      }
+    },
+    {
+      "name": "line_list_follower_ids",
+      "description": "List the userIds of the users who added the Official Account as a friend, up to 1000 per page, to use with line_get_profile or line_push_message. LINE only offers this to verified and premium accounts; other accounts get 403. Users who blocked the account or have not agreed to share their profile are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 300,
+            "description": "UserIds per page, at most 1000."
+          },
+          "start": {
+            "type": "string",
+            "description": "Continuation token: the next value from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bot/followers/ids",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start"
         }
       }
     }

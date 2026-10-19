@@ -17,6 +17,7 @@ import {
   withoutOperatorProvided,
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
+import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
 import { odooCheckAdvice } from './odoo-database-hint';
 import { outboundRequest } from '../common/outbound-http';
 import { interpolateString } from '../common/env-interpolation.util';
@@ -870,6 +871,8 @@ export class AdaptersService {
     ) {
       return null;
     }
+    // Same for a Shopee shop, authorized with "Authorize shop" after install.
+    if (shopeeNeedsAuthorization(adapter.connector.authType, auth)) return null;
     const call = pickProbe(adapter);
     if (!call) return null;
     const started = Date.now();
