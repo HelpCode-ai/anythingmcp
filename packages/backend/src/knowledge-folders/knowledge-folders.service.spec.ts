@@ -295,3 +295,19 @@ describe('KnowledgeFoldersService never widens access by accident', () => {
     await expect(svc.remove(ORG, 'a')).rejects.toThrow(/limited to different roles/);
   });
 });
+
+describe('KnowledgeFoldersService: only folders the caller can see', () => {
+  it('refuses an editor acting on a folder hidden from them, and caps the count', async () => {
+    const { svc } = make({ roles: [] });
+    // 'big' and 'sales' are limited to roles this editor lacks.
+    await expect(svc.update(ORG, 'sales', { name: 'X' }, false, 'u1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.remove(ORG, 'sales', 'u1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.create(ORG, { name: 'Sub', parentId: 'quotes' }, 'u1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.moveItems(ORG, 'skill', ['s1'], 'quotes', false, 'u1')).rejects.toBeInstanceOf(NotFoundException);
+    // A visible folder works.
+    await expect(svc.update(ORG, 'hr', { description: 'People' }, false, 'u1')).resolves.toBeDefined();
+
+    const many = Array.from({ length: 500 }, (_, i) => ({ id: `f${i}`, parentId: null, name: `F${i}`, description: null, roleIds: [] }));
+    await expect(make({ rows: many }).svc.create(ORG, { name: 'One more' })).rejects.toThrow(/at most 500/);
+  });
+});

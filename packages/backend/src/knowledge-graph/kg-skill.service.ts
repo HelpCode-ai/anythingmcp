@@ -3,6 +3,7 @@ import { PrismaService } from '../common/prisma.service';
 import { KgLlmService } from './kg-llm.service';
 import { chatJson, resolveLlmConfig } from './llm-client';
 import { maybeRedactIntent } from './redact';
+import { findFixPatterns, FIX_WINDOW_MS, type FixPattern } from './error-fix';
 import {
   folderVisibility,
   resolveFolder,
@@ -14,7 +15,7 @@ import {
 const MAX_INTENTS = 200;
 
 /** Where a skill came from; generation only ever replaces its own `llm` rows. */
-export type SkillSource = 'manual' | 'llm' | 'finder';
+export type SkillSource = 'manual' | 'llm' | 'finder' | 'consolidation' | 'errors';
 
 /** Longest procedure (`body`) a skill can carry. Served by skill_get only. */
 export const SKILL_BODY_MAX = 20_000;
@@ -25,10 +26,13 @@ export type SkillsDelivery = (typeof SKILLS_DELIVERY_MODES)[number];
 
 /**
  * `auto` keeps the full text up to this many characters, then switches to the
- * index. The skills_v2 migration pins servers already above it to `inline`;
- * keep both numbers equal.
+ * index. The skills_v2 migration pins every server that already received
+ * applied skills to `inline`, so this only applies to new servers and to
+ * admins who choose it.
  */
 export const SKILLS_INLINE_BUDGET = 6_000;
+/** Most text the shared /mcp guide returns for skills before shortening. */
+const SKILLS_FULL_BUDGET = 30_000;
 /** The index stops listing entries past this size and points to skills_list. */
 const SKILLS_INDEX_BUDGET = 8_000;
 const INDEX_WHEN_MAX = 200;
@@ -164,12 +168,12 @@ function indexText(rows: SkillRow[], folders?: FolderNode[]): string {
 /** Auto-apply a generated skill only when at/above this confidence. */
 export const SKILL_AUTO_APPLY_MIN = 0.9;
 
-const CONSOLIDATE_PROMPT = `You are tidying the ACTIVE skills (standing rules) of an AI tool-integration platform. You receive a list of currently-applied skills; several may overlap, duplicate, or restate the same rule.
+const CONSOLIDATE_PROMPT = `You are tidying the ACTIVE skills (standing rules) of an AI tool-integration platform. You receive the currently-applied skills of one scope, each with a "ref"; several may overlap, duplicate, or restate the same rule.
 
-Merge them into the FEWEST distinct, non-redundant skills that together preserve every real rule. Combine duplicates and near-duplicates into one; keep genuinely different rules separate; never drop a rule's meaning; do not invent new rules.
+Propose merges: combine duplicates and near-duplicates into one skill that preserves every real rule of the skills it replaces; never drop a rule's meaning; do not invent new rules. Write each merged instruction once, concisely: state a rule a single time even when several skills say it. Leave skills that need no merging out of the answer.
 
-Return STRICT JSON: {"skills":[{"title":"<short>","whenToUse":"<when this rule applies>","instruction":"<imperative guidance>","confidence":0..1,"connector":"<connector name or null>"}]}.
-Only use connector names that appear in the input (or null). Keep titles short and instructions actionable.`;
+Return STRICT JSON: {"skills":[{"title":"<short>","whenToUse":"<when this rule applies>","instruction":"<imperative guidance>","confidence":0..1,"replaces":["<ref>","<ref>"]}]}.
+Each merged skill lists the refs it replaces (at least two); a ref appears in at most one merged skill. Keep titles short and instructions actionable.`;
 
 const JSON_SHAPE =
   'Return STRICT JSON: {"skills":[{"title":"<short>","whenToUse":"<when this rule applies>","instruction":"<imperative guidance for the agent>","confidence":0..1,"evidenceCount":<int>}]}.';
@@ -245,8 +249,13 @@ export class KgSkillService {
     // applyConnectorResult so pending suggestions are left untouched.
     if (skipped) return { created: 0, skipped: true, model: cfg.model };
     const created = await this.applyConnectorResult(organizationId, json);
-    this.logger.log(`KG skills (connectors) ${organizationId}: ${created}`);
-    return { created, model: cfg.model, usage };
+    // Learning from fixed errors needs no model; it runs with every pass.
+    const fromErrors = await this.proposeFromErrors(organizationId).catch((e: any) => {
+      this.logger.warn(`Skill proposals from errors failed for ${organizationId}: ${e?.message ?? e}`);
+      return { created: 0 };
+    });
+    this.logger.log(`KG skills (connectors) ${organizationId}: ${created} (+${fromErrors.created} from errors)`);
+    return { created: created + fromErrors.created, model: cfg.model, usage };
   }
 
   /** Pure prompt builder for connector-scoped skills (intents redacted). */
@@ -272,6 +281,104 @@ export class KgSkillService {
       ok: i.status === 'SUCCESS',
     }));
     return { system: CONNECTOR_PROMPT, user: JSON.stringify({ calls }) };
+  }
+
+  /**
+   * Proposes skills from calls that failed and were then fixed by changing
+   * the format of an argument (see error-fix.ts). Only calls stamped
+   * learnable (members who contribute to learning) are read, and only the
+   * argument names and value formats are kept. Each pattern seen at least
+   * twice becomes a pending skill on the tool's connector; previous pending
+   * proposals of this kind are replaced and dismissed ones are not proposed
+   * again. Needs no AI model.
+   */
+  async proposeFromErrors(
+    organizationId: string,
+    opts?: { days?: number; now?: Date },
+  ): Promise<{ created: number; patterns: number }> {
+    const now = opts?.now ?? new Date();
+    const since = new Date(now.getTime() - (opts?.days ?? 30) * 24 * 60 * 60 * 1000);
+    const failures = await this.prisma.toolInvocation.findMany({
+      where: {
+        organizationId,
+        learnable: true,
+        status: { not: 'SUCCESS' },
+        createdAt: { gte: since },
+        userId: { not: null },
+      },
+      select: { toolId: true, userId: true, status: true, input: true, error: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    });
+    if (failures.length === 0) return { created: 0, patterns: 0 };
+
+    // Successes of the same people and tools, from the first failure on.
+    const pairs = [...new Set(failures.map((f) => `${f.userId}|${f.toolId}`))].slice(0, 300);
+    const first = new Date(Math.min(...failures.map((f) => f.createdAt.getTime())));
+    const successes = await this.prisma.toolInvocation.findMany({
+      where: {
+        organizationId,
+        learnable: true,
+        status: 'SUCCESS',
+        createdAt: { gte: first, lte: new Date(now.getTime() + FIX_WINDOW_MS) },
+        OR: pairs.map((p) => {
+          const [userId, toolId] = p.split('|');
+          return { userId, toolId };
+        }),
+      },
+      select: { toolId: true, userId: true, status: true, input: true, error: true, createdAt: true },
+      // Newest first, like the failures, so busy workspaces keep recent fixes.
+      orderBy: { createdAt: 'desc' },
+      take: 3000,
+    });
+    const rows = [...failures, ...successes]
+      .map((r) => ({ ...r, userId: r.userId ?? null, status: String(r.status) }))
+      .sort(
+        (a, b) =>
+          (a.userId ?? '').localeCompare(b.userId ?? '') ||
+          a.toolId.localeCompare(b.toolId) ||
+          a.createdAt.getTime() - b.createdAt.getTime(),
+      );
+    const patterns = findFixPatterns(rows);
+
+    const tools = patterns.length
+      ? await this.prisma.mcpTool.findMany({
+          where: { id: { in: [...new Set(patterns.map((p) => p.toolId))] }, connector: { organizationId } },
+          select: { id: true, name: true, connectorId: true },
+        })
+      : [];
+    const known = new Set(
+      (
+        await this.prisma.kgSkillSuggestion.findMany({
+          where: { organizationId, source: 'errors', status: { in: ['applied', 'dismissed'] } },
+          select: { title: true },
+        })
+      ).map((r) => r.title),
+    );
+
+    await this.prisma.kgSkillSuggestion.deleteMany({
+      where: { organizationId, status: 'pending', source: 'errors' },
+    });
+    let created = 0;
+    for (const p of patterns.slice(0, 20)) {
+      const tool = tools.find((t) => t.id === p.toolId);
+      if (!tool) continue;
+      const draft = errorFixSkill(tool.name, p);
+      if (known.has(draft.title)) continue;
+      await this.prisma.kgSkillSuggestion.create({
+        data: {
+          organizationId,
+          connectorId: tool.connectorId,
+          ...draft,
+          confidence: Math.min(0.95, 0.5 + 0.1 * p.occurrences),
+          evidenceCount: p.occurrences,
+          status: 'pending',
+          source: 'errors',
+        },
+      });
+      created++;
+    }
+    return { created, patterns: patterns.length };
   }
 
   /** Apply a connector-scoped skills LLM result (sync or batch). */
@@ -474,7 +581,7 @@ export class KgSkillService {
   async consolidate(
     organizationId: string,
     opts?: { mcpServerId?: string },
-  ): Promise<{ before: number; after: number; model?: string; usage?: any }> {
+  ): Promise<{ before: number; after: number; proposed: number; replaced: number; model?: string; usage?: any }> {
     if (!(await this.llm.isEnabled(organizationId))) {
       throw new ConflictException('AI features are disabled for this workspace.');
     }
@@ -502,65 +609,85 @@ export class KgSkillService {
         title: true,
         whenToUse: true,
         instruction: true,
-        connector: { select: { name: true } },
+        connectorId: true,
+        folderId: true,
       },
     });
-    if (current.length < 2) return { before: current.length, after: current.length, model: cfg.model };
+    const none = { before: current.length, after: current.length, proposed: 0, replaced: 0, model: cfg.model };
+    if (current.length < 2) return none;
 
-    const payload = current.map((s) => ({
-      title: s.title,
-      whenToUse: s.whenToUse,
-      instruction: s.instruction,
-      connector: mcpServerId ? undefined : (s.connector?.name ?? null),
-    }));
-    const { json, usage } = await chatJson(cfg, CONSOLIDATE_PROMPT, JSON.stringify({ skills: payload }));
-    const merged: any[] = Array.isArray(json?.skills) ? json.skills : [];
-    // Safety: never let a bad/empty model response wipe live skills.
-    if (merged.length === 0 || merged.length >= current.length) {
-      return { before: current.length, after: current.length, model: cfg.model, usage };
+    // Merge only within one folder (and one connector), so a merged skill
+    // keeps exactly the place, and the audience, of what it replaces.
+    const groups = new Map<string, typeof current>();
+    for (const sk of current) {
+      const key = `${sk.folderId ?? ''}|${mcpServerId ? '' : (sk.connectorId ?? '')}`;
+      groups.set(key, [...(groups.get(key) ?? []), sk]);
     }
-
-    const idByName = new Map(
-      (
-        await this.prisma.connector.findMany({
-          where: { organizationId },
-          select: { id: true, name: true },
-        })
-      ).map((c) => [c.name.toLowerCase(), c.id]),
-    );
-
-    const after = await this.prisma.$transaction(async (tx) => {
-      await tx.kgSkillSuggestion.deleteMany({ where });
-      let n = 0;
-      for (const s of merged) {
-        const title = typeof s?.title === 'string' ? s.title.slice(0, 160) : null;
-        const instruction = typeof s?.instruction === 'string' ? s.instruction.slice(0, 2000) : null;
-        if (!title || !instruction) continue;
-        const connectorId =
-          !mcpServerId && typeof s?.connector === 'string'
-            ? (idByName.get(s.connector.toLowerCase()) ?? null)
-            : null;
-        await tx.kgSkillSuggestion.create({
+    const drafts: Array<{ data: Record<string, unknown>; replaces: string[] }> = [];
+    let usage: any;
+    let answered = false;
+    for (const group of [...groups.values()].filter((g) => g.length >= 2).slice(0, 10)) {
+      const refs = new Map(group.map((sk, i) => [`s${i + 1}`, sk]));
+      const payload = [...refs].map(([ref, sk]) => ({
+        ref,
+        title: sk.title,
+        whenToUse: sk.whenToUse,
+        instruction: sk.instruction,
+      }));
+      const res = await chatJson(cfg, CONSOLIDATE_PROMPT, JSON.stringify({ skills: payload }));
+      usage = res.usage ?? usage;
+      if (res.skipped || !Array.isArray(res.json?.skills)) continue;
+      answered = true;
+      const merged: any[] = res.json.skills;
+      const used = new Set<string>();
+      for (const m of merged) {
+        const title = typeof m?.title === 'string' ? m.title.slice(0, 160) : null;
+        const instruction = typeof m?.instruction === 'string' ? m.instruction.slice(0, 2000) : null;
+        const replaced = (Array.isArray(m?.replaces) ? m.replaces : [])
+          .filter((r: unknown) => typeof r === 'string' && refs.has(r) && !used.has(r)) as string[];
+        if (!title || !instruction || replaced.length < 2) continue;
+        replaced.forEach((r) => used.add(r));
+        const first = refs.get(replaced[0])!;
+        drafts.push({
+          replaces: replaced.map((r) => refs.get(r)!.id),
           data: {
             organizationId,
-            connectorId,
             mcpServerId,
+            connectorId: mcpServerId ? null : first.connectorId,
+            folderId: first.folderId,
             title,
-            whenToUse: typeof s?.whenToUse === 'string' ? s.whenToUse.slice(0, 1000) : '',
+            whenToUse: typeof m?.whenToUse === 'string' ? m.whenToUse.slice(0, 1000) : '',
             instruction,
-            confidence: Math.max(0, Math.min(1, Number(s?.confidence) || 0.8)),
+            confidence: Math.max(0, Math.min(1, Number(m?.confidence) || 0.8)),
             evidenceCount: 0,
-            status: 'applied',
-            source: 'llm',
           },
         });
-        n++;
       }
-      return n;
-    });
+    }
 
-    this.logger.log(`KG skills consolidate ${organizationId}: ${current.length} → ${after}`);
-    return { before: current.length, after, model: cfg.model, usage };
+    // A model that gave no usable answer leaves earlier proposals alone.
+    if (!answered) return { ...none, usage };
+    // Proposals only: nothing live changes until an admin applies one.
+    await this.prisma.kgSkillSuggestion.deleteMany({
+      where: { organizationId, status: 'pending', source: 'consolidation', mcpServerId },
+    });
+    for (const d of drafts) {
+      await this.prisma.kgSkillSuggestion.create({
+        data: { ...(d.data as any), status: 'pending', source: 'consolidation', replaces: d.replaces },
+      });
+    }
+    const replaced = drafts.reduce((n, d) => n + d.replaces.length, 0);
+    this.logger.log(
+      `KG skills consolidate ${organizationId}: ${drafts.length} proposal(s) replacing ${replaced} of ${current.length}`,
+    );
+    return {
+      before: current.length,
+      after: current.length - replaced + drafts.length,
+      proposed: drafts.length,
+      replaced,
+      model: cfg.model,
+      usage,
+    };
   }
 
   /**
@@ -592,7 +719,13 @@ export class KgSkillService {
     });
     if (!rows.length) return null;
     const tree = folders?.folders;
-    if (mode === 'full') return inlineText(rows, true, tree);
+    if (mode === 'full') {
+      // The shared guide has no skill_get; keep it bounded all the same.
+      const full = inlineText(rows, true, tree);
+      if (full.length <= SKILLS_FULL_BUDGET) return full;
+      const inline = inlineText(rows, false, tree);
+      return inline.length <= SKILLS_FULL_BUDGET ? inline : indexText(rows, tree);
+    }
     if (mode === 'index') return indexText(rows, tree);
     const inline = inlineText(rows, false, tree);
     if (mode === 'inline' || inline.length <= SKILLS_INLINE_BUDGET) return inline;
@@ -737,8 +870,12 @@ export class KgSkillService {
   }
 
   /** Earlier versions of one skill, newest first. */
-  async versions(organizationId: string, id: string) {
-    await this.owned(organizationId, id);
+  async versions(organizationId: string, id: string, folders?: FolderAccess | null) {
+    const skill = await this.owned(organizationId, id);
+    // A skill in a folder the caller may not see answers like a missing one.
+    if (skill.folderId && folders && !folders.all && !folders.ids.has(skill.folderId)) {
+      throw new NotFoundException('Suggestion not found.');
+    }
     return this.prisma.kgSkillVersion.findMany({
       where: { skillId: id, organizationId },
       orderBy: { version: 'desc' },
@@ -839,9 +976,24 @@ export class KgSkillService {
     return s;
   }
 
+  /**
+   * Activate a skill. A consolidation proposal also dismisses the applied
+   * skills it replaces (they stay, with their history, and can be activated
+   * again).
+   */
   async apply(organizationId: string, id: string) {
-    await this.owned(organizationId, id);
-    return this.prisma.kgSkillSuggestion.update({ where: { id }, data: { status: 'applied' } });
+    const skill = await this.owned(organizationId, id);
+    const replaces = Array.isArray(skill.replaces) ? (skill.replaces as string[]) : [];
+    if (!replaces.length) {
+      return this.prisma.kgSkillSuggestion.update({ where: { id }, data: { status: 'applied' } });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.kgSkillSuggestion.updateMany({
+        where: { organizationId, id: { in: replaces }, status: 'applied' },
+        data: { status: 'dismissed' },
+      });
+      return tx.kgSkillSuggestion.update({ where: { id }, data: { status: 'applied' } });
+    });
   }
 
   async dismiss(organizationId: string, id: string) {
@@ -868,6 +1020,13 @@ export class KgSkillService {
     editedByUserId?: string,
   ) {
     const current = await this.owned(organizationId, id);
+    // Activating a merge proposal must also deactivate what it replaces.
+    const replaces = Array.isArray(current.replaces) ? (current.replaces as string[]) : [];
+    if (patch.status === 'applied' && current.status !== 'applied' && replaces.length) {
+      const { status: _status, ...rest } = patch;
+      if (Object.keys(rest).length) await this.update(organizationId, id, rest, editedByUserId);
+      return this.apply(organizationId, id);
+    }
     const data: Record<string, unknown> = {};
     if (typeof patch.title === 'string') data.title = patch.title.slice(0, 160);
     if (typeof patch.whenToUse === 'string') data.whenToUse = patch.whenToUse.slice(0, 1000);
@@ -919,4 +1078,41 @@ function normalizeBody(body: string | null | undefined): string | null {
   if (typeof body !== 'string') return null;
   const trimmed = body.trim();
   return trimmed ? trimmed.slice(0, SKILL_BODY_MAX) : null;
+}
+
+/** The skill text for a fixed-error pattern: names and formats only. */
+export function errorFixSkill(
+  toolName: string,
+  p: FixPattern,
+): { title: string; whenToUse: string; instruction: string } {
+  const changed = p.changes
+    .map((c) => (c.after === 'missing' ? `leave out \`${c.key}\`` : `\`${c.key}\` as ${c.after}`))
+    .join(', ');
+  const from = p.changes
+    .map((c) => `\`${c.key}\` ${c.before === 'missing' ? 'missing' : `as ${c.before}`}`)
+    .join(', ');
+  // Only an error CODE, never the message: messages quote values (names,
+  // ids, tokens) that would then be stored and served to every client.
+  const error = errorCode(p.error);
+  const patterned = p.changes.some((c) => c.before.startsWith('"') || c.after.startsWith('"'));
+  return {
+    title: `${toolName}: ${changed}`.slice(0, 160),
+    whenToUse: `When calling ${toolName}`,
+    instruction:
+      `Send ${changed}. Calls with ${from} failed${error ? ` (${error})` : ''} and worked after ` +
+      `this change (${p.occurrences} times, ${p.users} ${p.users === 1 ? 'person' : 'people'}).` +
+      (patterned ? ' In the formats, 9 stands for a digit and a for a letter.' : ''),
+  };
+}
+
+/**
+ * A machine-readable error code from an error message, or null: an
+ * upper-case code (`INVALID_INPUT`, `VALIDATION_ERROR`) or an HTTP status.
+ */
+export function errorCode(message: string | null | undefined): string | null {
+  if (!message) return null;
+  const code = message.match(/\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b/);
+  if (code) return code[0].slice(0, 40);
+  const status = message.match(/\b([45]\d\d)\b/);
+  return status ? `HTTP ${status[1]}` : null;
 }

@@ -123,15 +123,37 @@ export default function SkillsPage() {
     try {
       const r = await knowledgeGraph.skills.consolidate(token, target || undefined);
       setStatus(
-        r.after < r.before
-          ? `Consolidated ${r.before} active skills into ${r.after}.`
-          : `Nothing to consolidate (${r.before} active skill(s)).`,
+        r.proposed
+          ? `Proposed ${r.proposed} merged skill(s) replacing ${r.replaced} active ones. Review them under Suggested: applying one deactivates the skills it replaces.`
+          : `Nothing to merge (${r.before} active skill(s)).`,
       );
       load();
     } catch (e: any) {
       setStatus(e.message || 'Consolidation failed');
     } finally {
       setConsolidating(false);
+    }
+  };
+
+  const [learning, setLearning] = useState(false);
+  const learnFromErrors = async () => {
+    if (!token) return;
+    setLearning(true);
+    setStatus('Looking for calls that failed and were fixed…');
+    try {
+      const r = await knowledgeGraph.skills.proposeFromErrors(token);
+      setStatus(
+        r.created
+          ? `Proposed ${r.created} skill(s) from fixed errors. Review them under Suggested.`
+          : 'No recurring fixed errors yet. Only calls of users who contribute to skill learning are used.',
+      );
+      setStatusFilter('pending');
+      setPage(0);
+      load();
+    } catch (e: any) {
+      setStatus(e.message || 'Could not look at the errors');
+    } finally {
+      setLearning(false);
     }
   };
 
@@ -202,6 +224,12 @@ export default function SkillsPage() {
                   onSelect: consolidate,
                   disabled: consolidating || generating,
                 },
+                {
+                  label: learning ? 'Looking…' : 'Learn from fixed errors',
+                  icon: <GenerateIcon />,
+                  onSelect: learnFromErrors,
+                  disabled: learning,
+                },
               ]}
             />
             <Button variant="primary" size="sm" onClick={() => setShowNew((v) => !v)}>
@@ -229,6 +257,16 @@ export default function SkillsPage() {
         <code className="font-mono text-[12px]">skill_get</code> (set per server). Long procedures
         are always opened on demand.
       </p>
+      {isAdmin && (
+        <div className="mb-3 flex flex-wrap items-center gap-2.5 max-md:hidden">
+          <Button variant="secondary" size="sm" onClick={learnFromErrors} disabled={learning}>
+            {learning ? 'Looking…' : 'Learn from fixed errors'}
+          </Button>
+          <span className="text-[12px] text-[var(--text-3)]">
+            Proposes a rule when calls failed and worked after an argument changed format. No AI model needed.
+          </span>
+        </div>
+      )}
       {status && <p className="text-[12px] text-[var(--text-3)] mb-3">{status}</p>}
 
       <div className="grid gap-4 md:grid-cols-[230px_minmax(0,1fr)]">
@@ -529,8 +567,8 @@ function SkillCard({
           </div>
           <p className="text-[11.5px] text-[var(--text-3)]">
             {folderPath ? `${folderPath} · ` : ''}
-            {scope} · {sourceLabel(s.source)} · v{s.version ?? 1}
-            {s.source === 'llm' ? ` · confidence ${s.confidence.toFixed(2)}` : ''}
+            {scope} · {sourceLabel(s.source, s.status)} · v{s.version ?? 1}
+            {s.source === 'llm' || s.source === 'consolidation' ? ` · confidence ${s.confidence.toFixed(2)}` : ''}
             {s.evidenceCount ? ` · ${s.evidenceCount} example(s)` : ''}
             {' · '}
             {s.useCount
@@ -586,6 +624,11 @@ function SkillCard({
       <p className="text-[13px] leading-[1.55] text-[var(--text)]">
         <span className="text-[var(--text-3)]">Do:</span> {s.instruction}
       </p>
+      {s.status === 'pending' && (s.replaces?.length ?? 0) > 0 && (
+        <p className="mt-1 text-[12px] text-[var(--text-3)]">
+          Replaces {s.replaces!.length} active skills: applying it deactivates them (they stay, with their history).
+        </p>
+      )}
       {s.body && (
         <details className="mt-2">
           <summary className="cursor-pointer text-[12.5px] text-[var(--text-2)]">
@@ -625,8 +668,10 @@ function SkillCard({
   );
 }
 
-function sourceLabel(source?: string): string {
+function sourceLabel(source?: string, status?: string): string {
   if (source === 'llm') return 'AI-generated';
+  if (source === 'consolidation') return status === 'pending' ? 'merge proposal' : 'merged by AI';
+  if (source === 'errors') return 'learned from fixed errors';
   if (source === 'finder') return 'from Skills Finder';
   return 'written by hand';
 }

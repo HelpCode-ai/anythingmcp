@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../common/prisma.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import { EditionService } from '../ee/licensing/edition.service';
+import { singularize } from '../knowledge-graph/static/entity-extraction';
 import {
   folderVisibility,
   resolveFolder,
@@ -32,8 +33,10 @@ export const MEMORY_TAGS_MAX = 10;
 const MEMORY_TAG_LENGTH = 40;
 /** Personal items one member may keep in one workspace. */
 export const MEMORY_PERSONAL_MAX = 1_000;
-/** Items (any scope) one workspace may keep. */
+/** Company (organization) items one workspace may keep. Personal memory has its own per-member cap. */
 export const MEMORY_ORG_MAX = 20_000;
+/** Company items waiting for review at once; more proposals are refused. */
+export const MEMORY_PENDING_MAX = 200;
 const SEARCH_DEFAULT = 10;
 const SEARCH_MAX = 50;
 
@@ -66,6 +69,60 @@ const SECRET_PATTERNS: RegExp[] = [
   /\bmcp_[0-9a-f]{40,}/,
   /\b(?:password|passwort|passwd|pwd|secret|api[_ -]?key|access[_ -]?token|token)\s*[:=]\s*\S{6,}/i,
 ];
+
+/**
+ * A knowledge-graph entity name as the graph stores it: lower case, words
+ * joined by "_", last word singular ("Customers" → "customer").
+ */
+export function normalizeAbout(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  if (looksLikeSecret(raw)) throw new BadRequestException('"about" names an entity, not a secret.');
+  const words = raw
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
+  if (!words.length) return null;
+  words[words.length - 1] = singularize(words[words.length - 1]);
+  return words.join('_').slice(0, 80);
+}
+
+/**
+ * A full-text query that matches ANY of the words, each also as a prefix
+ * ("rispost" finds "risposte"), ranked by how many and how well they match.
+ * Requiring every word missed obvious hits: a model asking for "formato delle
+ * risposte" did not find "risposte in italiano con i numeri in tabella".
+ * Only letters and digits reach to_tsquery, so its syntax cannot be injected.
+ */
+export function anyWordQuery(text: string): string | null {
+  const words = [
+    ...new Set((text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? ([] as string[])).filter((w) => w.length >= 2)),
+  ].slice(0, 12);
+  return words.length ? words.map((w) => `${w}:*`).join(' | ') : null;
+}
+
+/**
+ * Text that addresses the AI assistant with orders meant to override its
+ * instructions ("ignore all previous instructions", "system prompt: …").
+ * Memory holds facts, preferences and notes; a model may still obey such a
+ * sentence when it reads it back, so it is refused. Heuristic, as defense in
+ * depth next to approval of company memory and the data label on results.
+ */
+const INJECTION_PATTERNS: RegExp[] = [
+  /\b(ignore|disregard|forget|override)\b.{0,40}\b(all|any|previous|prior|above|earlier|other|your)\b.{0,30}\b(instructions?|rules?|prompts?|guidelines?)\b/i,
+  /\b(ignora|ignorare|dimentica|dimenticare)\b.{0,40}\b(tutte|tutti|le|precedenti|altre|tue)\b.{0,30}\b(istruzioni|regole|indicazioni)\b/i,
+  /\b(ignoriere|ignorieren|vergiss|vergessen)\b.{0,40}\b(alle|vorherigen|anderen|deine|bisherigen)\b.{0,30}\b(anweisungen|regeln|vorgaben)\b/i,
+  /\b(ignore[zr]?|oublie[zr]?)\b.{0,40}\b(toutes|les|précédentes|autres)\b.{0,30}\b(instructions|règles|consignes)\b/i,
+  /\b(ignora|olvida)\b.{0,40}\b(todas|las|anteriores|otras)\b.{0,30}\b(instrucciones|reglas)\b/i,
+  /\b(system|developer)\s*(prompt|instructions?|message)\b/i,
+  /\bistruzion[ei]\s+di\s+sistema\b|\bsystemanweisung(en)?\b|\binstructions?\s+syst[eè]me\b/i,
+  /\b(you are now|from now on you|new instructions|nuove istruzioni|neue anweisungen)\b/i,
+];
+
+export function looksLikeInjection(text: string): boolean {
+  return INJECTION_PATTERNS.some((re) => re.test(text));
+}
 
 export function looksLikeSecret(text: string): boolean {
   return SECRET_PATTERNS.some((re) => re.test(text));
@@ -104,6 +161,7 @@ const ITEM_SELECT = {
   approvedByUserId: true,
   approvedAt: true,
   folderId: true,
+  about: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -262,7 +320,7 @@ export class MemoryService {
    */
   async search(
     caller: MemoryCaller,
-    opts: { query?: string; scope?: MemoryScope; limit?: number; folder?: string },
+    opts: { query?: string; scope?: MemoryScope; limit?: number; folder?: string; about?: string },
   ) {
     const limit = Math.min(Math.max(opts.limit ?? SEARCH_DEFAULT, 1), SEARCH_MAX);
     // A folder narrows to company items in it and its subfolders; personal
@@ -283,9 +341,11 @@ export class MemoryService {
       : restricted
         ? { scope: 'organization', AND: [folderVisibility(caller.folders)] }
         : { scope: 'organization' };
+    const about = normalizeAbout(opts.about);
     const visible = {
       organizationId: caller.organizationId,
       status: 'active',
+      ...(about ? { about } : {}),
       OR: [
         ...(opts.scope !== 'personal' ? [orgClause] : []),
         ...(includePersonal && opts.scope !== 'organization'
@@ -294,12 +354,14 @@ export class MemoryService {
       ],
     };
 
-    if (q) {
+    // A query with no usable word (e.g. one letter) goes to the substring match.
+    const tsq = q ? anyWordQuery(q) : null;
+    if (q && tsq) {
       const scope = opts.scope ?? null;
       const visibleIds = [...(caller.folders?.ids ?? [])];
       const hits = await this.prisma.$queryRaw<Array<{ id: string }>>`
         SELECT m.id
-        FROM memory_items m, websearch_to_tsquery('simple', ${q}) AS q
+        FROM memory_items m, to_tsquery('simple', ${tsq}) AS q
         WHERE m.organization_id = ${caller.organizationId}
           AND m.status = 'active'
           AND (${scope}::text IS NULL OR m.scope = ${scope}::text)
@@ -314,6 +376,7 @@ export class MemoryService {
             OR m.folder_id = ANY(${visibleIds}::text[])
           )
           AND (${filterIds}::text[] IS NULL OR m.folder_id = ANY(${filterIds}::text[]))
+          AND (${about}::text IS NULL OR m.about = ${about}::text)
           AND m.search_vector @@ q
         ORDER BY ts_rank(m.search_vector, q) DESC, m.updated_at DESC
         LIMIT ${limit}`;
@@ -332,8 +395,43 @@ export class MemoryService {
         take: limit,
       });
     }
+    if (q) {
+      return this.prisma.memoryItem.findMany({
+        where: { ...visible, content: { contains: q, mode: 'insensitive' } },
+        select: ITEM_SELECT,
+        orderBy: { updatedAt: 'desc' },
+        take: limit,
+      });
+    }
     return this.prisma.memoryItem.findMany({
       where: visible,
+      select: ITEM_SELECT,
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+    });
+  }
+
+  /**
+   * Facts about knowledge-graph entities for kg_how_to_obtain: active company
+   * items in folders the caller may see and, from `personal` up, the caller's
+   * own items. Nothing for a caller without memory access.
+   */
+  async factsAbout(caller: MemoryCaller, entities: string[], limit = 10) {
+    const names = [...new Set(entities.map((e) => normalizeAbout(e)).filter((e): e is string => !!e))];
+    if (!names.length || !allows(caller.level, 'read')) return [];
+    const restricted = !!caller.folders && !caller.folders.all;
+    return this.prisma.memoryItem.findMany({
+      where: {
+        organizationId: caller.organizationId,
+        status: 'active',
+        about: { in: names },
+        OR: [
+          restricted
+            ? { scope: 'organization', AND: [folderVisibility(caller.folders)] }
+            : { scope: 'organization' },
+          ...(allows(caller.level, 'personal') ? [{ scope: 'personal', ownerUserId: caller.userId }] : []),
+        ],
+      },
       select: ITEM_SELECT,
       orderBy: { updatedAt: 'desc' },
       take: limit,
@@ -409,7 +507,14 @@ export class MemoryService {
    */
   async save(
     caller: MemoryCaller,
-    input: { content: string; kind?: string; scope?: string; tags?: unknown; folder?: string | null },
+    input: {
+      content: string;
+      kind?: string;
+      scope?: string;
+      tags?: unknown;
+      folder?: string | null;
+      about?: string | null;
+    },
     source: MemorySource,
     opts?: { asCurator?: boolean },
   ) {
@@ -434,7 +539,9 @@ export class MemoryService {
     }
 
     const [orgCount, personalCount] = await Promise.all([
-      this.prisma.memoryItem.count({ where: { organizationId: caller.organizationId } }),
+      scope === 'organization'
+        ? this.prisma.memoryItem.count({ where: { organizationId: caller.organizationId, scope: 'organization' } })
+        : Promise.resolve(0),
       scope === 'personal'
         ? this.prisma.memoryItem.count({
             where: {
@@ -446,7 +553,7 @@ export class MemoryService {
         : Promise.resolve(0),
     ]);
     if (orgCount >= MEMORY_ORG_MAX) {
-      throw new BadRequestException(`This workspace has reached ${MEMORY_ORG_MAX} memory items.`);
+      throw new BadRequestException(`The company memory has reached ${MEMORY_ORG_MAX} items.`);
     }
     if (personalCount >= MEMORY_PERSONAL_MAX) {
       throw new BadRequestException(
@@ -458,6 +565,16 @@ export class MemoryService {
     if (scope === 'organization' && !opts?.asCurator) {
       status = (await this.settings(caller.organizationId)).writeMode === 'auto' ? 'active' : 'pending';
     }
+    if (status === 'pending') {
+      const waiting = await this.prisma.memoryItem.count({
+        where: { organizationId: caller.organizationId, scope: 'organization', status: 'pending' },
+      });
+      if (waiting >= MEMORY_PENDING_MAX) {
+        throw new BadRequestException(
+          `${MEMORY_PENDING_MAX} company memory proposals are already waiting for review. Ask an admin or editor to review them first.`,
+        );
+      }
+    }
     const now = new Date();
     return this.prisma.memoryItem.create({
       data: {
@@ -465,6 +582,7 @@ export class MemoryService {
         scope,
         ownerUserId: scope === 'personal' ? caller.userId : null,
         folderId,
+        about: normalizeAbout(input.about),
         kind,
         content,
         tags,
@@ -502,7 +620,7 @@ export class MemoryService {
     userId: string,
     isCurator: boolean,
     id: string,
-    patch: { content?: string; kind?: string; tags?: unknown },
+    patch: { content?: string; kind?: string; tags?: unknown; about?: string | null },
     folders?: FolderAccess | null,
   ) {
     await this.edition.assertMemory(organizationId);
@@ -511,6 +629,7 @@ export class MemoryService {
     if (typeof patch.content === 'string') data.content = this.cleanContent(patch.content);
     if (patch.kind && (MEMORY_KINDS as readonly string[]).includes(patch.kind)) data.kind = patch.kind;
     if (patch.tags !== undefined) data.tags = cleanTags(patch.tags);
+    if (patch.about !== undefined) data.about = normalizeAbout(patch.about);
     return this.prisma.memoryItem.update({ where: { id }, data, select: ITEM_SELECT });
   }
 
@@ -604,6 +723,11 @@ export class MemoryService {
         'This looks like a password, token or key. Secrets are never stored in memory.',
       );
     }
+    if (looksLikeInjection(content)) {
+      throw new BadRequestException(
+        'This reads like an instruction to AI assistants. Memory stores facts, preferences and notes; rules for assistants belong in AI Skills, which an admin reviews.',
+      );
+    }
     return content;
   }
 }
@@ -614,6 +738,10 @@ function cleanTags(raw: unknown): string[] {
   for (const t of raw) {
     if (typeof t !== 'string') continue;
     const tag = t.trim().toLowerCase().slice(0, MEMORY_TAG_LENGTH);
+    // Tags are served back like content: no secrets or orders in them either.
+    if (tag && (looksLikeSecret(tag) || looksLikeInjection(tag) || looksLikeSecret(t))) {
+      throw new BadRequestException(`The tag "${tag.slice(0, 12)}…" is not allowed.`);
+    }
     if (tag) out.add(tag);
     if (out.size >= MEMORY_TAGS_MAX) break;
   }

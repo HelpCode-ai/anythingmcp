@@ -256,6 +256,16 @@ export class KgController {
     return this.skills.generate(req.user.organizationId, { mcpServerId: body?.mcpServerId });
   }
 
+  @Post('skills/propose-from-errors')
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary:
+      'Propose skills from calls that failed and were fixed by changing an argument format (no AI model needed)',
+  })
+  async proposeFromErrors(@Req() req: any) {
+    return this.skills.proposeFromErrors(req.user.organizationId);
+  }
+
   @Post('skills/consolidate')
   @Roles('ADMIN')
   @ApiOperation({
@@ -294,7 +304,11 @@ export class KgController {
   @Roles('ADMIN', 'EDITOR')
   @ApiOperation({ summary: 'Earlier versions of a skill, newest first' })
   async skillVersions(@Req() req: any, @Param('id') id: string) {
-    return this.skills.versions(req.user.organizationId, id);
+    return this.skills.versions(
+      req.user.organizationId,
+      id,
+      await this.folders.accessFor(req.user.organizationId, req.user.sub),
+    );
   }
 
   // ── Who contributes to skill learning ────────────────────────────────────

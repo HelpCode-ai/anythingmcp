@@ -108,10 +108,22 @@ whole MCP server.
 - **Auto-apply (optional).** Turn on *Auto-apply high-confidence skills*
   (Settings → Features) and generated skills at/above **0.90** confidence are
   applied automatically; lower-confidence ones still wait for review.
-- **Consolidate with AI.** The *Consolidate with AI* button merges a scope's
-  **active** skills into the fewest non-redundant ones (same connector/server
-  target selector as Generate). Pending and dismissed skills are left untouched,
-  and a bad/empty model reply never wipes live skills.
+- **Consolidate with AI.** The *Consolidate* button proposes merges of a
+  scope's **active** skills (same connector/server target selector as
+  Generate). Each merged skill is filed as a *Suggested* proposal that lists
+  the skills it replaces; applying it deactivates those (they stay, with their
+  history, and can be activated again). Nothing live changes until you apply a
+  proposal. Skills are merged only within one folder, and skills with a
+  procedure are left alone. A bad or empty model reply changes nothing.
+- **Learn from fixed errors.** *Learn from fixed errors* (and every skill
+  generation) looks at the last 30 days of calls by users who contribute to
+  skill learning. When a call failed and the same person's next call of the
+  same tool, within 10 minutes, worked after an argument changed format (for
+  example a date sent as `99.99.9999` and then as `9999-99-99`), and that
+  happened at least twice, it proposes a skill on the tool's connector. Only
+  argument names and value formats are used, never the values; errors quoted
+  in the proposal are masked. No AI model is needed. Proposals you dismissed
+  are not proposed again.
 
 ### Who contributes to skill learning
 

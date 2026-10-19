@@ -754,6 +754,11 @@ model ToolInvocation {
   // a minute is counted here instead of stored again (see AuditService).
   repeatCount Int @default(1) @map("repeat_count")
 
+  // Whether the caller contributed to skill learning when the call was made
+  // (stamped at capture time, so changing a member's setting later never
+  // pulls old calls in). Only learnable calls feed skill proposals.
+  learnable Boolean @default(false)
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([toolId, createdAt])
@@ -1385,10 +1390,14 @@ model KgSkillSuggestion {
   confidence    Float    @default(0)
   evidenceCount Int      @default(0) @map("evidence_count")
   status        String   @default("pending") // pending | applied | dismissed
-  // Where the skill came from: manual (UI/API) | llm (generated or
-  // consolidated) | finder (skills_save_to_workspace). Generation only
-  // replaces its own pending `llm` rows.
+  // Where the skill came from: manual (UI/API) | llm (generated from
+  // intents) | consolidation (merged proposal) | errors (learned from calls
+  // that failed and were fixed) | finder (skills_save_to_workspace). Each
+  // generator only replaces its own pending rows.
   source        String   @default("manual")
+  // For a consolidation proposal: the applied skills it replaces; applying
+  // it dismisses them.
+  replaces      Json     @default("[]")
   // Optional long procedure (markdown). Never pasted into the instructions:
   // served on demand by skill_get.
   body          String?  @db.Text
@@ -1483,6 +1492,9 @@ model MemoryItem {
   status           String       @default("active") // active | pending | rejected
   // { via: "mcp" | "ui", mcpServerId?, client? }
   source           Json         @default("{}")
+  // Knowledge-graph entity the item is about (e.g. "customer"), normalised
+  // like graph entities; kg_how_to_obtain offers matching facts.
+  about            String?
   // Optional folder (organization items only; personal memory has none).
   folderId         String?          @map("folder_id")
   folder           KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: NoAction)
@@ -1496,6 +1508,7 @@ model MemoryItem {
 
   @@index([organizationId, scope, status])
   @@index([organizationId, ownerUserId])
+  @@index([organizationId, about])
   @@index([searchVector], type: Gin)
   @@map("memory_items")
 }

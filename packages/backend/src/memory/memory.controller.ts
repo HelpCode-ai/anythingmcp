@@ -68,6 +68,12 @@ class CreateMemoryDto {
   @IsString({ each: true })
   tags?: string[];
 
+  @ApiPropertyOptional({ description: 'Knowledge-graph entity this is about, e.g. "customer".' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  about?: string | null;
+
   @ApiPropertyOptional({ description: 'Knowledge folder id (company memory only).' })
   @IsOptional()
   @IsString()
@@ -75,6 +81,12 @@ class CreateMemoryDto {
 }
 
 class UpdateMemoryDto {
+  @ApiPropertyOptional({ description: 'Knowledge-graph entity this is about; empty removes it.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  about?: string | null;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

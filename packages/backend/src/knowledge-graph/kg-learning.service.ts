@@ -199,8 +199,8 @@ export class KgLearningService {
   private async clearIntents(organizationId: string, userIds: string[]): Promise<number> {
     if (userIds.length === 0) return 0;
     const res = await this.prisma.toolInvocation.updateMany({
-      where: { organizationId, userId: { in: userIds }, intent: { not: null } },
-      data: { intent: null },
+      where: { organizationId, userId: { in: userIds }, OR: [{ intent: { not: null } }, { learnable: true }] },
+      data: { intent: null, learnable: false },
     });
     return res.count;
   }

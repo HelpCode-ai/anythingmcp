@@ -119,8 +119,12 @@ describe('KgLearningService', () => {
 
     expect(res.intentsCleared).toBe(3);
     expect(prisma.toolInvocation.updateMany).toHaveBeenCalledWith({
-      where: { organizationId: ORG, userId: { in: ['u1', 'u2'] }, intent: { not: null } },
-      data: { intent: null },
+      where: {
+        organizationId: ORG,
+        userId: { in: ['u1', 'u2'] },
+        OR: [{ intent: { not: null } }, { learnable: true }],
+      },
+      data: { intent: null, learnable: false },
     });
   });
 
@@ -149,7 +153,7 @@ describe('KgLearningService', () => {
     expect(prisma.toolInvocation.updateMany.mock.calls[0][0].where).toEqual({
       organizationId: ORG,
       userId: { in: ['u1'] },
-      intent: { not: null },
+      OR: [{ intent: { not: null } }, { learnable: true }],
     });
   });
 
