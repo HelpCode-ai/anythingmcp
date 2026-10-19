@@ -11,6 +11,11 @@ export interface LibredeskMessage {
   created_at?: string;
 }
 
+export interface LibredeskMention {
+  type: 'agent' | 'team';
+  id: number;
+}
+
 /** Minimal REST client for the endpoints the triage uses (API-key auth). */
 export class LibredeskClient {
   constructor(
@@ -67,11 +72,13 @@ export class LibredeskClient {
     });
   }
 
-  addPrivateNote(uuid: string, html: string) {
+  /** Mentioned agents and team members get an in-app and email notification. */
+  addPrivateNote(uuid: string, html: string, mentions: LibredeskMention[] = []) {
     return this.call('POST', `/api/v1/conversations/${encodeURIComponent(uuid)}/messages`, {
       message: html,
       private: true,
       sender_type: 'agent',
+      ...(mentions.length ? { mentions } : {}),
     });
   }
 

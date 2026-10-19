@@ -126,12 +126,20 @@ describe('SupportTriageService', () => {
     expect(desk.addPrivateNote).toHaveBeenCalledTimes(1);
   });
 
-  it('routes dedicated instances to the Enterprise team', async () => {
+  it('routes dedicated instances to the Enterprise team and mentions it in the note', async () => {
     const desk = fakeDesk([{ private: false, sender_type: 'contact', text_content: 'help' }]);
     jest.spyOn(llm, 'chatJson').mockResolvedValue({ json: { category: 'bug', priority: 'Low' } });
     await new TestTriage(desk).triage({ uuid: 'c2', contact: { custom_attributes: { deployment: 'dedicated' } } });
     expect(desk.assignTeam).toHaveBeenCalledWith('c2', 2);
     expect(desk.setPriority).toHaveBeenCalledWith('c2', 'High');
+    expect(desk.addPrivateNote).toHaveBeenCalledWith('c2', expect.any(String), [{ type: 'team', id: 2 }]);
+  });
+
+  it('does not mention a team for non-enterprise conversations', async () => {
+    const desk = fakeDesk([{ private: false, sender_type: 'contact', text_content: 'help' }]);
+    jest.spyOn(llm, 'chatJson').mockResolvedValue({ json: { category: 'bug', priority: 'Low' } });
+    await new TestTriage(desk).triage({ uuid: 'c7', contact: { custom_attributes: { deployment: 'cloud', plan: 'starter' } } });
+    expect(desk.addPrivateNote).toHaveBeenCalledWith('c7', expect.any(String), []);
   });
 
   it('still tags and annotates when the LLM is unavailable', async () => {
@@ -151,7 +159,7 @@ describe('SupportTriageService', () => {
     expect(desk.addTags).toHaveBeenCalledTimes(1);
   });
 
-  it('hands safe live chats to the AI assistant after the team, never billing or enterprise', async () => {
+  it('hands safe live chats to the AI assistant after the team, enterprise included, never billing', async () => {
     const msgs = [{ private: false, sender_type: 'contact', text_content: 'help' }];
     const chat = jest.spyOn(llm, 'chatJson');
 
@@ -174,7 +182,14 @@ describe('SupportTriageService', () => {
     chat.mockResolvedValueOnce({ json: { category: 'connector-setup', priority: 'Low' } });
     const ent = fakeDesk(msgs);
     await new TestTriage(ent, undefined, 5).triage({ uuid: 'a3', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'dedicated' } } });
-    expect(ent.assignUser).not.toHaveBeenCalled();
+    expect(ent.assignTeam).toHaveBeenCalledWith('a3', 2);
+    expect(ent.assignUser).toHaveBeenCalledWith('a3', 5);
+    expect(ent.addPrivateNote).toHaveBeenCalledWith('a3', expect.any(String), [{ type: 'team', id: 2 }]);
+
+    chat.mockResolvedValueOnce({ json: { category: 'billing', priority: 'Low' } });
+    const entBilling = fakeDesk(msgs);
+    await new TestTriage(entBilling, undefined, 5).triage({ uuid: 'a6', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'cloud', plan: 'enterprise' } } });
+    expect(entBilling.assignUser).not.toHaveBeenCalled();
 
     chat.mockResolvedValueOnce({ json: { category: 'connector-setup', priority: 'Low' } });
     const email = fakeDesk(msgs);
