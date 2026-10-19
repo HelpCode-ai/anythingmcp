@@ -37,6 +37,17 @@ describe('twelve-data adapter: static spec conformance', () => {
     }
   });
 
+  it('steers index and CFD names to a symbol the plan can read', () => {
+    // Cloud log, 17 Oct 2026: NDX answered "available starting with the Pro
+    // plan" (404), US100 "Grow plan", NAS100 "symbol missing or invalid".
+    const a2 = a as unknown as { instructions: string };
+    expect(a2.instructions).toMatch(/NAS100/);
+    expect(a2.instructions).toMatch(/QQQ/);
+    const symbol = tool('twelve_data_get_time_series').parameters.properties!.symbol as { description: string };
+    expect(symbol.description).toMatch(/QQQ/);
+    expect(tool('twelve_data_search_symbols').endpointMapping.queryParams).toMatchObject({ show_plan: '$show_plan' });
+  });
+
   it('time series and indicators require symbol and interval', () => {
     for (const name of ['twelve_data_get_time_series', 'twelve_data_get_rsi', 'twelve_data_get_macd', 'twelve_data_get_bbands']) {
       expect(tool(name).parameters.required).toEqual(['symbol', 'interval']);

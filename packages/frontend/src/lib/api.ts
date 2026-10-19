@@ -566,6 +566,18 @@ export const connectors = {
       '/api/mcp-oauth/complete',
       { method: 'POST', token, body: { state, code } },
     ),
+  /** "Authorize with Provider" for a Shopee shop: the signed shop authorization link. */
+  shopeeAuthorize: (id: string, token: string, returnTo?: string) =>
+    request<{ authorizationUrl?: string; error?: string }>(
+      `/api/shopee/connectors/${id}/authorize`,
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
+    ),
+  /** Second half of a Shopee shop authorization: exchange the code Shopee sent back. */
+  shopeeComplete: (state: string, code: string, shopId: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
+      '/api/shopee/complete',
+      { method: 'POST', token, body: { state, code, shopId } },
+    ),
   oauthRedirectUri: (token: string) =>
     request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>

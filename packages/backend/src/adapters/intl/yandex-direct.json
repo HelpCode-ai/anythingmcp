@@ -1,0 +1,1324 @@
+{
+  "slug": "yandex-direct",
+  "name": "Yandex Direct",
+  "aliases": [
+    "Яндекс Директ",
+    "Яндекс.Директ",
+    "Yandex.Direct",
+    "Yandex Direct API"
+  ],
+  "description": "Let your AI analyse your Yandex Direct advertising, read-only: campaigns, ad groups, ads, keywords and bids, sitelinks and callouts, agency clients, dictionaries, change tracking and statistics reports by day, campaign, ad or search query.",
+  "instructions": "## Yandex Direct\nThis connector reads **Yandex Direct API v5** (`https://api.direct.yandex.com/json/v501`) with an OAuth token: the advertiser account, campaigns, ad groups, ads, keywords and bids, sitelinks, callouts, negative keyword sets, retargeting lists, agency clients, dictionaries, change tracking and statistics reports. Every tool is read-only; nothing here creates, changes, pauses or pays for anything.\n\n**Setup (about 10 minutes, once)**\n1. Register an app at https://oauth.yandex.ru (platform: web services, permission **Yandex Direct API**, `direct:api`). Note its ClientID.\n2. In the Yandex Direct web interface open **Tools, API** and submit an API access request for that ClientID (it needs at least one campaign in the account; approval takes from an hour to a few business days). Accept the API user agreement there.\n3. Get a token: sign in with the Direct account and open `https://oauth.yandex.ru/authorize?response_type=token&client_id=<ClientID>`; copy the `access_token` (it starts with `y0_`) into `YANDEX_DIRECT_TOKEN`. It is valid for about a year and is extended while it is used. It is sent as `Authorization: Bearer ...` and only to api.direct.yandex.com.\n4. Agencies only: set `YANDEX_DIRECT_CLIENT_LOGIN` to the advertiser's login to read that advertiser (sent as `Client-Login`); `yandex_direct_list_agency_clients` lists the logins. Leave it empty for your own account.\n\n**Where to start**: `yandex_direct_get_client` (account, currency), `yandex_direct_list_campaigns`, then `yandex_direct_list_ad_groups`, `yandex_direct_list_ads` and `yandex_direct_list_keywords` with up to 10 `campaign_ids`. Performance numbers come from `yandex_direct_get_report`.\n\n**Money**: object amounts (bids, budgets, Funds) are integers in **micros**: 2500000 = 2.50 in the account currency (`yandex_direct_get_client` gives it). Reports return decimals instead.\n\n**Reports** (`yandex_direct_get_report`): the answer is **tab-separated text**, the first line the column names. `report_name` must be unique for each set of parameters. Small reports come back at once; larger ones are built offline: the answer is then empty with a `retryin` header (seconds). Call again with exactly the same parameters and name after that time. At most 5 offline reports can be queued; search query reports are offline only and cover the last 180 days. With `CUSTOM_DATE` pass `date_from` and `date_to`; with any other period leave them out.\n\n**Paging**: lists return up to `limit` objects (default 500, at most 10,000). If the answer has `LimitedBy`, pass that number as `offset` for the next page.\n\n**Points (units)**: every call spends API points from the advertiser's daily allowance (the `Units` limit); a failed call costs 20. Prefer one call with several ids over many single calls and ask only for the fields you need.\n\n**Errors** arrive as `{\"error\": {\"error_code\", \"error_string\", \"error_detail\"}}` and are passed on as errors: 53 the token is invalid or expired (get a new one, step 3), 54 or 3000/3001 no API access or no rights (the access request of step 2, or a Client-Login the token may not read), 513 the login is not connected to Direct, 152 not enough points today, 506 too many parallel requests, 8000 and 4000 to 4006 a wrong parameter, 8800 not found, 9300 too many ids in one call.\n\n**Out of scope**: creating or editing campaigns, ads, keywords and bids, moderation, budgets and payments, the Sandbox and Wordstat.",
+  "region": "intl",
+  "category": "advertising",
+  "icon": "yandex-direct",
+  "docsUrl": "https://yandex.com/dev/direct/doc/en/",
+  "prerequisites": "A Yandex Direct account with approved API access (Tools, API in Direct) for an app registered at oauth.yandex.ru with the direct:api permission, and an OAuth token of that account. About 10 minutes plus Yandex's approval time.",
+  "requiredEnvVars": [
+    "YANDEX_DIRECT_TOKEN"
+  ],
+  "optionalEnvVars": [
+    "YANDEX_DIRECT_CLIENT_LOGIN"
+  ],
+  "envVarMeta": {
+    "YANDEX_DIRECT_TOKEN": {
+      "label": "OAuth token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Open https://oauth.yandex.ru/authorize?response_type=token&client_id=<your ClientID> signed in with the Direct account and copy access_token (starts with y0_). The app needs approved Direct API access.",
+      "link": "https://oauth.yandex.ru/",
+      "pattern": "^(?![Bb]earer|OAuth )[A-Za-z0-9_-]{30,}$",
+      "patternMessage": "Paste only the token (it usually starts with y0_), without Bearer or OAuth."
+    },
+    "YANDEX_DIRECT_CLIENT_LOGIN": {
+      "label": "Client login (agencies only)",
+      "kind": "setting",
+      "help": "Only for agency accounts: the Yandex login of the advertiser to read. Leave empty for your own account.",
+      "example": "client-login",
+      "pattern": "^[A-Za-z0-9._-]{1,64}$",
+      "patternMessage": "The advertiser's Yandex login, letters, digits, dots, dashes."
+    }
+  },
+  "verifyHints": {
+    "401": "Yandex Direct refused the token (error 53): it is wrong, expired or revoked. Get a new one at oauth.yandex.ru with your app's ClientID.",
+    "403": "The token works, but this account has no Direct API access yet, or the app's access request is not approved (Tools, API in Direct). For agencies, check YANDEX_DIRECT_CLIENT_LOGIN.",
+    "429": "Yandex Direct points (units) for today are used up, or too many requests run at once. Wait and verify again."
+  },
+  "probe": {
+    "tool": "yandex_direct_get_client"
+  },
+  "connector": {
+    "name": "Yandex Direct API",
+    "type": "REST",
+    "baseUrl": "https://api.direct.yandex.com/json/v501",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{YANDEX_DIRECT_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Accept-Language": "en",
+      "Content-Type": "application/json; charset=utf-8",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error.error_code",
+          "in": [
+            53
+          ],
+          "messagePath": [
+            "error.error_string",
+            "error.error_detail"
+          ],
+          "status": 401
+        },
+        {
+          "path": "error.error_code",
+          "in": [
+            54,
+            513,
+            3000,
+            3001,
+            58
+          ],
+          "messagePath": [
+            "error.error_string",
+            "error.error_detail"
+          ],
+          "status": 403
+        },
+        {
+          "path": "error.error_code",
+          "in": [
+            8800
+          ],
+          "messagePath": [
+            "error.error_string",
+            "error.error_detail"
+          ],
+          "status": 404
+        },
+        {
+          "path": "error.error_code",
+          "in": [
+            152,
+            506,
+            56
+          ],
+          "messagePath": [
+            "error.error_string",
+            "error.error_detail"
+          ],
+          "status": 429
+        },
+        {
+          "path": "error.error_code",
+          "in": [
+            52,
+            1000,
+            1001,
+            1002
+          ],
+          "messagePath": [
+            "error.error_string",
+            "error.error_detail"
+          ],
+          "status": 502
+        },
+        {
+          "path": "error.error_code",
+          "matches": "^[0-9]+$",
+          "messagePath": [
+            "error.error_string",
+            "error.error_detail"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "yandex_direct_get_client",
+      "description": "Read the advertiser account the token acts for (or the Client-Login one): ClientId, Login, ClientInfo (name), Currency, CountryId, Type, VatRate, AccountQuality, Archived, CreatedAt and the account's restrictions. Checks the token. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return.",
+            "default": [
+              "ClientId",
+              "Login",
+              "ClientInfo",
+              "Currency",
+              "CountryId",
+              "Type",
+              "VatRate",
+              "AccountQuality",
+              "Archived",
+              "CreatedAt",
+              "Restrictions"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/clients",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "FieldNames": "$field_names"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_list_campaigns",
+      "description": "List campaigns: Id, Name, Type (TEXT_CAMPAIGN, UNIFIED_CAMPAIGN, SMART_CAMPAIGN, MOBILE_APP_CAMPAIGN, CPM_BANNER_CAMPAIGN ...), Status, State (ON, OFF, SUSPENDED, ENDED, ARCHIVED), StatusPayment, StartDate, EndDate, Currency, Funds and Statistics (all-time clicks and impressions). Optionally the bidding strategy and settings of text or unified campaigns. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these campaign ids."
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ON",
+                "OFF",
+                "SUSPENDED",
+                "ENDED",
+                "CONVERTED",
+                "ARCHIVED"
+              ]
+            },
+            "description": "Only campaigns in these states."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ACCEPTED",
+                "DRAFT",
+                "MODERATION",
+                "REJECTED"
+              ]
+            },
+            "description": "Only campaigns with these moderation statuses."
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these campaign types, e.g. TEXT_CAMPAIGN, UNIFIED_CAMPAIGN."
+          },
+          "field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return.",
+            "default": [
+              "Id",
+              "Name",
+              "Type",
+              "Status",
+              "State",
+              "StatusPayment",
+              "StartDate",
+              "EndDate",
+              "Currency",
+              "Funds",
+              "Statistics"
+            ]
+          },
+          "text_campaign_field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional extra fields of text campaigns: BiddingStrategy, Settings, CounterIds, PriorityGoals, AttributionModel, RelevantKeywords, NegativeKeywordSharedSetIds."
+          },
+          "unified_campaign_field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional extra fields of unified performance campaigns: BiddingStrategy, Settings, CounterIds, PriorityGoals, AttributionModel, TrackingParams, NegativeKeywordSharedSetIds."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Objects per page, at most 10000. Default 500. When the answer has LimitedBy, there are more: pass it as offset."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many objects (the LimitedBy value of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "SelectionCriteria": {
+              "Ids": "$ids",
+              "States": "$states",
+              "Statuses": "$statuses",
+              "Types": "$types"
+            },
+            "FieldNames": "$field_names",
+            "TextCampaignFieldNames": "$text_campaign_field_names",
+            "UnifiedCampaignFieldNames": "$unified_campaign_field_names",
+            "Page": {
+              "Limit": "$limit",
+              "Offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_list_ad_groups",
+      "description": "List ad groups of up to 10 campaigns (or by id): Id, Name, CampaignId, Type, Status, ServingStatus, RegionIds, NegativeKeywords, TrackingParams. Needs campaign_ids or ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Campaign ids, at most 10."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Ad group ids."
+          },
+          "field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return.",
+            "default": [
+              "Id",
+              "Name",
+              "CampaignId",
+              "Type",
+              "Status",
+              "ServingStatus",
+              "RegionIds",
+              "NegativeKeywords",
+              "TrackingParams"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Objects per page, at most 10000. Default 500. When the answer has LimitedBy, there are more: pass it as offset."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many objects (the LimitedBy value of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/adgroups",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "SelectionCriteria": {
+              "CampaignIds": "$campaign_ids",
+              "Ids": "$ids"
+            },
+            "FieldNames": "$field_names",
+            "Page": {
+              "Limit": "$limit",
+              "Offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_list_ads",
+      "description": "List ads of up to 10 campaigns, up to 1000 ad groups, or by id: Id, CampaignId, AdGroupId, Type, Status, State, StatusClarification, and for text ads Title, Title2, Text, Href, DisplayUrlPath. Needs campaign_ids, ad_group_ids or ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Campaign ids, at most 10."
+          },
+          "ad_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Ad group ids, at most 1000."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Ad ids."
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ON",
+                "OFF",
+                "OFF_BY_MONITORING",
+                "SUSPENDED",
+                "ARCHIVED"
+              ]
+            },
+            "description": "Only ads in these states."
+          },
+          "field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return.",
+            "default": [
+              "Id",
+              "CampaignId",
+              "AdGroupId",
+              "Type",
+              "Status",
+              "State",
+              "StatusClarification"
+            ]
+          },
+          "text_ad_field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields of text ads.",
+            "default": [
+              "Title",
+              "Title2",
+              "Text",
+              "Href",
+              "DisplayUrlPath",
+              "SitelinkSetId",
+              "AdExtensions"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Objects per page, at most 10000. Default 500. When the answer has LimitedBy, there are more: pass it as offset."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many objects (the LimitedBy value of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ads",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "SelectionCriteria": {
+              "CampaignIds": "$campaign_ids",
+              "AdGroupIds": "$ad_group_ids",
+              "Ids": "$ids",
+              "States": "$states"
+            },
+            "FieldNames": "$field_names",
+            "TextAdFieldNames": "$text_ad_field_names",
+            "Page": {
+              "Limit": "$limit",
+              "Offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_list_keywords",
+      "description": "List keywords and autotargeting of up to 10 campaigns, up to 1000 ad groups, or by id: Id, Keyword, State, Status, ServingStatus, AdGroupId, CampaignId, Bid and ContextBid (in micros: 2500000 = 2.5 of the currency), Productivity and search and network statistics. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Campaign ids, at most 10."
+          },
+          "ad_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Ad group ids, at most 1000."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Keyword ids."
+          },
+          "field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return.",
+            "default": [
+              "Id",
+              "Keyword",
+              "State",
+              "Status",
+              "ServingStatus",
+              "AdGroupId",
+              "CampaignId",
+              "Bid",
+              "ContextBid",
+              "StrategyPriority",
+              "Productivity",
+              "StatisticsSearch",
+              "StatisticsNetwork"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Objects per page, at most 10000. Default 500. When the answer has LimitedBy, there are more: pass it as offset."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many objects (the LimitedBy value of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/keywords",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "SelectionCriteria": {
+              "CampaignIds": "$campaign_ids",
+              "AdGroupIds": "$ad_group_ids",
+              "Ids": "$ids"
+            },
+            "FieldNames": "$field_names",
+            "Page": {
+              "Limit": "$limit",
+              "Offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_list_keyword_bids",
+      "description": "Read keyword bids with the auction picture: for each keyword the search and network bid and, on search, the bids and traffic volume needed for each position (AuctionBids). Money in micros. Needs campaign_ids, ad_group_ids or keyword_ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Campaign ids, at most 10."
+          },
+          "ad_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Ad group ids, at most 1000."
+          },
+          "keyword_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Keyword ids."
+          },
+          "field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return.",
+            "default": [
+              "KeywordId",
+              "AdGroupId",
+              "CampaignId",
+              "ServingStatus",
+              "StrategyPriority"
+            ]
+          },
+          "search_field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Search fields.",
+            "default": [
+              "Bid",
+              "AuctionBids"
+            ]
+          },
+          "network_field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Network fields.",
+            "default": [
+              "Bid",
+              "Coverage"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Objects per page, at most 10000. Default 500. When the answer has LimitedBy, there are more: pass it as offset."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many objects (the LimitedBy value of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/keywordbids",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "SelectionCriteria": {
+              "CampaignIds": "$campaign_ids",
+              "AdGroupIds": "$ad_group_ids",
+              "KeywordIds": "$keyword_ids"
+            },
+            "FieldNames": "$field_names",
+            "SearchFieldNames": "$search_field_names",
+            "NetworkFieldNames": "$network_field_names",
+            "Page": {
+              "Limit": "$limit",
+              "Offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_list_sitelinks",
+      "description": "Read sitelink sets by id (SitelinkSetId from yandex_direct_list_ads): each sitelink's Title, Href and Description. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Sitelink set ids."
+          },
+          "sitelink_field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields of each sitelink.",
+            "default": [
+              "Title",
+              "Href",
+              "Description"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Objects per page, at most 10000. Default 500. When the answer has LimitedBy, there are more: pass it as offset."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many objects (the LimitedBy value of the previous page)."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sitelinks",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "SelectionCriteria": {
+              "Ids": "$ids"
+            },
+            "FieldNames": [
+              "Id",
+              "Sitelinks"
+            ],
+            "SitelinkFieldNames": "$sitelink_field_names",
+            "Page": {
+              "Limit": "$limit",
+              "Offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_list_ad_extensions",
+      "description": "List ad extensions (callouts) of the account: Id, Type, Status, Associated and the callout text. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these extension ids."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Objects per page, at most 10000. Default 500. When the answer has LimitedBy, there are more: pass it as offset."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many objects (the LimitedBy value of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/adextensions",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "SelectionCriteria": {
+              "Ids": "$ids",
+              "Types": [
+                "CALLOUT"
+              ]
+            },
+            "FieldNames": [
+              "Id",
+              "Type",
+              "Status",
+              "StatusClarification",
+              "Associated"
+            ],
+            "CalloutFieldNames": [
+              "CalloutText"
+            ],
+            "Page": {
+              "Limit": "$limit",
+              "Offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_list_negative_keyword_sets",
+      "description": "Read shared negative keyword sets by id (NegativeKeywordSharedSetIds of campaigns and ad groups): Id, Name, NegativeKeywords, Associated. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Set ids, at most 30."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Objects per page, at most 10000. Default 500. When the answer has LimitedBy, there are more: pass it as offset."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many objects (the LimitedBy value of the previous page)."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/negativekeywordsharedsets",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "SelectionCriteria": {
+              "Ids": "$ids"
+            },
+            "FieldNames": [
+              "Id",
+              "Name",
+              "NegativeKeywords",
+              "Associated"
+            ],
+            "Page": {
+              "Limit": "$limit",
+              "Offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_list_retargeting_lists",
+      "description": "List retargeting and audience lists: Id, Name, Type, Description, Rules (Metrica goals and segments), IsAvailable, Scope. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these list ids."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Objects per page, at most 10000. Default 500. When the answer has LimitedBy, there are more: pass it as offset."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many objects (the LimitedBy value of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/retargetinglists",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "SelectionCriteria": {
+              "Ids": "$ids"
+            },
+            "FieldNames": [
+              "Id",
+              "Type",
+              "Name",
+              "Description",
+              "Rules",
+              "IsAvailable",
+              "Scope"
+            ],
+            "Page": {
+              "Limit": "$limit",
+              "Offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_list_agency_clients",
+      "description": "For agency accounts: list the agency's advertisers with Login, ClientId, ClientInfo, Currency and Archived. Use a Login as Client-Login (YANDEX_DIRECT_CLIENT_LOGIN) to read that advertiser. Answers an error for a direct advertiser account. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "logins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these advertiser logins."
+          },
+          "archived": {
+            "type": "string",
+            "enum": [
+              "YES",
+              "NO"
+            ],
+            "description": "YES for archived advertisers only, NO for active ones."
+          },
+          "field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return.",
+            "default": [
+              "Login",
+              "ClientId",
+              "ClientInfo",
+              "Currency",
+              "Archived",
+              "Type"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Objects per page, at most 10000. Default 500. When the answer has LimitedBy, there are more: pass it as offset."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many objects (the LimitedBy value of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/agencyclients",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "SelectionCriteria": {
+              "Logins": "$logins",
+              "Archived": "$archived"
+            },
+            "FieldNames": "$field_names",
+            "Page": {
+              "Limit": "$limit",
+              "Offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_get_dictionaries",
+      "description": "Read reference dictionaries: Currencies (with bid limits), GeoRegions (region ids used in RegionIds), TimeZones, Constants, AdCategories, Interests, AudienceCriteriaTypes and more. GeoRegions is large: ask for it only when needed. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dictionary_names": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Currencies",
+                "MetroStations",
+                "GeoRegions",
+                "TimeZones",
+                "Constants",
+                "AdCategories",
+                "OperationSystemVersions",
+                "ProductivityAssertions",
+                "SupplySidePlatforms",
+                "Interests",
+                "AudienceCriteriaTypes",
+                "AudienceDemographicProfiles",
+                "AudienceInterests",
+                "FilterSchemas"
+              ]
+            },
+            "description": "Dictionaries to read."
+          }
+        },
+        "required": [
+          "dictionary_names"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dictionaries",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "get",
+          "params": {
+            "DictionaryNames": "$dictionary_names"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_check_campaign_changes",
+      "description": "Which campaigns changed since a moment: for each changed campaign, whether the campaign itself (SELF), its groups, ads or keywords (CHILDREN) or its statistics (STAT) changed. Pass the Timestamp of the previous answer next time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "description": "UTC time, YYYY-MM-DDThh:mm:ssZ, e.g. 2026-10-18T00:00:00Z."
+          }
+        },
+        "required": [
+          "timestamp"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/changes",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}"
+        },
+        "bodyMapping": {
+          "method": "checkCampaigns",
+          "params": {
+            "Timestamp": "$timestamp"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_direct_get_report",
+      "description": "Run a statistics report (Reports service) and return it as tab-separated text: a column header row, one row per line, money as decimals in the account currency. Common: CAMPAIGN_PERFORMANCE_REPORT with Date, CampaignName, Impressions, Clicks, Ctr, Cost, AvgCpc, Conversions; SEARCH_QUERY_PERFORMANCE_REPORT for search terms (offline only); CUSTOM_REPORT for any combination. If the answer is empty and the retryin header is set (HTTP 201 or 202), the report is being built offline: call again with exactly the same parameters and report_name after that many seconds. Read-only, free apart from API points.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "A name unique for this set of parameters, e.g. campaigns-2026-10-01-2026-10-18. Reuse it only to poll the same report."
+          },
+          "report_type": {
+            "type": "string",
+            "enum": [
+              "ACCOUNT_PERFORMANCE_REPORT",
+              "CAMPAIGN_PERFORMANCE_REPORT",
+              "ADGROUP_PERFORMANCE_REPORT",
+              "AD_PERFORMANCE_REPORT",
+              "CRITERIA_PERFORMANCE_REPORT",
+              "CUSTOM_REPORT",
+              "SEARCH_QUERY_PERFORMANCE_REPORT",
+              "REACH_AND_FREQUENCY_PERFORMANCE_REPORT"
+            ],
+            "default": "CAMPAIGN_PERFORMANCE_REPORT",
+            "description": "Report type. Default CAMPAIGN_PERFORMANCE_REPORT."
+          },
+          "date_range_type": {
+            "type": "string",
+            "enum": [
+              "TODAY",
+              "YESTERDAY",
+              "LAST_3_DAYS",
+              "LAST_5_DAYS",
+              "LAST_7_DAYS",
+              "LAST_14_DAYS",
+              "LAST_30_DAYS",
+              "LAST_90_DAYS",
+              "LAST_365_DAYS",
+              "THIS_WEEK_MON_TODAY",
+              "LAST_WEEK",
+              "LAST_BUSINESS_WEEK",
+              "THIS_MONTH",
+              "LAST_MONTH",
+              "ALL_TIME",
+              "CUSTOM_DATE",
+              "AUTO"
+            ],
+            "default": "LAST_7_DAYS",
+            "description": "Period. CUSTOM_DATE needs date_from and date_to; other values forbid them. Default LAST_7_DAYS."
+          },
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "With CUSTOM_DATE: first day, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "With CUSTOM_DATE: last day, YYYY-MM-DD."
+          },
+          "field_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "Date",
+              "CampaignId",
+              "CampaignName",
+              "Impressions",
+              "Clicks",
+              "Ctr",
+              "Cost",
+              "AvgCpc"
+            ],
+            "description": "Columns, e.g. Date, CampaignId, CampaignName, AdGroupName, Criterion, Query, Device, LocationOfPresenceName, Impressions, Clicks, Ctr, Cost, AvgCpc, Conversions, CostPerConversion, ConversionRate, Revenue, Bounces. Not every column exists in every report type."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Optional filters: [{\"Field\":\"CampaignId\",\"Operator\":\"IN\",\"Values\":[\"123\"]}]. Operators EQUALS, NOT_EQUALS, IN, NOT_IN, LESS_THAN, GREATER_THAN, STARTS_WITH_IGNORE_CASE ... Money values in micros."
+          },
+          "goals": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional Metrica goal ids (at most 10) for Conversions columns."
+          },
+          "attribution_models": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FC",
+                "LC",
+                "LSC",
+                "LYDC",
+                "FCCD",
+                "LSCCD",
+                "LYDCCD",
+                "AUTO"
+              ]
+            },
+            "description": "Optional attribution models for conversions."
+          },
+          "order_by": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Optional sort: [{\"Field\":\"Clicks\",\"SortOrder\":\"DESCENDING\"}]."
+          },
+          "include_vat": {
+            "type": "string",
+            "enum": [
+              "YES",
+              "NO"
+            ],
+            "default": "YES",
+            "description": "Money with VAT (YES, default) or without."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000,
+            "default": 1000,
+            "description": "Maximum rows. Default 1000."
+          },
+          "processing_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "online",
+              "offline"
+            ],
+            "default": "auto",
+            "description": "auto (default) lets Yandex decide; offline always queues."
+          }
+        },
+        "required": [
+          "report_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reports",
+        "headers": {
+          "Client-Login": "${YANDEX_DIRECT_CLIENT_LOGIN}",
+          "processingMode": "$processing_mode",
+          "returnMoneyInMicros": "false",
+          "skipReportHeader": "true",
+          "skipReportSummary": "true",
+          "Accept": "text/tab-separated-values, application/json"
+        },
+        "exposeHeaders": [
+          "retryin",
+          "reportsinqueue"
+        ],
+        "bodyMapping": {
+          "params": {
+            "SelectionCriteria": {
+              "DateFrom": "$date_from",
+              "DateTo": "$date_to",
+              "Filter": "$filter"
+            },
+            "Goals": "$goals",
+            "AttributionModels": "$attribution_models",
+            "FieldNames": "$field_names",
+            "OrderBy": "$order_by",
+            "Page": {
+              "Limit": "$limit"
+            },
+            "ReportName": "$report_name",
+            "ReportType": "$report_type",
+            "DateRangeType": "$date_range_type",
+            "Format": "TSV",
+            "IncludeVAT": "$include_vat"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

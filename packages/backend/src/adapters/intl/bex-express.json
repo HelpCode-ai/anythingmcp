@@ -1,0 +1,383 @@
+{
+  "slug": "bex-express",
+  "name": "BEX Express",
+  "aliases": [
+    "Bexexpress",
+    "BEX",
+    "Bex Express Srbija",
+    "BEX kurirska služba"
+  ],
+  "description": "BEX Express courier (Serbia) from an AI agent: shipment status history by shipment number, address labels as PDF, the BEX address directory of municipalities, places and streets, and parcel shops and depots. Creating and cancelling shipments is included, installed switched off.",
+  "region": "intl",
+  "category": "logistics",
+  "icon": "bex-express",
+  "docsUrl": "https://bexexpress.rs/DevDocumentation",
+  "instructions": "## BEX Express\nThis connector uses the **BexExpress REST API**, the API of the Serbian courier BEX Express (Bexexpress, Šabac): shipment status history, address labels as PDF, the address directory (municipalities, places, streets) BEX needs for a shipment, and the list of parcel shops and depots. Creating and cancelling shipments is included but installed switched off.\n\n**Setup (contract customers only)**\n1. You need a contract with BEX Express. New customers write to ponude@bex.rs.\n2. Ask for API access by e-mail to api@bex.rs and name the contract it is for.\n3. BEX replies with an **API key** (sent as the `X-AUTH-TOKEN` header) and your **KlijentId**. Paste the key into `BEX_API_TOKEN`. Keep the KlijentId at hand: it identifies your own company as sender in a shipment (`NameType` 3, `Name1` = KlijentId).\n4. Install and run `bex_express_list_municipalities` to check the key.\n\n**Two hosts**: lookups, tracking and labels run on `https://integrations.bexexpress.rs/api`; creating, cancelling shipments and the parcel shop list run on `https://api.bex.rs:62503/ship/api/Ship`. The same key works on both. Port 62503 must be reachable from where AnythingMCP runs (it is from AnythingMCP Cloud); a firewall that only allows 443 blocks those three tools.\n\n**Tracking**: `bex_express_get_shipment_history` takes the BEX shipment number (e.g. 206897445, as printed on the label and returned when the shipment is created) and returns every scan with status, date, place and time zone, plus `eventPrediction`, the next expected event. Status codes: 1 registered, 11 picked up from the sender, 21 delivered, 25 to be returned to the sender, 30 returned to the sender, -21 address check by the call centre, -51 at customs.\n\n**Labels**: `bex_express_get_label` returns the address labels of a shipment as a Base64 PDF in `parcelLabel` (`state` false and `err` on failure). `page_size` 6 prints one A6 label per page, 4 prints four labels on A4, starting at `page_position` (0 to 3). `parcel_no` 0 prints every parcel of the shipment, otherwise only that parcel. The PDF is large; ask for it only when the user wants to print or save the label.\n\n**Address directory**: a shipment address uses BEX ids. `bex_express_list_municipalities` lists municipalities (opštine), `bex_express_list_settlements` the places (mesta) of one municipality with postcode, `bex_express_list_streets` the streets of one place (with the old street name where it changed). Use the ids as `Municipalities`, `Place` and `Street` with `AdressType` 3, or send the place id and the street name with `AdressType` 2, or both names with `AdressType` 1. BEX would return every place or every street of Serbia for id 0 (almost 100,000 streets, about 7 MB), so the connector requires a real municipality or place id.\n\n**Parcel shops**: `bex_express_list_parcel_shops` lists parcel shops and BEX depots (about 120) with code, address, opening hours and coordinates; BEX answers `state: false` with `err: \"ok\"` here even when the list is complete; the code goes into `ParcelShop` of a shipment task for delivery to or pickup at a parcel shop. `region_id` 0 lists all.\n\n**Creating and cancelling shipments (switched off)**: `bex_express_create_shipments` announces shipments for pickup by a courier and `bex_express_cancel_shipment` cancels an announced shipment. Both act on real courier orders, so they are installed switched off: an admin turns them on deliberately. Before each call, show the user the full shipment (sender, receiver, parcels, cash on delivery, insurance, pay type) or the shipment number to cancel and wait for a yes. Every field of the BEX shipment structure must be present: send 0 for unused numbers and an empty string for unused text. `shipmentId` 0 creates a new shipment; the answer lists the new shipment numbers per shipment, with `reqstate` and `reqerr` for the request as a whole.\n\n**Errors**: a wrong or missing key answers 401. Many BEX methods answer HTTP 200 with `state: false` and a text in `err`: read those fields before treating a call as successful.",
+  "prerequisites": "A BEX Express contract and an API key that BEX sends on request to api@bex.rs, together with your KlijentId.",
+  "requiredEnvVars": [
+    "BEX_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "BEX_API_TOKEN": {
+      "label": "API key (X-AUTH-TOKEN)",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API key BEX Express e-mails you after you request API access at api@bex.rs for your contract. It is sent as the X-AUTH-TOKEN header.",
+      "link": "https://bexexpress.rs/DevDocumentation/authorization",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the API key alone, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "BEX refused the API key. Check BEX_API_TOKEN against the key BEX e-mailed you; ask api@bex.rs if it was replaced.",
+    "403": "The key works, but this method is not enabled for your contract. Ask api@bex.rs.",
+    "404": "BEX did not find the shipment or method. Check the shipment number."
+  },
+  "probe": {
+    "tool": "bex_express_list_municipalities"
+  },
+  "connector": {
+    "name": "BEX Express API",
+    "type": "REST",
+    "baseUrl": "https://integrations.bexexpress.rs/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-AUTH-TOKEN",
+      "apiKey": "{{BEX_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "bex_express_get_shipment_history",
+      "description": "Get the status history of a BEX shipment by its shipment number: every scan with status name, scan and reason code, date, place, timestamp and time zone, plus eventPrediction, the next expected event. Status 1 registered, 11 picked up, 21 delivered, 25 to be returned, 30 returned to sender, -21 address check, -51 at customs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_number": {
+            "type": "string",
+            "description": "BEX shipment number, e.g. 206897445, as on the label or returned by bex_express_create_shipments."
+          }
+        },
+        "required": [
+          "shipment_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Shipments/shipmentHistory",
+        "queryParams": {
+          "trackingValue": "$shipment_number"
+        }
+      }
+    },
+    {
+      "name": "bex_express_get_label",
+      "description": "Get the address labels of a shipment as a Base64-encoded PDF (parcelLabel), with state true on success or false and an err text. page_size 6 = one A6 label per page, 4 = four labels per A4 page. The PDF is large: call only when the user wants to print or save the label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "integer",
+            "description": "BEX shipment number (returned by bex_express_create_shipments)."
+          },
+          "page_size": {
+            "type": "integer",
+            "enum": [
+              4,
+              6
+            ],
+            "default": 6,
+            "description": "6 for A6 labels (one per page), 4 for four labels on an A4 sheet."
+          },
+          "page_position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3,
+            "default": 0,
+            "description": "Only with page_size 4: the slot on the A4 sheet to start printing at, 0 to 3."
+          },
+          "parcel_no": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "0 prints the labels of every parcel of the shipment; a parcel number prints only that parcel."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Shipments/getLabelWithProperties",
+        "queryParams": {
+          "shipmentId": "$shipment_id",
+          "pageSize": "$page_size",
+          "pagePosition": "$page_position",
+          "parcelNo": "$parcel_no"
+        }
+      }
+    },
+    {
+      "name": "bex_express_list_municipalities",
+      "description": "List the municipalities (opštine) in the BEX address directory with id and name. The id goes into the Municipalities field of a shipment address and filters bex_express_list_settlements. Changes rarely: read it once per conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Addresses/Municipalities"
+      }
+    },
+    {
+      "name": "bex_express_list_settlements",
+      "description": "List the places (mesta) of one municipality in the BEX address directory with id, name, postcode and municipality id. The place id goes into the Place field of a shipment address (AdressType 2 or 3) and filters bex_express_list_streets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "municipality_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Municipality id from bex_express_list_municipalities."
+          }
+        },
+        "required": [
+          "municipality_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Addresses/Settlements",
+        "queryParams": {
+          "municipalityId": "$municipality_id"
+        }
+      }
+    },
+    {
+      "name": "bex_express_list_streets",
+      "description": "List the streets of one place in the BEX address directory with id, name, old name and place id. The street id goes into the Street field of a shipment address with AdressType 3.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "settlement_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Place id from bex_express_list_settlements."
+          }
+        },
+        "required": [
+          "settlement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Addresses/Streets",
+        "queryParams": {
+          "settlementId": "$settlement_id"
+        }
+      }
+    },
+    {
+      "name": "bex_express_list_parcel_shops",
+      "description": "List BEX parcel shops and depots with code, region, name, city, street and house number, opening hours on weekdays and Saturday, and coordinates. The code goes into the ParcelShop field of a shipment task. Read-only, although BEX takes it as a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "region_id": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Only parcel shops of this BEX region; 0 lists all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://api.bex.rs:62503/ship/api/Ship/listParcelShop",
+        "bodyMapping": {
+          "regionId": "$region_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "bex_express_create_shipments",
+      "description": "Create shipments and announce them to BEX for pickup by a courier (postShipments). Each shipment needs every field of the BEX structure (0 or an empty string when unused): shipmentId 0, serviceSpeed 1, shipmentType, shipmentCategory, totalPackages, shipmentContents, payType, cash on delivery and insurance amounts, the flags, and tasks with the sender (Type 1) and receiver (Type 2) addresses. Returns the new shipment numbers. Installed switched off; acts on real courier orders: show the user every shipment and get a yes first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipments": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Shipments in the BEX postShipments format.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shipmentId": {
+                  "type": "integer",
+                  "description": "Always 0 for a new shipment."
+                },
+                "serviceSpeed": {
+                  "type": "integer",
+                  "description": "Service speed, 1 by default."
+                },
+                "shipmentType": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    3
+                  ],
+                  "description": "1 standard, 3 special."
+                },
+                "shipmentCategory": {
+                  "type": "integer",
+                  "description": "Standard (shipmentType 1) by weight: 1 up to 0.5 kg, 2 up to 1 kg, 3 up to 2 kg, 4 up to 5 kg, 5 up to 10 kg, 6 up to 15 kg, 7 up to 20 kg, 8 up to 30 kg, 9 up to 50 kg, 31 over 50 kg, 219 full euro pallet. Special (shipmentType 3): e.g. 218 bicycle, 227 TV up to 55 inch, 229 car tyre."
+                },
+                "shipmentWeight": {
+                  "type": "integer",
+                  "description": "Total weight in kg, only for category 31 (over 50 kg); otherwise 0."
+                },
+                "totalPackages": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 99,
+                  "description": "Number of parcels in the shipment."
+                },
+                "invoiceAmount": {
+                  "type": "integer",
+                  "description": "0 by default."
+                },
+                "shipmentContents": {
+                  "type": "integer",
+                  "description": "Content category, e.g. 1 household appliances, 2 documents, 3 furniture, 9 electronics, 11 clothes, 12 car parts, 14 shoes, 19 computers, 21 mobile phones, 22 books, 24 sports equipment."
+                },
+                "commentPublic": {
+                  "type": "string",
+                  "description": "Note printed on the label, up to 255 characters."
+                },
+                "commentPrivate": {
+                  "type": "string",
+                  "description": "Internal note, up to 255 characters."
+                },
+                "personalDelivery": {
+                  "type": "boolean",
+                  "description": "Only to the named person with an ID document."
+                },
+                "returnSignedInvoices": {
+                  "type": "boolean",
+                  "description": "A delivery note travels with the parcel and comes back signed."
+                },
+                "returnSignedConfirmation": {
+                  "type": "boolean",
+                  "description": "A signed proof of delivery comes back to the sender."
+                },
+                "returnPackage": {
+                  "type": "boolean",
+                  "description": "The receiver may hand the courier a return envelope for the sender."
+                },
+                "payType": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    2,
+                    6
+                  ],
+                  "description": "Who pays the delivery: 1 sender in cash, 2 receiver in cash, 6 the contract customer on account."
+                },
+                "insuranceAmount": {
+                  "type": "integer",
+                  "description": "Insured value, 0 for none."
+                },
+                "payToSender": {
+                  "type": "integer",
+                  "description": "Cash on delivery amount collected from the receiver, 0 for none."
+                },
+                "payToSenderViaAccount": {
+                  "type": "boolean",
+                  "description": "Pay the cash on delivery to the sender's bank account."
+                },
+                "sendersAccountNumber": {
+                  "type": "string",
+                  "description": "Bank account for cash on delivery, or an empty string."
+                },
+                "bankTransferComment": {
+                  "type": "string",
+                  "description": "Payment reference for the transfer, up to 20 characters."
+                },
+                "tasks": {
+                  "type": "array",
+                  "description": "Two tasks: Type 1 sender (pickup) and Type 2 receiver (delivery). Fields: Type, NameType (1 person, 2 company, 3 BEX KlijentId), Name1, Name2, TaxId, AdressType (1 names, 2 place id and street name, 3 place and street ids), Municipalities, Place, Street, HouseNumber, Apartment, ContactPerson, Phone, Date (YYYY-MM-DD or empty), TimeFrom, TimeTo, PreNotification, Comment, ParcelShop (0 or a parcel shop code).",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "reports": {
+                  "type": "array",
+                  "description": "Notifications: Mode 1 e-mail or 2 SMS, Type 1 pickup confirmation, 2 courier arrival, 3 delivery report, Adress the e-mail or phone. Empty array for none.",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "shipments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://api.bex.rs:62503/ship/api/Ship/postShipments",
+        "bodyMapping": {
+          "shipmentslist": "$shipments"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "bex_express_cancel_shipment",
+      "description": "Cancel (delete) an announced BEX shipment by its shipment number. Returns state true and the shipment number, or false and an err text, e.g. when the courier has already picked it up. Installed switched off; show the user the shipment and get a yes first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "integer",
+            "description": "BEX shipment number to cancel."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://api.bex.rs:62503/ship/api/Ship/deleteShipments",
+        "bodyMapping": {
+          "shipmentid": "$shipment_id",
+          "mtype": 1,
+          "lang": 1
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

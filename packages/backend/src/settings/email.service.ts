@@ -4,6 +4,7 @@ import axios from 'axios';
 import { SiteSettingsService } from './site-settings.service';
 import { OrgSettingsService } from './org-settings.service';
 import { PrismaService } from '../common/prisma.service';
+import { findUserByEmail } from '../common/email.util';
 import { DeploymentService } from '../common/deployment.service';
 import { TrustStatsService } from '../public-stats/trust-stats.service';
 import { EMPTY_TRUST_STATS, TrustStats, formatTrustStats } from '../public-stats/trust-stats.format';
@@ -105,9 +106,7 @@ export class EmailService {
     const cloudUrl = this.cloudUrl();
     const secret = unsubscribeSecret();
     const user = secret
-      ? await this.prisma.user
-          .findUnique({ where: { email: to }, select: { id: true } })
-          .catch(() => null)
+      ? await findUserByEmail<{ id: string; email: string }>(this.prisma, to, { id: true }).catch(() => null)
       : null;
     if (secret && user) {
       const url = buildUnsubscribeUrl(cloudUrl, user.id, secret);
