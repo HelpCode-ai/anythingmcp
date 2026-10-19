@@ -1,0 +1,794 @@
+{
+  "slug": "manychat",
+  "name": "Manychat",
+  "aliases": [
+    "Many Chat"
+  ],
+  "description": "Let your AI work with a Manychat account on Instagram, WhatsApp, Messenger and Telegram: find contacts and read their tags and fields, tag contacts, update fields and contact details, list flows and growth tools, and send messages or start flows with your confirmation.",
+  "instructions": "## Manychat\nThis connector calls the **Manychat Public API** (`https://api.manychat.com`) with the API key of one Manychat account (one Facebook page, Instagram, WhatsApp or Telegram bot). It reads contacts, tags, fields, flows and growth tools, updates contacts, and sends messages and flows.\n\n**Plan**: API access needs the **Manychat Pro** plan (or higher). The free plan and the Essential plan have no API key. Creating contacts through the API (`manychat_create_contact`) is an import feature of paid plans as well.\n\n**Setup (about 2 minutes)**\n1. In Manychat open the account, then **Settings > API** and click **Generate your API Key**.\n2. Copy the key into `MANYCHAT_API_KEY`. It looks like `1234567:abcdef0123456789...` (the page id, a colon and a hash) and is sent as `Authorization: Bearer <key>`.\n3. Regenerating or deleting the key in Manychat stops every tool that uses the old one. One key covers one account; install the connector once per account.\n\n**Where to start**: `manychat_get_account` checks the key. `manychat_list_tags`, `manychat_list_custom_fields`, `manychat_list_bot_fields` and `manychat_list_flows` give the names and ids the other tools need. There is no endpoint that lists every contact: find contacts with `manychat_find_contacts_by_name`, `manychat_find_contact_by_email_or_phone` or `manychat_find_contacts_by_custom_field` (text and number fields only, at most 100 results, no paging), then read one with `manychat_get_contact`.\n\n**Ids**: contact ids are long numbers; pass them exactly as Manychat returned them. Tags are addressed by name, custom and bot fields by `field_id` or `field_name`.\n\n**Field values** must match the field type: text as a string, number as a number, boolean as true or false, date as `YYYY-MM-DD`, datetime as `YYYY-MM-DDTHH:MM:SS+00:00`. A wrong type answers 400.\n\n**Sending**: `manychat_send_text_message`, `manychat_send_content` and `manychat_send_flow` send real messages. Messenger, Instagram and WhatsApp only allow automated messages within 24 hours of the contact's last message (`last_interaction` on the contact). Meta retired Messenger message tags in February 2026, so `message_tag` no longer opens the window. Outside the window WhatsApp needs an approved template: start a flow that begins with a template message using `manychat_send_flow`. WhatsApp content sent directly accepts only text with url or flow buttons. Show the user the recipient and the exact content and wait for a yes before every send.\n\n**Other writes**: tagging, field updates, contact updates and new tags or fields change the account and can start automations that listen for them; confirm each with the user. `manychat_delete_tag` removes a tag from the account and every contact, cannot be undone, and is installed switched off.\n\n**Rate limits** are per account: 100 requests a second for most reads, 10 a second for `manychat_list_flows`, contact lookups and all writes, 25 a second for sends and 20 a second plus 100 an hour per contact for `manychat_send_flow`. Manychat may stop serving an account that keeps exceeding them, so avoid loops over many contacts.\n\n**Errors**: 401 `Wrong token` or `Wrong format token` means the key is wrong, incomplete or regenerated. 400 carries `message` and `details`; send errors carry a `code`, e.g. 3011 (outside the 24-hour window) or 3040 to 3049 (content not supported on the contact's channel).\n\n**Out of scope**: listing all contacts, deleting contacts or custom fields, live chat conversations, comments, payments and the Messenger checkbox (user_ref) tools.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "manychat",
+  "docsUrl": "https://api.manychat.com/swagger",
+  "prerequisites": "A Manychat account on the Pro plan or higher, and its API key from Settings > API. About 2 minutes.",
+  "requiredEnvVars": [
+    "MANYCHAT_API_KEY"
+  ],
+  "envVarMeta": {
+    "MANYCHAT_API_KEY": {
+      "label": "Manychat API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Manychat, Settings, API, Generate your API Key. Needs the Pro plan. It looks like the page id, a colon and a hash.",
+      "link": "https://help.manychat.com/hc/en-us/articles/14959510331420",
+      "example": "1234567:0123456789abcdef0123456789abcdef",
+      "pattern": "^[0-9]+:[A-Za-z0-9]+$",
+      "patternMessage": "Paste the whole key as Manychat shows it (digits, a colon, then letters and digits), without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Manychat refused the API key: it is wrong, incomplete or was regenerated. Copy it again from Settings > API in Manychat (Pro plan needed).",
+    "429": "Manychat is rate limiting this account. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "manychat_get_account"
+  },
+  "connector": {
+    "name": "Manychat API",
+    "type": "REST",
+    "baseUrl": "https://api.manychat.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MANYCHAT_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/fb/page/getInfo",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status",
+          "equals": "error",
+          "messagePath": "message",
+          "messageMatches": "token",
+          "status": 401
+        },
+        {
+          "path": "status",
+          "equals": "error",
+          "messagePath": "message",
+          "status": 400
+        },
+        {
+          "path": "status",
+          "equals": "exception",
+          "messagePath": "message",
+          "status": 502
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "manychat_get_account",
+      "description": "Read the connected Manychat account (page): id, name, category, username, timezone and is_pro. Checks the API key.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fb/page/getInfo"
+      }
+    },
+    {
+      "name": "manychat_list_tags",
+      "description": "List the account's tags with id and name. Tag names are what the tagging tools take.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fb/page/getTags"
+      }
+    },
+    {
+      "name": "manychat_list_custom_fields",
+      "description": "List the account's contact (custom) fields with id, name, type (text, number, date, datetime, boolean) and description. Use the id or name with manychat_set_contact_fields and manychat_find_contacts_by_custom_field.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fb/page/getCustomFields"
+      }
+    },
+    {
+      "name": "manychat_list_bot_fields",
+      "description": "List the account's bot fields (account-wide values shared by every contact) with id, name, type, description and current value.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fb/page/getBotFields"
+      }
+    },
+    {
+      "name": "manychat_list_flows",
+      "description": "List the automations (flows) of the account with their ns id, name and folder, plus the folders. Use ns as flow_ns in manychat_send_flow.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fb/page/getFlows"
+      }
+    },
+    {
+      "name": "manychat_list_growth_tools",
+      "description": "List the growth tools (entry points such as ref links, QR codes, comment triggers and widgets) with id, name and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fb/page/getGrowthTools"
+      }
+    },
+    {
+      "name": "manychat_get_contact",
+      "description": "Get one contact by id: name, channels (Messenger, Instagram username, WhatsApp phone, email, SMS phone) and their opt-ins, subscription state, last interaction and last seen, live chat URL, tags and custom field values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": {
+            "type": "integer",
+            "description": "Contact (subscriber) id: from manychat_find_contacts_by_name, manychat_find_contact_by_email_or_phone or the contact card in Manychat. Pass the digits exactly as returned."
+          }
+        },
+        "required": [
+          "subscriber_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fb/subscriber/getInfo",
+        "queryParams": {
+          "subscriber_id": "$subscriber_id"
+        }
+      }
+    },
+    {
+      "name": "manychat_find_contacts_by_name",
+      "description": "Find contacts by full name (up to 100, no paging). Returns the same details as manychat_get_contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name of the contact, e.g. Jane Doe."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fb/subscriber/findByName",
+        "queryParams": {
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "manychat_find_contacts_by_custom_field",
+      "description": "Find contacts whose text or number custom field has a given value (up to 100, most recently updated first). Date and boolean fields cannot be searched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_id": {
+            "type": "integer",
+            "description": "Custom field id from manychat_list_custom_fields (a text or number field)."
+          },
+          "field_value": {
+            "type": "string",
+            "description": "Exact value to look for."
+          }
+        },
+        "required": [
+          "field_id",
+          "field_value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fb/subscriber/findByCustomField",
+        "queryParams": {
+          "field_id": "$field_id",
+          "field_value": "$field_value"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "manychat_find_contact_by_email_or_phone",
+      "description": "Find one contact by email address or by phone number. Give exactly one of email or phone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address of the contact."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number with country code, e.g. +15405550100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fb/subscriber/findBySystemField",
+        "queryParams": {
+          "email": "$email",
+          "phone": "$phone"
+        }
+      }
+    },
+    {
+      "name": "manychat_tag_contact",
+      "description": "Add an existing tag to a contact, by tag name. Adding a tag can start automations that listen for it. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": {
+            "type": "integer",
+            "description": "Contact (subscriber) id: from manychat_find_contacts_by_name, manychat_find_contact_by_email_or_phone or the contact card in Manychat. Pass the digits exactly as returned."
+          },
+          "tag_name": {
+            "type": "string",
+            "description": "Tag name as listed by manychat_list_tags."
+          }
+        },
+        "required": [
+          "subscriber_id",
+          "tag_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/subscriber/addTagByName",
+        "bodyMapping": {
+          "subscriber_id": "$subscriber_id",
+          "tag_name": "$tag_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "manychat_untag_contact",
+      "description": "Remove a tag from one contact, by tag name. The tag itself stays in the account. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": {
+            "type": "integer",
+            "description": "Contact (subscriber) id: from manychat_find_contacts_by_name, manychat_find_contact_by_email_or_phone or the contact card in Manychat. Pass the digits exactly as returned."
+          },
+          "tag_name": {
+            "type": "string",
+            "description": "Tag name as listed by manychat_list_tags."
+          }
+        },
+        "required": [
+          "subscriber_id",
+          "tag_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/subscriber/removeTagByName",
+        "bodyMapping": {
+          "subscriber_id": "$subscriber_id",
+          "tag_name": "$tag_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "manychat_set_contact_fields",
+      "description": "Set one or more custom field values of a contact (up to 20 per call), each by field_id or field_name. Overwrites the current values and can start automations. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": {
+            "type": "integer",
+            "description": "Contact (subscriber) id: from manychat_find_contacts_by_name, manychat_find_contact_by_email_or_phone or the contact card in Manychat. Pass the digits exactly as returned."
+          },
+          "fields": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "field_id": {
+                  "type": "integer",
+                  "description": "Field id. Give field_id or field_name, not both."
+                },
+                "field_name": {
+                  "type": "string",
+                  "description": "Field name, as listed."
+                },
+                "field_value": {
+                  "description": "New value: text as a string, number as a number, boolean as true or false, date as YYYY-MM-DD, datetime as YYYY-MM-DDTHH:MM:SS+00:00."
+                }
+              },
+              "required": [
+                "field_value"
+              ]
+            },
+            "description": "Fields to set, e.g. [{\"field_name\": \"City\", \"field_value\": \"Lyon\"}]."
+          }
+        },
+        "required": [
+          "subscriber_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/subscriber/setCustomFields",
+        "bodyMapping": {
+          "subscriber_id": "$subscriber_id",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "manychat_create_contact",
+      "description": "Create a contact from a phone number, WhatsApp number or email (at least one). An SMS phone needs has_opt_in_sms and, when true, consent_phrase; an email needs has_opt_in_email. A whatsapp_phone alone creates a WhatsApp contact. Fails if the contact exists. Importing contacts needs a paid plan. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "SMS phone number with country code, e.g. +15405550100."
+          },
+          "whatsapp_phone": {
+            "type": "string",
+            "description": "WhatsApp number with country code, e.g. +15405550100."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "gender": {
+            "type": "string",
+            "description": "Gender, e.g. male or female."
+          },
+          "has_opt_in_sms": {
+            "type": "boolean",
+            "description": "Whether the contact agreed to receive SMS. Required with phone."
+          },
+          "has_opt_in_email": {
+            "type": "boolean",
+            "description": "Whether the contact agreed to receive email. Required with email."
+          },
+          "consent_phrase": {
+            "type": "string",
+            "description": "The consent text the contact agreed to. Required when has_opt_in_sms is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/subscriber/createSubscriber",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "phone": "$phone",
+          "whatsapp_phone": "$whatsapp_phone",
+          "email": "$email",
+          "gender": "$gender",
+          "has_opt_in_sms": "$has_opt_in_sms",
+          "has_opt_in_email": "$has_opt_in_email",
+          "consent_phrase": "$consent_phrase"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "manychat_update_contact",
+      "description": "Update a contact's name, gender, SMS phone, email and their opt-ins. The WhatsApp number cannot be changed here. Same opt-in rules as manychat_create_contact. Overwrites the values sent. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": {
+            "type": "integer",
+            "description": "Contact (subscriber) id: from manychat_find_contacts_by_name, manychat_find_contact_by_email_or_phone or the contact card in Manychat. Pass the digits exactly as returned."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "SMS phone number with country code."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "gender": {
+            "type": "string",
+            "description": "Gender."
+          },
+          "has_opt_in_sms": {
+            "type": "boolean",
+            "description": "SMS opt-in. Required with phone."
+          },
+          "has_opt_in_email": {
+            "type": "boolean",
+            "description": "Email opt-in. Required with email."
+          },
+          "consent_phrase": {
+            "type": "string",
+            "description": "Consent text. Required when has_opt_in_sms is true."
+          }
+        },
+        "required": [
+          "subscriber_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/subscriber/updateSubscriber",
+        "bodyMapping": {
+          "subscriber_id": "$subscriber_id",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "phone": "$phone",
+          "email": "$email",
+          "gender": "$gender",
+          "has_opt_in_sms": "$has_opt_in_sms",
+          "has_opt_in_email": "$has_opt_in_email",
+          "consent_phrase": "$consent_phrase"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "manychat_create_tag",
+      "description": "Create a new tag in the account, to use with manychat_tag_contact. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the new tag."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/page/createTag",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "manychat_delete_tag",
+      "description": "Delete a tag from the account and from every contact that has it. Automations using it lose it, and it cannot be undone. Installed switched off. Name the tag and the effect and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag_name": {
+            "type": "string",
+            "description": "Name of the tag to delete, as listed by manychat_list_tags."
+          }
+        },
+        "required": [
+          "tag_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/page/removeTagByName",
+        "bodyMapping": {
+          "tag_name": "$tag_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "manychat_create_custom_field",
+      "description": "Create a contact (custom) field. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "caption": {
+            "type": "string",
+            "description": "Name of the new field."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "datetime",
+              "boolean"
+            ],
+            "description": "Field type."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description."
+          }
+        },
+        "required": [
+          "caption",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/page/createCustomField",
+        "bodyMapping": {
+          "caption": "$caption",
+          "type": "$type",
+          "description": "$description"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "manychat_set_bot_fields",
+      "description": "Set one or more bot field values (account-wide, up to 20 per call), each by field_id or field_name. Every automation that reads the field sees the new value. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "field_id": {
+                  "type": "integer",
+                  "description": "Field id. Give field_id or field_name, not both."
+                },
+                "field_name": {
+                  "type": "string",
+                  "description": "Field name, as listed."
+                },
+                "field_value": {
+                  "description": "New value: text as a string, number as a number, boolean as true or false, date as YYYY-MM-DD, datetime as YYYY-MM-DDTHH:MM:SS+00:00."
+                }
+              },
+              "required": [
+                "field_value"
+              ]
+            },
+            "description": "Bot fields to set, e.g. [{\"field_name\": \"promo_code\", \"field_value\": \"FALL10\"}]."
+          }
+        },
+        "required": [
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/page/setBotFields",
+        "bodyMapping": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "manychat_send_flow",
+      "description": "Start an automation (flow) for one contact, which sends its messages on the contact's channel. Messaging rules apply: outside the 24-hour window only content the channel allows goes out (on WhatsApp, a flow that starts with an approved template). This sends real messages: name the contact and the flow and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": {
+            "type": "integer",
+            "description": "Contact (subscriber) id: from manychat_find_contacts_by_name, manychat_find_contact_by_email_or_phone or the contact card in Manychat. Pass the digits exactly as returned."
+          },
+          "flow_ns": {
+            "type": "string",
+            "description": "Flow ns id from manychat_list_flows, e.g. content20240101000000_123456."
+          }
+        },
+        "required": [
+          "subscriber_id",
+          "flow_ns"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/sending/sendFlow",
+        "bodyMapping": {
+          "subscriber_id": "$subscriber_id",
+          "flow_ns": "$flow_ns"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "manychat_send_text_message",
+      "description": "Send a plain text message to one contact on Messenger, Instagram, WhatsApp or Telegram. Only inside the 24-hour window after the contact's last message (check last_interaction). This sends a real message: show the user the recipient and the exact text and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": {
+            "type": "integer",
+            "description": "Contact (subscriber) id: from manychat_find_contacts_by_name, manychat_find_contact_by_email_or_phone or the contact card in Manychat. Pass the digits exactly as returned."
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "instagram",
+              "whatsapp",
+              "telegram"
+            ],
+            "description": "Channel of the contact. Leave empty for Facebook Messenger."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text."
+          }
+        },
+        "required": [
+          "subscriber_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/sending/sendContent",
+        "bodyMapping": {
+          "subscriber_id": "$subscriber_id",
+          "data": {
+            "version": "v2",
+            "content": {
+              "type": "$channel",
+              "messages": [
+                {
+                  "type": "text",
+                  "text": "$text"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "manychat_send_content",
+      "description": "Send rich content to one contact in Manychat's v2 content format: up to 10 messages (text, image, video, audio, file, cards) with buttons, actions and quick replies. What a channel accepts differs (WhatsApp: text with url or flow buttons only). Only inside the 24-hour window. This sends a real message: show the user the recipient and the content and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": {
+            "type": "integer",
+            "description": "Contact (subscriber) id: from manychat_find_contacts_by_name, manychat_find_contact_by_email_or_phone or the contact card in Manychat. Pass the digits exactly as returned."
+          },
+          "data": {
+            "type": "object",
+            "description": "Content object, e.g. {\"version\": \"v2\", \"content\": {\"type\": \"instagram\", \"messages\": [{\"type\": \"text\", \"text\": \"Hi\", \"buttons\": [{\"type\": \"url\", \"caption\": \"Open\", \"url\": \"https://example.com\"}]}]}}. Omit content.type for Messenger."
+          },
+          "message_tag": {
+            "type": "string",
+            "description": "Legacy Messenger message tag (e.g. ACCOUNT_UPDATE). Meta retired message tags on Messenger in February 2026; leave empty."
+          }
+        },
+        "required": [
+          "subscriber_id",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fb/sending/sendContent",
+        "bodyMapping": {
+          "subscriber_id": "$subscriber_id",
+          "data": "$data",
+          "message_tag": "$message_tag"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

@@ -1,8 +1,9 @@
 {
   "slug": "mirakl",
   "name": "Mirakl Seller API",
-  "description": "Run your shop on any Mirakl-powered marketplace (Leroy Merlin, Conforama, BUT, home24, Maisons du Monde, Vente-unique, ePrice, Decathlon, Carrefour and many more) from an AI agent: orders, acceptance, tracking and shipping, offers with prices and stock, offer and product imports, customer and operator messages, returns, invoices and transactions. One install per marketplace.",
-  "instructions": "## Mirakl Seller API\nThis connector uses the **Mirakl Marketplace Platform (MMP) shop API**, the same REST API on every marketplace that runs on Mirakl. Each marketplace operator has its own Mirakl instance, so **one install covers one marketplace**: install the connector once per marketplace you sell on (for example once for Leroy Merlin and once for Conforama) and give each install a name that says which one it is.\n\n**Setup (about 5 minutes per marketplace)**\n1. Sign in to the marketplace's seller back office (the Mirakl portal the operator gave you).\n2. Copy the address of the portal without any path into `MIRAKL_URL`, e.g. `https://adeo-marketplace.mirakl.net` or `https://conforama-prod.mirakl.net`. Some operators use their own domain (e.g. `https://marketplace.eprice.it`); that works the same way. The connector adds `/api` itself, so do not paste it.\n3. Click your user name in the top right corner, open **My user settings** and the **API Key** tab, and generate a key (or copy the existing one). Paste it into `MIRAKL_API_KEY`. The key is sent as is in the `Authorization` header, without `Bearer`. Generating a new key invalidates the old one, so any other tool using it stops working.\n4. Only if your user manages several shops on this marketplace: set `MIRAKL_SHOP_ID` to the shop to work on (shown in the back office and in `mirakl_get_account`). Without it Mirakl uses your default shop.\n5. Install and run `mirakl_get_account`.\n\n**Order workflow**: a new order waits in `WAITING_ACCEPTANCE`. `mirakl_accept_order` accepts (or refuses) every line; after the customer is debited the order moves to `SHIPPING`. Then `mirakl_update_tracking` stores the carrier and tracking number (carrier codes come from `mirakl_list_carriers`) and `mirakl_ship_order` confirms the shipment (`SHIPPED`). Later states are `TO_COLLECT`, `RECEIVED`, `CLOSED`, `REFUSED` and `CANCELED`. Use `mirakl_list_orders` with `order_state_codes=WAITING_ACCEPTANCE` for the daily to-do list and `has_incident=true` for open incidents.\n\n**Writes: confirm first.** `mirakl_accept_order`, `mirakl_update_tracking`, `mirakl_ship_order`, `mirakl_update_offers`, `mirakl_reply_thread`, `mirakl_create_order_thread` and `mirakl_import_products` act on the live marketplace. Before each call, show the user what will change (order id and lines, tracking number, offer SKU with the old and new price or stock, the message text and recipients) and wait for a yes. Refusing an order line cancels it for good. `mirakl_import_offers` can delete offers (REPLACE mode deletes every offer missing from the file), so it is installed switched off.\n\n**Updating offers (prices and stock)**: `mirakl_update_offers` (OF24) replaces the whole offer. Every field you leave out is reset: a missing `quantity` becomes 0, a missing `discount` or `description` is deleted. Always read the offer first (`mirakl_get_offer` or `mirakl_list_offers` with `sku`) and send it back complete with only the intended change: `shop_sku`, `product_id` and `product_id_type` (from `product_references`), `state_code`, `price`, `quantity`, `leadtime_to_ship`, `logistic_class` (its code), `min_quantity_alert`, `description`, `discount`, `all_prices`, `available_started` / `available_ended` (read as `available_start_date` / `available_end_date`) and any `offer_additional_fields`. Leave `update_delete` empty or `update`. The call returns an `import_id`; the change is applied asynchronously, so check it with `mirakl_get_offer_import` before reading the offer again. Condition codes for `state_code` come from `mirakl_list_offer_conditions`.\n\n**File imports**: `mirakl_import_products` (P41) and `mirakl_import_offers` (OF01) take the URL of a CSV, XLSX or XML file in the operator's format; the connector downloads it and uploads it to Mirakl. Track them with `mirakl_list_product_imports` / `mirakl_get_product_import` and `mirakl_list_offer_imports` / `mirakl_get_offer_import`.\n\n**Messages**: `mirakl_list_threads` lists conversations (filter with `entity_type=MMP_ORDER` and `entity_id=<order id>` for one order), `mirakl_get_thread` reads one with its messages, `mirakl_reply_thread` answers (recipient `CUSTOMER` or `OPERATOR`) and `mirakl_create_order_thread` opens a new conversation on an order. Reason codes for topics come from `mirakl_list_reasons`.\n\n**Money**: `mirakl_list_invoices` (IV01) lists the operator's accounting documents and `mirakl_list_transactions` (TL02) the transaction lines (sales, commissions, refunds, payouts). On marketplaces with Enhanced Seller Invoicing IV01 returns no new documents; use the transactions then.\n\n**Pagination**: orders, offers, invoices and product imports page with `max` (at most 100) and `offset`. Threads, returns, transactions and offer imports return a `next_page_token`; pass it as `page_token` to get the next page (all other filters are then ignored) until it is missing.\n\n**Dates** are ISO 8601, e.g. `2026-10-01T00:00:00Z`; Mirakl answers in UTC.\n\n**Rate limits**: Mirakl limits each API separately and the operator can tighten them. Listing offers and orders is meant for interactive use, product and offer imports at most every 15 minutes, `mirakl_get_account` and `mirakl_list_carriers` about once a day. A 429 carries a `Retry-After` header with the seconds to wait; do not retry in a loop.\n\n**Errors**: 401 means the key is wrong or belongs to another marketplace, 403 that your user lacks the right for this action, 404 that the order, offer or thread does not exist for this shop (or that `MIRAKL_URL` is not a Mirakl instance), 400 a wrong parameter or an order in the wrong state (the message names it, e.g. `ORDER_INVALID_STATE`).",
+  "aliases": ["Leroy Merlin", "ADEO", "Conforama", "BUT", "home24", "Maisons du Monde", "Vente-unique", "ePrice", "Mirakl Marketplace Platform"],
+  "description": "Run your shop on any Mirakl-powered marketplace (Leroy Merlin, Conforama, BUT, home24, Maisons du Monde, Vente-unique, ePrice, Decathlon, Carrefour and many more) from an AI agent: orders, acceptance, tracking and shipping, incidents, offers with prices and stock, offer and product imports, customer and operator messages, returns, order documents, invoices and transactions. One install per marketplace.",
+  "instructions": "## Mirakl Seller API\nThis connector uses the **Mirakl Marketplace Platform (MMP) shop API**, the same REST API on every marketplace that runs on Mirakl. Each marketplace operator has its own Mirakl instance, so **one install covers one marketplace**: install the connector once per marketplace you sell on (for example once for Leroy Merlin and once for Conforama) and give each install a name that says which one it is.\n\n**Setup (about 5 minutes per marketplace)**\n1. Sign in to the marketplace's seller back office (the Mirakl portal the operator gave you).\n2. Copy the address of the portal without any path into `MIRAKL_URL`. The connector adds `/api` itself, so do not paste it. Addresses of common marketplaces:\n   - Leroy Merlin (ADEO): `https://adeo-marketplace.mirakl.net`\n   - BUT: `https://but-prod.mirakl.net`\n   - Conforama: `https://conforama-prod.mirakl.net`\n   - home24: `https://home24.mirakl.net`\n   - Maisons du Monde: `https://maisonsdumonde-prod.mirakl.net`\n   - Vente-unique: `https://venteunique-prod.mirakl.net`\n   - ePrice: `https://marketplace.eprice.it`\n   Other operators work the same way, also those on their own domain: use the address of the seller back office you sign in to.\n3. Click your user name in the top right corner, open **My user settings** and the **API Key** tab, and generate a key (or copy the existing one). Paste it into `MIRAKL_API_KEY`. The key is sent as is in the `Authorization` header, without `Bearer`. Generating a new key invalidates the old one, so any other tool using it stops working.\n4. Only if your user manages several shops on this marketplace (common on home24 and Vente-unique): set `MIRAKL_SHOP_ID` to the shop to work on (shown in the back office and in `mirakl_get_account`). Without it Mirakl uses your default shop.\n5. Install and run `mirakl_get_account`.\n\n**Order workflow**: a new order waits in `WAITING_ACCEPTANCE`. `mirakl_accept_order` accepts (or refuses) every line; after the customer is debited the order moves to `SHIPPING`. Then `mirakl_update_tracking` stores the carrier and tracking number (carrier codes come from `mirakl_list_carriers`) and `mirakl_ship_order` confirms the shipment (`SHIPPED`). Later states are `TO_COLLECT`, `RECEIVED`, `CLOSED`, `REFUSED` and `CANCELED`. Use `mirakl_list_orders` with `order_state_codes=WAITING_ACCEPTANCE` for the daily to-do list and `has_incident=true` for open incidents; `mirakl_resolve_incident` closes an incident on one order line once it is solved. Documents attached to orders (delivery notes, labels, customer invoices) are listed by `mirakl_list_order_documents`.\n\n**Writes: confirm first.** `mirakl_accept_order`, `mirakl_update_tracking`, `mirakl_ship_order`, `mirakl_resolve_incident`, `mirakl_accept_return`, `mirakl_receive_return`, `mirakl_update_offers`, `mirakl_reply_thread`, `mirakl_create_order_thread` and `mirakl_import_products` act on the live marketplace. Before each call, show the user what will change (order id and lines, tracking number, offer SKU with the old and new price or stock, the message text and recipients) and wait for a yes. Refusing an order line cancels it for good. No tool here refunds, cancels orders or moves money; do that in the back office. `mirakl_import_offers` can delete offers (REPLACE mode deletes every offer missing from the file), so it is installed switched off.\n\n**Updating offers (prices and stock)**: `mirakl_update_offers` (OF24) replaces the whole offer. Every field you leave out is reset: a missing `quantity` becomes 0, a missing `discount` or `description` is deleted. Always read the offer first (`mirakl_get_offer` or `mirakl_list_offers` with `sku`) and send it back complete with only the intended change: `shop_sku`, `product_id` and `product_id_type` (from `product_references`), `state_code`, `price`, `quantity`, `leadtime_to_ship`, `logistic_class` (its code), `min_quantity_alert`, `description`, `discount`, `all_prices`, `available_started` / `available_ended` (read as `available_start_date` / `available_end_date`) and any `offer_additional_fields`. Leave `update_delete` empty or `update`. The call returns an `import_id`; the change is applied asynchronously, so check it with `mirakl_get_offer_import` before reading the offer again. Condition codes for `state_code` come from `mirakl_list_offer_conditions`, logistic class codes from `mirakl_list_logistic_classes`.\n\n**File imports**: `mirakl_import_products` (P41) and `mirakl_import_offers` (OF01) take the URL of a CSV, XLSX or XML file in the operator's format; the connector downloads it and uploads it to Mirakl. Track them with `mirakl_list_product_imports` / `mirakl_get_product_import` and `mirakl_list_offer_imports` / `mirakl_get_offer_import`.\n\n**Returns**: `mirakl_list_returns` (RT11) lists return requests. Where the operator lets the shop decide, `mirakl_accept_return` accepts or refuses one in `WAITING_ACCEPTANCE` and `mirakl_receive_return` confirms the goods arrived. Refunds stay in the back office.\n\n**Messages**: `mirakl_list_threads` lists conversations (filter with `entity_type=MMP_ORDER` and `entity_id=<order id>` for one order; Mirakl refuses `entity_id` without `entity_type`), `mirakl_get_thread` reads one with its messages, `mirakl_reply_thread` answers (recipient `CUSTOMER` or `OPERATOR`) and `mirakl_create_order_thread` opens a new conversation on an order. Reason codes for topics come from `mirakl_list_reasons`; leave its `locale` empty unless you know the marketplace has that language (an inactive locale answers 400).\n\n**Money**: `mirakl_list_invoices` (IV01) lists the operator's accounting documents and `mirakl_list_transactions` (TL02) the transaction lines (sales, commissions, refunds, payouts). On marketplaces with Enhanced Seller Invoicing IV01 returns no new documents; use `mirakl_list_document_requests` (DR11) and the transactions then.\n\n**Reference lists**: `mirakl_list_channels` (country sites), `mirakl_list_carriers`, `mirakl_list_shipping_zones`, `mirakl_list_shipping_methods` and `mirakl_list_logistic_classes` change rarely; read them once per conversation.\n\n**Pagination**: orders, offers, invoices and product imports page with `max` (at most 100) and `offset`. Threads, returns, transactions, document requests and offer imports return a `next_page_token`; pass it as `page_token` to get the next page (all other filters are then ignored) until it is missing.\n\n**Dates** are ISO 8601, e.g. `2026-10-01T00:00:00Z`; Mirakl answers in UTC.\n\n**Rate limits**: Mirakl limits each API separately and the operator can tighten them. Listing offers and orders is meant for interactive use, product and offer imports at most every 15 minutes, `mirakl_get_account` and the reference lists about once a day. A 429 carries a `Retry-After` header with the seconds to wait; do not retry in a loop.\n\n**Errors**: 401 means the key is wrong or belongs to another marketplace, 403 that your user lacks the right for this action, 404 that the order, offer or thread does not exist for this shop (or that `MIRAKL_URL` is not a Mirakl instance), 400 a wrong parameter or an order in the wrong state (the message names it, e.g. `ORDER_INVALID_STATE`).",
   "region": "intl",
   "category": "e-commerce",
   "icon": "mirakl",
@@ -590,7 +591,7 @@
         "properties": {
           "locale": {
             "type": "string",
-            "description": "Language of the labels, e.g. fr_FR or en_US."
+            "description": "Language of the labels, e.g. fr_FR. Only a locale active on this marketplace works (others answer 400); leave empty for the default."
           }
         }
       },
@@ -735,6 +736,164 @@
           "accounting_document_number": "$accounting_document_number",
           "limit": "$limit",
           "page_token": "$page_token",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_document_requests",
+      "description": "List accounting document requests (DR11), used on marketplaces with Enhanced Seller Invoicing: invoices and credit notes the operator or the shop issues, with state, type, issuer, document number, amounts and payment state. Filter by date, state, type or document number. Pass next_page_token back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["STAGING", "TO_PROCESS", "ISSUED", "CANCELED"],
+            "description": "Only requests in this state. TO_PROCESS are documents the shop still has to issue."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["INVOICE", "CREDIT_NOTE"],
+            "description": "Only invoices or only credit notes."
+          },
+          "issuer_type": {
+            "type": "string",
+            "enum": ["OPERATOR", "SHOP"],
+            "description": "Only documents issued by the operator, or by the shop."
+          },
+          "document_number": {
+            "type": "string",
+            "description": "Only the request with this accounting document number."
+          },
+          "date_created_from": {
+            "type": "string",
+            "description": "Requests created after this time, ISO 8601."
+          },
+          "date_created_to": {
+            "type": "string",
+            "description": "Requests created before this time, ISO 8601."
+          },
+          "issue_date_from": {
+            "type": "string",
+            "description": "Requests issued after this time, ISO 8601."
+          },
+          "issue_date_to": {
+            "type": "string",
+            "description": "Requests issued before this time, ISO 8601."
+          },
+          "payment_state": {
+            "type": "string",
+            "enum": ["PAID", "PENDING"],
+            "description": "Only paid or pending documents (purchase order and fee requests only)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Requests per page.",
+            "default": 20
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page. All other filters are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document-request/requests",
+        "queryParams": {
+          "state": "$state",
+          "type": "$type",
+          "issuer_type": "$issuer_type",
+          "document_number": "$document_number",
+          "date_created_from": "$date_created_from",
+          "date_created_to": "$date_created_to",
+          "issue_date_from": "$issue_date_from",
+          "issue_date_to": "$issue_date_to",
+          "payment_state": "$payment_state",
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_order_documents",
+      "description": "List the documents attached to one or more orders (OR72): delivery notes, shipping labels, customer invoices and other files, with id, file name, type code and upload date. Download links are not part of this tool; open the file in the back office.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "string",
+            "description": "Comma-separated order ids, e.g. 1234567-A,1234568-A."
+          }
+        },
+        "required": ["order_ids"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/documents",
+        "queryParams": {
+          "order_ids": "$order_ids",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_channels",
+      "description": "List the marketplace's sales channels (CH11), usually one per country site, with code and label. Use the codes as channel_codes in mirakl_list_orders and mirakl_list_product_offers. Changes rarely: call it once, not on every question.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_shipping_zones",
+      "description": "List the active shipping zones of the marketplace (SH11) with code and label, e.g. mainland France or Corsica. Changes rarely: call it once, not on every question.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/zones",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_shipping_methods",
+      "description": "List the active shipping methods of the marketplace (SH12), e.g. standard, express or pick-up, with code, label, whether a tracking number is mandatory and whether it is click and collect. The code appears as shipping_type_code on orders. Changes rarely: call it once, not on every question.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/types",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_logistic_classes",
+      "description": "List the marketplace's logistic classes (SH31), the size or weight bands that decide shipping prices, with code and label. Use the code as logistic_class in mirakl_update_offers. Changes rarely: call it once, not on every question.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/logistic_classes",
+        "queryParams": {
           "shop_id": "${MIRAKL_SHOP_ID}"
         }
       }
@@ -1077,6 +1236,121 @@
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false
+      }
+    },
+    {
+      "name": "mirakl_resolve_incident",
+      "description": "Mark the open incident on one order line as resolved (OR64), once the customer's problem is solved. reason_code must be an INCIDENT_CLOSE reason from mirakl_list_reasons. Closes the incident on the live marketplace: name the order, the line and the reason and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 1234567-A."
+          },
+          "order_line_id": {
+            "type": "string",
+            "description": "Order line id with the open incident, e.g. 1234567-A-1 (order_line_id in mirakl_list_orders)."
+          },
+          "reason_code": {
+            "type": "string",
+            "description": "Code of an INCIDENT_CLOSE reason from mirakl_list_reasons."
+          }
+        },
+        "required": ["order_id", "order_line_id", "reason_code"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/lines/{order_line_id}/resolve_incident",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "reason_code": "$reason_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mirakl_accept_return",
+      "description": "Accept or refuse a return request in WAITING_ACCEPTANCE (RT21). Only on marketplaces that use Mirakl returns and leave the decision to the shop. Refusing needs a rejection_reason_code. This only decides the request; refunds are not made by this tool. Acts on the live marketplace: name the return, the decision and the reason and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_id": {
+            "type": "string",
+            "description": "Return id from mirakl_list_returns."
+          },
+          "accepted": {
+            "type": "boolean",
+            "description": "true accepts the return, false refuses it."
+          },
+          "rejection_reason_code": {
+            "type": "string",
+            "enum": ["RETURN_REJECTION_NOT_ELIGIBLE", "RETURN_REJECTION_NOT_NEEDED", "RETURN_REJECTION_WINDOW_CLOSED"],
+            "description": "Required when accepted is false: not eligible, no return needed, or return window closed."
+          }
+        },
+        "required": ["return_id", "accepted"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/returns/accept",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "returns": [
+            {
+              "id": "$return_id",
+              "accepted": "$accepted",
+              "rejection_reason_code": "$rejection_reason_code"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mirakl_receive_return",
+      "description": "Confirm that the goods of an accepted return arrived at your warehouse (RT25). The return moves to RECEIVED. Acts on the live marketplace: name the return and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_id": {
+            "type": "string",
+            "description": "Return id from mirakl_list_returns."
+          }
+        },
+        "required": ["return_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/returns/receive",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "returns": [
+            {
+              "id": "$return_id"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
       }
     },
     {

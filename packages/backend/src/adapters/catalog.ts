@@ -266,6 +266,7 @@ import * as mailerlite from './intl/mailerlite.json';
 import * as mailshake from './intl/mailshake.json';
 import * as make from './intl/make.json';
 import * as mangools from './intl/mangools.json';
+import * as manychat from './intl/manychat.json';
 import * as mapbox from './intl/mapbox.json';
 import * as mastodon from './intl/mastodon.json';
 import * as matomo from './intl/matomo.json';
@@ -455,6 +456,7 @@ import * as youtubeData from './intl/youtube-data.json';
 import * as zabbix from './intl/zabbix.json';
 import * as zendesk from './intl/zendesk.json';
 import * as zenhub from './intl/zenhub.json';
+import * as zenkit from './intl/zenkit.json';
 import * as zohoBooks from './intl/zoho-books.json';
 import * as zohoCrm from './intl/zoho-crm.json';
 import * as zohoMail from './intl/zoho-mail.json';
@@ -977,6 +979,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mailshake as unknown as AdapterDefinition,
   make as unknown as AdapterDefinition,
   mangools as unknown as AdapterDefinition,
+  manychat as unknown as AdapterDefinition,
   mapbox as unknown as AdapterDefinition,
   mastodon as unknown as AdapterDefinition,
   matomo as unknown as AdapterDefinition,
@@ -1166,6 +1169,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zabbix as unknown as AdapterDefinition,
   zendesk as unknown as AdapterDefinition,
   zenhub as unknown as AdapterDefinition,
+  zenkit as unknown as AdapterDefinition,
   zohoBooks as unknown as AdapterDefinition,
   zohoCrm as unknown as AdapterDefinition,
   zohoMail as unknown as AdapterDefinition,

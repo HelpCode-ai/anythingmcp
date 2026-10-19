@@ -1,0 +1,585 @@
+{
+  "slug": "zenkit",
+  "name": "Zenkit",
+  "aliases": [
+    "Zenkit Base",
+    "Zenkit To Do",
+    "Zenkit Projects",
+    "Hypernotes"
+  ],
+  "description": "Let your AI work in Zenkit: browse workspaces and collections, read fields, entries, members and activity, search everywhere, and create or update entries and post comments with your confirmation.",
+  "instructions": "## Zenkit\nThis connector calls the **Zenkit REST API** (`https://zenkit.com/api/v1`) with a personal API key. The same API and the same data serve Zenkit Base, Zenkit To Do, Zenkit Projects and Hypernotes. It reads workspaces, collections (lists), fields, entries, members and activity, creates and updates entries and posts comments.\n\n**Setup (about 2 minutes)**\n1. In Zenkit open your profile (click your avatar), go to **Integrations** and, under **API Key**, generate a new key.\n2. Copy it into `ZENKIT_API_KEY`. It is sent in the `Zenkit-API-Key` header and acts as you, with access to everything you can open. Generating a new key invalidates the old one.\n\n**Words**: a **workspace** holds **collections** (the API calls them lists); a collection has **fields** (elements) and **entries** (items, rows, tasks or cards depending on the view). Every object has a numeric `id`, a `shortId` and a `uuid`; list and entry ids accept any of the three. `zenkit_list_workspace_users` needs the numeric workspace id and `zenkit_archive_entries` numeric entry ids.\n\n**Where to start**: `zenkit_list_workspaces_with_lists` lists every workspace with its collections. `zenkit_list_fields` gives each field's `id`, `uuid`, name and type, and for label fields the category ids. Then `zenkit_filter_entries` pages through entries (50 at a time, with `countData.filteredTotal`) and `zenkit_search_entries` searches by text everywhere. `displayString` is an entry's title.\n\n**Field values** are keyed by the field's uuid and a value key: `<uuid>_text`, `_number`, `_link`, `_date` (ISO 8601, with `_endDate` and `_hasTime`), `_checked` (checkbox), `_categories` (label ids), `_persons` (user ids from `zenkit_list_workspace_users`) and `_references` (entry uuids). Reads also return helper keys such as `_categories_sort` with the label names; do not send those back. Formula and created or updated fields are read-only. Zenkit refuses unknown keys with error C21.\n\n**Filters**: `{\"AND\": {\"TERMS\": [{\"elementId\": <numeric field id>, \"modus\": \"contains\", \"text\": \"...\"}]}}`; `OR` works the same way and both can be nested. Numbers use `numberFrom` / `numberTo` with `inRange`, dates `dateType` 10 with `dateFrom` / `dateTo`, labels `filterCategories`. Zenkit documents filters only briefly; when a filter is refused, read without it and filter the page yourself.\n\n**Writes: confirm first.** `zenkit_create_entry`, `zenkit_update_entry` and `zenkit_comment_on_entry` change shared data and notify followers. Show the user what will change and wait for a yes. `zenkit_archive_entries` moves entries to the archive and is installed switched off. Permanent deletion is not offered.\n\n**Rate limits**: 200 requests a minute per user and 500 a minute per IP address. Error D2 (Limit reached) means wait before trying again; prefer one filtered page over many single reads.\n\n**Errors** come as `{\"error\": {\"code\", \"message\", \"description\"}}`: 401 the key is wrong or was replaced, 403 no access to that workspace or collection, 404 unknown id, 400 C21 a parameter or value key Zenkit does not accept.\n\n**Out of scope**: creating or changing workspaces, collections and fields, file uploads, webhooks, and permanent deletion.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "zenkit",
+  "docsUrl": "https://base.zenkit.com/docs/api/overview/introduction",
+  "prerequisites": "A Zenkit account and a personal API key from your profile (Integrations, API Key). About 2 minutes.",
+  "requiredEnvVars": [
+    "ZENKIT_API_KEY"
+  ],
+  "envVarMeta": {
+    "ZENKIT_API_KEY": {
+      "label": "Zenkit API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Zenkit, your profile, Integrations, API Key: generate a key. It acts as you; a new key invalidates the old one.",
+      "link": "https://base.zenkit.com/docs/api/overview/authentication",
+      "pattern": "^[A-Za-z0-9-]{20,80}$",
+      "patternMessage": "Paste only the key, without spaces or a header name."
+    }
+  },
+  "verifyHints": {
+    "401": "Zenkit refused the API key: it is wrong or a newer key replaced it. Generate a key again in your Zenkit profile under Integrations.",
+    "429": "Zenkit is rate limiting this key (200 requests a minute). Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "zenkit_get_current_user"
+  },
+  "connector": {
+    "name": "Zenkit API",
+    "type": "REST",
+    "baseUrl": "https://zenkit.com/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Zenkit-API-Key",
+      "apiKey": "{{ZENKIT_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Accept-Language": "en",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users/me"
+  },
+  "tools": [
+    {
+      "name": "zenkit_get_current_user",
+      "description": "Read the Zenkit user the API key belongs to: id, name, username, emails, locale and timezone. Checks the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      }
+    },
+    {
+      "name": "zenkit_list_workspaces_with_lists",
+      "description": "List every workspace the user can open, each with its collections (lists): ids, shortIds, uuids and names. Start here to find a list.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me/workspacesWithLists"
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "zenkit_get_workspace",
+      "description": "Read one workspace with its name, description, settings and creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id, shortId or uuid."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "zenkit_list_workspace_users",
+      "description": "List the members of a workspace with user id, name and username. Use the user ids for member fields (_persons).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "integer",
+            "description": "Numeric workspace id (not the shortId), from zenkit_list_workspaces_with_lists."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/users",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "zenkit_get_list",
+      "description": "Read one collection (list) with its name, workspace, description and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{list_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "zenkit_list_list_users",
+      "description": "List the users who have access to a collection (list), with user id, name and username.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{list_id}/users",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "zenkit_list_fields",
+      "description": "List the fields (elements) of a collection: id, uuid, name, type (elementcategory), whether it is the primary title field, and for label fields the predefined categories with their ids. Needed before reading or writing entry values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{list_id}/elements",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "zenkit_filter_entries",
+      "description": "List the entries (items) of a collection with all field values, page by page, optionally filtered. Returns countData (total and filteredTotal) and listEntries; displayString is each entry's title. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Optional filter, e.g. {\"AND\": {\"TERMS\": [{\"elementId\": 230, \"modus\": \"contains\", \"text\": \"invoice\"}]}}. elementId is the numeric field id; modus is isEmpty, contains, equals, startsWith, endsWith, inRange, greaterOrEqual, lessOrEqual or containsCurrentUser; negated: true inverts a term."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "Entries per page. Default 50."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Entries to skip, for paging."
+          },
+          "allowDeprecated": {
+            "type": "boolean",
+            "description": "true to include archived (deleted) entries."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lists/{list_id}/entries/filter/list",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "filter": "$filter",
+          "limit": "$limit",
+          "skip": "$skip",
+          "allowDeprecated": "$allowDeprecated"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zenkit_search_entries",
+      "description": "Search entries by text across every workspace and collection the user can open. Returns matching entries, lists and workspaces, and thereAreMoreResults.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to search for."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Maximum results. Default 20."
+          },
+          "searchInArchive": {
+            "type": "boolean",
+            "description": "true to include archived entries."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entries/search",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit",
+          "searchInArchive": "$searchInArchive"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "zenkit_get_entry",
+      "description": "Read one entry with all its field values, keyed by field uuid (for example <uuid>_text), plus displayString, comment count and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          },
+          "entry_id": {
+            "type": "string",
+            "description": "Entry id: the numeric id, shortId or uuid of the entry."
+          }
+        },
+        "required": [
+          "list_id",
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{list_id}/entries/{entry_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "zenkit_list_entry_activities",
+      "description": "List the comments and change history of one entry, newest first, with total for paging. A comment has type 0 and its text in message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          },
+          "entry_id": {
+            "type": "string",
+            "description": "Entry id: the numeric id, shortId or uuid of the entry."
+          },
+          "filter": {
+            "type": "integer",
+            "enum": [
+              0,
+              2,
+              3
+            ],
+            "description": "0 all activities (default), 2 comments only, 3 deleted items."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Activities per page. Default 20."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Activities to skip, for paging."
+          }
+        },
+        "required": [
+          "list_id",
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{list_id}/entries/{entry_id}/activities",
+        "encodePathParams": true,
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "zenkit_list_list_activities",
+      "description": "List the comments and changes across a whole collection, newest first, with total for paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          },
+          "filter": {
+            "type": "integer",
+            "enum": [
+              0,
+              2,
+              3
+            ],
+            "description": "0 all activities (default), 2 comments only, 3 deleted items."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Activities per page. Default 20."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Activities to skip, for paging."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{list_id}/activities",
+        "encodePathParams": true,
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "zenkit_create_entry",
+      "description": "Create an entry (item) in a collection with the given field values. Read the field uuids with zenkit_list_fields first; the primary text field is the title. Show the values and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          },
+          "values": {
+            "type": "object",
+            "description": "Field values keyed by <field uuid>_<value key>, using the uuids from zenkit_list_fields. Text: {\"<uuid>_text\": \"Call supplier\"}; number: _number; link: _link; date: _date (ISO 8601, optional _endDate and _hasTime); checkbox: _checked (true or false); labels: _categories (array of category ids from the field's elementData.predefinedCategories); members: _persons (array of user ids); references: _references (array of entry uuids). Unknown keys are refused."
+          }
+        },
+        "required": [
+          "list_id",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lists/{list_id}/entries",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__merge": "$values"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "zenkit_update_entry",
+      "description": "Change field values of an entry. Only the keys sent change. For array fields (labels, members, references) update_action decides whether the values replace, are added to or are removed from the current ones. Show the change and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          },
+          "entry_id": {
+            "type": "string",
+            "description": "Entry id: the numeric id, shortId or uuid of the entry."
+          },
+          "values": {
+            "type": "object",
+            "description": "Field values keyed by <field uuid>_<value key>, using the uuids from zenkit_list_fields. Text: {\"<uuid>_text\": \"Call supplier\"}; number: _number; link: _link; date: _date (ISO 8601, optional _endDate and _hasTime); checkbox: _checked (true or false); labels: _categories (array of category ids from the field's elementData.predefinedCategories); members: _persons (array of user ids); references: _references (array of entry uuids). Unknown keys are refused."
+          },
+          "update_action": {
+            "type": "string",
+            "enum": [
+              "replace",
+              "append",
+              "remove"
+            ],
+            "description": "For array fields: replace (default), append or remove."
+          }
+        },
+        "required": [
+          "list_id",
+          "entry_id",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/lists/{list_id}/entries/{entry_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__merge": "$values",
+          "updateAction": "$update_action"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "zenkit_comment_on_entry",
+      "description": "Post a comment on an entry as the API key's user. Members following the entry may be notified. Show the user the text and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          },
+          "entry_id": {
+            "type": "string",
+            "description": "Entry id: the numeric id, shortId or uuid of the entry."
+          },
+          "message": {
+            "type": "string",
+            "description": "Comment text."
+          }
+        },
+        "required": [
+          "list_id",
+          "entry_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/me/lists/{list_id}/entries/{entry_id}/activities",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message": "$message"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "zenkit_archive_entries",
+      "description": "Delete entries of a collection by moving them to the archive (Zenkit's soft delete; they can be restored in the Zenkit app). Takes numeric entry ids. Installed switched off. Name the entries and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id: the numeric id, shortId or uuid, e.g. from zenkit_list_workspaces_with_lists."
+          },
+          "entry_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "description": "Numeric ids (the id field, not shortId or uuid) of the entries to archive."
+          }
+        },
+        "required": [
+          "list_id",
+          "entry_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lists/{list_id}/entries/delete/filter",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "shouldDeleteAll": false,
+          "listEntryIds": "$entry_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}
