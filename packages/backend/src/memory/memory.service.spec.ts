@@ -328,3 +328,31 @@ describe('MemoryService with folders', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('memory linked to the knowledge graph', () => {
+  it('normalises entity names like the graph', () => {
+    const { normalizeAbout } = jest.requireActual('./memory.service');
+    expect(normalizeAbout('Customers')).toBe('customer');
+    expect(normalizeAbout('Sales Orders')).toBe('sales_order');
+    expect(normalizeAbout('  ')).toBeNull();
+  });
+
+  it('stores what an item is about', async () => {
+    const { service, prisma } = make();
+    await service.save(caller('personal'), { content: 'Prefers email', about: 'Customers' }, { via: 'mcp' });
+    expect(prisma.memoryItem.create.mock.calls[0][0].data.about).toBe('customer');
+  });
+
+  it('returns facts about entities within the caller\'s access and folders', async () => {
+    const { service, prisma } = make();
+    const restricted = { organizationId: ORG, all: false, ids: new Set(['f-hr']), folders: [] };
+    await service.factsAbout({ ...caller('read'), folders: restricted as any }, ['customer', 'Orders']);
+    expect(prisma.memoryItem.findMany.mock.calls[0][0].where).toEqual({
+      organizationId: ORG,
+      status: 'active',
+      about: { in: ['customer', 'order'] },
+      OR: [{ scope: 'organization', AND: [{ OR: [{ folderId: null }, { folderId: { in: ['f-hr'] } }] }] }],
+    });
+    expect(await service.factsAbout(caller('none' as any), ['customer'])).toEqual([]);
+  });
+});

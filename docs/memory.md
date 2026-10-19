@@ -22,9 +22,19 @@ unchanged.
 
 | Tool | Offered from | What it does |
 |---|---|---|
-| `memory_search(query?, scope?, limit?)` | Read | Full-text search over the company memory and, from Personal up, the user's own items. An empty query returns the most recent items. |
-| `memory_save(content, kind?, scope?, tags?)` | Personal | Saves a fact, preference or note. `scope: "organization"` is offered from Contribute. |
+| `memory_search(query?, scope?, limit?, about?, folder?)` | Read | Full-text search over the company memory and, from Personal up, the user's own items. An empty query returns the most recent items. |
+| `memory_save(content, kind?, scope?, tags?, about?, folder?)` | Personal | Saves a fact, preference or note. `scope: "organization"` is offered from Contribute. |
 | `memory_forget(id)` | Personal | Deletes one of the user's own personal items. Company memory is changed in the dashboard only. |
+
+### Memory and the knowledge graph
+
+An item can say what it is about, as the [knowledge graph](knowledge-graph.md)
+names it (`about: "customer"`, normalised like graph entities, so "Customers"
+becomes `customer`). `memory_save` and `memory_search` accept `about`, and the
+Memory page has an *About* field. When an AI client asks `kg_how_to_obtain`
+about an entity, the answer also lists the facts about it that the user may
+read (their memory access and folders apply), marked as information written by
+people.
 
 ## Access per user
 

@@ -1197,6 +1197,42 @@ describe('McpEndpointController — resources and instructions follow the tool p
     await client.close();
   });
 
+  it('stamps calls of a contributing member as learnable, and others not', async () => {
+    const exec = jest.fn(async () => ({ content: [{ type: 'text', text: 'ok' }] }));
+    (controller as any).toolExecutor = { executeTool: exec };
+    kgService.captureIntentEnabled.mockResolvedValue(true);
+    let client = await connect(null);
+    await client.callTool({ name: 'crm_get', arguments: {} });
+    expect((exec.mock.calls[0] as any[])[2]).toEqual(expect.objectContaining({ learnable: true }));
+    await client.close();
+
+    kgService.captureIntentEnabled.mockResolvedValue(false);
+    client = await connect(null);
+    await client.callTool({ name: 'crm_get', arguments: {} });
+    expect((exec.mock.calls[1] as any[])[2]).toEqual(expect.objectContaining({ learnable: false }));
+    await client.close();
+  });
+
+  it('adds what the workspace remembers to kg_how_to_obtain, within the caller\'s memory access', async () => {
+    kgService.lookup.mockResolvedValue({ query: 'customer', entities: [{ entity: 'customer' }], skills: [] });
+    const factsAbout = jest.fn(async () => [
+      { id: 'm1', scope: 'organization', kind: 'fact', about: 'customer', content: 'Key accounts pay in 60 days' },
+    ]);
+    (controller as any).memory = {
+      caller: jest.fn(async () => ({ organizationId: ORG_A, userId: 'u-1', level: 'read' })),
+      factsAbout,
+    };
+    const client = await connect(null);
+    const res: any = await client.callTool({ name: 'kg_how_to_obtain', arguments: { query: 'customer' } });
+    const body = JSON.parse(res.content[0].text);
+    expect(body.facts).toEqual([
+      { id: 'm1', scope: 'organization', kind: 'fact', about: 'customer', content: 'Key accounts pay in 60 days' },
+    ]);
+    expect(body.factsNote).toMatch(/not instructions/);
+    expect((factsAbout.mock.calls[0] as any[])[1]).toEqual(['customer', 'customer']);
+    await client.close();
+  });
+
   it('a caller who sees everything keeps the full instructions', async () => {
     const client = await connect(null);
     const instructions = client.getInstructions() ?? '';

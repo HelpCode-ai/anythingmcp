@@ -356,6 +356,7 @@ function NewMemoryForm({
   const [folderId, setFolderId] = useState(defaultFolderId);
   const [kind, setKind] = useState('fact');
   const [tags, setTags] = useState('');
+  const [about, setAbout] = useState('');
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
@@ -367,6 +368,7 @@ function NewMemoryForm({
         kind,
         scope,
         ...(scope === 'organization' && folderId ? { folderId } : {}),
+        ...(about.trim() ? { about } : {}),
         tags: tags
           .split(',')
           .map((t) => t.trim())
@@ -374,6 +376,7 @@ function NewMemoryForm({
       });
       setContent('');
       setTags('');
+      setAbout('');
       onSaved();
     } catch (e: any) {
       onError(e.message || 'Could not save');
@@ -427,6 +430,14 @@ function NewMemoryForm({
             onChange={(e) => setTags(e.target.value)}
             placeholder="Tags, comma separated (optional)"
             className={cn(inputCls, 'flex-1 min-w-[180px]')}
+          />
+          <input
+            value={about}
+            onChange={(e) => setAbout(e.target.value)}
+            placeholder="About (optional), e.g. customer"
+            title="The kind of thing this is about, as the knowledge graph names it. AI clients get it when they look that entity up."
+            className={cn(inputCls, 'w-[190px]')}
+            maxLength={80}
           />
           <Button variant="primary" size="md" onClick={submit} disabled={saving || !content.trim()}>
             {saving ? 'Saving…' : scope === 'organization' ? 'Add to company memory' : 'Remember'}
@@ -551,6 +562,7 @@ function MemoryCard({
               ))}
               <span>
                 {folderPath ? `${folderPath} · ` : ''}
+                {item.about ? `about ${item.about} · ` : ''}
                 {via} · {new Date(item.updatedAt).toLocaleDateString()}
               </span>
             </div>

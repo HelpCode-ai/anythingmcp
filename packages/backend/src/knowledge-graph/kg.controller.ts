@@ -256,6 +256,16 @@ export class KgController {
     return this.skills.generate(req.user.organizationId, { mcpServerId: body?.mcpServerId });
   }
 
+  @Post('skills/propose-from-errors')
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary:
+      'Propose skills from calls that failed and were fixed by changing an argument format (no AI model needed)',
+  })
+  async proposeFromErrors(@Req() req: any) {
+    return this.skills.proposeFromErrors(req.user.organizationId);
+  }
+
   @Post('skills/consolidate')
   @Roles('ADMIN')
   @ApiOperation({

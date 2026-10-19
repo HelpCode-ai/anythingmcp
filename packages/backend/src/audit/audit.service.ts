@@ -76,6 +76,8 @@ export class AuditService implements OnModuleDestroy {
     usedProxy?: boolean;
     /** Natural-language user intent that led to the call (opt-in capture). */
     intent?: string;
+    /** The caller contributed to skill learning when the call was made. */
+    learnable?: boolean;
     input: Record<string, unknown>;
     output?: Record<string, unknown>;
     status: 'SUCCESS' | 'ERROR' | 'TIMEOUT';
@@ -127,6 +129,7 @@ export class AuditService implements OnModuleDestroy {
           connectorId: data.connectorId,
           usedProxy: data.usedProxy ?? false,
           intent: data.intent,
+          learnable: data.learnable ?? false,
           input: input as any,
           output: output as any,
           status: data.status as InvocationStatus,

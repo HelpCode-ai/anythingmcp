@@ -1103,8 +1103,13 @@ export const knowledgeGraph = {
       const suffix = qs.toString() ? `?${qs.toString()}` : '';
       return request<KgSkillList>(`/api/knowledge-graph/skills${suffix}`, { token });
     },
+    proposeFromErrors: (token: string) =>
+      request<{ created: number; patterns: number }>('/api/knowledge-graph/skills/propose-from-errors', {
+        token,
+        method: 'POST',
+      }),
     consolidate: (token: string, mcpServerId?: string) =>
-      request<{ before: number; after: number; model?: string }>(
+      request<{ before: number; after: number; proposed?: number; replaced?: number; model?: string }>(
         '/api/knowledge-graph/skills/consolidate',
         { token, method: 'POST', body: mcpServerId ? { mcpServerId } : {} },
       ),
@@ -1170,6 +1175,8 @@ export interface KgSkill {
   useCount?: number;
   lastUsedAt?: string | null;
   folderId?: string | null;
+  /** For a merge proposal: the active skills applying it deactivates. */
+  replaces?: string[];
 }
 
 export interface KnowledgeFolder {
@@ -1222,6 +1229,8 @@ export interface MemoryItem {
   source: { via?: 'mcp' | 'ui'; mcpServerId?: string; client?: string };
   ownerUserId: string | null;
   folderId?: string | null;
+  /** Knowledge-graph entity the item is about, e.g. "customer". */
+  about?: string | null;
   createdByUserId: string | null;
   approvedByUserId: string | null;
   approvedAt: string | null;
@@ -1262,9 +1271,20 @@ export const memory = {
   },
   create: (
     token: string,
-    body: { content: string; kind?: string; scope?: MemoryScope; tags?: string[]; folderId?: string | null },
+    body: {
+      content: string;
+      kind?: string;
+      scope?: MemoryScope;
+      tags?: string[];
+      folderId?: string | null;
+      about?: string | null;
+    },
   ) => request<MemoryItem>('/api/memory/items', { token, method: 'POST', body }),
-  update: (token: string, id: string, body: { content?: string; kind?: string; tags?: string[] }) =>
+  update: (
+    token: string,
+    id: string,
+    body: { content?: string; kind?: string; tags?: string[]; about?: string | null },
+  ) =>
     request<MemoryItem>(`/api/memory/items/${id}`, { token, method: 'PATCH', body }),
   remove: (token: string, id: string) =>
     request<{ ok: boolean }>(`/api/memory/items/${id}`, { token, method: 'DELETE' }),

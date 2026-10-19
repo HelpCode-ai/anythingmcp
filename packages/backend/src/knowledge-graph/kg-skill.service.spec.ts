@@ -502,3 +502,123 @@ describe('KgSkillService with folders', () => {
     expect(findMany).not.toHaveBeenCalled();
   });
 });
+
+describe('KgSkillService.proposeFromErrors', () => {
+  const ORG = 'org-A';
+  const now = new Date('2026-10-19T12:00:00Z');
+  const row = (userId: string, status: string, date: string, min: number) => ({
+    toolId: 'tool-1',
+    userId,
+    status,
+    input: { date },
+    error: status === 'SUCCESS' ? null : 'Invalid date',
+    createdAt: new Date(now.getTime() - 3_600_000 + min * 60_000),
+  });
+
+  function make(known: Array<{ title: string }> = []) {
+    const failures = [row('u1', 'ERROR', '12.10.2026', 0), row('u1', 'ERROR', '13.10.2026', 20)];
+    const successes = [row('u1', 'SUCCESS', '2026-10-12', 1), row('u1', 'SUCCESS', '2026-10-13', 21)];
+    const prisma: any = {
+      toolInvocation: {
+        findMany: jest.fn(async ({ where }: any) => (where.status === 'SUCCESS' ? successes : failures)),
+      },
+      mcpTool: { findMany: jest.fn(async () => [{ id: 'tool-1', name: 'erp_create_order', connectorId: 'c-erp' }]) },
+      kgSkillSuggestion: { findMany: jest.fn(async () => known), deleteMany: jest.fn(), create: jest.fn() },
+    };
+    return { svc: new KgSkillService(prisma, {} as any), prisma };
+  }
+
+  it('reads only learnable calls of this workspace and files a pending skill on the connector', async () => {
+    const { svc, prisma } = make();
+    const res = await svc.proposeFromErrors(ORG, { now });
+    expect(res).toEqual({ created: 1, patterns: 1 });
+    for (const [q] of prisma.toolInvocation.findMany.mock.calls) {
+      expect(q.where).toEqual(expect.objectContaining({ organizationId: ORG, learnable: true }));
+    }
+    expect(prisma.mcpTool.findMany.mock.calls[0][0].where.connector).toEqual({ organizationId: ORG });
+    expect(prisma.kgSkillSuggestion.deleteMany).toHaveBeenCalledWith({
+      where: { organizationId: ORG, status: 'pending', source: 'errors' },
+    });
+    expect(prisma.kgSkillSuggestion.create.mock.calls[0][0].data).toEqual(
+      expect.objectContaining({
+        organizationId: ORG,
+        connectorId: 'c-erp',
+        title: 'erp_create_order: `date` as "9999-99-99"',
+        status: 'pending',
+        source: 'errors',
+        evidenceCount: 2,
+      }),
+    );
+  });
+
+  it('does not propose again what an admin already applied or dismissed', async () => {
+    const { svc, prisma } = make([{ title: 'erp_create_order: `date` as "9999-99-99"' }]);
+    expect((await svc.proposeFromErrors(ORG, { now })).created).toBe(0);
+    expect(prisma.kgSkillSuggestion.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('KgSkillService consolidation proposals', () => {
+  const ORG = 'org-A';
+  const realFetch = global.fetch;
+  beforeEach(() => {
+    process.env.KG_LLM_BASE_URL = 'http://localhost:11434/v1';
+    process.env.KG_LLM_MODEL = 'qwen2.5';
+    delete process.env.KG_LLM_API_KEY;
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+    delete process.env.KG_LLM_BASE_URL;
+    delete process.env.KG_LLM_MODEL;
+  });
+  const reply = (skills: any[]) =>
+    (global.fetch = jest.fn().mockResolvedValue(okJson({ choices: [{ message: { content: JSON.stringify({ skills }) } }] })) as any);
+
+  it('files merged skills as pending proposals that list what they replace, per folder', async () => {
+    const current = [
+      { id: 'a', title: 'A', whenToUse: '', instruction: 'x', connectorId: 'c1', folderId: 'f1' },
+      { id: 'b', title: 'B', whenToUse: '', instruction: 'x', connectorId: 'c1', folderId: 'f1' },
+      { id: 'c', title: 'C', whenToUse: '', instruction: 'y', connectorId: 'c1', folderId: null },
+    ];
+    reply([{ title: 'AB', instruction: 'x', replaces: ['s1', 's2', 's9'] }]);
+    const prisma: any = {
+      kgSkillSuggestion: { findMany: jest.fn().mockResolvedValue(current), deleteMany: jest.fn(), create: jest.fn() },
+    };
+    const svc = new KgSkillService(prisma, { isEnabled: async () => true } as any);
+    const res = await svc.consolidate(ORG);
+
+    // Only the folder with two skills went to the model.
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(1);
+    expect(res).toEqual(expect.objectContaining({ before: 3, after: 2, proposed: 1, replaced: 2 }));
+    expect(prisma.kgSkillSuggestion.create.mock.calls[0][0].data).toEqual(
+      expect.objectContaining({
+        title: 'AB',
+        status: 'pending',
+        source: 'consolidation',
+        replaces: ['a', 'b'],
+        folderId: 'f1',
+        connectorId: 'c1',
+      }),
+    );
+    // Nothing applied was deleted or changed.
+    expect(prisma.kgSkillSuggestion.deleteMany).toHaveBeenCalledWith({
+      where: { organizationId: ORG, status: 'pending', source: 'consolidation', mcpServerId: null },
+    });
+  });
+
+  it('applying a proposal dismisses the skills it replaces, in this workspace', async () => {
+    const tx: any = { kgSkillSuggestion: { updateMany: jest.fn(), update: jest.fn().mockResolvedValue({ id: 'p' }) } };
+    const prisma: any = {
+      kgSkillSuggestion: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'p', organizationId: ORG, replaces: ['a', 'b'] }),
+      },
+      $transaction: jest.fn(async (fn: any) => fn(tx)),
+    };
+    await new KgSkillService(prisma, {} as any).apply(ORG, 'p');
+    expect(tx.kgSkillSuggestion.updateMany).toHaveBeenCalledWith({
+      where: { organizationId: ORG, id: { in: ['a', 'b'] }, status: 'applied' },
+      data: { status: 'dismissed' },
+    });
+    expect(tx.kgSkillSuggestion.update).toHaveBeenCalledWith({ where: { id: 'p' }, data: { status: 'applied' } });
+  });
+});
