@@ -1,0 +1,489 @@
+{
+  "slug": "interakt",
+  "name": "Interakt",
+  "aliases": [
+    "Interakt WhatsApp",
+    "Interakt.ai",
+    "Interakt Shop"
+  ],
+  "description": "Let your AI work with your Interakt WhatsApp Business account: list approved templates, look up and list customers with their traits and tags, add or update customers, record events and assign chats. Sending template and text messages is installed switched off.",
+  "instructions": "## Interakt\nThis connector calls the **Interakt public API** (`https://api.interakt.ai`) with your account's API key: WhatsApp templates, customers (contacts) and their traits and tags, events, chat assignment, and sending template and text messages.\n\n**Setup (about 2 minutes)**\n1. Interakt needs the Growth plan or higher for API access.\n2. In Interakt open **Settings, Developer Setting** and copy the **Secret Key** into `INTERAKT_API_KEY`. Paste it exactly as shown, without the word Basic: it is already encoded and is sent as `Authorization: Basic ...`, only to api.interakt.ai.\n\n**Numbers**: tools take `phone_number` without the country code plus `country_code` (default `+91`), e.g. `9876543210` and `+91`; where a tool asks for `full_phone_number` it is the country code and number together without `+`, e.g. `919876543210`.\n\n**Reading**: `interakt_list_templates` shows each template's code `name`, `approval_status` and the `body` with its `{{1}}`, `{{2}}` placeholders. `interakt_get_customer_by_phone` and `interakt_get_customer` read one customer; `interakt_list_customers` pages through customers created or updated in a window (100 at most per page). The API has no message history or delivery status: those reach Interakt webhooks only.\n\n**Sending a template** (`interakt_send_template`): pick an APPROVED template, count its body placeholders and pass exactly that many `body_values`, in order; a missing value is refused with \"Missing variable values for template's body, expected number of values are N\". Templates with a media header need `header_values` with a public file URL. A successful answer (`result: true` and an `id`) means Interakt accepted the message, not that it was delivered.\n\n**Writes: confirm first.** `interakt_upsert_customer`, `interakt_track_event` and `interakt_assign_chat` change data or can trigger automations: show the change and wait for a yes. `traits` must be a JSON object, not a string. `interakt_send_template` and `interakt_send_text` are installed switched off: an admin turns them on deliberately, and even then confirm every send. Free text only works within 24 hours of the customer's last message.\n\n**Limits**: 300 requests a minute on Growth, 600 on Advanced; a 429 means wait. Requests are limited to 32 KB.\n\n**Errors** come as `{\"result\": false, \"message\": ...}`: 401 the key is wrong or the plan has no API access, 400 a missing or invalid field (the message says which), 429 rate limit.\n\n**Out of scope**: creating templates, campaigns, media uploads, RCS and SMS fallback, webhooks.",
+  "region": "in",
+  "category": "messaging",
+  "icon": "interakt",
+  "docsUrl": "https://www.interakt.shop/resource-center/interakt-apis-and-webhooks-an-overview/",
+  "prerequisites": "An Interakt account on the Growth plan or higher and its Secret Key from Settings, Developer Setting. About 2 minutes.",
+  "requiredEnvVars": [
+    "INTERAKT_API_KEY"
+  ],
+  "envVarMeta": {
+    "INTERAKT_API_KEY": {
+      "label": "Secret Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Interakt, Settings, Developer Setting: the Secret Key. Paste it as shown, without Basic in front.",
+      "link": "https://app.interakt.ai/settings/developer-setting",
+      "pattern": "^(?![Bb]asic)[A-Za-z0-9+/_-]{16,}={0,2}$",
+      "patternMessage": "Paste only the key, without Basic and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Interakt refused the key. Copy the Secret Key again from Settings, Developer Setting, without Basic in front, and check that your plan includes API access (Growth or higher).",
+    "429": "Interakt is rate limiting this account. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "interakt_list_templates",
+    "params": {
+      "approval_status": "APPROVED"
+    }
+  },
+  "connector": {
+    "name": "Interakt API",
+    "type": "REST",
+    "baseUrl": "https://api.interakt.ai",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Basic {{INTERAKT_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "result",
+          "equals": false,
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "interakt_list_templates",
+      "description": "List the account's WhatsApp message templates: id, name (the code name used to send), display_name, language, category, approval_status, header, body (with {{1}}, {{2}} placeholders), footer and buttons. Count the placeholders before sending a template: every one needs a value. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_name": {
+            "type": "string",
+            "description": "Optional: only templates whose name matches."
+          },
+          "approval_status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "PENDING",
+              "REJECTED",
+              "PAUSED",
+              "DISABLED"
+            ],
+            "description": "Optional: only templates in this state. APPROVED ones can be sent."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many templates (pagination; has_next says whether more exist)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/public/track/organization/templates",
+        "queryParams": {
+          "template_name": "$template_name",
+          "approval_status": "$approval_status",
+          "offset": "$offset",
+          "autosubmitted_for": "all",
+          "language": "all"
+        }
+      }
+    },
+    {
+      "name": "interakt_list_customers",
+      "description": "List customers (contacts) created or updated in a time window, 100 at a time: id, phone_number, country_code, traits (name, email, whatsapp_opted_in and custom traits), tag_names, created_at_utc, modified_at_utc. Without dates it lists every customer. Read-only (a search, sent as POST).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "trait": {
+            "type": "string",
+            "enum": [
+              "created_at_utc",
+              "modified_at_utc"
+            ],
+            "default": "created_at_utc",
+            "description": "Which timestamp the window applies to. Default created_at_utc."
+          },
+          "from": {
+            "type": "string",
+            "default": "2015-01-01T00:00:00.000Z",
+            "description": "Window start, UTC ISO 8601 (2026-10-01T00:00:00.000Z). Default: the beginning."
+          },
+          "to": {
+            "type": "string",
+            "default": "2100-01-01T00:00:00.000Z",
+            "description": "Window end, UTC ISO 8601. Default: no end."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Skip this many customers. has_next_page says whether more exist."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Customers per page, at most 100. Default 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/public/apis/users/",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        },
+        "bodyMapping": {
+          "filters": [
+            {
+              "trait": "$trait",
+              "op": "gte",
+              "val": "$from"
+            },
+            {
+              "trait": "$trait",
+              "op": "lt",
+              "val": "$to",
+              "supr_op": "and"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "interakt_get_customer_by_phone",
+      "description": "Find a customer by phone number: id, name and other traits, tags, WhatsApp opt-in, created and modified time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "pattern": "^[0-9]{6,15}$",
+            "description": "Phone number without the country code, digits only, e.g. 9876543210."
+          }
+        },
+        "required": [
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/public/apis/users/phone_number/{phone_number}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "interakt_get_customer",
+      "description": "Read a customer by Interakt customer id: phone, traits, tags, created and modified time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (UUID) from interakt_list_customers or interakt_get_customer_by_phone."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/public/apis/users/id/{customer_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "interakt_upsert_customer",
+      "description": "Create a customer or update one with the same number: traits are merged into the profile, tags are added (never removed). traits must be a JSON object of flat values, e.g. {\"name\":\"Asha\",\"email\":\"asha@example.com\",\"whatsapp_opted_in\":true}. Changes the CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "pattern": "^[0-9]{6,15}$",
+            "description": "Phone number without the country code, digits only, e.g. 9876543210."
+          },
+          "country_code": {
+            "type": "string",
+            "pattern": "^\\+[0-9]{1,4}$",
+            "default": "+91",
+            "description": "Country code with +, default +91."
+          },
+          "traits": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Profile fields as an object, not a string: name, email, whatsapp_opted_in and any custom trait."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names to add."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Optional id of this customer in your own system."
+          }
+        },
+        "required": [
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/public/track/users/",
+        "bodyMapping": {
+          "phoneNumber": "$phone_number",
+          "countryCode": "$country_code",
+          "traits": "$traits",
+          "tags": "$tags",
+          "userId": "$user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "interakt_track_event",
+      "description": "Record an event on a customer's timeline (e.g. Order Placed with its details); events can trigger Interakt automations that message the customer. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "pattern": "^[0-9]{6,15}$",
+            "description": "Phone number without the country code, digits only, e.g. 9876543210."
+          },
+          "country_code": {
+            "type": "string",
+            "pattern": "^\\+[0-9]{1,4}$",
+            "default": "+91",
+            "description": "Country code with +, default +91."
+          },
+          "event": {
+            "type": "string",
+            "description": "Event name, e.g. Order Placed."
+          },
+          "traits": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Event details as an object of flat values."
+          }
+        },
+        "required": [
+          "phone_number",
+          "event"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/public/track/events/",
+        "bodyMapping": {
+          "phoneNumber": "$phone_number",
+          "countryCode": "$country_code",
+          "event": "$event",
+          "traits": "$traits"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "interakt_assign_chat",
+      "description": "Assign a customer's chat in the Interakt inbox to a team member by e-mail. Only changes the shared inbox. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "full_phone_number": {
+            "type": "string",
+            "pattern": "^[0-9]{8,17}$",
+            "description": "Customer number with country code, digits only, e.g. 919876543210."
+          },
+          "agent_email": {
+            "type": "string",
+            "format": "email",
+            "description": "E-mail of the Interakt team member."
+          }
+        },
+        "required": [
+          "full_phone_number",
+          "agent_email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/public/assignment/",
+        "bodyMapping": {
+          "user_phone_number": "$full_phone_number",
+          "agent_email": "$agent_email"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "interakt_send_template",
+      "description": "Send an approved WhatsApp template to a number. It reaches the customer at once and Meta charges the conversation. body_values needs exactly one value per {{n}} placeholder in the template body, in order (read it with interakt_list_templates first); otherwise Interakt answers Missing variable values. Installed switched off. Show the template, number and values and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "pattern": "^[0-9]{6,15}$",
+            "description": "Phone number without the country code, digits only, e.g. 9876543210."
+          },
+          "country_code": {
+            "type": "string",
+            "pattern": "^\\+[0-9]{1,4}$",
+            "default": "+91",
+            "description": "Country code with +, default +91."
+          },
+          "template_name": {
+            "type": "string",
+            "description": "Template code name (name, not display_name) from interakt_list_templates."
+          },
+          "language_code": {
+            "type": "string",
+            "default": "en",
+            "description": "Template language code, e.g. en, hi. Default en."
+          },
+          "body_values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Values for {{1}}, {{2}} ... of the body, in order."
+          },
+          "header_values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Header variable value, or the public media URL for an image, video or document header."
+          },
+          "file_name": {
+            "type": "string",
+            "description": "File name shown for a document header."
+          },
+          "button_values": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Dynamic button values keyed by button index, e.g. {\"0\":[\"order123\"]}."
+          },
+          "callback_data": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Optional text returned in Interakt webhooks for this message."
+          }
+        },
+        "required": [
+          "phone_number",
+          "template_name",
+          "body_values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/public/message/",
+        "bodyMapping": {
+          "countryCode": "$country_code",
+          "phoneNumber": "$phone_number",
+          "type": "Template",
+          "callbackData": "$callback_data",
+          "template": {
+            "name": "$template_name",
+            "languageCode": "$language_code",
+            "bodyValues": "$body_values",
+            "headerValues": "$header_values",
+            "fileName": "$file_name",
+            "buttonValues": "$button_values"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "interakt_send_text",
+      "description": "Send a free-text WhatsApp message to a customer. WhatsApp only allows it within 24 hours of the customer's last message; outside that window Interakt refuses it and only templates work. Installed switched off. Show the text and number and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "full_phone_number": {
+            "type": "string",
+            "pattern": "^[0-9]{8,17}$",
+            "description": "Number with country code, digits only, e.g. 919876543210."
+          },
+          "message": {
+            "type": "string",
+            "description": "Message text."
+          },
+          "callback_data": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Optional text returned in webhooks."
+          }
+        },
+        "required": [
+          "full_phone_number",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/public/message/",
+        "bodyMapping": {
+          "fullPhoneNumber": "$full_phone_number",
+          "type": "Text",
+          "callbackData": "$callback_data",
+          "data": {
+            "message": "$message"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    }
+  ]
+}
