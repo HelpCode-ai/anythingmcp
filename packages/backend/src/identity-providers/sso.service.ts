@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import * as client from 'openid-client';
 import { PrismaService } from '../common/prisma.service';
+import { findUserByEmail, normalizeEmail } from '../common/email.util';
 import { ROLE_SYNC_PROVIDER_SELECT, RoleSyncService } from './role-sync.service';
 import { DeploymentService } from '../common/deployment.service';
 import { AuthService } from '../auth/auth.service';
@@ -879,13 +880,12 @@ export class SsoService {
 
     // Provision. The email is used ONLY to populate a display field on a
     // brand-new row — never to find or claim an existing account.
-    const email = String(claims.email ?? claims.preferred_username ?? '').toLowerCase();
+    const email = normalizeEmail(String(claims.email ?? claims.preferred_username ?? ''));
     if (!email) throw new SsoError('jit_without_email');
 
-    const collision = await this.prisma.user.findUnique({
-      where: { email },
-      select: { id: true },
-    });
+    // In any case: a local account stored as `Name@Example.com` owns
+    // `name@example.com` too.
+    const collision = await findUserByEmail(this.prisma, email, { id: true });
     if (!collision) {
       // Creating accounts on first sign-in needs Enterprise and a free seat.
       // People who already have an identity here never reach this point, so
