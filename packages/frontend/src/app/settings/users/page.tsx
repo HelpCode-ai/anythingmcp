@@ -4,7 +4,16 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useAuth } from '@/lib/auth-context';
-import { users, auth, roles, knowledgeGraph, type LearningMode } from '@/lib/api';
+import {
+  users,
+  auth,
+  roles,
+  knowledgeGraph,
+  memory as memoryApi,
+  type LearningMode,
+  type MemoryAccessLevel,
+  type MemoryAccessSetting,
+} from '@/lib/api';
 import { AppSelect } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,6 +22,23 @@ import { useEdition } from '@/lib/use-edition';
 import { EnterpriseNotice } from '@/components/enterprise-notice';
 
 const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
+
+const MEMORY_LEVEL_LABEL: Record<MemoryAccessLevel, string> = {
+  none: 'No access',
+  read: 'Read',
+  personal: 'Personal',
+  contribute: 'Contribute',
+};
+
+function memoryOptions(workspaceDefault: MemoryAccessLevel) {
+  return [
+    { value: 'inherit', label: `Default (${MEMORY_LEVEL_LABEL[workspaceDefault].toLowerCase()})` },
+    { value: 'none', label: 'No access' },
+    { value: 'read', label: 'Read company memory' },
+    { value: 'personal', label: 'Personal' },
+    { value: 'contribute', label: 'Contribute' },
+  ];
+}
 
 function learningOptions(workspaceDefault: boolean) {
   return [
@@ -58,6 +84,9 @@ export default function SettingsUsersPage() {
   const [eraseIntents, setEraseIntents] = useState(false);
   const [learningSaving, setLearningSaving] = useState(false);
 
+  // Workspace memory (Enterprise): what each user's AI clients may do with it.
+  const [memoryDefault, setMemoryDefault] = useState<MemoryAccessLevel | null>(null);
+
   const loadData = async () => {
     if (!token) return;
     try {
@@ -67,6 +96,10 @@ export default function SettingsUsersPage() {
         users.invitations(token).catch(() => []),
         knowledgeGraph.getSettings(token).catch(() => null),
       ]);
+      memoryApi
+        .status(token)
+        .then((st) => setMemoryDefault(st.licensed ? st.settings.defaultAccess : null))
+        .catch(() => setMemoryDefault(null));
       setUserList(userData);
       setLearningDefault(!!kgSettings?.captureIntent);
       setRoleList(roleData);
@@ -111,6 +144,40 @@ export default function SettingsUsersPage() {
       setMsg(`Error: ${err.message}`);
     } finally {
       setLearningSaving(false);
+    }
+  };
+
+  const handleMemoryChange = async (userIds: string[], access: MemoryAccessSetting) => {
+    if (!token || userIds.length === 0) return;
+    setLearningSaving(true);
+    try {
+      await memoryApi.setAccess(token, userIds, access);
+      setUserList((prev) =>
+        prev.map((u) => (userIds.includes(u.id) ? { ...u, memoryAccess: access } : u)),
+      );
+      setMsg(`Memory access updated for ${userIds.length} user${userIds.length !== 1 ? 's' : ''}.`);
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    } finally {
+      setLearningSaving(false);
+    }
+  };
+
+  const handleErasePersonalMemory = async (userIds: string[]) => {
+    if (
+      !token ||
+      userIds.length === 0 ||
+      !confirm(
+        `Erase the personal memory of ${userIds.length} user${userIds.length !== 1 ? 's' : ''} in this workspace?\n\nIt is deleted without being shown to you. This cannot be undone.`,
+      )
+    )
+      return;
+    try {
+      let erased = 0;
+      for (const id of userIds) erased += (await memoryApi.erasePersonal(token, id)).erased;
+      setMsg(`${erased} personal memory item(s) erased.`);
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
     }
   };
 
@@ -433,6 +500,30 @@ export default function SettingsUsersPage() {
           <button onClick={() => setSelected(new Set())} className="ml-auto text-xs underline text-[var(--text-2)]">
             Clear selection
           </button>
+          {memoryDefault && (
+            <div className="flex w-full flex-wrap items-center gap-3 border-t border-[var(--border)] pt-3">
+              <span className="text-sm font-medium text-[var(--text)]">Memory:</span>
+              {memoryOptions(memoryDefault).map((o) => (
+                <Button
+                  key={o.value}
+                  variant="secondary"
+                  size="sm"
+                  disabled={learningSaving}
+                  onClick={() => handleMemoryChange([...selected], o.value as MemoryAccessSetting)}
+                >
+                  {o.label}
+                </Button>
+              ))}
+              <Button
+                variant="danger"
+                size="sm"
+                className="ml-auto"
+                onClick={() => handleErasePersonalMemory([...selected])}
+              >
+                Erase personal memory
+              </Button>
+            </div>
+          )}
         </Card>
       )}
 
@@ -464,6 +555,14 @@ export default function SettingsUsersPage() {
                 >
                   Skill learning
                 </th>
+                {memoryDefault && (
+                  <th
+                    className="text-left px-4 py-3 font-semibold"
+                    title="What this user's AI clients may do with workspace memory. Default follows the Memory page settings."
+                  >
+                    Memory
+                  </th>
+                )}
                 <th className="text-left px-4 py-3 font-semibold">Date</th>
                 <th className="text-right px-4 py-3 font-semibold">Actions</th>
               </tr>
@@ -536,6 +635,17 @@ export default function SettingsUsersPage() {
                       )}
                     </div>
                   </td>
+                  {memoryDefault && (
+                    <td className="px-4 py-3">
+                      <AppSelect
+                        value={u.memoryAccess ?? 'inherit'}
+                        disabled={learningSaving}
+                        onValueChange={(v) => handleMemoryChange([u.id], v as MemoryAccessSetting)}
+                        className="h-8 whitespace-nowrap rounded-[9px] border border-[var(--border)] px-2 text-xs bg-[var(--surface)] text-[var(--text)]"
+                        options={memoryOptions(memoryDefault)}
+                      />
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-[var(--text-3)]">
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
@@ -594,6 +704,11 @@ export default function SettingsUsersPage() {
                     <td className="px-4 py-3">
                       <span className="text-xs text-[var(--text-3)]">Default</span>
                     </td>
+                    {memoryDefault && (
+                      <td className="px-4 py-3">
+                        <span className="text-xs text-[var(--text-3)]">Default</span>
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-[var(--text-3)]">
                       <span title={`Expires: ${new Date(inv.expiresAt).toLocaleString()}`}>
                         {new Date(inv.createdAt).toLocaleDateString()}

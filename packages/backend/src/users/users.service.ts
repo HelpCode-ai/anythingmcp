@@ -81,6 +81,7 @@ export class UsersService {
       active: m.deactivatedAt === null,
       learningMode: m.learningMode,
       learningOptOut: m.learningOptOut,
+      memoryAccess: m.memoryAccess,
     }));
   }
 
@@ -205,6 +206,10 @@ export class UsersService {
     await this.prisma.$transaction([
       this.prisma.userRoleAssignment.deleteMany({ where: { userId, organizationId } }),
       this.prisma.mcpApiKey.deleteMany({ where: { userId, organizationId } }),
+      // Personal memory belongs to the membership: it leaves with it.
+      this.prisma.memoryItem.deleteMany({
+        where: { organizationId, scope: 'personal', ownerUserId: userId },
+      }),
       this.prisma.organizationMember.delete({
         where: { userId_organizationId: { userId, organizationId } },
       }),

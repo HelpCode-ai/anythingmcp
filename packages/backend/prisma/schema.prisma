@@ -40,6 +40,7 @@ model Organization {
   kgEdges          KgEdge[]
   kgConnectorState KgConnectorState[]
   kgValueSeen      KgValueSeen[]
+  memoryItems      MemoryItem[]
   kgSkills         KgSkillSuggestion[]
   securityEvents   SecurityEvent[]
   productEvents    ProductEvent[]
@@ -73,6 +74,9 @@ model OrganizationMember {
   /// The member's own opt-out. Wins over `learningMode`; a member can opt
   /// out but never opt in against the admin.
   learningOptOut Boolean      @default(false) @map("learning_opt_out")
+  /// What this member's AI clients may do with workspace memory:
+  /// inherit | none | read | personal | contribute. Set by an admin.
+  memoryAccess   String       @default("inherit") @map("memory_access")
 
   @@unique([userId, organizationId])
   @@index([userId])
@@ -178,6 +182,7 @@ model User {
   recoveryCodes            RecoveryCode[]
   scimGroupMemberships     IdentityProviderGroupMember[]
   mcpConnectionGrants      McpConnectionGrant[]
+  memoryItems              MemoryItem[] @relation("MemoryOwner")
 
   @@index([organizationId])
   @@map("users")
@@ -1455,4 +1460,35 @@ model KgValueSeen {
   @@index([organizationId, valueHash])
   @@index([seenAt])
   @@map("kg_value_seen")
+}
+
+// Workspace memory (Enterprise): facts, preferences and notes AI clients save
+// and find again. `personal` items belong to one member and are readable only
+// by them; `organization` items are the company memory. Served as data, never
+// as instructions. `search_vector` is a generated tsvector (see migration).
+model MemoryItem {
+  id               String       @id @default(cuid())
+  organizationId   String       @map("organization_id")
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  scope            String // personal | organization
+  ownerUserId      String?      @map("owner_user_id")
+  owner            User?        @relation("MemoryOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  kind             String       @default("fact") // fact | preference | note
+  content          String       @db.Text
+  tags             Json         @default("[]")
+  status           String       @default("active") // active | pending | rejected
+  // { via: "mcp" | "ui", mcpServerId?, client? }
+  source           Json         @default("{}")
+  createdByUserId  String?      @map("created_by_user_id")
+  approvedByUserId String?      @map("approved_by_user_id")
+  approvedAt       DateTime?    @map("approved_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+  // Generated column (STORED), so Prisma never writes it.
+  searchVector     Unsupported("tsvector")? @default(dbgenerated("to_tsvector('simple'::regconfig, content)")) @map("search_vector")
+
+  @@index([organizationId, scope, status])
+  @@index([organizationId, ownerUserId])
+  @@index([searchVector], type: Gin)
+  @@map("memory_items")
 }

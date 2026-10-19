@@ -111,6 +111,10 @@ export class OrganizationsService {
     await this.prisma.organizationMember.delete({
       where: { userId_organizationId: { userId, organizationId } },
     });
+    // Personal memory belongs to the membership: it leaves with it.
+    await this.prisma.memoryItem.deleteMany({
+      where: { organizationId, scope: 'personal', ownerUserId: userId },
+    });
 
     // If this was the user's active org, point the cache at another ACTIVE
     // membership — or at nothing. Leaving it at the removed org would keep a

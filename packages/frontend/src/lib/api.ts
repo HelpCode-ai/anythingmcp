@@ -1162,6 +1162,75 @@ export interface KgSkill {
   lastUsedAt?: string | null;
 }
 
+export type MemoryAccessLevel = 'none' | 'read' | 'personal' | 'contribute';
+export type MemoryAccessSetting = 'inherit' | MemoryAccessLevel;
+export type MemoryScope = 'personal' | 'organization';
+
+export interface MemoryItem {
+  id: string;
+  scope: MemoryScope;
+  kind: 'fact' | 'preference' | 'note';
+  content: string;
+  tags: string[];
+  status: 'active' | 'pending' | 'rejected';
+  source: { via?: 'mcp' | 'ui'; mcpServerId?: string; client?: string };
+  ownerUserId: string | null;
+  createdByUserId: string | null;
+  approvedByUserId: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryStatus {
+  licensed: boolean;
+  access: MemoryAccessLevel;
+  settings: { defaultAccess: MemoryAccessLevel; writeMode: 'approval' | 'auto' };
+  isCurator: boolean;
+}
+
+export const memory = {
+  status: (token: string) => request<MemoryStatus>('/api/memory/status', { token }),
+  list: (
+    token: string,
+    params: { scope: MemoryScope; status?: string; q?: string; take?: number; skip?: number },
+  ) => {
+    const qs = new URLSearchParams({ scope: params.scope });
+    if (params.status) qs.set('status', params.status);
+    if (params.q) qs.set('q', params.q);
+    if (params.take != null) qs.set('take', String(params.take));
+    if (params.skip != null) qs.set('skip', String(params.skip));
+    return request<{ items: MemoryItem[]; total: number; pending: number; take: number; skip: number }>(
+      `/api/memory/items?${qs.toString()}`,
+      { token },
+    );
+  },
+  create: (
+    token: string,
+    body: { content: string; kind?: string; scope?: MemoryScope; tags?: string[] },
+  ) => request<MemoryItem>('/api/memory/items', { token, method: 'POST', body }),
+  update: (token: string, id: string, body: { content?: string; kind?: string; tags?: string[] }) =>
+    request<MemoryItem>(`/api/memory/items/${id}`, { token, method: 'PATCH', body }),
+  remove: (token: string, id: string) =>
+    request<{ ok: boolean }>(`/api/memory/items/${id}`, { token, method: 'DELETE' }),
+  approve: (token: string, id: string) =>
+    request<MemoryItem>(`/api/memory/items/${id}/approve`, { token, method: 'POST' }),
+  reject: (token: string, id: string) =>
+    request<MemoryItem>(`/api/memory/items/${id}/reject`, { token, method: 'POST' }),
+  updateSettings: (
+    token: string,
+    body: { defaultAccess?: MemoryAccessLevel; writeMode?: 'approval' | 'auto' },
+  ) => request<MemoryStatus['settings']>('/api/memory/settings', { token, method: 'PUT', body }),
+  setAccess: (token: string, userIds: string[], access: MemoryAccessSetting) =>
+    request<{ updated: number; notFound: string[] }>('/api/memory/members/access', {
+      token,
+      method: 'PUT',
+      body: { userIds, access },
+    }),
+  erasePersonal: (token: string, userId: string) =>
+    request<{ erased: number }>(`/api/memory/members/${userId}/personal`, { token, method: 'DELETE' }),
+};
+
 export interface KgSkillVersion {
   version: number;
   title: string;

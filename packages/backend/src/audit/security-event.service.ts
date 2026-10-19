@@ -79,6 +79,12 @@ export const SecurityEvents = {
    * their mode, or the member opted out / back in. One row per member.
    */
   LEARNING_CHANGED: 'LEARNING_CHANGED',
+  /** An admin changed what a member may do with workspace memory. One row per member. */
+  MEMORY_ACCESS_CHANGED: 'MEMORY_ACCESS_CHANGED',
+  /** The workspace's memory default access or organization write mode changed. */
+  MEMORY_SETTINGS_CHANGED: 'MEMORY_SETTINGS_CHANGED',
+  /** An admin erased a member's personal memory (without reading it). */
+  MEMORY_ERASED: 'MEMORY_ERASED',
 
   // ── Consent plane: which AI client was authorized, by whom ──────────────
   CONSENT_GRANTED: 'CONSENT_GRANTED',

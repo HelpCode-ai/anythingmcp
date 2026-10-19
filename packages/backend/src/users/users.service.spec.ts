@@ -37,6 +37,7 @@ describe('UsersService', () => {
       },
       userRoleAssignment: { deleteMany: jest.fn() },
       mcpApiKey: { deleteMany: jest.fn() },
+      memoryItem: { deleteMany: jest.fn() },
       $transaction: jest.fn(async (ops: any) => (Array.isArray(ops) ? Promise.all(ops) : ops(mockPrisma))),
     };
     organizations = { assertNotLastAdmin: jest.fn() };
@@ -164,6 +165,9 @@ describe('UsersService', () => {
         where: { userId_organizationId: { userId: 'u1', organizationId: 'org-1' } },
       });
       expect(mockPrisma.mcpApiKey.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1', organizationId: 'org-1' } });
+      expect(mockPrisma.memoryItem.deleteMany).toHaveBeenCalledWith({
+        where: { organizationId: 'org-1', scope: 'personal', ownerUserId: 'u1' },
+      });
       expect(securityEvents.log).toHaveBeenCalledWith(expect.objectContaining({ event: 'MEMBERSHIP_REMOVED' }));
     });
   });

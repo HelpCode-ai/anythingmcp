@@ -24,6 +24,10 @@ export const TRANSITION_DAYS = 60;
 const PAID_PLANS = new Set(['starter', 'team', 'business', 'enterprise']);
 /** Paid plans that include single sign-on, SCIM and role sync. */
 const BUSINESS_PLANS = new Set(['business', 'enterprise']);
+/** Plans that include workspace memory. Not unlocked by the trial or the transition. */
+const MEMORY_PLANS = new Set(['enterprise']);
+/** How long a workspace's memory entitlement is cached (it is read on every MCP request). */
+const MEMORY_CACHE_MS = 60_000;
 const TRIAL_KEY = 'business_trial_ends_at';
 const TRANSITION_KEY = 'business_transition_until';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -175,6 +179,34 @@ export class EditionService implements OnModuleInit {
       trialDays: BUSINESS_TRIAL_DAYS,
       transitionUntil: transitionActive ? transitionUntil!.toISOString() : null,
     };
+  }
+
+  private readonly memoryCache = new Map<string, { value: boolean; at: number }>();
+
+  /**
+   * Whether a workspace may use workspace memory: an active, unexpired licence
+   * with an Enterprise plan. On Cloud that is the workspace's own licence; on
+   * a self-hosted instance the workspace's or else the instance's key. The
+   * trial and the transition period do not include it.
+   */
+  async hasMemory(organizationId: string, now = new Date()): Promise<boolean> {
+    if (!organizationId) return false;
+    const hit = this.memoryCache.get(organizationId);
+    if (hit && now.getTime() - hit.at < MEMORY_CACHE_MS) return hit.value;
+    const license = await this.licenses.getCurrentLicense(organizationId);
+    const value = this.isPaid(license, now) && MEMORY_PLANS.has(license!.plan);
+    this.memoryCache.set(organizationId, { value, at: now.getTime() });
+    return value;
+  }
+
+  /** Throws the 403 the frontend recognises when memory is not licensed. */
+  async assertMemory(organizationId: string): Promise<void> {
+    if (await this.hasMemory(organizationId)) return;
+    throw new ForbiddenException({
+      statusCode: 403,
+      code: EDITION_REQUIRED,
+      message: 'Workspace memory is available with AnythingMCP Enterprise.',
+    });
   }
 
   async hasBusiness(): Promise<boolean> {
