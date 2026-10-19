@@ -27,8 +27,8 @@ export function useKnowledgeFolders(token: string | null | undefined) {
       .list(token)
       .then((r) => {
         if (cancelled) return;
-        setFolders(r.folders);
-        setRestrictionsAvailable(r.restrictionsAvailable);
+        setFolders(Array.isArray(r?.folders) ? r.folders : []);
+        setRestrictionsAvailable(!!r?.restrictionsAvailable);
       })
       .catch(() => {
         if (!cancelled) setFolders([]);
