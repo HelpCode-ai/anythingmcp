@@ -34,10 +34,13 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: http://localhost:4100
 
-      - name: Upload Playwright report on failure
+      # The list reporter writes no playwright-report/; the traces of failed
+      # and retried tests (trace: on-first-retry) land in test-results/.
+      - name: Upload Playwright traces on failure
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
-          path: packages/frontend/playwright-report/
+          name: playwright-test-results
+          path: packages/frontend/test-results/
+          if-no-files-found: ignore
           retention-days: 14
