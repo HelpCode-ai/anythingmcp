@@ -41,6 +41,7 @@ model Organization {
   kgConnectorState KgConnectorState[]
   kgValueSeen      KgValueSeen[]
   memoryItems      MemoryItem[]
+  knowledgeFolders KnowledgeFolder[]
   kgSkills         KgSkillSuggestion[]
   securityEvents   SecurityEvent[]
   productEvents    ProductEvent[]
@@ -1397,6 +1398,9 @@ model KgSkillSuggestion {
   useCount      Int      @default(0) @map("use_count")
   lastUsedAt    DateTime? @map("last_used_at")
   versions      KgSkillVersion[]
+  // Optional folder in the workspace's knowledge tree (shared with memory).
+  folderId      String?          @map("folder_id")
+  folder        KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1479,6 +1483,9 @@ model MemoryItem {
   status           String       @default("active") // active | pending | rejected
   // { via: "mcp" | "ui", mcpServerId?, client? }
   source           Json         @default("{}")
+  // Optional folder (organization items only; personal memory has none).
+  folderId         String?          @map("folder_id")
+  folder           KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
   createdByUserId  String?      @map("created_by_user_id")
   approvedByUserId String?      @map("approved_by_user_id")
   approvedAt       DateTime?    @map("approved_at")
@@ -1491,4 +1498,29 @@ model MemoryItem {
   @@index([organizationId, ownerUserId])
   @@index([searchVector], type: Gin)
   @@map("memory_items")
+}
+
+// A folder of the workspace's knowledge tree, shared by skills and the
+// company memory (e.g. "Sales / Quotes" holds quote procedures and facts).
+// `roleIds` limits it, and everything below it, to members holding one of
+// those custom roles (Enterprise); empty means the whole workspace.
+model KnowledgeFolder {
+  id             String            @id @default(cuid())
+  organizationId String            @map("organization_id")
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parentId       String?           @map("parent_id")
+  parent         KnowledgeFolder?  @relation("KnowledgeFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children       KnowledgeFolder[] @relation("KnowledgeFolderTree")
+  name           String
+  description    String?           @db.Text
+  roleIds        Json              @default("[]") @map("role_ids")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  skills      KgSkillSuggestion[]
+  memoryItems MemoryItem[]
+
+  @@index([organizationId])
+  @@index([parentId])
+  @@map("knowledge_folders")
 }

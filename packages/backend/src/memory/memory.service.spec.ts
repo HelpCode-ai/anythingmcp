@@ -275,3 +275,56 @@ describe('MemoryService.setAccess', () => {
     );
   });
 });
+
+describe('MemoryService with folders', () => {
+  const tree = [
+    { id: 'f-sales', parentId: null, name: 'Sales', description: null, roleIds: ['r'], path: 'Sales', depth: 1 },
+    { id: 'f-hr', parentId: null, name: 'HR', description: null, roleIds: [], path: 'HR', depth: 1 },
+  ];
+  const restricted = { organizationId: ORG, all: false, ids: new Set(['f-hr']), folders: [tree[1]] };
+
+  it('hides company items in folders the caller may not see', async () => {
+    const { service, prisma } = make();
+    await service.search({ ...caller('personal'), folders: restricted as any }, {});
+    expect(prisma.memoryItem.findMany.mock.calls[0][0].where.OR).toEqual([
+      {
+        scope: 'organization',
+        AND: [{ OR: [{ folderId: null }, { folderId: { in: ['f-hr'] } }] }],
+      },
+      { scope: 'personal', ownerUserId: 'u1' },
+    ]);
+  });
+
+  it('narrows to a visible folder and leaves personal memory out', async () => {
+    const { service, prisma } = make();
+    await service.search({ ...caller('personal'), folders: restricted as any }, { folder: 'hr' });
+    expect(prisma.memoryItem.findMany.mock.calls[0][0].where.OR).toEqual([
+      { scope: 'organization', folderId: { in: ['f-hr'] } },
+    ]);
+    expect(await service.search({ ...caller('personal'), folders: restricted as any }, { folder: 'Sales' })).toEqual([]);
+  });
+
+  it('files company items only in a folder the caller may see', async () => {
+    const { service, prisma } = make();
+    await service.save(
+      { ...caller('contribute'), folders: restricted as any },
+      { content: 'Payroll closes on the 25th', scope: 'organization', folder: 'HR' },
+      { via: 'mcp' },
+    );
+    expect(prisma.memoryItem.create.mock.calls[0][0].data.folderId).toBe('f-hr');
+    await expect(
+      service.save(
+        { ...caller('contribute'), folders: restricted as any },
+        { content: 'x', scope: 'organization', folder: 'Sales' },
+        { via: 'mcp' },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('answers not-found to a curator for a company item in a hidden folder', async () => {
+    const { service } = make({ item: { scope: 'organization', ownerUserId: null, folderId: 'f-sales' } });
+    await expect(
+      service.update(ORG, 'u1', true, 'm1', { content: 'x' }, restricted as any),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});

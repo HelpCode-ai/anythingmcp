@@ -85,6 +85,8 @@ export const SecurityEvents = {
   MEMORY_SETTINGS_CHANGED: 'MEMORY_SETTINGS_CHANGED',
   /** An admin erased a member's personal memory (without reading it). */
   MEMORY_ERASED: 'MEMORY_ERASED',
+  /** The roles a knowledge folder (and its subtree) is limited to changed. */
+  KNOWLEDGE_FOLDER_ACCESS_CHANGED: 'KNOWLEDGE_FOLDER_ACCESS_CHANGED',
 
   // ── Consent plane: which AI client was authorized, by whom ──────────────
   CONSENT_GRANTED: 'CONSENT_GRANTED',

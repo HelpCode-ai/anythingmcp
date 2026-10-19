@@ -1,10 +1,11 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import {
   KgSkillService,
   SKILLS_DELIVERY_MODES,
   type SkillsDelivery,
 } from '../knowledge-graph/kg-skill.service';
+import { KnowledgeFoldersService } from '../knowledge-folders/knowledge-folders.service';
 import { McpSessionManager } from './mcp-session.manager';
 
 /** What the per-server endpoint may serve as text to one caller. */
@@ -32,7 +33,13 @@ export class McpServersService {
     private readonly prisma: PrismaService,
     private readonly kgSkills: KgSkillService,
     private readonly sessionManager: McpSessionManager,
+    @Optional() private readonly folders?: KnowledgeFoldersService,
   ) {}
+
+  /** The caller's knowledge-folder access in one workspace (null without the module). */
+  private folderAccess(organizationId: string, userId?: string | null) {
+    return this.folders ? this.folders.accessFor(organizationId, userId) : Promise.resolve(null);
+  }
 
   async findAllByUser(userId: string) {
     return this.prisma.mcpServerConfig.findMany({
@@ -320,12 +327,13 @@ export class McpServersService {
   async getComposedInstructions(
     serverId: string,
     visibleConnectorIds: string[],
+    userId?: string | null,
   ): Promise<string | undefined> {
     const { server, serverConnectors } = await this.loadVisibleConnectors(
       serverId,
       visibleConnectorIds,
     );
-    return this.composeInstructions(serverId, server, serverConnectors);
+    return this.composeInstructions(serverId, server, serverConnectors, userId);
   }
 
   /**
@@ -361,6 +369,8 @@ export class McpServersService {
   async getSharedGuide(opts: {
     connectorIds: string[];
     serverIds: string[];
+    /** The caller, so skills in folders limited to roles they lack stay out. */
+    userId?: string | null;
   }): Promise<string | undefined> {
     const connectorIds = [...new Set(opts.connectorIds)];
     const serverIds = [...new Set(opts.serverIds)];
@@ -400,6 +410,7 @@ export class McpServersService {
         servers.filter((s) => s.organizationId === orgId).map((s) => s.id),
         connectors.filter((c) => c.organizationId === orgId).map((c) => c.id),
         'full',
+        await this.folderAccess(orgId, opts.userId),
       );
       if (skillsText) parts.push(skillsText);
     }
@@ -430,6 +441,7 @@ export class McpServersService {
   async getVisibleContent(
     serverId: string,
     visibleConnectorIds: string[],
+    userId?: string | null,
   ): Promise<VisibleServerContent> {
     const { server, serverConnectors } = await this.loadVisibleConnectors(
       serverId,
@@ -439,6 +451,7 @@ export class McpServersService {
       serverId,
       server,
       serverConnectors,
+      userId,
     );
     if (!server) return { instructions, connectors: [], resources: [] };
 
@@ -522,6 +535,7 @@ export class McpServersService {
       connectorId: string;
       connector: { name: string; instructions: string | null };
     }>,
+    userId?: string | null,
   ): Promise<string | undefined> {
     const parts: string[] = [];
 
@@ -544,6 +558,7 @@ export class McpServersService {
           serverId,
           serverConnectors.map((sc) => sc.connectorId),
           toDelivery(server.skillsDelivery),
+          await this.folderAccess(server.organizationId, userId),
         )
       : null;
     if (skillsText) parts.push(skillsText);

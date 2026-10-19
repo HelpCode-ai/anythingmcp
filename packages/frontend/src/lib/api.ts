@@ -1092,9 +1092,10 @@ export const knowledgeGraph = {
   skills: {
     list: (
       token: string,
-      params?: { status?: string; q?: string; take?: number; skip?: number },
+      params?: { status?: string; q?: string; take?: number; skip?: number; folderId?: string },
     ) => {
       const qs = new URLSearchParams();
+      if (params?.folderId) qs.set('folderId', params.folderId);
       if (params?.status) qs.set('status', params.status);
       if (params?.q) qs.set('q', params.q);
       if (params?.take != null) qs.set('take', String(params.take));
@@ -1117,6 +1118,7 @@ export const knowledgeGraph = {
         mcpServerId?: string | null;
         status?: string;
         body?: string | null;
+        folderId?: string | null;
       },
     ) => request<KgSkill>('/api/knowledge-graph/skills', { token, method: 'POST', body }),
     generate: (token: string, mcpServerId?: string) =>
@@ -1132,7 +1134,14 @@ export const knowledgeGraph = {
     update: (
       token: string,
       id: string,
-      patch: { title?: string; whenToUse?: string; instruction?: string; body?: string | null; status?: string },
+      patch: {
+        title?: string;
+        whenToUse?: string;
+        instruction?: string;
+        body?: string | null;
+        status?: string;
+        folderId?: string | null;
+      },
     ) => request<KgSkill>(`/api/knowledge-graph/skills/${id}`, { token, method: 'PATCH', body: patch }),
     versions: (token: string, id: string) =>
       request<KgSkillVersion[]>(`/api/knowledge-graph/skills/${id}/versions`, { token }),
@@ -1160,7 +1169,44 @@ export interface KgSkill {
   version?: number;
   useCount?: number;
   lastUsedAt?: string | null;
+  folderId?: string | null;
 }
+
+export interface KnowledgeFolder {
+  id: string;
+  parentId: string | null;
+  name: string;
+  description: string | null;
+  /** Custom roles the folder (and its subtree) is limited to; empty = everyone. */
+  roleIds: string[];
+  /** "Sales / Quotes" */
+  path: string;
+  depth: number;
+  skillCount: number;
+  memoryCount: number;
+}
+
+export const knowledgeFolders = {
+  list: (token: string) =>
+    request<{ folders: KnowledgeFolder[]; restrictionsAvailable: boolean }>('/api/knowledge-folders', { token }),
+  create: (token: string, body: { name: string; parentId?: string | null; description?: string | null }) =>
+    request<KnowledgeFolder>('/api/knowledge-folders', { token, method: 'POST', body }),
+  update: (
+    token: string,
+    id: string,
+    body: { name?: string; parentId?: string | null; description?: string | null },
+  ) => request<KnowledgeFolder>(`/api/knowledge-folders/${id}`, { token, method: 'PATCH', body }),
+  remove: (token: string, id: string) =>
+    request<{ ok: boolean; movedTo: string | null }>(`/api/knowledge-folders/${id}`, { token, method: 'DELETE' }),
+  setRoles: (token: string, id: string, roleIds: string[]) =>
+    request<KnowledgeFolder>(`/api/knowledge-folders/${id}/roles`, { token, method: 'PUT', body: { roleIds } }),
+  move: (token: string, kind: 'skill' | 'memory', ids: string[], folderId: string | null) =>
+    request<{ moved: number }>('/api/knowledge-folders/move', {
+      token,
+      method: 'POST',
+      body: { kind, ids, folderId },
+    }),
+};
 
 export type MemoryAccessLevel = 'none' | 'read' | 'personal' | 'contribute';
 export type MemoryAccessSetting = 'inherit' | MemoryAccessLevel;
@@ -1175,6 +1221,7 @@ export interface MemoryItem {
   status: 'active' | 'pending' | 'rejected';
   source: { via?: 'mcp' | 'ui'; mcpServerId?: string; client?: string };
   ownerUserId: string | null;
+  folderId?: string | null;
   createdByUserId: string | null;
   approvedByUserId: string | null;
   approvedAt: string | null;
@@ -1193,9 +1240,17 @@ export const memory = {
   status: (token: string) => request<MemoryStatus>('/api/memory/status', { token }),
   list: (
     token: string,
-    params: { scope: MemoryScope; status?: string; q?: string; take?: number; skip?: number },
+    params: {
+      scope: MemoryScope;
+      status?: string;
+      q?: string;
+      take?: number;
+      skip?: number;
+      folderId?: string;
+    },
   ) => {
     const qs = new URLSearchParams({ scope: params.scope });
+    if (params.folderId) qs.set('folderId', params.folderId);
     if (params.status) qs.set('status', params.status);
     if (params.q) qs.set('q', params.q);
     if (params.take != null) qs.set('take', String(params.take));
@@ -1207,7 +1262,7 @@ export const memory = {
   },
   create: (
     token: string,
-    body: { content: string; kind?: string; scope?: MemoryScope; tags?: string[] },
+    body: { content: string; kind?: string; scope?: MemoryScope; tags?: string[]; folderId?: string | null },
   ) => request<MemoryItem>('/api/memory/items', { token, method: 'POST', body }),
   update: (token: string, id: string, body: { content?: string; kind?: string; tags?: string[] }) =>
     request<MemoryItem>(`/api/memory/items/${id}`, { token, method: 'PATCH', body }),

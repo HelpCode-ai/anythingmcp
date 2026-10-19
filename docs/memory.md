@@ -54,6 +54,34 @@ Either way, each item records who saved it and from which client, and admins
 and editors can edit or delete company memory on the Memory page. They can
 also add to it directly.
 
+## Folders
+
+Company memory and skills share one folder tree per workspace, so a topic
+such as "Sales / Quotes" holds both the procedures (skills) and the facts
+(memory). Folders are available in every edition.
+
+- Admins and editors create, rename, describe, move and delete folders from
+  the left column of the Memory page (Company memory tab) or the AI Skills
+  page. Folders go up to 4 levels deep. Deleting a folder moves its subfolders
+  and items to its parent; nothing is deleted.
+- Personal memory has no folders; use tags.
+- `memory_search(folder: "Sales")` searches a folder and its subfolders.
+  `memory_save` can file a company item in an existing folder. AI clients
+  never create folders. Results show each item's folder.
+
+### Limiting folders to roles (Enterprise)
+
+An admin can limit a folder to one or more custom roles (Settings → Roles,
+including roles synced from the identity provider): edit the folder → *Visible
+to*. The limit applies to the folder and everything below it, for skills and
+memory alike, on every path: instructions, `skills_list` / `skill_get`,
+prompts, `memory_search`, `kg_how_to_obtain` and the dashboard. Workspace
+admins see every folder. For everyone else a limited folder does not exist.
+
+Setting limits needs an Enterprise licence. Limits already set keep applying
+without it, so access never widens on its own. Every change is logged as
+`KNOWLEDGE_FOLDER_ACCESS_CHANGED`.
+
 ## Privacy and safety
 
 - Content that looks like a password, token or key is refused.

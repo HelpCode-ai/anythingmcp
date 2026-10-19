@@ -9,12 +9,19 @@ import {
   connectors as connectorsApi,
   type KgSkill,
   type KgSkillVersion,
+  type KnowledgeFolder,
 } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, type Tone } from '@/components/ui/badge';
 import { ActionMenu } from '@/components/ui/action-menu';
+import {
+  KnowledgeFolderTree,
+  folderOptions,
+  useKnowledgeFolders,
+  type FolderSelection,
+} from '@/components/knowledge-folders';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
@@ -40,6 +47,8 @@ export default function SkillsPage() {
   const [connectorList, setConnectorList] = useState<Array<{ id: string; name: string }>>([]);
   const [target, setTarget] = useState<string>(''); // '' = connectors, else mcpServerId
   const [statusFilter, setStatusFilter] = useState<string>(''); // tab
+  const [folderSel, setFolderSel] = useState<FolderSelection>('');
+  const { folders, restrictionsAvailable, reload: reloadFolders } = useKnowledgeFolders(token);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [page, setPage] = useState(0);
@@ -60,6 +69,7 @@ export default function SkillsPage() {
         q: debouncedQuery || undefined,
         take: PAGE_SIZE,
         skip: page * PAGE_SIZE,
+        folderId: folderSel || undefined,
       })
       .then((r) => {
         setItems(r.items);
@@ -68,7 +78,7 @@ export default function SkillsPage() {
       })
       .catch((e) => setStatus(e.message || 'Failed to load'))
       .finally(() => setLoading(false));
-  }, [token, statusFilter, debouncedQuery, page]);
+  }, [token, statusFilter, debouncedQuery, page, folderSel]);
 
   useEffect(() => load(), [load]);
   useEffect(() => {
@@ -138,7 +148,7 @@ export default function SkillsPage() {
     <AppShell
       backTo={{ label: 'Knowledge Graph', href: '/knowledge-graph' }}
       title="AI Skills"
-      maxWidth={860}
+      maxWidth={1120}
       actions={
         isAdmin && (
           <div className="flex flex-wrap items-center gap-2">
@@ -221,16 +231,40 @@ export default function SkillsPage() {
       </p>
       {status && <p className="text-[12px] text-[var(--text-3)] mb-3">{status}</p>}
 
+      <div className="grid gap-4 md:grid-cols-[230px_minmax(0,1fr)]">
+      <aside className="md:sticky md:top-4 md:self-start">
+        <KnowledgeFolderTree
+          token={token!}
+          kind="skill"
+          folders={folders}
+          restrictionsAvailable={restrictionsAvailable}
+          selected={folderSel}
+          onSelect={(f) => {
+            setFolderSel(f);
+            setPage(0);
+          }}
+          canEdit={isAdmin || user?.role === 'EDITOR'}
+          isAdmin={isAdmin}
+          onChanged={() => {
+            reloadFolders();
+            load();
+          }}
+        />
+      </aside>
+      <div className="min-w-0">
       {isAdmin && showNew && (
         <NewSkillForm
           token={token!}
           servers={servers}
           connectors={connectorList}
+          folders={folders}
+          defaultFolderId={folderSel && folderSel !== 'none' ? folderSel : ''}
           onCreated={() => {
             setShowNew(false);
             setStatus('Skill created (live for MCP).');
             setPage(0);
             load();
+            reloadFolders();
           }}
         />
       )}
@@ -297,7 +331,17 @@ export default function SkillsPage() {
           ) : (
             <div className="flex flex-col gap-2.5">
               {items.map((s) => (
-                <SkillCard key={s.id} s={s} isAdmin={isAdmin} token={token!} onChanged={onChanged} />
+                <SkillCard
+                  key={s.id}
+                  s={s}
+                  isAdmin={isAdmin}
+                  token={token!}
+                  folders={folders}
+                  onChanged={() => {
+                    onChanged();
+                    reloadFolders();
+                  }}
+                />
               ))}
             </div>
           )}
@@ -333,6 +377,8 @@ export default function SkillsPage() {
           )}
         </>
       )}
+      </div>
+      </div>
     </AppShell>
   );
 }
@@ -341,14 +387,18 @@ function SkillCard({
   s,
   isAdmin,
   token,
+  folders,
   onChanged,
 }: {
   s: KgSkill;
   isAdmin: boolean;
   token: string;
+  folders: KnowledgeFolder[];
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [folderId, setFolderId] = useState(s.folderId ?? '');
+  const folderPath = folders.find((f) => f.id === s.folderId)?.path;
   const [title, setTitle] = useState(s.title);
   const [whenToUse, setWhenToUse] = useState(s.whenToUse);
   const [instruction, setInstruction] = useState(s.instruction);
@@ -424,6 +474,20 @@ function SkillCard({
             className={cn(textareaCls, 'bg-[var(--surface-2)] font-mono text-[12.5px]')}
             placeholder="Full procedure (optional, markdown): steps, field rules, output format. Opened on demand with skill_get."
           />
+          {folders.length > 0 && (
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              className={cn(inputCls, 'h-9 bg-[var(--surface-2)]')}
+              aria-label="Folder"
+            >
+              {folderOptions(folders).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.value ? `Folder: ${o.label}` : 'No folder'}
+                </option>
+              ))}
+            </select>
+          )}
           <div className="flex gap-2">
             <Button
               variant="primary"
@@ -436,6 +500,7 @@ function SkillCard({
                     whenToUse,
                     instruction,
                     body: procedure.trim() ? procedure : null,
+                    ...(folders.length > 0 ? { folderId: folderId || null } : {}),
                   });
                   setEditing(false);
                 })
@@ -463,6 +528,7 @@ function SkillCard({
             </Badge>
           </div>
           <p className="text-[11.5px] text-[var(--text-3)]">
+            {folderPath ? `${folderPath} · ` : ''}
             {scope} · {sourceLabel(s.source)} · v{s.version ?? 1}
             {s.source === 'llm' ? ` · confidence ${s.confidence.toFixed(2)}` : ''}
             {s.evidenceCount ? ` · ${s.evidenceCount} example(s)` : ''}
@@ -569,13 +635,18 @@ function NewSkillForm({
   token,
   servers,
   connectors,
+  folders,
+  defaultFolderId,
   onCreated,
 }: {
   token: string;
   servers: Array<{ id: string; name: string }>;
   connectors: Array<{ id: string; name: string }>;
+  folders: KnowledgeFolder[];
+  defaultFolderId: string;
   onCreated: () => void;
 }) {
+  const [folderId, setFolderId] = useState(defaultFolderId);
   const [title, setTitle] = useState('');
   const [whenToUse, setWhenToUse] = useState('');
   const [instruction, setInstruction] = useState('');
@@ -592,6 +663,7 @@ function NewSkillForm({
     setErr('');
     const body: any = { title, whenToUse, instruction };
     if (procedure.trim()) body.body = procedure;
+    if (folderId) body.folderId = folderId;
     if (scope.startsWith('srv:')) body.mcpServerId = scope.slice(4);
     else if (scope.startsWith('con:')) body.connectorId = scope.slice(4);
     try {
@@ -640,6 +712,20 @@ function NewSkillForm({
           placeholder="Full procedure (optional, markdown): steps, field rules, output format. The AI opens it with skill_get when the skill applies."
           className={cn(textareaCls, 'font-mono text-[12.5px]')}
         />
+        {folders.length > 0 && (
+          <select
+            value={folderId}
+            onChange={(e) => setFolderId(e.target.value)}
+            className={cn(inputCls, 'text-[var(--text)]')}
+            aria-label="Folder"
+          >
+            {folderOptions(folders).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.value ? `Folder: ${o.label}` : 'No folder (top level)'}
+              </option>
+            ))}
+          </select>
+        )}
         <select
           value={scope}
           onChange={(e) => setScope(e.target.value)}

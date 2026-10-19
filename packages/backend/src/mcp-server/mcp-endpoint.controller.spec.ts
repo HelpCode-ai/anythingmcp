@@ -1092,12 +1092,12 @@ describe('McpEndpointController — resources and instructions follow the tool p
     const names = (await client.listTools()).tools.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining(['skills_list', 'skill_get']));
     // Scoped to the server's organization and the caller's visible connectors.
-    expect(kgSkills.hasVisible).toHaveBeenCalledWith(ORG_A, 'srv-1', ['c-crm']);
+    expect(kgSkills.hasVisible).toHaveBeenCalledWith(ORG_A, 'srv-1', ['c-crm'], null);
 
     const got: any = await client.callTool({ name: 'skill_get', arguments: { skill: 'sk-1' } });
     expect(got.content[0].text).toContain('STEP 1: draft_quote');
     expect(got.content[0].text).toContain('version 2');
-    expect(kgSkills.getForCaller).toHaveBeenCalledWith(ORG_A, 'srv-1', ['c-crm'], 'sk-1');
+    expect(kgSkills.getForCaller).toHaveBeenCalledWith(ORG_A, 'srv-1', ['c-crm'], 'sk-1', null);
 
     const missing: any = await client.callTool({ name: 'skill_get', arguments: { skill: 'nope' } });
     expect(missing.isError).toBe(true);
@@ -1160,7 +1160,7 @@ describe('McpEndpointController — resources and instructions follow the tool p
     expect(found.content[0].text).toContain('Customer 112759');
     await client.callTool({ name: 'memory_save', arguments: { content: 'Answer in Italian', kind: 'preference' } });
     expect(save).toHaveBeenCalledWith(
-      { organizationId: ORG_A, userId: 'u-1', level: 'personal' },
+      { organizationId: ORG_A, userId: 'u-1', level: 'personal', folders: null },
       expect.objectContaining({ content: 'Answer in Italian', kind: 'preference' }),
       expect.objectContaining({ via: 'mcp', mcpServerId: 'srv-1' }),
     );
@@ -1171,6 +1171,30 @@ describe('McpEndpointController — resources and instructions follow the tool p
     const saveContrib = (await contributor.listTools()).tools.find((t) => t.name === 'memory_save')!;
     expect(saveContrib.inputSchema.properties).toHaveProperty('scope');
     await contributor.close();
+  });
+
+  it('scopes skills to the caller\'s folders and offers a folder argument when folders exist', async () => {
+    const access = {
+      organizationId: ORG_A,
+      all: false,
+      ids: new Set(['f-hr']),
+      folders: [{ id: 'f-hr', parentId: null, name: 'HR', description: null, roleIds: [], path: 'HR', depth: 1 }],
+    };
+    (controller as any).folders = { accessFor: jest.fn(async () => access) };
+    const kgSkills = (controller as any).kgSkills;
+    kgSkills.hasVisible = jest.fn().mockResolvedValue(true);
+    kgSkills.listForCaller = jest.fn().mockResolvedValue([]);
+    kgSkills.folderSummary = jest.fn().mockResolvedValue([{ path: 'HR', description: null, skills: 2 }]);
+
+    const client = await connect(['crm_get']);
+    expect((controller as any).folders.accessFor).toHaveBeenCalledWith(ORG_A, 'u-1');
+    expect(kgSkills.hasVisible).toHaveBeenCalledWith(ORG_A, 'srv-1', ['c-crm'], access);
+    const list = (await client.listTools()).tools.find((t) => t.name === 'skills_list')!;
+    expect(list.inputSchema.properties).toHaveProperty('folder');
+    const res: any = await client.callTool({ name: 'skills_list', arguments: { folder: 'HR' } });
+    expect(JSON.parse(res.content[0].text)).toEqual({ folder: 'HR', folders: [{ path: 'HR', description: null, skills: 2 }], skills: [] });
+    expect(kgSkills.listForCaller).toHaveBeenCalledWith(ORG_A, 'srv-1', ['c-crm'], undefined, access, 'HR');
+    await client.close();
   });
 
   it('a caller who sees everything keeps the full instructions', async () => {

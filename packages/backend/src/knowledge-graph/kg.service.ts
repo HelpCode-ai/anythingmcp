@@ -10,6 +10,10 @@ import { RedisService } from '../common/redis.service';
 import { RolesService } from '../roles/roles.service';
 import { KgStaticService } from './kg-static.service';
 import { memberContributes } from './kg-learning.service';
+import {
+  folderVisibility,
+  type FolderAccess,
+} from '../knowledge-folders/knowledge-folders.service';
 import { KgObservationalService } from './kg-observational.service';
 import { KgLlmService } from './kg-llm.service';
 
@@ -494,7 +498,7 @@ export class KgService {
   async lookup(
     organizationId: string,
     query: string,
-    opts?: { connectorIds?: string[]; mcpServerId?: string },
+    opts?: { connectorIds?: string[]; mcpServerId?: string; folders?: FolderAccess | null },
   ) {
     const scope = opts?.connectorIds
       ? { connectorId: { in: opts.connectorIds.length ? opts.connectorIds : ['__none__'] } }
@@ -583,7 +587,12 @@ export class KgService {
    */
   async describeForResource(
     organizationId: string,
-    opts: { connectorIds: string[]; mcpServerId?: string; serverName?: string },
+    opts: {
+      connectorIds: string[];
+      mcpServerId?: string;
+      serverName?: string;
+      folders?: FolderAccess | null;
+    },
   ): Promise<string> {
     const MAX_ENTITIES = 150;
     const MAX_RELATIONS = 250;
@@ -616,6 +625,7 @@ export class KgService {
       this.scopedSkills(organizationId, {
         connectorIds: opts.connectorIds,
         mcpServerId: opts.mcpServerId,
+        folders: opts.folders,
       }),
     ]);
 
@@ -700,7 +710,7 @@ export class KgService {
   /** Applied skills for the scope (server-wide skills + assigned connectors'). */
   private async scopedSkills(
     organizationId: string,
-    opts?: { connectorIds?: string[]; mcpServerId?: string },
+    opts?: { connectorIds?: string[]; mcpServerId?: string; folders?: FolderAccess | null },
   ) {
     const or: any[] = [];
     if (opts?.mcpServerId) or.push({ mcpServerId: opts.mcpServerId });
@@ -710,6 +720,8 @@ export class KgService {
         organizationId,
         status: 'applied',
         ...(or.length ? { OR: or } : {}),
+        // Skills in folders limited to roles the caller lacks stay out.
+        AND: [folderVisibility(opts?.folders)],
       },
       select: { id: true, title: true, whenToUse: true },
       take: 25,

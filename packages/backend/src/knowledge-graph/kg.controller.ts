@@ -26,6 +26,7 @@ import {
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { KgService } from './kg.service';
 import { KgSkillService, SKILL_BODY_MAX } from './kg-skill.service';
+import { KnowledgeFoldersService } from '../knowledge-folders/knowledge-folders.service';
 import {
   KgLearningService,
   LEARNING_BULK_MAX,
@@ -71,6 +72,11 @@ class CreateSkillDto {
   @IsOptional()
   @IsIn(SKILL_STATUSES)
   status?: string;
+
+  @ApiPropertyOptional({ description: 'Knowledge folder id; omit for the top level.' })
+  @IsOptional()
+  @IsString()
+  folderId?: string | null;
 }
 
 class UpdateSkillDto {
@@ -99,6 +105,11 @@ class UpdateSkillDto {
   @IsOptional()
   @IsIn(SKILL_STATUSES)
   status?: string;
+
+  @ApiPropertyOptional({ description: 'Knowledge folder id; null moves the skill to the top level.' })
+  @IsOptional()
+  @IsString()
+  folderId?: string | null;
 }
 
 class SkillScopeDto {
@@ -155,6 +166,7 @@ export class KgController {
     private readonly kg: KgService,
     private readonly skills: KgSkillService,
     private readonly learning: KgLearningService,
+    private readonly folders: KnowledgeFoldersService,
   ) {}
 
   @Get()
@@ -212,12 +224,15 @@ export class KgController {
     @Query('q') q?: string,
     @Query('take') take?: string,
     @Query('skip') skip?: string,
+    @Query('folderId') folderId?: string,
   ) {
     return this.skills.list(req.user.organizationId, {
       status,
       q,
       take: take ? parseInt(take, 10) : undefined,
       skip: skip ? parseInt(skip, 10) : undefined,
+      folderId,
+      folders: await this.folders.accessFor(req.user.organizationId, req.user.sub),
     });
   }
 

@@ -24,10 +24,13 @@ export const TRANSITION_DAYS = 60;
 const PAID_PLANS = new Set(['starter', 'team', 'business', 'enterprise']);
 /** Paid plans that include single sign-on, SCIM and role sync. */
 const BUSINESS_PLANS = new Set(['business', 'enterprise']);
-/** Plans that include workspace memory. Not unlocked by the trial or the transition. */
-const MEMORY_PLANS = new Set(['enterprise']);
-/** How long a workspace's memory entitlement is cached (it is read on every MCP request). */
-const MEMORY_CACHE_MS = 60_000;
+/**
+ * Plans that include the Enterprise workspace features (workspace memory,
+ * folder restrictions by role). Not unlocked by the trial or the transition.
+ */
+const ENTERPRISE_PLANS = new Set(['enterprise']);
+/** How long a workspace's Enterprise entitlement is cached (read on every MCP request). */
+const ENTERPRISE_CACHE_MS = 60_000;
 const TRIAL_KEY = 'business_trial_ends_at';
 const TRANSITION_KEY = 'business_transition_until';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -181,32 +184,42 @@ export class EditionService implements OnModuleInit {
     };
   }
 
-  private readonly memoryCache = new Map<string, { value: boolean; at: number }>();
+  private readonly enterpriseCache = new Map<string, { value: boolean; at: number }>();
 
   /**
-   * Whether a workspace may use workspace memory: an active, unexpired licence
-   * with an Enterprise plan. On Cloud that is the workspace's own licence; on
-   * a self-hosted instance the workspace's or else the instance's key. The
-   * trial and the transition period do not include it.
+   * Whether a workspace has the Enterprise workspace features: an active,
+   * unexpired licence with an Enterprise plan. On Cloud that is the
+   * workspace's own licence; on a self-hosted instance the workspace's or
+   * else the instance's key. The trial and the transition period do not
+   * include them.
    */
-  async hasMemory(organizationId: string, now = new Date()): Promise<boolean> {
+  async hasEnterprise(organizationId: string, now = new Date()): Promise<boolean> {
     if (!organizationId) return false;
-    const hit = this.memoryCache.get(organizationId);
-    if (hit && now.getTime() - hit.at < MEMORY_CACHE_MS) return hit.value;
+    const hit = this.enterpriseCache.get(organizationId);
+    if (hit && now.getTime() - hit.at < ENTERPRISE_CACHE_MS) return hit.value;
     const license = await this.licenses.getCurrentLicense(organizationId);
-    const value = this.isPaid(license, now) && MEMORY_PLANS.has(license!.plan);
-    this.memoryCache.set(organizationId, { value, at: now.getTime() });
+    const value = this.isPaid(license, now) && ENTERPRISE_PLANS.has(license!.plan);
+    this.enterpriseCache.set(organizationId, { value, at: now.getTime() });
     return value;
   }
 
-  /** Throws the 403 the frontend recognises when memory is not licensed. */
-  async assertMemory(organizationId: string): Promise<void> {
-    if (await this.hasMemory(organizationId)) return;
+  /** Throws the 403 the frontend recognises when the feature is not licensed. */
+  async assertEnterprise(organizationId: string, feature: string): Promise<void> {
+    if (await this.hasEnterprise(organizationId)) return;
     throw new ForbiddenException({
       statusCode: 403,
       code: EDITION_REQUIRED,
-      message: 'Workspace memory is available with AnythingMCP Enterprise.',
+      message: `${feature} is available with AnythingMCP Enterprise.`,
     });
+  }
+
+  /** Workspace memory (Enterprise). */
+  hasMemory(organizationId: string, now = new Date()): Promise<boolean> {
+    return this.hasEnterprise(organizationId, now);
+  }
+
+  assertMemory(organizationId: string): Promise<void> {
+    return this.assertEnterprise(organizationId, 'Workspace memory');
   }
 
   async hasBusiness(): Promise<boolean> {

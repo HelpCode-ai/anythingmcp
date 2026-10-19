@@ -166,6 +166,15 @@ The shared `/mcp` endpoint keeps its fixed toolset: its workspace guide
 (`anythingmcp_get_workspace_guide`) returns the skills as text, procedures
 included.
 
+**Folders.** Skills can be filed in folders (AI Skills page, left column),
+the same tree the company memory uses; see [Folders](memory.md#folders). With
+folders, the index groups skills by folder, and when it does not fit it lists
+the top-level folders with their description and number of skills;
+`skills_list(folder: "Sales / Quotes")` opens one. A folder limited to roles
+hides its skills from everyone without one of those roles, on every path
+(instructions, `skills_list`, `skill_get`, prompts, `kg_how_to_obtain`, the
+dashboard).
+
 **Versions and usage.** Editing a skill's title, *when to use*, instruction or
 procedure keeps the previous content as a version (see *History* on the skill)
 and increments its version number. Each `skill_get` or prompt use is counted, so

@@ -7,6 +7,12 @@ import {
 import { PrismaService } from '../common/prisma.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import { EditionService } from '../ee/licensing/edition.service';
+import {
+  folderVisibility,
+  resolveFolder,
+  subtreeIds,
+  type FolderAccess,
+} from '../knowledge-folders/knowledge-folders.service';
 
 export const MEMORY_ACCESS_LEVELS = ['inherit', 'none', 'read', 'personal', 'contribute'] as const;
 export type MemoryAccessSetting = (typeof MEMORY_ACCESS_LEVELS)[number];
@@ -69,6 +75,8 @@ export interface MemoryCaller {
   organizationId: string;
   userId: string;
   level: MemoryAccess;
+  /** Knowledge folders the caller may see; company items elsewhere are hidden. */
+  folders?: FolderAccess | null;
 }
 
 export interface MemoryActionContext {
@@ -95,6 +103,7 @@ const ITEM_SELECT = {
   createdByUserId: true,
   approvedByUserId: true,
   approvedAt: true,
+  folderId: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -253,17 +262,32 @@ export class MemoryService {
    */
   async search(
     caller: MemoryCaller,
-    opts: { query?: string; scope?: MemoryScope; limit?: number },
+    opts: { query?: string; scope?: MemoryScope; limit?: number; folder?: string },
   ) {
     const limit = Math.min(Math.max(opts.limit ?? SEARCH_DEFAULT, 1), SEARCH_MAX);
-    const includePersonal = allows(caller.level, 'personal');
+    // A folder narrows to company items in it and its subfolders; personal
+    // memory has no folders.
+    let filterIds: string[] | null = null;
+    if (opts.folder?.trim()) {
+      const tree = caller.folders?.folders ?? [];
+      const f = resolveFolder(tree, opts.folder);
+      if (!f) return [];
+      filterIds = [...subtreeIds(tree, f.id)];
+    }
+    const includePersonal = allows(caller.level, 'personal') && !filterIds;
     if (opts.scope === 'personal' && !includePersonal) return [];
     const q = (opts.query ?? '').trim().slice(0, 300);
+    const restricted = !!caller.folders && !caller.folders.all;
+    const orgClause = filterIds
+      ? { scope: 'organization', folderId: { in: filterIds } }
+      : restricted
+        ? { scope: 'organization', AND: [folderVisibility(caller.folders)] }
+        : { scope: 'organization' };
     const visible = {
       organizationId: caller.organizationId,
       status: 'active',
       OR: [
-        ...(opts.scope !== 'personal' ? [{ scope: 'organization' }] : []),
+        ...(opts.scope !== 'personal' ? [orgClause] : []),
         ...(includePersonal && opts.scope !== 'organization'
           ? [{ scope: 'personal', ownerUserId: caller.userId }]
           : []),
@@ -272,6 +296,7 @@ export class MemoryService {
 
     if (q) {
       const scope = opts.scope ?? null;
+      const visibleIds = [...(caller.folders?.ids ?? [])];
       const hits = await this.prisma.$queryRaw<Array<{ id: string }>>`
         SELECT m.id
         FROM memory_items m, websearch_to_tsquery('simple', ${q}) AS q
@@ -282,6 +307,13 @@ export class MemoryService {
             m.scope = 'organization'
             OR (${includePersonal} AND m.scope = 'personal' AND m.owner_user_id = ${caller.userId})
           )
+          AND (
+            m.scope = 'personal'
+            OR NOT ${restricted}
+            OR m.folder_id IS NULL
+            OR m.folder_id = ANY(${visibleIds}::text[])
+          )
+          AND (${filterIds}::text[] IS NULL OR m.folder_id = ANY(${filterIds}::text[]))
           AND m.search_vector @@ q
         ORDER BY ts_rank(m.search_vector, q) DESC, m.updated_at DESC
         LIMIT ${limit}`;
@@ -312,7 +344,16 @@ export class MemoryService {
   async list(
     organizationId: string,
     userId: string,
-    opts: { scope: MemoryScope; status?: string; q?: string; take?: number; skip?: number },
+    opts: {
+      scope: MemoryScope;
+      status?: string;
+      q?: string;
+      take?: number;
+      skip?: number;
+      /** Company memory: a folder id (with subfolders) or 'none' for unfiled items. */
+      folderId?: string;
+      folders?: FolderAccess | null;
+    },
   ) {
     await this.edition.assertMemory(organizationId);
     const where: any =
@@ -325,6 +366,16 @@ export class MemoryService {
               ? opts.status
               : 'active',
           };
+    if (opts.scope === 'organization') {
+      where.AND = [folderVisibility(opts.folders)];
+      if (opts.folderId === 'none') where.folderId = null;
+      else if (opts.folderId) {
+        const tree = opts.folders?.folders ?? [];
+        where.folderId = tree.some((f) => f.id === opts.folderId)
+          ? { in: [...subtreeIds(tree, opts.folderId)] }
+          : '__none__';
+      }
+    }
     if (opts.q?.trim()) where.content = { contains: opts.q.trim(), mode: 'insensitive' };
     const take = Math.min(Math.max(opts.take ?? 25, 1), 100);
     const skip = Math.max(opts.skip ?? 0, 0);
@@ -338,7 +389,12 @@ export class MemoryService {
       }),
       this.prisma.memoryItem.count({ where }),
       this.prisma.memoryItem.count({
-        where: { organizationId, scope: 'organization', status: 'pending' },
+        where: {
+          organizationId,
+          scope: 'organization',
+          status: 'pending',
+          AND: [folderVisibility(opts.folders)],
+        },
       }),
     ]);
     return { items, total, pending, take, skip };
@@ -353,7 +409,7 @@ export class MemoryService {
    */
   async save(
     caller: MemoryCaller,
-    input: { content: string; kind?: string; scope?: string; tags?: unknown },
+    input: { content: string; kind?: string; scope?: string; tags?: unknown; folder?: string | null },
     source: MemorySource,
     opts?: { asCurator?: boolean },
   ) {
@@ -369,6 +425,13 @@ export class MemoryService {
       ? (input.kind as MemoryKind)
       : 'fact';
     const tags = cleanTags(input.tags);
+    // Only company items are filed, and only in a folder the caller can see.
+    let folderId: string | null = null;
+    if (scope === 'organization' && input.folder) {
+      const f = resolveFolder(caller.folders?.folders ?? [], input.folder);
+      if (!f) throw new BadRequestException(`No folder "${input.folder}".`);
+      folderId = f.id;
+    }
 
     const [orgCount, personalCount] = await Promise.all([
       this.prisma.memoryItem.count({ where: { organizationId: caller.organizationId } }),
@@ -401,6 +464,7 @@ export class MemoryService {
         organizationId: caller.organizationId,
         scope,
         ownerUserId: scope === 'personal' ? caller.userId : null,
+        folderId,
         kind,
         content,
         tags,
@@ -439,9 +503,10 @@ export class MemoryService {
     isCurator: boolean,
     id: string,
     patch: { content?: string; kind?: string; tags?: unknown },
+    folders?: FolderAccess | null,
   ) {
     await this.edition.assertMemory(organizationId);
-    await this.editable(organizationId, userId, isCurator, id);
+    await this.editable(organizationId, userId, isCurator, id, folders);
     const data: Record<string, unknown> = {};
     if (typeof patch.content === 'string') data.content = this.cleanContent(patch.content);
     if (patch.kind && (MEMORY_KINDS as readonly string[]).includes(patch.kind)) data.kind = patch.kind;
@@ -449,9 +514,15 @@ export class MemoryService {
     return this.prisma.memoryItem.update({ where: { id }, data, select: ITEM_SELECT });
   }
 
-  async remove(organizationId: string, userId: string, isCurator: boolean, id: string) {
+  async remove(
+    organizationId: string,
+    userId: string,
+    isCurator: boolean,
+    id: string,
+    folders?: FolderAccess | null,
+  ) {
     await this.edition.assertMemory(organizationId);
-    await this.editable(organizationId, userId, isCurator, id);
+    await this.editable(organizationId, userId, isCurator, id, folders);
     await this.prisma.memoryItem.delete({ where: { id } });
     return { ok: true };
   }
@@ -462,10 +533,11 @@ export class MemoryService {
     userId: string,
     id: string,
     decision: 'approve' | 'reject',
+    folders?: FolderAccess | null,
   ) {
     await this.edition.assertMemory(organizationId);
     const item = await this.prisma.memoryItem.findFirst({
-      where: { id, organizationId, scope: 'organization' },
+      where: { id, organizationId, scope: 'organization', AND: [folderVisibility(folders)] },
       select: { id: true },
     });
     if (!item) throw new NotFoundException('Memory item not found.');
@@ -501,14 +573,22 @@ export class MemoryService {
     return { erased: res.count };
   }
 
-  private async editable(organizationId: string, userId: string, isCurator: boolean, id: string) {
+  private async editable(
+    organizationId: string,
+    userId: string,
+    isCurator: boolean,
+    id: string,
+    folders?: FolderAccess | null,
+  ) {
     const item = await this.prisma.memoryItem.findFirst({
       where: { id, organizationId },
-      select: { scope: true, ownerUserId: true },
+      select: { scope: true, ownerUserId: true, folderId: true },
     });
+    const folderOk =
+      !item?.folderId || !folders || folders.all || folders.ids.has(item.folderId);
     const ok =
       !!item &&
-      (item.scope === 'personal' ? item.ownerUserId === userId : isCurator);
+      (item.scope === 'personal' ? item.ownerUserId === userId : isCurator && folderOk);
     // Someone else's personal item answers like one that does not exist.
     if (!ok) throw new NotFoundException('Memory item not found.');
   }

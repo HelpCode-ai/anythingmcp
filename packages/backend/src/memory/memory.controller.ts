@@ -24,6 +24,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
+import { KnowledgeFoldersService } from '../knowledge-folders/knowledge-folders.service';
 import {
   MEMORY_ACCESS_LEVELS,
   MEMORY_CONTENT_MAX,
@@ -66,6 +67,11 @@ class CreateMemoryDto {
   @ArrayMaxSize(MEMORY_TAGS_MAX)
   @IsString({ each: true })
   tags?: string[];
+
+  @ApiPropertyOptional({ description: 'Knowledge folder id (company memory only).' })
+  @IsOptional()
+  @IsString()
+  folderId?: string | null;
 }
 
 class UpdateMemoryDto {
@@ -124,7 +130,14 @@ class SetMemoryAccessDto {
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Controller('api/memory')
 export class MemoryController {
-  constructor(private readonly memory: MemoryService) {}
+  constructor(
+    private readonly memory: MemoryService,
+    private readonly folders: KnowledgeFoldersService,
+  ) {}
+
+  private access(req: any) {
+    return this.folders.accessFor(req.user.organizationId, req.user.sub);
+  }
 
   @Get('status')
   @ApiOperation({ summary: 'Whether memory is licensed here, my access and the workspace settings' })
@@ -151,6 +164,7 @@ export class MemoryController {
     @Query('q') q?: string,
     @Query('take') take?: string,
     @Query('skip') skip?: string,
+    @Query('folderId') folderId?: string,
   ) {
     const org = req.user.organizationId;
     const curator = CURATOR_ROLES.includes(req.user.role);
@@ -169,6 +183,8 @@ export class MemoryController {
       q,
       take: take ? parseInt(take, 10) : undefined,
       skip: skip ? parseInt(skip, 10) : undefined,
+      folderId,
+      folders: sc === 'organization' ? await this.access(req) : null,
     });
   }
 
@@ -185,8 +201,13 @@ export class MemoryController {
     const level = await this.memory.accessFor(org, req.user.sub);
     return this.memory.save(
       // A curator writing company memory needs no member level for it.
-      { organizationId: org, userId: req.user.sub, level: organization ? 'contribute' : level },
-      body,
+      {
+        organizationId: org,
+        userId: req.user.sub,
+        level: organization ? 'contribute' : level,
+        folders: organization ? await this.access(req) : null,
+      },
+      { ...body, folder: body.folderId ?? null },
       { via: 'ui' },
       { asCurator: organization },
     );
@@ -201,6 +222,7 @@ export class MemoryController {
       CURATOR_ROLES.includes(req.user.role),
       id,
       body,
+      await this.access(req),
     );
   }
 
@@ -212,6 +234,7 @@ export class MemoryController {
       req.user.sub,
       CURATOR_ROLES.includes(req.user.role),
       id,
+      await this.access(req),
     );
   }
 
@@ -219,14 +242,14 @@ export class MemoryController {
   @Roles('ADMIN', 'EDITOR')
   @ApiOperation({ summary: 'Approve a pending company memory item' })
   async approve(@Req() req: any, @Param('id') id: string) {
-    return this.memory.review(req.user.organizationId, req.user.sub, id, 'approve');
+    return this.memory.review(req.user.organizationId, req.user.sub, id, 'approve', await this.access(req));
   }
 
   @Post('items/:id/reject')
   @Roles('ADMIN', 'EDITOR')
   @ApiOperation({ summary: 'Reject a pending company memory item' })
   async reject(@Req() req: any, @Param('id') id: string) {
-    return this.memory.review(req.user.organizationId, req.user.sub, id, 'reject');
+    return this.memory.review(req.user.organizationId, req.user.sub, id, 'reject', await this.access(req));
   }
 
   @Put('settings')

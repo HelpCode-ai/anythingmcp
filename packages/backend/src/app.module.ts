@@ -19,6 +19,7 @@ import { SettingsModule } from './settings/settings.module';
 import { RolesModule } from './roles/roles.module';
 import { KgModule } from './knowledge-graph/kg.module';
 import { MemoryModule } from './memory/memory.module';
+import { KnowledgeFoldersModule } from './knowledge-folders/knowledge-folders.module';
 import { McpServersModule } from './mcp-servers/mcp-servers.module';
 import { LicenseModule } from './license/license.module';
 import { PrismaModule } from './common/prisma.module';
@@ -171,6 +172,7 @@ if (useOAuth) {
     RolesModule,
     KgModule,
     MemoryModule,
+    KnowledgeFoldersModule,
     McpServersModule,
     LicenseModule,
     LicensingModule,

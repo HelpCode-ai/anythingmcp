@@ -266,7 +266,7 @@ describe('shared /mcp in fixed mode', () => {
 
     const graph = await call(client, 'kg_how_to_obtain', { query: 'customer_id' });
     expect(graph.body).toEqual({ org: 'org-A' });
-    expect(kg.lookup).toHaveBeenCalledWith('org-A', 'customer_id', { connectorIds: ['conn-A1'] });
+    expect(kg.lookup).toHaveBeenCalledWith('org-A', 'customer_id', { connectorIds: ['conn-A1'], folders: null });
 
     const cfg = await call(client, 'anythingmcp_get_configuration_url');
     expect(cfg.body.servers[0].url).toMatch(/\/mcp\/srv-org-A$/);

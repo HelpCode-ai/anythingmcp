@@ -3,6 +3,13 @@ import { PrismaService } from '../common/prisma.service';
 import { KgLlmService } from './kg-llm.service';
 import { chatJson, resolveLlmConfig } from './llm-client';
 import { maybeRedactIntent } from './redact';
+import {
+  folderVisibility,
+  resolveFolder,
+  subtreeIds,
+  type FolderAccess,
+  type FolderNode,
+} from '../knowledge-folders/knowledge-folders.service';
 
 const MAX_INTENTS = 200;
 
@@ -37,10 +44,17 @@ interface SkillRow {
   instruction: string;
   body: string | null;
   version: number;
+  folderId?: string | null;
 }
 
 /** The skills a caller may see: the server's own and its visible connectors'. */
-function visibleWhere(organizationId: string, serverIds: string[], connectorIds: string[]) {
+function visibleWhere(
+  organizationId: string,
+  serverIds: string[],
+  connectorIds: string[],
+  folders?: FolderAccess | null,
+) {
+  const inFolders = folderVisibility(folders);
   return {
     // Re-stated rather than trusted from the ids, so a stray id can never
     // pull another workspace's skills in.
@@ -50,7 +64,14 @@ function visibleWhere(organizationId: string, serverIds: string[], connectorIds:
       { mcpServerId: { in: serverIds.length ? serverIds : ['__none__'] } },
       { connectorId: { in: connectorIds.length ? connectorIds : ['__none__'] } },
     ],
+    // Skills in folders limited to roles the caller lacks are not there.
+    ...(Object.keys(inFolders).length ? { AND: [inFolders] } : {}),
   };
+}
+
+function pathOf(folders: FolderNode[] | undefined, folderId?: string | null): string | null {
+  if (!folderId || !folders) return null;
+  return folders.find((f) => f.id === folderId)?.path ?? null;
 }
 
 function oneLine(text: string, max: number): string {
@@ -58,10 +79,11 @@ function oneLine(text: string, max: number): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-function inlineText(rows: SkillRow[], withBodies: boolean): string {
+function inlineText(rows: SkillRow[], withBodies: boolean, folders?: FolderNode[]): string {
   const body = rows
     .map((s) => {
-      const head = `- ${s.title}${s.whenToUse ? ` (when: ${s.whenToUse})` : ''}: ${s.instruction}`;
+      const path = pathOf(folders, s.folderId);
+      const head = `- ${s.title}${path ? ` [${path}]` : ''}${s.whenToUse ? ` (when: ${s.whenToUse})` : ''}: ${s.instruction}`;
       if (!s.body) return head;
       return withBodies
         ? `${head}\n\n${s.body}\n`
@@ -71,23 +93,72 @@ function inlineText(rows: SkillRow[], withBodies: boolean): string {
   return `## Workspace skills\n${body}`;
 }
 
-function indexText(rows: SkillRow[]): string {
+function indexLine(s: SkillRow): string {
+  return `- \`${s.id}\` ${s.title}${s.whenToUse ? `: ${oneLine(s.whenToUse, INDEX_WHEN_MAX)}` : ''}`;
+}
+
+/**
+ * The skills as an index for skill_get. Without folders: one list, cut at the
+ * budget. With folders: grouped by folder; when that does not fit, the root
+ * skills plus one line per top-level folder (description and count), which
+ * the model opens with skills_list.
+ */
+function indexText(rows: SkillRow[], folders?: FolderNode[]): string {
   const head =
     `## Workspace skills\n` +
     `This workspace has ${rows.length} skill${rows.length === 1 ? '' : 's'}: its procedures and rules. ` +
     `Before a task that matches one, call \`${SKILL_GET_TOOL}\` with its id and follow it. ` +
     `\`${SKILLS_LIST_TOOL}\` searches them all.`;
-  const lines: string[] = [];
-  let size = head.length;
-  for (const s of rows) {
-    const line = `- \`${s.id}\` ${s.title}${s.whenToUse ? `: ${oneLine(s.whenToUse, INDEX_WHEN_MAX)}` : ''}`;
-    if (size + line.length + 1 > SKILLS_INDEX_BUDGET) break;
-    lines.push(line);
-    size += line.length + 1;
+  const fit = (lines: string[], start: number) => {
+    const out: string[] = [];
+    let size = start;
+    for (const line of lines) {
+      if (size + line.length + 1 > SKILLS_INDEX_BUDGET) break;
+      out.push(line);
+      size += line.length + 1;
+    }
+    return out;
+  };
+
+  const filed = rows.some((r) => pathOf(folders, r.folderId));
+  if (!filed) {
+    const lines = fit(rows.map(indexLine), head.length);
+    const rest = rows.length - lines.length;
+    if (rest > 0) lines.push(`- …and ${rest} more: call \`${SKILLS_LIST_TOOL}\`.`);
+    return `${head}\n${lines.join('\n')}`;
   }
-  const rest = rows.length - lines.length;
-  if (rest > 0) lines.push(`- …and ${rest} more: call \`${SKILLS_LIST_TOOL}\`.`);
-  return `${head}\n${lines.join('\n')}`;
+
+  const root = rows.filter((r) => !pathOf(folders, r.folderId));
+  const byPath = new Map<string, SkillRow[]>();
+  for (const r of rows) {
+    const p = pathOf(folders, r.folderId);
+    if (p) byPath.set(p, [...(byPath.get(p) ?? []), r]);
+  }
+  const grouped = [
+    ...root.map(indexLine),
+    ...[...byPath.keys()].sort().flatMap((p) => [`### ${p}`, ...byPath.get(p)!.map(indexLine)]),
+  ];
+  if (grouped.join('\n').length + head.length + 1 <= SKILLS_INDEX_BUDGET) {
+    return `${head}\n${grouped.join('\n')}`;
+  }
+
+  // Too many: the root skills, then one line per top-level folder.
+  const tops = (folders ?? []).filter((f) => !f.parentId);
+  const folderLines = tops
+    .map((t) => {
+      const ids = subtreeIds(folders!, t.id);
+      const n = rows.filter((r) => r.folderId && ids.has(r.folderId)).length;
+      if (!n) return null;
+      return `- Folder "${t.path}" (${n} skill${n === 1 ? '' : 's'})${t.description ? `: ${oneLine(t.description, INDEX_WHEN_MAX)}` : ''}`;
+    })
+    .filter((l): l is string => !!l);
+  const intro = `Skills are filed in folders. Open one with \`${SKILLS_LIST_TOOL}\` and its folder.`;
+  const folderBlock = [intro, ...folderLines];
+  const start = head.length + folderBlock.join('\n').length + 2;
+  const rootLines = fit(root.map(indexLine), start);
+  const restRoot = root.length - rootLines.length;
+  if (restRoot > 0) rootLines.push(`- …and ${restRoot} more outside folders: call \`${SKILLS_LIST_TOOL}\`.`);
+  return `${head}\n${[...folderBlock, ...rootLines].join('\n')}`;
 }
 
 /** Auto-apply a generated skill only when at/above this confidence. */
@@ -332,9 +403,27 @@ export class KgSkillService {
    */
   async list(
     organizationId: string,
-    opts?: { status?: string; q?: string; take?: number; skip?: number },
+    opts?: {
+      status?: string;
+      q?: string;
+      take?: number;
+      skip?: number;
+      /** A folder id (with its subfolders), or 'none' for skills outside folders. */
+      folderId?: string;
+      /** The caller's folder access; skills in folders they may not see are left out. */
+      folders?: FolderAccess | null;
+    },
   ) {
-    const where: any = { organizationId };
+    const visible = folderVisibility(opts?.folders);
+    const where: any = { organizationId, AND: [visible] };
+    if (opts?.folderId === 'none') {
+      where.folderId = null;
+    } else if (opts?.folderId) {
+      const tree = opts.folders?.folders ?? [];
+      where.folderId = tree.some((f) => f.id === opts.folderId)
+        ? { in: [...subtreeIds(tree, opts.folderId)] }
+        : '__none__';
+    }
     if (opts?.status && ['pending', 'applied', 'dismissed'].includes(opts.status)) {
       where.status = opts.status;
     }
@@ -363,7 +452,7 @@ export class KgSkillService {
       this.prisma.kgSkillSuggestion.count({ where }),
       this.prisma.kgSkillSuggestion.groupBy({
         by: ['status'],
-        where: { organizationId },
+        where: { organizationId, AND: [visible] },
         _count: { _all: true },
       }),
     ]);
@@ -485,25 +574,40 @@ export class KgSkillService {
     serverId: string | string[],
     connectorIds: string[],
     mode: SkillsDelivery | 'full' = 'inline',
+    folders?: FolderAccess | null,
   ): Promise<string | null> {
     const serverIds = Array.isArray(serverId) ? serverId : [serverId];
     const rows: SkillRow[] = await this.prisma.kgSkillSuggestion.findMany({
-      where: visibleWhere(organizationId, serverIds, connectorIds),
-      select: { id: true, title: true, whenToUse: true, instruction: true, body: true, version: true },
+      where: visibleWhere(organizationId, serverIds, connectorIds, folders),
+      select: {
+        id: true,
+        title: true,
+        whenToUse: true,
+        instruction: true,
+        body: true,
+        version: true,
+        folderId: true,
+      },
       orderBy: { confidence: 'desc' },
     });
     if (!rows.length) return null;
-    if (mode === 'full') return inlineText(rows, true);
-    if (mode === 'index') return indexText(rows);
-    const inline = inlineText(rows, false);
+    const tree = folders?.folders;
+    if (mode === 'full') return inlineText(rows, true, tree);
+    if (mode === 'index') return indexText(rows, tree);
+    const inline = inlineText(rows, false, tree);
     if (mode === 'inline' || inline.length <= SKILLS_INLINE_BUDGET) return inline;
-    return indexText(rows);
+    return indexText(rows, tree);
   }
 
   /** Whether a caller sees at least one applied skill (offers the skill tools). */
-  async hasVisible(organizationId: string, serverId: string, connectorIds: string[]): Promise<boolean> {
+  async hasVisible(
+    organizationId: string,
+    serverId: string,
+    connectorIds: string[],
+    folders?: FolderAccess | null,
+  ): Promise<boolean> {
     const n = await this.prisma.kgSkillSuggestion.count({
-      where: visibleWhere(organizationId, [serverId], connectorIds),
+      where: visibleWhere(organizationId, [serverId], connectorIds, folders),
     });
     return n > 0;
   }
@@ -514,12 +618,23 @@ export class KgSkillService {
     serverId: string,
     connectorIds: string[],
     query?: string,
+    folders?: FolderAccess | null,
+    folderRef?: string,
   ) {
     const q = (query ?? '').trim();
+    // A folder narrows the list to it and its subfolders (by id or path,
+    // among the folders this caller may see).
+    let inFolder: Record<string, unknown> | null = null;
+    if (folderRef?.trim()) {
+      const f = resolveFolder(folders?.folders ?? [], folderRef);
+      if (!f) return [];
+      inFolder = { folderId: { in: [...subtreeIds(folders!.folders, f.id)] } };
+    }
     const rows = await this.prisma.kgSkillSuggestion.findMany({
       where: {
         AND: [
-          visibleWhere(organizationId, [serverId], connectorIds),
+          visibleWhere(organizationId, [serverId], connectorIds, folders),
+          ...(inFolder ? [inFolder] : []),
           ...(q
             ? [
                 {
@@ -533,7 +648,7 @@ export class KgSkillService {
             : []),
         ],
       },
-      select: { id: true, title: true, whenToUse: true, body: true, version: true },
+      select: { id: true, title: true, whenToUse: true, body: true, version: true, folderId: true },
       orderBy: { confidence: 'desc' },
       take: 100,
     });
@@ -543,7 +658,40 @@ export class KgSkillService {
       whenToUse: r.whenToUse,
       version: r.version,
       hasProcedure: !!r.body,
+      folder: pathOf(folders?.folders, r.folderId),
     }));
+  }
+
+  /**
+   * The subfolders of a folder (or the top-level folders) that hold at least
+   * one skill this caller can see, with counts, for skills_list.
+   */
+  async folderSummary(
+    organizationId: string,
+    serverId: string,
+    connectorIds: string[],
+    folders: FolderAccess | null | undefined,
+    parentRef?: string,
+  ): Promise<Array<{ path: string; description: string | null; skills: number }>> {
+    const tree = folders?.folders ?? [];
+    if (!tree.length) return [];
+    const parent = parentRef?.trim() ? resolveFolder(tree, parentRef) : null;
+    if (parentRef?.trim() && !parent) return [];
+    const rows = await this.prisma.kgSkillSuggestion.findMany({
+      where: { AND: [visibleWhere(organizationId, [serverId], connectorIds, folders), { folderId: { not: null } }] },
+      select: { folderId: true },
+    });
+    return tree
+      .filter((f) => f.parentId === (parent?.id ?? null))
+      .map((f) => {
+        const ids = subtreeIds(tree, f.id);
+        return {
+          path: f.path,
+          description: f.description,
+          skills: rows.filter((r) => r.folderId && ids.has(r.folderId)).length,
+        };
+      })
+      .filter((f) => f.skills > 0);
   }
 
   /**
@@ -556,13 +704,14 @@ export class KgSkillService {
     serverId: string,
     connectorIds: string[],
     ref: string,
+    folders?: FolderAccess | null,
   ) {
     const key = (ref ?? '').trim();
     if (!key) return null;
     const skill = await this.prisma.kgSkillSuggestion.findFirst({
       where: {
         AND: [
-          visibleWhere(organizationId, [serverId], connectorIds),
+          visibleWhere(organizationId, [serverId], connectorIds, folders),
           { OR: [{ id: key }, { title: { equals: key, mode: 'insensitive' as const } }] },
         ],
       },
@@ -621,6 +770,7 @@ export class KgSkillService {
       status?: string;
       source?: SkillSource;
       body?: string | null;
+      folderId?: string | null;
     },
   ) {
     const title = (body.title || '').trim().slice(0, 160);
@@ -667,8 +817,20 @@ export class KgSkillService {
         status,
         source: body.source === 'finder' ? 'finder' : 'manual',
         body: normalizeBody(body.body),
+        folderId: await this.ownFolder(organizationId, body.folderId),
       },
     });
+  }
+
+  /** A folder id of this workspace, or null; anything else is refused. */
+  private async ownFolder(organizationId: string, folderId?: string | null): Promise<string | null> {
+    if (!folderId) return null;
+    const f = await this.prisma.knowledgeFolder.findFirst({
+      where: { id: folderId, organizationId },
+      select: { id: true },
+    });
+    if (!f) throw new NotFoundException('Folder not found.');
+    return f.id;
   }
 
   private async owned(organizationId: string, id: string) {
@@ -701,6 +863,7 @@ export class KgSkillService {
       instruction?: string;
       body?: string | null;
       status?: string;
+      folderId?: string | null;
     },
     editedByUserId?: string,
   ) {
@@ -712,6 +875,10 @@ export class KgSkillService {
     if (patch.body !== undefined) data.body = normalizeBody(patch.body);
     if (patch.status && ['pending', 'applied', 'dismissed'].includes(patch.status)) {
       data.status = patch.status;
+    }
+    // Filing a skill elsewhere is not a content change: no new version.
+    if (patch.folderId !== undefined) {
+      data.folderId = await this.ownFolder(organizationId, patch.folderId);
     }
 
     const changed = (['title', 'whenToUse', 'instruction', 'body'] as const).some(

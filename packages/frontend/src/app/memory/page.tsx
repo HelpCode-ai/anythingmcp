@@ -8,6 +8,8 @@ import {
   type MemoryAccessLevel,
   type MemoryItem,
   type MemoryStatus,
+  type KnowledgeFolder,
+  knowledgeFolders,
 } from '@/lib/api';
 import { buildEnterpriseContactUrl } from '@/lib/marketing';
 import { AppShell } from '@/components/app-shell';
@@ -15,6 +17,12 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import {
+  KnowledgeFolderTree,
+  folderOptions,
+  useKnowledgeFolders,
+  type FolderSelection,
+} from '@/components/knowledge-folders';
 
 const PAGE_SIZE = 25;
 const CONTENT_MAX = 2000;
@@ -69,7 +77,10 @@ export default function MemoryPage() {
   }, [query]);
 
   // What the list shows; it is loading until the data for this key arrives.
-  const listKey = `${tab}|${debounced}|${page}|${reload}`;
+  const [folderSel, setFolderSel] = useState<FolderSelection>('');
+  const { folders, restrictionsAvailable, reload: reloadFolders } = useKnowledgeFolders(token);
+  const companyTab = tab !== 'personal';
+  const listKey = `${tab}|${debounced}|${page}|${reload}|${companyTab ? folderSel : ''}`;
   const licensed = !!status?.licensed;
   useEffect(() => {
     if (!token || !licensed) return;
@@ -81,6 +92,7 @@ export default function MemoryPage() {
         q: debounced || undefined,
         take: PAGE_SIZE,
         skip: page * PAGE_SIZE,
+        folderId: companyTab && folderSel ? folderSel : undefined,
       })
       .then((r) => {
         if (!cancelled) setData({ key: listKey, items: r.items, total: r.total, pending: r.pending });
@@ -94,21 +106,21 @@ export default function MemoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [token, licensed, tab, debounced, page, listKey]);
+  }, [token, licensed, tab, debounced, page, listKey, companyTab, folderSel]);
   const load = () => setReload((n) => n + 1);
   const { items, total, pending } = data;
   const loading = data.key !== listKey;
 
   if (statusError) {
     return (
-      <AppShell title="Memory" maxWidth={860}>
+      <AppShell title="Memory" maxWidth={1120}>
         <p className="text-[13px] text-[var(--danger)]">{statusError}</p>
       </AppShell>
     );
   }
   if (!status) {
     return (
-      <AppShell title="Memory" maxWidth={860}>
+      <AppShell title="Memory" maxWidth={1120}>
         <p className="text-[13px] text-[var(--text-3)]">Loading…</p>
       </AppShell>
     );
@@ -127,7 +139,7 @@ export default function MemoryPage() {
   ];
 
   return (
-    <AppShell title="Memory" maxWidth={860}>
+    <AppShell title="Memory" maxWidth={1120}>
       <p className="text-[13px] leading-relaxed text-[var(--text-2)] mb-4">
         Facts, preferences and notes your AI clients save and find again, in any client connected to
         a server of this workspace. <span className="text-[var(--text)]">My memory</span> is visible
@@ -189,14 +201,40 @@ export default function MemoryPage() {
             />
           </div>
 
+          <div className={cn(companyTab && 'grid gap-4 md:grid-cols-[230px_minmax(0,1fr)]')}>
+          {companyTab && (
+            <aside className="md:sticky md:top-4 md:self-start">
+              <KnowledgeFolderTree
+                token={token!}
+                kind="memory"
+                folders={folders}
+                restrictionsAvailable={restrictionsAvailable}
+                selected={folderSel}
+                onSelect={(f) => {
+                  setFolderSel(f);
+                  setPage(0);
+                }}
+                canEdit={curator}
+                isAdmin={isAdmin}
+                onChanged={() => {
+                  reloadFolders();
+                  load();
+                }}
+              />
+            </aside>
+          )}
+          <div className="min-w-0">
           {canWriteHere && (
             <NewMemoryForm
               token={token!}
               scope={tab === 'organization' ? 'organization' : 'personal'}
+              folders={tab === 'organization' ? folders : []}
+              defaultFolderId={folderSel && folderSel !== 'none' ? folderSel : ''}
               onSaved={() => {
                 setMsg('Saved.');
                 setPage(0);
                 load();
+                reloadFolders();
               }}
               onError={(m) => setMsg(m)}
             />
@@ -221,7 +259,12 @@ export default function MemoryPage() {
                   token={token!}
                   canEdit={m.scope === 'personal' || curator}
                   canReview={curator && m.status === 'pending'}
-                  onChanged={load}
+                  folders={m.scope === 'organization' ? folders : []}
+                  canMove={curator && m.scope === 'organization'}
+                  onChanged={() => {
+                    load();
+                    reloadFolders();
+                  }}
                   onError={(e) => setMsg(e)}
                 />
               ))}
@@ -251,6 +294,9 @@ export default function MemoryPage() {
               </div>
             </div>
           )}
+
+          </div>
+          </div>
 
           {isAdmin && (
             <MemorySettings
@@ -294,15 +340,20 @@ function EnterpriseMemoryNotice() {
 function NewMemoryForm({
   token,
   scope,
+  folders,
+  defaultFolderId,
   onSaved,
   onError,
 }: {
   token: string;
   scope: 'personal' | 'organization';
+  folders: KnowledgeFolder[];
+  defaultFolderId: string;
   onSaved: () => void;
   onError: (msg: string) => void;
 }) {
   const [content, setContent] = useState('');
+  const [folderId, setFolderId] = useState(defaultFolderId);
   const [kind, setKind] = useState('fact');
   const [tags, setTags] = useState('');
   const [saving, setSaving] = useState(false);
@@ -315,6 +366,7 @@ function NewMemoryForm({
         content,
         kind,
         scope,
+        ...(scope === 'organization' && folderId ? { folderId } : {}),
         tags: tags
           .split(',')
           .map((t) => t.trim())
@@ -356,6 +408,20 @@ function NewMemoryForm({
             <option value="preference">Preference</option>
             <option value="note">Note</option>
           </select>
+          {folders.length > 0 && (
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              className={cn(inputCls, 'w-auto max-w-[220px]')}
+              aria-label="Folder"
+            >
+              {folderOptions(folders, 'No folder').map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          )}
           <input
             value={tags}
             onChange={(e) => setTags(e.target.value)}
@@ -379,6 +445,8 @@ function MemoryCard({
   token,
   canEdit,
   canReview,
+  folders,
+  canMove,
   onChanged,
   onError,
 }: {
@@ -386,10 +454,14 @@ function MemoryCard({
   token: string;
   canEdit: boolean;
   canReview: boolean;
+  folders: KnowledgeFolder[];
+  canMove: boolean;
   onChanged: () => void;
   onError: (msg: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [folderId, setFolderId] = useState(item.folderId ?? '');
+  const folderPath = folders.find((f) => f.id === item.folderId)?.path;
   const [content, setContent] = useState(item.content);
   const [busy, setBusy] = useState(false);
 
@@ -418,6 +490,20 @@ function MemoryCard({
             maxLength={CONTENT_MAX}
             className={textareaCls}
           />
+          {canMove && folders.length > 0 && (
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              className={cn(inputCls, 'w-auto max-w-[260px]')}
+              aria-label="Folder"
+            >
+              {folderOptions(folders, 'No folder').map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          )}
           <div className="flex gap-2">
             <Button
               variant="primary"
@@ -426,6 +512,9 @@ function MemoryCard({
               onClick={() =>
                 run(async () => {
                   await memoryApi.update(token, item.id, { content });
+                  if (canMove && (folderId || null) !== (item.folderId ?? null)) {
+                    await knowledgeFolders.move(token, 'memory', [item.id], folderId || null);
+                  }
                   setEditing(false);
                 })
               }
@@ -461,6 +550,7 @@ function MemoryCard({
                 </span>
               ))}
               <span>
+                {folderPath ? `${folderPath} · ` : ''}
                 {via} · {new Date(item.updatedAt).toLocaleDateString()}
               </span>
             </div>

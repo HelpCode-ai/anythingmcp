@@ -426,3 +426,79 @@ describe('KgSkillService.update versions', () => {
     await expect(svc.update('org-A', 's1', { title: 'x' })).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('KgSkillService with folders', () => {
+  const ORG = 'org-A';
+  const tree = [
+    { id: 'f-sales', parentId: null, name: 'Sales', description: 'Selling', roleIds: [], path: 'Sales', depth: 1 },
+    { id: 'f-quotes', parentId: 'f-sales', name: 'Quotes', description: null, roleIds: [], path: 'Sales / Quotes', depth: 2 },
+  ];
+  const access = (ids: string[], all = false) => ({
+    organizationId: ORG,
+    all,
+    ids: new Set(ids),
+    folders: tree.filter((f) => ids.includes(f.id)),
+  });
+  const row = (i: number, folderId: string | null, extra: Partial<any> = {}) => ({
+    id: `s${i}`,
+    title: `Skill ${i}`,
+    whenToUse: `when ${i}`,
+    instruction: `rule ${i}`,
+    body: null,
+    version: 1,
+    folderId,
+    ...extra,
+  });
+
+  it('keeps skills in folders the caller may not see out of every query', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const svc = new KgSkillService({ kgSkillSuggestion: { findMany } } as any, {} as any);
+    await svc.activeSkillsText(ORG, 'srv', [], 'auto', access(['f-sales']) as any);
+    expect(findMany.mock.calls[0][0].where.AND).toEqual([
+      { OR: [{ folderId: null }, { folderId: { in: ['f-sales'] } }] },
+    ]);
+  });
+
+  it('adds no folder filter when the caller sees everything', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const svc = new KgSkillService({ kgSkillSuggestion: { findMany } } as any, {} as any);
+    await svc.activeSkillsText(ORG, 'srv', [], 'auto', access(['f-sales', 'f-quotes'], true) as any);
+    expect(findMany.mock.calls[0][0].where.AND).toBeUndefined();
+  });
+
+  it('groups the index by folder', async () => {
+    const rows = [row(1, null), row(2, 'f-quotes')];
+    const svc = new KgSkillService({ kgSkillSuggestion: { findMany: jest.fn().mockResolvedValue(rows) } } as any, {} as any);
+    const text = (await svc.activeSkillsText(ORG, 'srv', [], 'index', access(['f-sales', 'f-quotes'], true) as any))!;
+    expect(text).toContain('- `s1` Skill 1: when 1\n### Sales / Quotes\n- `s2` Skill 2: when 2');
+  });
+
+  it('summarises top-level folders when the grouped index does not fit', async () => {
+    const rows = [row(0, null), ...Array.from({ length: 120 }, (_, i) => row(i + 1, 'f-quotes', { whenToUse: 'w'.repeat(150) }))];
+    const svc = new KgSkillService({ kgSkillSuggestion: { findMany: jest.fn().mockResolvedValue(rows) } } as any, {} as any);
+    const text = (await svc.activeSkillsText(ORG, 'srv', [], 'index', access(['f-sales', 'f-quotes'], true) as any))!;
+    expect(text).toContain('- Folder "Sales" (120 skills): Selling');
+    expect(text).toContain('- `s0` Skill 0');
+    expect(text).not.toContain('`s5`');
+  });
+
+  it('shows the folder next to a skill in full text', async () => {
+    const svc = new KgSkillService(
+      { kgSkillSuggestion: { findMany: jest.fn().mockResolvedValue([row(1, 'f-quotes')]) } } as any,
+      {} as any,
+    );
+    const text = await svc.activeSkillsText(ORG, 'srv', [], 'inline', access(['f-sales', 'f-quotes'], true) as any);
+    expect(text).toBe('## Workspace skills\n- Skill 1 [Sales / Quotes] (when: when 1): rule 1');
+  });
+
+  it('lists a folder with its subfolders by path, and nothing for an unknown or hidden folder', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const svc = new KgSkillService({ kgSkillSuggestion: { findMany } } as any, {} as any);
+    await svc.listForCaller(ORG, 'srv', [], undefined, access(['f-sales', 'f-quotes'], true) as any, 'sales');
+    expect(findMany.mock.calls[0][0].where.AND[1]).toEqual({ folderId: { in: ['f-sales', 'f-quotes'] } });
+
+    findMany.mockClear();
+    expect(await svc.listForCaller(ORG, 'srv', [], undefined, access(['f-sales']) as any, 'Sales / Quotes')).toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+});
