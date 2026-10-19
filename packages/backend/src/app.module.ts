@@ -46,6 +46,8 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { PublicStatsModule } from './public-stats/public-stats.module';
 import { CloudModule } from './ee/cloud/cloud.module';
 import { LicensingModule } from './ee/licensing/licensing.module';
+import { SupportModule } from './ee/support/support.module';
+import { supportModuleEnabled } from './ee/support/support-config';
 import { getRequiredSecret } from './common/secrets.util';
 import { AppLoggerModule } from './common/logger.module';
 import { SentryContextInterceptor } from './common/sentry-context.interceptor';
@@ -53,6 +55,9 @@ import { SentryContextInterceptor } from './common/sentry-context.interceptor';
 // Determine deployment and auth mode from env
 const useCloud = process.env.DEPLOYMENT_MODE === 'cloud';
 const cloudImports = useCloud ? [CloudModule] : [];
+// Support chat of the instances we operate (Cloud + dedicated enterprise
+// instances); off unless SUPPORT_CHAT_* / LIBREDESK_* are set.
+const supportImports = supportModuleEnabled() ? [SupportModule] : [];
 
 // Determine auth mode from env
 const authMode = process.env.MCP_AUTH_MODE || 'none';
@@ -179,6 +184,7 @@ if (useOAuth) {
 
     // Cloud-specific modules (conditionally loaded)
     ...cloudImports,
+    ...supportImports,
   ],
   providers: [
     // Reports exceptions Nest turns into a 500 response, which otherwise never
