@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { users, server, sso, ApiError, type LinkableProvider } from '@/lib/api';
+import { users, server, sso, knowledgeGraph, ApiError, type LinkableProvider, type MemberLearning } from '@/lib/api';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useToast } from '@/components/toast';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,8 @@ export default function SettingsPage() {
   const [isCloud, setIsCloud] = useState(false);
   const [marketingOptOut, setMarketingOptOut] = useState<boolean | null>(null);
   const [marketingSaving, setMarketingSaving] = useState(false);
+  const [learning, setLearning] = useState<MemberLearning | null>(null);
+  const [learningSaving, setLearningSaving] = useState(false);
 
   // Delete account
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -64,6 +66,35 @@ export default function SettingsPage() {
       .then((st) => setMarketingOptOut(st.emailMarketingOptOut))
       .catch(() => setMarketingOptOut(null));
   }, [isCloud, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    knowledgeGraph.learning
+      .me(token)
+      .then(setLearning)
+      .catch(() => setLearning(null));
+  }, [token]);
+
+  const handleLearningOptOut = async (optOut: boolean, clearIntents = false) => {
+    if (!token) return;
+    setLearningSaving(true);
+    try {
+      const res = await knowledgeGraph.learning.setMine(token, { optOut, clearIntents });
+      setLearning(res);
+      toast.show({
+        tone: 'success',
+        title: clearIntents
+          ? `${res.intentsCleared} captured request(s) erased`
+          : optOut
+            ? 'Your requests are no longer used for skill learning'
+            : 'Your choice was removed; your admin\'s setting applies',
+      });
+    } catch (err: any) {
+      toast.show({ tone: 'error', title: 'Could not save', description: err?.message });
+    } finally {
+      setLearningSaving(false);
+    }
+  };
 
   const handleMarketingToggle = async (wantsEmails: boolean) => {
     if (!token) return;
@@ -269,6 +300,47 @@ export default function SettingsPage() {
               Setup tips while your workspace is new, and offers after a trial. Emails about your account, such as sign-in codes and plan notices, are always sent.
             </span>
           </label>
+        </Card>
+      )}
+
+      {/* Skill learning: shown once it can concern this user (workspace switch
+          on, an admin turned it on for them, or they already opted out). */}
+      {learning && (learning.workspaceDefault || learning.mode === 'on' || learning.optOut) && (
+        <Card className="p-[22px]">
+          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Skill learning</h3>
+          <p className="text-sm text-[var(--text-2)] mb-3 max-w-xl">
+            {learning.effective
+              ? 'Your requests to AI clients connected to this workspace are recorded with the tool calls they lead to, so admins can turn recurring needs into workspace skills.'
+              : learning.optOut
+                ? 'You opted out: your requests are not recorded for skill learning in this workspace.'
+                : 'Your admin has turned skill learning off for you in this workspace.'}
+          </p>
+          <label className="flex items-start gap-2.5 cursor-pointer max-w-md">
+            <input
+              type="checkbox"
+              checked={!learning.optOut}
+              disabled={learningSaving}
+              onChange={(e) => handleLearningOptOut(!e.target.checked)}
+              className="mt-0.5 accent-[var(--brand)]"
+            />
+            <span className="text-sm text-[var(--text-2)]">
+              <span className="font-medium text-[var(--text)]">Use my requests for skill learning</span>
+              <br />
+              Unchecking it always wins. Checking it again only removes your opt-out: whether your
+              requests are used is then up to your admin.
+            </span>
+          </label>
+          {learning.optOut && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-3"
+              disabled={learningSaving}
+              onClick={() => handleLearningOptOut(true, true)}
+            >
+              Erase my captured requests
+            </Button>
+          )}
         </Card>
       )}
 

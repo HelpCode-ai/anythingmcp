@@ -6,6 +6,9 @@ import { maybeRedactIntent } from './redact';
 
 const MAX_INTENTS = 200;
 
+/** Where a skill came from; generation only ever replaces its own `llm` rows. */
+export type SkillSource = 'manual' | 'llm' | 'finder';
+
 /** Auto-apply a generated skill only when at/above this confidence. */
 export const SKILL_AUTO_APPLY_MIN = 0.9;
 
@@ -129,8 +132,10 @@ export class KgSkillService {
     const idByName = new Map(connectors.map((c) => [c.name.toLowerCase(), c.id]));
     const autoApply = await this.autoApplyEnabled(organizationId);
 
+    // Replace only the previous generation's pending output: manual pending
+    // skills and Finder suggestions awaiting approval are not ours to drop.
     await this.prisma.kgSkillSuggestion.deleteMany({
-      where: { organizationId, status: 'pending', mcpServerId: null },
+      where: { organizationId, status: 'pending', source: 'llm', mcpServerId: null },
     });
 
     let created = 0;
@@ -196,7 +201,7 @@ export class KgSkillService {
     const skills: any[] = Array.isArray(json?.skills) ? json.skills : [];
 
     await this.prisma.kgSkillSuggestion.deleteMany({
-      where: { organizationId, status: 'pending', mcpServerId },
+      where: { organizationId, status: 'pending', source: 'llm', mcpServerId },
     });
     const autoApply = await this.autoApplyEnabled(organizationId);
 
@@ -232,6 +237,7 @@ export class KgSkillService {
         confidence,
         evidenceCount: Math.max(0, Math.min(9999, parseInt(s?.evidenceCount, 10) || 0)),
         status,
+        source: 'llm',
       },
     });
     return true;
@@ -373,6 +379,7 @@ export class KgSkillService {
             confidence: Math.max(0, Math.min(1, Number(s?.confidence) || 0.8)),
             evidenceCount: 0,
             status: 'applied',
+            source: 'llm',
           },
         });
         n++;
@@ -386,12 +393,16 @@ export class KgSkillService {
 
   /** Active skills composed into an MCP server's instructions at serve time. */
   async activeSkillsText(
+    organizationId: string,
     serverId: string | string[],
     connectorIds: string[],
   ): Promise<string | null> {
     const serverIds = Array.isArray(serverId) ? serverId : [serverId];
     const skills = await this.prisma.kgSkillSuggestion.findMany({
       where: {
+        // Re-stated rather than trusted from the ids, so a stray id can never
+        // pull another workspace's skills into these instructions.
+        organizationId,
         status: 'applied',
         OR: [
           { mcpServerId: { in: serverIds.length ? serverIds : ['__none__'] } },
@@ -422,6 +433,7 @@ export class KgSkillService {
       connectorId?: string | null;
       mcpServerId?: string | null;
       status?: string;
+      source?: SkillSource;
     },
   ) {
     const title = (body.title || '').trim().slice(0, 160);
@@ -466,6 +478,7 @@ export class KgSkillService {
         confidence: 1,
         evidenceCount: 0,
         status,
+        source: body.source === 'finder' ? 'finder' : 'manual',
       },
     });
   }

@@ -162,3 +162,122 @@ describe('KgSkillService custom skip', () => {
     expect(prisma.kgSkillSuggestion.deleteMany).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Generation used to delete every pending skill in its scope, including
+ * Agent Skills Finder suggestions awaiting approval and manual pending ones.
+ * It now replaces only its own previous output (`source: 'llm'`).
+ */
+describe('KgSkillService provenance', () => {
+  const ORG = 'org-A';
+  const realFetch = global.fetch;
+
+  beforeEach(() => {
+    process.env.KG_LLM_BASE_URL = 'http://localhost:11434/v1';
+    process.env.KG_LLM_MODEL = 'qwen2.5';
+    delete process.env.KG_LLM_API_KEY;
+    global.fetch = jest.fn().mockResolvedValue(
+      okJson({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ skills: [{ title: 'T', instruction: 'I', confidence: 0.5 }] }),
+            },
+          },
+        ],
+      }),
+    );
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+    delete process.env.KG_LLM_BASE_URL;
+    delete process.env.KG_LLM_MODEL;
+  });
+
+  it('server generation deletes only its own pending llm rows and tags new ones llm', async () => {
+    const prisma = {
+      mcpServerConfig: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'srv', name: 'S', organizationId: ORG }),
+      },
+      mcpServerConnector: { findMany: jest.fn().mockResolvedValue([]) },
+      kgNode: { findMany: jest.fn().mockResolvedValue([]) },
+      toolInvocation: { findMany: jest.fn().mockResolvedValue([]) },
+      orgSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+      kgSkillSuggestion: { deleteMany: jest.fn(), create: jest.fn() },
+    };
+    const svc = new KgSkillService(prisma as any, { isEnabled: async () => true } as any);
+    await svc.generate(ORG, { mcpServerId: 'srv' });
+
+    expect(prisma.kgSkillSuggestion.deleteMany).toHaveBeenCalledWith({
+      where: { organizationId: ORG, status: 'pending', source: 'llm', mcpServerId: 'srv' },
+    });
+    expect(prisma.kgSkillSuggestion.create.mock.calls[0][0].data).toEqual(
+      expect.objectContaining({ source: 'llm', status: 'pending', mcpServerId: 'srv' }),
+    );
+  });
+
+  it('connector generation deletes only its own pending llm rows', async () => {
+    const prisma = {
+      toolInvocation: {
+        findMany: jest.fn().mockResolvedValue([
+          { intent: 'x', status: 'SUCCESS', tool: { name: 't', connector: { name: 'C' } } },
+        ]),
+      },
+      connector: { findMany: jest.fn().mockResolvedValue([]) },
+      orgSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+      kgSkillSuggestion: { deleteMany: jest.fn(), create: jest.fn() },
+    };
+    const svc = new KgSkillService(prisma as any, { isEnabled: async () => true } as any);
+    await svc.generate(ORG);
+
+    expect(prisma.kgSkillSuggestion.deleteMany).toHaveBeenCalledWith({
+      where: { organizationId: ORG, status: 'pending', source: 'llm', mcpServerId: null },
+    });
+  });
+});
+
+describe('KgSkillService.create source', () => {
+  const ORG = 'org-A';
+
+  function prismaFor() {
+    return {
+      mcpServerConfig: { findUnique: jest.fn().mockResolvedValue({ organizationId: ORG }) },
+      kgSkillSuggestion: { create: jest.fn().mockResolvedValue({ id: 's1' }) },
+    };
+  }
+
+  it('records manual by default', async () => {
+    const prisma = prismaFor();
+    await new KgSkillService(prisma as any, {} as any).create(ORG, {
+      title: 'T',
+      instruction: 'I',
+      mcpServerId: 'srv',
+    });
+    expect(prisma.kgSkillSuggestion.create.mock.calls[0][0].data.source).toBe('manual');
+  });
+
+  it('records finder when the Skills Finder files it', async () => {
+    const prisma = prismaFor();
+    await new KgSkillService(prisma as any, {} as any).create(ORG, {
+      title: 'T',
+      instruction: 'I',
+      mcpServerId: 'srv',
+      status: 'pending',
+      source: 'finder',
+    });
+    expect(prisma.kgSkillSuggestion.create.mock.calls[0][0].data).toEqual(
+      expect.objectContaining({ source: 'finder', status: 'pending' }),
+    );
+  });
+});
+
+describe('KgSkillService.activeSkillsText', () => {
+  it('filters by organization as well as by the given ids', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const svc = new KgSkillService({ kgSkillSuggestion: { findMany } } as any, {} as any);
+    await svc.activeSkillsText('org-A', 'srv-1', ['c-1']);
+    expect(findMany.mock.calls[0][0].where).toEqual(
+      expect.objectContaining({ organizationId: 'org-A', status: 'applied' }),
+    );
+  });
+});

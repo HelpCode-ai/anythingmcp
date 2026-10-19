@@ -66,6 +66,13 @@ model OrganizationMember {
   /// reactivation, and so the member list can say "deactivated" instead of
   /// making a leaver indistinguishable from someone who was never here.
   deactivatedAt  DateTime?    @map("deactivated_at")
+  /// Whether this member's requests may feed skill learning (intent capture):
+  /// `inherit` follows the workspace switch, `on` / `off` override it. Set by
+  /// an admin. Per membership, so one person can differ between workspaces.
+  learningMode   String       @default("inherit") @map("learning_mode")
+  /// The member's own opt-out. Wins over `learningMode`; a member can opt
+  /// out but never opt in against the admin.
+  learningOptOut Boolean      @default(false) @map("learning_opt_out")
 
   @@unique([userId, organizationId])
   @@index([userId])
@@ -1368,6 +1375,10 @@ model KgSkillSuggestion {
   confidence    Float    @default(0)
   evidenceCount Int      @default(0) @map("evidence_count")
   status        String   @default("pending") // pending | applied | dismissed
+  // Where the skill came from: manual (UI/API) | llm (generated or
+  // consolidated) | finder (skills_save_to_workspace). Generation only
+  // replaces its own pending `llm` rows.
+  source        String   @default("manual")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

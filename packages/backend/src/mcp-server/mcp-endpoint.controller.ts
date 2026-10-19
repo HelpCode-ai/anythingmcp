@@ -1094,9 +1094,13 @@ export class McpEndpointController {
 
     // Optional: ask the calling agent to pass the user's originating request on
     // every tool call, so we capture the intent/context behind it (used later to
-    // optimize the graph and suggest skills). Per-workspace switch, default off.
+    // optimize the graph and suggest skills). Workspace switch, default off,
+    // overridden per member; only callers who contribute get `_intent`.
     const captureIntent = invocationContext.organizationId
-      ? await this.kgService.captureIntentEnabled(invocationContext.organizationId)
+      ? await this.kgService.captureIntentEnabled(
+          invocationContext.organizationId,
+          invocationContext.userId,
+        )
       : false;
     const kgEnabled =
       process.env.KG_MCP_TOOL !== 'off' && !!invocationContext.organizationId
@@ -1748,6 +1752,7 @@ export class McpEndpointController {
                 instruction: `${args.instruction.trim()}\n\nSource: ${args.sourceUrl} (licence: ${args.license || 'unknown'})`,
                 mcpServerId: serverId,
                 status: 'pending',
+                source: 'finder',
               });
               const result = {
                 saved: true,

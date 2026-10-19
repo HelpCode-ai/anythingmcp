@@ -9,6 +9,7 @@ import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { RolesService } from '../roles/roles.service';
 import { KgStaticService } from './kg-static.service';
+import { memberContributes } from './kg-learning.service';
 import { KgObservationalService } from './kg-observational.service';
 import { KgLlmService } from './kg-llm.service';
 
@@ -128,9 +129,13 @@ export class KgService {
     }
   }
 
-  /** Whether intent capture is on for this org (used by the MCP path). */
-  captureIntentEnabled(organizationId: string): Promise<boolean> {
-    return this.staticSvc.getFlag(organizationId, 'kg_capture_intent', false);
+  /**
+   * Whether this caller's tool calls capture intent (used by the MCP path):
+   * the workspace switch, overridden per member by an admin and by the
+   * member's own opt-out. A caller without a member identity never does.
+   */
+  captureIntentEnabled(organizationId: string, userId?: string | null): Promise<boolean> {
+    return memberContributes(this.prisma, this.staticSvc, organizationId, userId);
   }
 
   /**

@@ -980,6 +980,17 @@ export interface KgSettings {
   edgeAutoApply: boolean;
 }
 
+export type LearningMode = 'inherit' | 'on' | 'off';
+
+export interface MemberLearning {
+  /** The workspace switch ("Capture user intent"). */
+  workspaceDefault: boolean;
+  mode: LearningMode;
+  optOut: boolean;
+  /** Whether this member's requests are used for skill learning right now. */
+  effective: boolean;
+}
+
 export interface KgSkillList {
   items: KgSkill[];
   total: number;
@@ -996,6 +1007,24 @@ export const knowledgeGraph = {
     ),
   getSettings: (token: string) =>
     request<KgSettings>('/api/knowledge-graph/settings', { token }),
+  learning: {
+    me: (token: string) =>
+      request<MemberLearning>('/api/knowledge-graph/learning/me', { token }),
+    setMine: (token: string, body: { optOut: boolean; clearIntents?: boolean }) =>
+      request<MemberLearning & { intentsCleared: number }>('/api/knowledge-graph/learning/me', {
+        token,
+        method: 'PUT',
+        body,
+      }),
+    setMembers: (
+      token: string,
+      body: { userIds: string[]; mode: LearningMode; clearIntents?: boolean },
+    ) =>
+      request<{ updated: number; notFound: string[]; intentsCleared: number }>(
+        '/api/knowledge-graph/learning/members',
+        { token, method: 'PUT', body },
+      ),
+  },
   updateSettings: (
     token: string,
     body: {

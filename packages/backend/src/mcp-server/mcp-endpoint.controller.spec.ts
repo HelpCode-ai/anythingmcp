@@ -747,6 +747,7 @@ describe('McpEndpointController — skills_save_to_workspace', () => {
         'Source: https://github.com/bytedance/deer-flow/tree/8bb14fa/skills/public/code-documentation (licence: MIT)',
       mcpServerId: 'srv-A',
       status: 'pending',
+      source: 'finder',
     });
     expect(JSON.parse(result.content[0].text)).toMatchObject({ saved: true, id: 'sk-1', status: 'pending' });
   });
@@ -931,7 +932,7 @@ describe('McpEndpointController — resources and instructions follow the tool p
     ];
     const kgSkills = {
       // A connector-scoped skill on the Fibu connector.
-      activeSkillsText: jest.fn(async (_srv: string, ids: string[]) =>
+      activeSkillsText: jest.fn(async (_org: string, _srv: string, ids: string[]) =>
         ids.includes('c-fibu') ? '## Workspace skills\n- FIBU-SKILL' : null,
       ),
     };
@@ -1045,6 +1046,22 @@ describe('McpEndpointController — resources and instructions follow the tool p
     expect(never.message).not.toMatch(/forbidden|denied|permission/i);
 
     await client.close();
+  });
+
+  it('offers _intent only to a caller who contributes to learning, checked per member', async () => {
+    kgService.captureIntentEnabled.mockResolvedValue(false);
+    const off = await connect(null);
+    const offTools = (await off.listTools()).tools;
+    expect(offTools.length).toBeGreaterThan(0);
+    for (const t of offTools) expect(t.inputSchema.properties ?? {}).not.toHaveProperty('_intent');
+    expect(kgService.captureIntentEnabled).toHaveBeenCalledWith(ORG_A, 'u-1');
+    await off.close();
+
+    kgService.captureIntentEnabled.mockResolvedValue(true);
+    const on = await connect(null);
+    const onTools = (await on.listTools()).tools.filter((t) => t.name === 'crm_get');
+    expect(onTools[0].inputSchema.properties).toHaveProperty('_intent');
+    await on.close();
   });
 
   it('a caller who sees everything keeps the full instructions', async () => {

@@ -366,13 +366,15 @@ export class McpServersService {
       serverIds.length
         ? this.prisma.mcpServerConfig.findMany({
             where: { id: { in: serverIds } },
-            select: { name: true, instructions: true },
+            select: { id: true, name: true, instructions: true, organizationId: true },
             orderBy: { createdAt: 'asc' },
           })
-        : Promise.resolve([]),
+        : Promise.resolve(
+            [] as Array<{ id: string; name: string; instructions: string | null; organizationId: string }>,
+          ),
       this.prisma.connector.findMany({
         where: { id: { in: connectorIds } },
-        select: { name: true, instructions: true },
+        select: { id: true, name: true, instructions: true, organizationId: true },
         orderBy: { name: 'asc' },
       }),
     ]);
@@ -384,8 +386,17 @@ export class McpServersService {
     for (const c of connectors) {
       if (c.instructions) parts.push(`## ${c.name}\n${c.instructions}`);
     }
-    const skillsText = await this.kgSkills.activeSkillsText(serverIds, connectorIds);
-    if (skillsText) parts.push(skillsText);
+    // A shared connection can reach several workspaces: read each one's
+    // skills with its own organization and only its own server/connector ids.
+    const orgIds = [...new Set(connectors.map((c) => c.organizationId))];
+    for (const orgId of orgIds) {
+      const skillsText = await this.kgSkills.activeSkillsText(
+        orgId,
+        servers.filter((s) => s.organizationId === orgId).map((s) => s.id),
+        connectors.filter((c) => c.organizationId === orgId).map((c) => c.id),
+      );
+      if (skillsText) parts.push(skillsText);
+    }
     return parts.length > 0 ? parts.join('\n\n') : undefined;
   }
 
@@ -500,7 +511,7 @@ export class McpServersService {
 
   private async composeInstructions(
     serverId: string,
-    server: { instructions: string | null } | null,
+    server: { instructions: string | null; organizationId: string } | null,
     serverConnectors: Array<{
       connectorId: string;
       connector: { name: string; instructions: string | null };
@@ -521,10 +532,13 @@ export class McpServersService {
     // Compose applied skills (server-scoped + the visible connectors'
     // connector-scoped ones) dynamically, so editing/deleting a skill takes
     // effect immediately.
-    const skillsText = await this.kgSkills.activeSkillsText(
-      serverId,
-      serverConnectors.map((sc) => sc.connectorId),
-    );
+    const skillsText = server
+      ? await this.kgSkills.activeSkillsText(
+          server.organizationId,
+          serverId,
+          serverConnectors.map((sc) => sc.connectorId),
+        )
+      : null;
     if (skillsText) parts.push(skillsText);
 
     return parts.length > 0 ? parts.join('\n\n') : undefined;

@@ -86,12 +86,16 @@ whole MCP server.
 
 **The loop:**
 
-1. **Capture (optional).** With the per-workspace *intent capture* switch on,
-   every MCP tool gains an optional `_intent` parameter; the agent records *why*
-   it's calling the tool. The value is stripped before the upstream call and
-   stored for analysis (never sent to the API).
+1. **Capture (optional).** For users who contribute to learning (see
+   [Who contributes](#who-contributes-to-skill-learning)), every MCP tool gains
+   an optional `_intent` parameter; the agent records *why* it's calling the
+   tool. The value is stripped before the upstream call and stored for analysis
+   (never sent to the API). Other users' tools do not get the parameter.
 2. **Suggest.** An AI pass over the captured intents proposes skills (title,
-   *when to use*, *instruction*), scoped per connector or per server.
+   *when to use*, *instruction*), scoped per connector or per server. Generating
+   again replaces only the previous AI suggestions that are still pending:
+   skills you created by hand and skills filed by the Agent Skills Finder are
+   kept.
 3. **Review.** On the **Skills** page each suggestion has **Apply / Edit /
    Dismiss / Delete**. The list has status tabs with counts (All / Suggested /
    Active / Dismissed), a search box and pagination, so it stays usable with
@@ -108,6 +112,26 @@ whole MCP server.
   **active** skills into the fewest non-redundant ones (same connector/server
   target selector as Generate). Pending and dismissed skills are left untouched,
   and a bad/empty model reply never wipes live skills.
+
+### Who contributes to skill learning
+
+Whether a user's requests are captured is decided per user and per workspace:
+
+- **Workspace default:** the *Intent capture* switch (Settings → Organization →
+  Features). Users set to *Default* follow it.
+- **Per user (admins):** Settings → Users → *Skill learning* sets a user to
+  *Default*, *On* or *Off*. Select several users to change them at once; when
+  turning learning off you can also erase the requests already captured from
+  them.
+- **Opt-out (each user):** Settings → Profile → *Skill learning*. A user can
+  always opt out and erase their own captured requests. Removing the opt-out
+  does not turn learning on: the admin's setting applies again.
+
+A caller with no user identity (an instance-level static API key or bearer, a
+client-credentials token) never contributes. Every change is recorded in the
+security event log as `LEARNING_CHANGED`. Settings belong to the workspace
+membership, so the same person can have different settings in two workspaces.
+Cloud and self-hosted behave the same.
 
 ### Skills are instructions, not extra tools
 
@@ -167,7 +191,7 @@ tiny built-in client (no SDK). Two ways to run them:
 |---|---|
 | Knowledge Graph | Master switch — gates build, serve, cron and the MCP tool. |
 | AI enrichment | Allows the LLM graph pass for this workspace. |
-| Intent capture | Adds the optional `_intent` param to this workspace's tools. |
+| Intent capture | Default for users set to *Default*: adds the optional `_intent` param to their tools. Override per user under Settings → Users. |
 | Scheduled AI extension | Lets the cloud cron extend graph + skills for this workspace. |
 
 **Instance env** (see `.env.example` for the full list):

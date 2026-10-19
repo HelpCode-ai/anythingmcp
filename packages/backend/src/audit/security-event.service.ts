@@ -74,6 +74,11 @@ export const SecurityEvents = {
    */
   WORKSPACE_SESSIONS_REVOKED: 'WORKSPACE_SESSIONS_REVOKED',
   API_KEY_DEACTIVATED: 'API_KEY_DEACTIVATED',
+  /**
+   * Whether a member's requests may feed skill learning changed: an admin set
+   * their mode, or the member opted out / back in. One row per member.
+   */
+  LEARNING_CHANGED: 'LEARNING_CHANGED',
 
   // ── Consent plane: which AI client was authorized, by whom ──────────────
   CONSENT_GRANTED: 'CONSENT_GRANTED',

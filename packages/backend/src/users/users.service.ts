@@ -79,6 +79,8 @@ export class UsersService {
       joinedAt: m.joinedAt,
       deactivatedAt: m.deactivatedAt,
       active: m.deactivatedAt === null,
+      learningMode: m.learningMode,
+      learningOptOut: m.learningOptOut,
     }));
   }
 
