@@ -1064,6 +1064,13 @@ describe('McpEndpointController — resources and instructions follow the tool p
     const on = await connect(null);
     const onTools = (await on.listTools()).tools.filter((t) => t.name === 'crm_get');
     expect(onTools[0].inputSchema.properties).toHaveProperty('_intent');
+    // A short goal, not the user's words, and why it is asked for: models
+    // leave an unexplained "send the request" field empty.
+    const intent = (onTools[0].inputSchema.properties as any)._intent.description as string;
+    expect(intent).toMatch(/one short sentence/i);
+    expect(intent).toMatch(/no names or other personal data/i);
+    expect(intent).toMatch(/turn it off in their AnythingMCP profile/i);
+    expect(intent).not.toMatch(/verbatim/i);
     await on.close();
   });
 
@@ -1090,12 +1097,28 @@ describe('McpEndpointController — resources and instructions follow the tool p
     kgSkills.getForCaller = jest.fn(async (_o: string, _s: string, _c: string[], ref: string) =>
       ref === 'sk-1' ? skill : null,
     );
+    kgSkills.toolHints = jest.fn().mockResolvedValue([
+      {
+        id: 'sk-1',
+        title: skill.title,
+        whenToUse: skill.whenToUse,
+        instruction: skill.instruction,
+        hasBody: true,
+        connectorId: 'c-crm',
+      },
+    ]);
 
     const client = await connect(['crm_get']);
-    const names = (await client.listTools()).tools.map((t) => t.name);
+    const listed = (await client.listTools()).tools;
+    const names = listed.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining(['skills_list', 'skill_get']));
     // Scoped to the server's organization and the caller's visible connectors.
     expect(kgSkills.hasVisible).toHaveBeenCalledWith(ORG_A, 'srv-1', ['c-crm'], null);
+    // The covered tool names its skill: some clients never show instructions.
+    expect(kgSkills.toolHints).toHaveBeenCalledWith(ORG_A, 'srv-1', ['c-crm'], null);
+    const crm = listed.find((t) => t.name === 'crm_get')!;
+    expect(crm.description).toContain(`- ${skill.title} (when: ${skill.whenToUse})`);
+    expect(crm.description).toContain('skill_get "sk-1"');
 
     const got: any = await client.callTool({ name: 'skill_get', arguments: { skill: 'sk-1' } });
     expect(got.content[0].text).toContain('STEP 1: draft_quote');
@@ -1189,6 +1212,7 @@ describe('McpEndpointController — resources and instructions follow the tool p
     kgSkills.hasVisible = jest.fn().mockResolvedValue(true);
     kgSkills.listForCaller = jest.fn().mockResolvedValue([]);
     kgSkills.folderSummary = jest.fn().mockResolvedValue([{ path: 'HR', description: null, skills: 2 }]);
+    kgSkills.toolHints = jest.fn().mockResolvedValue([]);
 
     const client = await connect(['crm_get']);
     expect((controller as any).folders.accessFor).toHaveBeenCalledWith(ORG_A, 'u-1');

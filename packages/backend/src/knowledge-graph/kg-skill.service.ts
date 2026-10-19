@@ -4,6 +4,7 @@ import { KgLlmService } from './kg-llm.service';
 import { chatJson, resolveLlmConfig } from './llm-client';
 import { maybeRedactIntent } from './redact';
 import { findFixPatterns, FIX_WINDOW_MS, type FixPattern } from './error-fix';
+import type { SkillHint } from './skill-hints';
 import {
   folderVisibility,
   resolveFolder,
@@ -743,6 +744,40 @@ export class KgSkillService {
       where: visibleWhere(organizationId, [serverId], connectorIds, folders),
     });
     return n > 0;
+  }
+
+  /**
+   * The caller's visible skills reduced to tool-description hints (see
+   * skill-hints.ts). Bounded: a server with hundreds of skills only needs
+   * the count past the few that are spelled out.
+   */
+  async toolHints(
+    organizationId: string,
+    serverId: string,
+    connectorIds: string[],
+    folders?: FolderAccess | null,
+  ): Promise<SkillHint[]> {
+    const rows = await this.prisma.kgSkillSuggestion.findMany({
+      where: visibleWhere(organizationId, [serverId], connectorIds, folders),
+      select: {
+        id: true,
+        title: true,
+        whenToUse: true,
+        instruction: true,
+        body: true,
+        connectorId: true,
+      },
+      orderBy: { confidence: 'desc' },
+      take: 500,
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      whenToUse: r.whenToUse ?? '',
+      instruction: r.instruction ?? '',
+      hasBody: !!r.body?.trim(),
+      connectorId: r.connectorId ?? null,
+    }));
   }
 
   /** skills_list: the caller's visible skills, optionally filtered. */

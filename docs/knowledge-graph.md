@@ -88,9 +88,13 @@ whole MCP server.
 
 1. **Capture (optional).** For users who contribute to learning (see
    [Who contributes](#who-contributes-to-skill-learning)), every MCP tool gains
-   an optional `_intent` parameter; the agent records *why* it's calling the
-   tool. The value is stripped before the upstream call and stored for analysis
-   (never sent to the API). Other users' tools do not get the parameter.
+   an optional `_intent` parameter: one short sentence on what the user wants to
+   achieve, without names or other personal data. Its description tells the
+   model that the workspace's admins turned learning on for this user and that
+   the user can turn it off in their profile; without that reason models tend
+   to leave it empty. The value is stripped before the upstream call and
+   stored for analysis (never sent to the API). Other users' tools do not get
+   the parameter.
 2. **Suggest.** An AI pass over the captured intents proposes skills (title,
    *when to use*, *instruction*), scoped per connector or per server. Generating
    again replaces only the previous AI suggestions that are still pending:
@@ -149,7 +153,7 @@ Cloud and self-hosted behave the same.
 
 A server's applied skills (its own server-scoped skills plus the
 connector-scoped ones of the connectors the caller can use) reach the client in
-two ways:
+three ways:
 
 - **In the instructions** sent on connect, as a `## Workspace skills` block.
   Each MCP server chooses how (MCP server page → *Workspace skills on connect*):
@@ -164,6 +168,14 @@ two ways:
 
   Both read the current version at call time and only return skills the caller
   can see on that server.
+- **In the descriptions of the tools they cover.** Some clients never show a
+  server's instructions to the model: claude.ai keeps them out and loads tool
+  schemas only when it is about to use a tool. So each tool's description also
+  names the skills that cover it (a server-scoped skill covers every tool of
+  the server, a connector-scoped one the tools of that connector): up to three
+  with their *when to use*, rule and a `skill_get` pointer when they have a
+  procedure, or, past three, the number of skills and a pointer to
+  `skills_list`.
 
 Each skill is also offered as an **MCP prompt**, so clients with a prompt
 picker (slash commands) can start one by hand.
@@ -196,6 +208,12 @@ AI leaves skills that have a procedure untouched.
 Because composition is dynamic, editing or deleting a skill takes effect on the
 next request (a stateful session keeps the instructions it started with; the
 tools always read the current version).
+
+**claude.ai caches the tool list.** After you add the first skill to a server,
+turn on learning or memory for a user, or upgrade AnythingMCP, claude.ai keeps
+offering the tools it listed before. Refresh them under *Customize →
+Connectors →* the connector *→ ⋮ → Refresh tools list*; new chats then get the
+current tools and descriptions.
 
 ---
 

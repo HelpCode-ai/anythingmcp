@@ -71,6 +71,7 @@ import {
   SKILL_GET_TOOL,
   SKILLS_LIST_TOOL,
 } from '../knowledge-graph/kg-skill.service';
+import { skillHintText, type SkillHint } from '../knowledge-graph/skill-hints';
 import {
   MEMORY_CONTENT_MAX,
   MEMORY_KINDS,
@@ -196,6 +197,8 @@ interface ToolSetParams {
   /** Set when the caller can see at least one applied workspace skill: offers
    *  skills_list / skill_get, scoped to the server's organization. */
   skills?: { organizationId: string };
+  /** The caller's visible skills, named in the descriptions of the tools they cover. */
+  skillHints?: SkillHint[];
   /** Set when the caller may use workspace memory (licensed, member level
    *  above none): offers the memory tools allowed by that level. */
   memory?: MemoryCaller;
@@ -220,8 +223,16 @@ interface InvocationContext {
 /** Added to the instructions of callers who contribute to skill learning. */
 const INTENT_INSTRUCTION =
   '## Skill learning\n' +
-  'This workspace improves its skills from real requests. On every tool call of this server, ' +
-  "pass the user's latest request, verbatim, in the optional `_intent` argument.";
+  "This workspace's admins turned on skill learning for this user, who can turn it off in their " +
+  'AnythingMCP profile. On every tool call of this server, pass one short sentence saying what ' +
+  'the user wants to achieve in the optional `_intent` argument (no personal data).';
+
+/** The `_intent` argument, offered to callers who contribute to skill learning. */
+const INTENT_DESCRIPTION =
+  'One short sentence: what the user wants to achieve with this call, e.g. "check a German ' +
+  'delivery address". No names or other personal data. Skill learning is on for this user, set ' +
+  "by the workspace's admins (the user can turn it off in their AnythingMCP profile); these " +
+  'summaries are only used to suggest skills for this workspace.';
 
 /** Built-in companion of the Agent Skills Finder adapter. */
 const SKILLS_SAVE_TOOL = 'skills_save_to_workspace';
@@ -1171,6 +1182,15 @@ export class McpEndpointController {
       folderAccess,
     );
 
+    const skillHints = skillsVisible
+      ? await this.kgSkills.toolHints(
+          mcpServerConfig.organizationId,
+          serverId,
+          visibleConnectorIds,
+          folderAccess,
+        )
+      : undefined;
+
     // The same per-member decision marks this caller's calls as learnable.
     invocationContext.learnable = captureIntent;
 
@@ -1181,6 +1201,7 @@ export class McpEndpointController {
       kgEnabled,
       invocationContext,
       skills: skillsVisible ? { organizationId: mcpServerConfig.organizationId } : undefined,
+      skillHints,
       // Memory belongs to the server's organization and its member levels.
       memory: withFolders(await this.memory?.caller(mcpServerConfig.organizationId, user?.sub), folderAccess),
       folders: folderAccess,
@@ -1530,12 +1551,16 @@ export class McpEndpointController {
       }
 
       const folderAccess = await this.folderAccessFor(serverOrganizationId, user?.sub);
+      const visibleIds = callerConnectorIds(serverTools, allowedToolIds, connectorIds);
       const skillsVisible = await this.kgSkills.hasVisible(
         serverOrganizationId,
         serverId,
-        callerConnectorIds(serverTools, allowedToolIds, connectorIds),
+        visibleIds,
         folderAccess,
       );
+      const skillHints = skillsVisible
+        ? await this.kgSkills.toolHints(serverOrganizationId, serverId, visibleIds, folderAccess)
+        : undefined;
       const entries = this.planToolSet({
         serverTools,
         allowedToolIds,
@@ -1543,6 +1568,7 @@ export class McpEndpointController {
         kgEnabled,
         invocationContext,
         skills: skillsVisible ? { organizationId: serverOrganizationId } : undefined,
+        skillHints,
         memory: withFolders(await this.memory?.caller(serverOrganizationId, user?.sub), folderAccess),
         folders: folderAccess,
       });
@@ -1621,13 +1647,7 @@ export class McpEndpointController {
       );
       const zodShape = this.jsonSchemaToZodShape(schema);
       if (captureIntent) {
-        zodShape._intent = z
-          .string()
-          .optional()
-          .describe(
-            "The user's natural-language request that led to this tool call (verbatim). " +
-              'Helps this workspace understand and improve its tooling. Optional but encouraged.',
-          );
+        zodShape._intent = z.string().optional().describe(INTENT_DESCRIPTION);
       }
       // Permissive output shape (only for object-shaped inferred schemas).
       const outShape = tool.outputSchema
@@ -1638,9 +1658,20 @@ export class McpEndpointController {
       // tool from a mutating one before calling it.
       const annotations = deriveToolAnnotations(tool);
 
+      // The skills covering this tool, for clients that never show the
+      // server's instructions to the model.
+      const description =
+        (tool.description ?? '') +
+        (params.skillHints?.length
+          ? skillHintText(params.skillHints, tool.connectorId, {
+              list: SKILLS_LIST_TOOL,
+              get: SKILL_GET_TOOL,
+            })
+          : '');
+
       const sig = [
         tool.name,
-        tool.description,
+        description,
         Object.keys(zodShape).sort().join(','),
         outShape ? Object.keys(outShape).sort().join(',') : '',
         annotationsSignature(annotations),
@@ -1714,7 +1745,7 @@ export class McpEndpointController {
           return mcpServer.registerTool(
             tool.name,
             {
-              description: tool.description,
+              description,
               inputSchema: zodShape,
               // Loose, not a raw shape: the SDK wraps a raw shape in
               // z.object(), which Zod 4 exports with additionalProperties:
@@ -2176,7 +2207,9 @@ export class McpEndpointController {
                   {
                   via: 'mcp',
                   mcpServerId: ctx.mcpServerId,
-                  client: ctx.apiKeyName ?? ctx.authMethod,
+                  // The API key's name when there is one; the auth method
+                  // ("jwt", "oauth") says nothing about the client.
+                  client: ctx.apiKeyName,
                 });
                 const note =
                   saved.status === 'pending'

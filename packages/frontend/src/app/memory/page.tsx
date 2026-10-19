@@ -26,6 +26,8 @@ import {
 
 const PAGE_SIZE = 25;
 const CONTENT_MAX = 2000;
+/** Auth methods older items stored as their client. */
+const AUTH_METHODS = new Set(['jwt', 'oauth', 'none', 'mcp_api_key', 'static_api_key', 'static_bearer']);
 
 type Tab = 'personal' | 'organization' | 'pending';
 
@@ -488,7 +490,9 @@ function MemoryCard({
     }
   };
 
-  const via = item.source?.via === 'mcp' ? `saved by an AI client${item.source.client ? ` (${item.source.client})` : ''}` : 'added in the dashboard';
+  // Older items stored the auth method ("jwt", "oauth") as the client: not a name.
+  const client = item.source?.client && !AUTH_METHODS.has(item.source.client) ? item.source.client : null;
+  const via = item.source?.via === 'mcp' ? `saved by an AI client${client ? ` (${client})` : ''}` : 'added in the dashboard';
 
   return (
     <Card className={cn('px-[18px] py-3.5', item.status === 'rejected' && 'opacity-60')}>

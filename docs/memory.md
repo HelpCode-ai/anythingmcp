@@ -20,6 +20,10 @@ The tools are offered on per-server endpoints (`/mcp/<serverId>`) only, and
 only those the user's access level allows. The shared `/mcp` endpoint is
 unchanged.
 
+claude.ai caches a connector's tool list: after memory is turned on for a user,
+refresh it under *Customize → Connectors →* the connector *→ ⋮ → Refresh tools
+list* before the memory tools appear in new chats.
+
 | Tool | Offered from | What it does |
 |---|---|---|
 | `memory_search(query?, scope?, limit?, about?, folder?)` | Read | Full-text search over the company memory and, from Personal up, the user's own items. An empty query returns the most recent items. |
