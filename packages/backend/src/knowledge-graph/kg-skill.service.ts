@@ -2,7 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException } from '@nestj
 import { PrismaService } from '../common/prisma.service';
 import { KgLlmService } from './kg-llm.service';
 import { chatJson, resolveLlmConfig } from './llm-client';
-import { maybeRedactIntent, redactPii } from './redact';
+import { maybeRedactIntent } from './redact';
 import { findFixPatterns, FIX_WINDOW_MS, type FixPattern } from './error-fix';
 import {
   folderVisibility,
@@ -26,10 +26,13 @@ export type SkillsDelivery = (typeof SKILLS_DELIVERY_MODES)[number];
 
 /**
  * `auto` keeps the full text up to this many characters, then switches to the
- * index. The skills_v2 migration pins servers already above it to `inline`;
- * keep both numbers equal.
+ * index. The skills_v2 migration pins every server that already received
+ * applied skills to `inline`, so this only applies to new servers and to
+ * admins who choose it.
  */
 export const SKILLS_INLINE_BUDGET = 6_000;
+/** Most text the shared /mcp guide returns for skills before shortening. */
+const SKILLS_FULL_BUDGET = 30_000;
 /** The index stops listing entries past this size and points to skills_list. */
 const SKILLS_INDEX_BUDGET = 8_000;
 const INDEX_WHEN_MAX = 200;
@@ -167,7 +170,7 @@ export const SKILL_AUTO_APPLY_MIN = 0.9;
 
 const CONSOLIDATE_PROMPT = `You are tidying the ACTIVE skills (standing rules) of an AI tool-integration platform. You receive the currently-applied skills of one scope, each with a "ref"; several may overlap, duplicate, or restate the same rule.
 
-Propose merges: combine duplicates and near-duplicates into one skill that preserves every real rule of the skills it replaces; never drop a rule's meaning; do not invent new rules. Leave skills that need no merging out of the answer.
+Propose merges: combine duplicates and near-duplicates into one skill that preserves every real rule of the skills it replaces; never drop a rule's meaning; do not invent new rules. Write each merged instruction once, concisely: state a rule a single time even when several skills say it. Leave skills that need no merging out of the answer.
 
 Return STRICT JSON: {"skills":[{"title":"<short>","whenToUse":"<when this rule applies>","instruction":"<imperative guidance>","confidence":0..1,"replaces":["<ref>","<ref>"]}]}.
 Each merged skill lists the refs it replaces (at least two); a ref appears in at most one merged skill. Keep titles short and instructions actionable.`;
@@ -324,7 +327,8 @@ export class KgSkillService {
         }),
       },
       select: { toolId: true, userId: true, status: true, input: true, error: true, createdAt: true },
-      orderBy: { createdAt: 'asc' },
+      // Newest first, like the failures, so busy workspaces keep recent fixes.
+      orderBy: { createdAt: 'desc' },
       take: 3000,
     });
     const rows = [...failures, ...successes]
@@ -715,7 +719,13 @@ export class KgSkillService {
     });
     if (!rows.length) return null;
     const tree = folders?.folders;
-    if (mode === 'full') return inlineText(rows, true, tree);
+    if (mode === 'full') {
+      // The shared guide has no skill_get; keep it bounded all the same.
+      const full = inlineText(rows, true, tree);
+      if (full.length <= SKILLS_FULL_BUDGET) return full;
+      const inline = inlineText(rows, false, tree);
+      return inline.length <= SKILLS_FULL_BUDGET ? inline : indexText(rows, tree);
+    }
     if (mode === 'index') return indexText(rows, tree);
     const inline = inlineText(rows, false, tree);
     if (mode === 'inline' || inline.length <= SKILLS_INLINE_BUDGET) return inline;
@@ -860,8 +870,12 @@ export class KgSkillService {
   }
 
   /** Earlier versions of one skill, newest first. */
-  async versions(organizationId: string, id: string) {
-    await this.owned(organizationId, id);
+  async versions(organizationId: string, id: string, folders?: FolderAccess | null) {
+    const skill = await this.owned(organizationId, id);
+    // A skill in a folder the caller may not see answers like a missing one.
+    if (skill.folderId && folders && !folders.all && !folders.ids.has(skill.folderId)) {
+      throw new NotFoundException('Suggestion not found.');
+    }
     return this.prisma.kgSkillVersion.findMany({
       where: { skillId: id, organizationId },
       orderBy: { version: 'desc' },
@@ -1006,6 +1020,13 @@ export class KgSkillService {
     editedByUserId?: string,
   ) {
     const current = await this.owned(organizationId, id);
+    // Activating a merge proposal must also deactivate what it replaces.
+    const replaces = Array.isArray(current.replaces) ? (current.replaces as string[]) : [];
+    if (patch.status === 'applied' && current.status !== 'applied' && replaces.length) {
+      const { status: _status, ...rest } = patch;
+      if (Object.keys(rest).length) await this.update(organizationId, id, rest, editedByUserId);
+      return this.apply(organizationId, id);
+    }
     const data: Record<string, unknown> = {};
     if (typeof patch.title === 'string') data.title = patch.title.slice(0, 160);
     if (typeof patch.whenToUse === 'string') data.whenToUse = patch.whenToUse.slice(0, 1000);
@@ -1070,15 +1091,28 @@ export function errorFixSkill(
   const from = p.changes
     .map((c) => `\`${c.key}\` ${c.before === 'missing' ? 'missing' : `as ${c.before}`}`)
     .join(', ');
-  // The error may quote values: mask personal data and digits.
-  const error = p.error ? redactPii(p.error).replace(/[0-9]/g, '9').replace(/\s+/g, ' ').slice(0, 160) : null;
+  // Only an error CODE, never the message: messages quote values (names,
+  // ids, tokens) that would then be stored and served to every client.
+  const error = errorCode(p.error);
   const patterned = p.changes.some((c) => c.before.startsWith('"') || c.after.startsWith('"'));
   return {
     title: `${toolName}: ${changed}`.slice(0, 160),
     whenToUse: `When calling ${toolName}`,
     instruction:
-      `Send ${changed}. Calls with ${from} failed${error ? ` ("${error}")` : ''} and worked after ` +
+      `Send ${changed}. Calls with ${from} failed${error ? ` (${error})` : ''} and worked after ` +
       `this change (${p.occurrences} times, ${p.users} ${p.users === 1 ? 'person' : 'people'}).` +
       (patterned ? ' In the formats, 9 stands for a digit and a for a letter.' : ''),
   };
+}
+
+/**
+ * A machine-readable error code from an error message, or null: an
+ * upper-case code (`INVALID_INPUT`, `VALIDATION_ERROR`) or an HTTP status.
+ */
+export function errorCode(message: string | null | undefined): string | null {
+  if (!message) return null;
+  const code = message.match(/\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b/);
+  if (code) return code[0].slice(0, 40);
+  const status = message.match(/\b([45]\d\d)\b/);
+  return status ? `HTTP ${status[1]}` : null;
 }

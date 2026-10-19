@@ -47,11 +47,12 @@ export function shapeOf(value: unknown): string {
   if (typeof value === 'boolean') return 'boolean';
   if (typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'decimal';
   if (Array.isArray(value)) return `list(${value.length ? shapeOf(value[0]) : 'empty'})`;
-  if (typeof value === 'object') return `object{${Object.keys(value as object).sort().slice(0, 6).join(',')}}`;
+  // Keys of free-form objects can be data too: only their number is kept.
+  if (typeof value === 'object') return `object(${Object.keys(value as object).length} keys)`;
   const s = String(value);
   if (s.length === 0) return 'empty text';
   if (s.length > 24) return `text(${s.length > 200 ? '200+' : s.length} chars)`;
-  return `"${s.replace(/[0-9]/g, '9').replace(/\p{L}/gu, 'a')}"`;
+  return `"${s.replace(/\p{N}/gu, '9').replace(/\p{L}/gu, 'a')}"`;
 }
 
 /** Top-level arguments whose format changed between two calls. */

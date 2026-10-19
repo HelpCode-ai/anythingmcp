@@ -622,3 +622,50 @@ describe('KgSkillService consolidation proposals', () => {
     expect(tx.kgSkillSuggestion.update).toHaveBeenCalledWith({ where: { id: 'p' }, data: { status: 'applied' } });
   });
 });
+
+describe('KgSkillService review fixes', () => {
+  const ORG = 'org-A';
+
+  it('hides the history of a skill in a folder the caller may not see', async () => {
+    const prisma: any = {
+      kgSkillSuggestion: { findUnique: jest.fn().mockResolvedValue({ id: 's1', organizationId: ORG, folderId: 'f-secret' }) },
+      kgSkillVersion: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const svc = new KgSkillService(prisma, {} as any);
+    const hidden = { organizationId: ORG, all: false, ids: new Set(['f-other']), folders: [] };
+    await expect(svc.versions(ORG, 's1', hidden as any)).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.kgSkillVersion.findMany).not.toHaveBeenCalled();
+    await expect(svc.versions(ORG, 's1', { ...hidden, all: true } as any)).resolves.toEqual([]);
+  });
+
+  it('activating a merge proposal through PATCH also dismisses what it replaces', async () => {
+    const tx: any = { kgSkillSuggestion: { updateMany: jest.fn(), update: jest.fn().mockResolvedValue({ id: 'p' }) } };
+    const prisma: any = {
+      kgSkillSuggestion: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'p', organizationId: ORG, status: 'pending', replaces: ['a', 'b'] }),
+      },
+      $transaction: jest.fn(async (fn: any) => fn(tx)),
+    };
+    await new KgSkillService(prisma, {} as any).update(ORG, 'p', { status: 'applied' });
+    expect(tx.kgSkillSuggestion.updateMany).toHaveBeenCalledWith({
+      where: { organizationId: ORG, id: { in: ['a', 'b'] }, status: 'applied' },
+      data: { status: 'dismissed' },
+    });
+  });
+
+  it('keeps the shared guide bounded', async () => {
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      id: `s${i}`,
+      title: `T${i}`,
+      whenToUse: '',
+      instruction: 'rule',
+      body: 'x'.repeat(19_000),
+      version: 1,
+      folderId: null,
+    }));
+    const svc = new KgSkillService({ kgSkillSuggestion: { findMany: jest.fn().mockResolvedValue(rows) } } as any, {} as any);
+    const text = (await svc.activeSkillsText(ORG, 'srv', [], 'full'))!;
+    expect(text.length).toBeLessThan(30_000);
+    expect(text).toContain('skill_get "s0"');
+  });
+});

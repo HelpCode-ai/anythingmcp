@@ -304,7 +304,11 @@ export class KgController {
   @Roles('ADMIN', 'EDITOR')
   @ApiOperation({ summary: 'Earlier versions of a skill, newest first' })
   async skillVersions(@Req() req: any, @Param('id') id: string) {
-    return this.skills.versions(req.user.organizationId, id);
+    return this.skills.versions(
+      req.user.organizationId,
+      id,
+      await this.folders.accessFor(req.user.organizationId, req.user.sub),
+    );
   }
 
   // ── Who contributes to skill learning ────────────────────────────────────

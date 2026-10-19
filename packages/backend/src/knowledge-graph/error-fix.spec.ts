@@ -68,20 +68,30 @@ describe('findFixPatterns', () => {
 });
 
 describe('errorFixSkill', () => {
-  it('writes the rule with names and formats and masks the error', () => {
-    const skill = errorFixSkill('erp_create_order', {
-      toolId: 't',
-      signature: 's',
-      changes: [{ key: 'date', before: '"99.99.9999"', after: '"9999-99-99"' }],
-      occurrences: 3,
-      users: 2,
-      error: 'Invalid date 12.10.2026 for anna@example.com',
-    });
+  const pattern = (error: string | null) => ({
+    toolId: 't',
+    signature: 's',
+    changes: [{ key: 'date', before: '"99.99.9999"', after: '"9999-99-99"' }],
+    occurrences: 3,
+    users: 2,
+    error,
+  });
+
+  it('writes the rule with names and formats, and keeps only an error code', () => {
+    const skill = errorFixSkill('erp_create_order', pattern('VIES rejected: INVALID_INPUT for Hans Müller GmbH 12.10.2026'));
     expect(skill.title).toBe('erp_create_order: `date` as "9999-99-99"');
     expect(skill.instruction).toContain('Send `date` as "9999-99-99"');
-    expect(skill.instruction).toContain('failed ("Invalid date ');
-    expect(skill.instruction).not.toContain('anna@example.com');
-    expect(skill.instruction).not.toContain('12.10.2026');
+    expect(skill.instruction).toContain('failed (INVALID_INPUT)');
+    expect(skill.instruction).not.toMatch(/Hans|Müller|12\.10/);
     expect(skill.instruction).toContain('3 times, 2 people');
+  });
+
+  it('keeps an HTTP status, or nothing', () => {
+    expect(errorFixSkill('t', pattern('Request failed with status 422: customer anna@example.com')).instruction).toContain(
+      'failed (HTTP 422)',
+    );
+    const none = errorFixSkill('t', pattern('Customer "Hans Müller" not found')).instruction;
+    expect(none).toContain('Calls with `date` as "99.99.9999" failed and worked');
+    expect(none).not.toContain('Hans');
   });
 });

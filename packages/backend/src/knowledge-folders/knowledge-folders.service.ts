@@ -11,6 +11,8 @@ import { EditionService } from '../ee/licensing/edition.service';
 
 /** Deepest folder level (1 = top level). */
 export const FOLDER_MAX_DEPTH = 4;
+/** Most folders one workspace may have (the tree is read on every MCP request). */
+export const FOLDER_MAX_COUNT = 500;
 const FOLDER_NAME_MAX = 80;
 const FOLDER_DESCRIPTION_MAX = 500;
 /** Separator used to show and to resolve folder paths ("Sales / Quotes"). */
@@ -257,10 +259,15 @@ export class KnowledgeFoldersService {
   async create(
     organizationId: string,
     input: { name: string; parentId?: string | null; description?: string | null },
+    actorUserId?: string,
   ) {
     const name = cleanName(input.name);
     const folders = await this.tree(organizationId);
+    if (folders.length >= FOLDER_MAX_COUNT) {
+      throw new BadRequestException(`A workspace can have at most ${FOLDER_MAX_COUNT} folders.`);
+    }
     const parent = input.parentId ? this.mustFind(folders, input.parentId) : null;
+    await this.assertVisible(organizationId, actorUserId, [parent?.id ?? null]);
     if ((parent?.depth ?? 0) + 1 > FOLDER_MAX_DEPTH) {
       throw new BadRequestException(`Folders go at most ${FOLDER_MAX_DEPTH} levels deep.`);
     }
@@ -282,9 +289,14 @@ export class KnowledgeFoldersService {
     id: string,
     patch: { name?: string; description?: string | null; parentId?: string | null },
     actorIsAdmin = false,
+    actorUserId?: string,
   ) {
     const folders = await this.tree(organizationId);
     const folder = this.mustFind(folders, id);
+    await this.assertVisible(organizationId, actorUserId, [
+      folder.id,
+      patch.parentId !== undefined ? patch.parentId || null : null,
+    ]);
     const data: Record<string, unknown> = {};
     let parentId = folder.parentId;
     if (patch.parentId !== undefined) {
@@ -320,9 +332,10 @@ export class KnowledgeFoldersService {
    * level); nothing else is deleted. A subfolder whose name is taken there is
    * renamed with a suffix.
    */
-  async remove(organizationId: string, id: string) {
+  async remove(organizationId: string, id: string, actorUserId?: string) {
     const folders = await this.tree(organizationId);
     const folder = this.mustFind(folders, id);
+    await this.assertVisible(organizationId, actorUserId, [folder.id]);
     const parentId = folder.parentId;
     const limit = folder.roleIds;
     // A limited folder must not hand its contents to a wider audience.
@@ -416,18 +429,22 @@ export class KnowledgeFoldersService {
     ids: string[],
     folderId: string | null,
     actorIsAdmin = false,
+    actorUserId?: string,
   ): Promise<{ moved: number }> {
     const folders = await this.tree(organizationId);
     if (folderId) this.mustFind(folders, folderId);
     const where = { organizationId, id: { in: [...new Set(ids)].slice(0, 500) } };
-    if (!actorIsAdmin) {
-      const current =
-        kind === 'skill'
-          ? await this.prisma.kgSkillSuggestion.findMany({ where, select: { folderId: true } })
-          : await this.prisma.memoryItem.findMany({ where, select: { folderId: true } });
-      if (current.some((r) => widensAccess(folders, r.folderId ?? null, folderId))) {
-        throw new ForbiddenException(WIDEN_MESSAGE);
-      }
+    const current =
+      kind === 'skill'
+        ? await this.prisma.kgSkillSuggestion.findMany({ where, select: { folderId: true } })
+        : await this.prisma.memoryItem.findMany({ where, select: { folderId: true } });
+    // Source and target must be folders the caller can see.
+    await this.assertVisible(organizationId, actorUserId, [
+      folderId,
+      ...current.map((r) => r.folderId ?? null),
+    ]);
+    if (!actorIsAdmin && current.some((r) => widensAccess(folders, r.folderId ?? null, folderId))) {
+      throw new ForbiddenException(WIDEN_MESSAGE);
     }
     const res =
       kind === 'skill'
@@ -444,6 +461,20 @@ export class KnowledgeFoldersService {
     const f = resolveFolder(access.folders, ref);
     if (!f) throw new NotFoundException(`No folder "${ref}".`);
     return f;
+  }
+
+  /**
+   * The caller may only act on folders they can see; a hidden one answers
+   * like a missing one. `null` (the top level) is always visible. Skipped
+   * for internal calls without an actor.
+   */
+  private async assertVisible(organizationId: string, actorUserId: string | undefined, ids: Array<string | null>) {
+    if (!actorUserId) return;
+    const wanted = ids.filter((id): id is string => !!id);
+    if (!wanted.length) return;
+    const access = await this.accessFor(organizationId, actorUserId);
+    if (access.all) return;
+    if (wanted.some((id) => !access.ids.has(id))) throw new NotFoundException('Folder not found.');
   }
 
   private mustFind(folders: FolderNode[], id: string): FolderNode {

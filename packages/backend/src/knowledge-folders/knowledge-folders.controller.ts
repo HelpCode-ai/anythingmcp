@@ -93,21 +93,21 @@ export class KnowledgeFoldersController {
   @Roles('ADMIN', 'EDITOR')
   @ApiOperation({ summary: 'Create a folder' })
   async create(@Req() req: any, @Body() body: CreateFolderDto) {
-    return this.folders.create(req.user.organizationId, body);
+    return this.folders.create(req.user.organizationId, body, req.user.sub);
   }
 
   @Patch(':id')
   @Roles('ADMIN', 'EDITOR')
   @ApiOperation({ summary: 'Rename, describe or move a folder' })
   async update(@Req() req: any, @Param('id') id: string, @Body() body: UpdateFolderDto) {
-    return this.folders.update(req.user.organizationId, id, body, req.user.role === 'ADMIN');
+    return this.folders.update(req.user.organizationId, id, body, req.user.role === 'ADMIN', req.user.sub);
   }
 
   @Delete(':id')
   @Roles('ADMIN', 'EDITOR')
   @ApiOperation({ summary: 'Delete a folder; its subfolders and items move to its parent' })
   async remove(@Req() req: any, @Param('id') id: string) {
-    return this.folders.remove(req.user.organizationId, id);
+    return this.folders.remove(req.user.organizationId, id, req.user.sub);
   }
 
   @Put(':id/roles')
@@ -131,6 +131,7 @@ export class KnowledgeFoldersController {
       body.ids,
       body.folderId ?? null,
       req.user.role === 'ADMIN',
+      req.user.sub,
     );
   }
 }
