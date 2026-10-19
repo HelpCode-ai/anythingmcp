@@ -34,6 +34,8 @@ export class EmailVerifiedGuard implements CanActivate {
     '/api/auth/forgot-password',
     '/api/auth/reset-password',
     '/api/auth/accept-invite',
+    // Unverified users must reach support (e.g. the code never arrived).
+    '/api/support/widget',
     '/health',
   ];
 
