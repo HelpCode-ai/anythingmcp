@@ -1,0 +1,2214 @@
+{
+  "slug": "binderp",
+  "name": "Bind ERP",
+  "aliases": [
+    "Bind",
+    "Bind ERP Mexico",
+    "Minnt"
+  ],
+  "description": "Connect Bind ERP, the Mexican cloud ERP, to Claude or ChatGPT: clients and prospects, providers, products and inventory per warehouse, orders, quotes, sales with their CFDI XML, purchase orders, expenses, chart of accounts and journal entries, with OData filters. Writes and CFDI creation ship switched off.",
+  "instructions": "## Bind ERP\nThis connector uses the **Bind ERP API** (`https://api.bind.com.mx`), the REST API of Bind ERP, the Mexican cloud ERP for small and medium companies: clients and prospects, providers, products, services, inventory per warehouse, client orders, quotes, sales with their CFDI, purchase orders, expenses, the chart of accounts and journal entries, CRM activities and comments.\n\n**Setup (about 5 minutes)**\n1. In Bind ERP click your user name (top right) > **Perfil**, open the **Integraciones** tab of the user profile, enter your password and click **Generar API Key**. Bind issues a long key (a JWT, valid for one year); copy it.\n2. Paste it into `BINDERP_API_TOKEN`. The connector sends it as `Authorization: Bearer <key>`. The key acts as the Bind user who generated it, with that user's permissions, so generate it as a user who may see what the assistant needs.\n3. Generate a new key before the year is over and paste it here; an expired key answers 401.\n\n**Limits**: with the API key alone Bind allows 150 calls every 5 minutes and 5,000 a day. Registering on Bind's developer portal and asking Bind for a subscription doubles that, at no extra cost. Prefer filtered lists over paging through everything.\n\n**Lists and filters**: list tools take OData options: `filter` (for example `RFC eq 'XAXX010101000'`, `Date ge datetime'2026-10-01T00:00:00'`, `substringof('ACME', LegalName)`, GUIDs as `guid'...'`), `orderby` (`Date desc`), `top` and `skip`. A page holds 50 rows by default; the answer carries `value`, `count` and `nextLink`. Detail tools take the record's ID (a GUID) from the lists.\n\n**IDs you will need**: many tools and every document need GUIDs of a branch (`binderp_list_locations`), a warehouse (`binderp_list_warehouses`), a price list (`binderp_list_price_lists`) and a currency (`binderp_list_currencies`). Look them up once per conversation. Inventory per warehouse and products with price and stock need a warehouse and a price list.\n\n**Invoices (CFDI)**: `binderp_list_invoices` and `binderp_get_invoice` read sales; `binderp_get_invoice_xml` returns the stamped CFDI XML (the SAT document) as text. Creating a sale with `IsFiscalInvoice` true stamps a CFDI with the SAT, which can only be undone by a formal cancellation, so `binderp_create_invoice` is installed switched off.\n\n**Writing**: creating and changing clients, prospects, products, orders, quotes and comments are installed **switched off**. Turn on only the tools you need, and confirm every change with the user. The connector does not register payments, bank movements, inventory adjustments or credit notes.\n\n**Errors**: 401 means the token is wrong, expired or revoked; 403 the token's user lacks the permission; 404 on a detail tool usually means a wrong or deleted ID.",
+  "region": "intl",
+  "category": "erp",
+  "icon": "binderp",
+  "docsUrl": "https://developers.bind.com.mx/apis",
+  "prerequisites": "A Bind ERP account and an API key generated under your user Perfil > Integraciones > Generar API Key; the key is valid for one year and acts with that user's permissions.",
+  "requiredEnvVars": [
+    "BINDERP_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "BINDERP_API_TOKEN": {
+      "label": "Bind ERP API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Bind ERP: your user name (top right) > Perfil > Integraciones > Generar API Key. It is a long JWT (three parts separated by dots), valid for one year.",
+      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+      "patternMessage": "Paste the token alone, without Bearer, quotes or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Bind ERP refused the token: it is wrong, revoked or older than one year. Generate a new one under your user Perfil > Integraciones > Generar API Key and paste it into BINDERP_API_TOKEN.",
+    "403": "The key works, but its Bind user lacks the permission for this. Give the user the role, or generate the key as a user who has it.",
+    "rate_limited": "Bind allows 150 calls every 5 minutes and 5,000 a day per API key. Wait a few minutes and try again."
+  },
+  "probe": {
+    "tool": "binderp_get_company_profile"
+  },
+  "connector": {
+    "name": "Bind ERP",
+    "type": "REST",
+    "baseUrl": "https://api.bind.com.mx",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{BINDERP_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/UserProfile"
+  },
+  "tools": [
+    {
+      "name": "binderp_get_company_profile",
+      "description": "Read the company profile of the Bind ERP account: legal and commercial name, RFC, tax regime, address and when the CFDI signing certificate (CSD) expires.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/CompanyProfile"
+      }
+    },
+    {
+      "name": "binderp_get_user_profile",
+      "description": "Read the profile of the Bind user the API token belongs to: name, email and role. Quick check that the token works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/UserProfile"
+      }
+    },
+    {
+      "name": "binderp_list_users",
+      "description": "List the users of the Bind account (salespeople, credit contacts), whose IDs appear on clients, orders and invoices. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Name eq 'Ana'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Users",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_locations",
+      "description": "List branches (sucursales) of the company. Most documents need a LocationID. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Name eq 'Matriz'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Locations",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_warehouses",
+      "description": "List warehouses (almacenes) with their IDs, for inventory and order tools. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Name eq 'General'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Warehouses",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_price_lists",
+      "description": "List price lists (listas de precios) with their IDs and currency. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Name eq 'Mayoreo'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/PriceLists",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_categories",
+      "description": "List the product categories (three levels: Category1, Category2, Category3) used to classify products.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Categories"
+      }
+    },
+    {
+      "name": "binderp_list_currencies",
+      "description": "List the currencies configured in Bind (MXN, USD, ...) with their IDs, for orders, quotes and invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Currencies"
+      }
+    },
+    {
+      "name": "binderp_list_bank_accounts",
+      "description": "List the company's bank and cash accounts (cuentas bancarias) with their balances. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Name eq 'BBVA'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/BankAccounts",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_banks",
+      "description": "List the bank catalogue Bind uses for bank accounts and payment references.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Banks"
+      }
+    },
+    {
+      "name": "binderp_list_series",
+      "description": "List the document number series (series y folios) for a document type, with the current number and the branches that use each series.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docType": {
+            "type": "integer",
+            "description": "Document type code as Bind numbers them, e.g. 0 for invoices; try the types you need."
+          }
+        },
+        "required": [
+          "docType"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Series",
+        "queryParams": {
+          "docType": "$docType"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_states",
+      "description": "List the states of Mexico in Bind's catalogue, for client addresses.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/States"
+      }
+    },
+    {
+      "name": "binderp_list_cities",
+      "description": "List the cities of one state (from binderp_list_states), for client addresses. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stateID": {
+            "type": "string",
+            "description": "ID (GUID) of the state.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Name eq 'Monterrey'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "stateID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Cities",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "stateID": "$stateID"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_clients",
+      "description": "List clients with RFC, legal and commercial name, credit days and limit, price list and status. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. RFC eq 'XAXX010101000' or substringof('ACME', LegalName). Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Clients",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_get_client",
+      "description": "Read one client in full: RFC, names, credit terms, price list, contacts, branch and balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the client.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Clients/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_list_client_addresses",
+      "description": "List the addresses of a client (fiscal and delivery), for orders and invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the client.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Clients/{id}/Addresses",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_list_prospects",
+      "description": "List prospects (prospectos): leads not yet clients, with company, contact, email, phone and salesperson. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. substringof('ACME', CompanyName). Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Prospects",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_get_prospect",
+      "description": "Read one prospect in full: contact, company, email, phone, salesperson and comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the prospect.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Prospects/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_list_providers",
+      "description": "List providers (proveedores, suppliers) with RFC, names and credit terms. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. RFC eq 'XAXX010101000'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Providers",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_products",
+      "description": "List products with code, SKU, title, cost, price, unit and categories. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Code eq 'P-001' or substringof('tornillo', Title). Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Products",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_get_product",
+      "description": "Read one product in full: codes, prices, costs, taxes (VAT, IEPS), SAT product and unit keys and categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the product.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Products/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_list_products_with_price_and_inventory",
+      "description": "List every product with its price in one price list and its stock in one warehouse, including volume prices. Needs a warehouse and a price list ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouseId": {
+            "type": "string",
+            "description": "ID (GUID) of the warehouse.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "priceListId": {
+            "type": "string",
+            "description": "ID (GUID) of the price list.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "warehouseId",
+          "priceListId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/ProductsPriceAndInventory",
+        "queryParams": {
+          "warehouseId": "$warehouseId",
+          "priceListId": "$priceListId"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_services",
+      "description": "List services (conceptos de venta) with title, price and SAT keys. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. substringof('Instalación', Title). Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Services",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_get_service",
+      "description": "Read one service (concepto de venta) in full: title, price, taxes and SAT product and unit keys.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the service.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Services/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_list_formulas",
+      "description": "List production formulas (fórmulas, bills of materials) with the product they make. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. ProductCode eq 'P-001'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Formulas",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_get_formula",
+      "description": "Read one production formula with its component items and quantities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the formula.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Formulas/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_get_inventory",
+      "description": "Get stock per product in one warehouse: on hand, ordered by clients, ordered from providers, balance and value. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouseID": {
+            "type": "string",
+            "description": "ID (GUID) of the warehouse.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. SKU eq 'ABC-1'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "warehouseID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Inventory",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "warehouseID": "$warehouseID"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_merchandise_receptions",
+      "description": "List merchandise receptions (recepciones de mercancía): goods received into warehouses. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Date ge datetime'2026-10-01T00:00:00'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Inventory/GetMerchandiseReceptions",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_transfers",
+      "description": "List stock transfers between warehouses (transferencias de mercancía). OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Date ge datetime'2026-10-01T00:00:00'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/TransferMerchandise",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_invoices",
+      "description": "List sales (ventas: CFDI invoices and notes) with serie and number, UUID, client and RFC, subtotal, taxes, total, payments, credit notes and status. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Date ge datetime'2026-10-01T00:00:00' and ClientID eq guid'...'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Invoices",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_get_invoice",
+      "description": "Read one sale in full, by ID or by number: client, products and services, taxes, payments and CFDI data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idOrNumber": {
+            "type": "string",
+            "description": "Invoice ID (GUID) or its number."
+          }
+        },
+        "required": [
+          "idOrNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Invoices/{idOrNumber}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_list_invoice_payments",
+      "description": "List the payments received on one sale (venta), with date, method and amount. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceID": {
+            "type": "string",
+            "description": "ID (GUID) of the invoice.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Amount gt 0. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "invoiceID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Invoices/Payment/{invoiceID}",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_get_invoice_xml",
+      "description": "Get the CFDI XML of a stamped sale (the fiscal document registered with the SAT) as text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the invoice.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Invoices/{id}/xml",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_list_orders",
+      "description": "List client orders (pedidos) with client, dates, totals and status. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. OrderDate ge datetime'2026-10-01T00:00:00'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Orders",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_get_order",
+      "description": "Read one client order with its products and services, taxes, totals and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the order.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Orders/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_list_quotes",
+      "description": "List quotes (cotizaciones) with client or prospect, dates, totals and status. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Date ge datetime'2026-10-01T00:00:00'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Quotes",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_get_quote",
+      "description": "Read one quote with its items, client or prospect, totals and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the quote.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Quotes/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_list_purchase_orders",
+      "description": "List purchase orders to providers (órdenes de compra) with provider, dates, totals and status. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Date ge datetime'2026-10-01T00:00:00'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Purchases/GetPurchaseOrders",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_get_purchase_order",
+      "description": "Read one purchase order to a provider with its products, quantities, costs and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the purchase order.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Purchases/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_get_expense",
+      "description": "Read one expense order (orden de gasto): provider, document, amounts, VAT and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID (GUID) of the expense.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Expenses/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "binderp_list_expense_payments",
+      "description": "List the payments made on one expense order (orden de gasto). OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expenseID": {
+            "type": "string",
+            "description": "ID (GUID) of the expense.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Amount gt 0. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "expenseID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Expenses/Payment/{expenseID}",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_accounts",
+      "description": "List the chart of accounts (cuentas contables) with number, name and category. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. startswith(Number, '102'). Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Accounts",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_account_categories",
+      "description": "List the categories of the chart of accounts (assets, liabilities, income, expenses...).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/AccountCategories"
+      }
+    },
+    {
+      "name": "binderp_list_accounting_journals",
+      "description": "List accounting journal entries (pólizas contables) with date, type, number and amounts. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. Date ge datetime'2026-10-01T00:00:00'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/AccountingJournals",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_activities",
+      "description": "List CRM activities (actividades): calls, meetings and tasks with dates and the record they belong to. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. StartDate ge datetime'2026-10-01T00:00:00'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Activities",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_list_comments",
+      "description": "List comments on a record (client, prospect, order...), filtered by its ExternalID. OData paging and filters; the answer holds value, count and nextLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. ExternalID eq guid'...'. Strings in single quotes, GUIDs as guid'...', dates as datetime'2026-10-01T00:00:00'."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. Date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging with top.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Comments",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "binderp_create_client",
+      "description": "Create a client with its fiscal data and address. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "LegalName": {
+            "type": "string",
+            "description": "Legal name (razón social), as registered with the SAT."
+          },
+          "CommercialName": {
+            "type": "string",
+            "description": "Commercial name."
+          },
+          "RFC": {
+            "type": "string",
+            "description": "RFC (tax id)."
+          },
+          "Email": {
+            "type": "string",
+            "description": "Email for invoices."
+          },
+          "Telephone": {
+            "type": "string",
+            "description": "Phone."
+          },
+          "CreditDays": {
+            "type": "integer",
+            "description": "Credit days."
+          },
+          "CreditAmount": {
+            "type": "number",
+            "description": "Credit limit."
+          },
+          "PriceListID": {
+            "type": "string",
+            "description": "ID (GUID) of the price list.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "LocationID": {
+            "type": "string",
+            "description": "ID (GUID) of the branch.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "SalesEmployeeID": {
+            "type": "string",
+            "description": "ID (GUID) of the salesperson (user).",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "CreditEmployeeID": {
+            "type": "string",
+            "description": "ID (GUID) of the credit contact (user).",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "PaymentMethod": {
+            "type": "integer",
+            "description": "Payment method code."
+          },
+          "PaymentTerm": {
+            "type": "integer",
+            "description": "Payment term code."
+          },
+          "AccountingNumber": {
+            "type": "string",
+            "description": "Accounting account number."
+          },
+          "AccountNumber": {
+            "type": "string",
+            "description": "Bank account number."
+          },
+          "DefaultDiscount": {
+            "type": "number",
+            "description": "Default discount."
+          },
+          "Comment": {
+            "type": "string",
+            "description": "Comment."
+          },
+          "Source": {
+            "type": "string",
+            "description": "Lead source."
+          },
+          "Address": {
+            "type": "object",
+            "description": "Address: {\"StreetName\": \"Av. Juárez\", \"ExteriorNumber\": \"100\", \"InteriorNumber\": \"\", \"Colonia\": \"Centro\", \"ZipCode\": \"64000\", \"City\": \"Monterrey\", \"State\": \"Nuevo León\"}."
+          }
+        },
+        "required": [
+          "LegalName",
+          "RFC"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/Clients",
+        "bodyMapping": {
+          "LegalName": "$LegalName",
+          "CommercialName": "$CommercialName",
+          "RFC": "$RFC",
+          "Email": "$Email",
+          "Telephone": "$Telephone",
+          "CreditDays": "$CreditDays",
+          "CreditAmount": "$CreditAmount",
+          "PriceListID": "$PriceListID",
+          "LocationID": "$LocationID",
+          "SalesEmployeeID": "$SalesEmployeeID",
+          "CreditEmployeeID": "$CreditEmployeeID",
+          "PaymentMethod": "$PaymentMethod",
+          "PaymentTerm": "$PaymentTerm",
+          "AccountingNumber": "$AccountingNumber",
+          "AccountNumber": "$AccountNumber",
+          "DefaultDiscount": "$DefaultDiscount",
+          "Comment": "$Comment",
+          "Source": "$Source",
+          "Address": "$Address"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "binderp_update_client",
+      "description": "Change a client's fiscal data, credit terms, price list or contacts. Send the fields to keep as well: Bind replaces the record. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ID": {
+            "type": "string",
+            "description": "ID (GUID) of the client.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "LegalName": {
+            "type": "string",
+            "description": "Legal name (razón social), as registered with the SAT."
+          },
+          "CommercialName": {
+            "type": "string",
+            "description": "Commercial name."
+          },
+          "RFC": {
+            "type": "string",
+            "description": "RFC (tax id)."
+          },
+          "Email": {
+            "type": "string",
+            "description": "Email for invoices."
+          },
+          "Telephone": {
+            "type": "string",
+            "description": "Phone."
+          },
+          "CreditDays": {
+            "type": "integer",
+            "description": "Credit days."
+          },
+          "CreditAmount": {
+            "type": "number",
+            "description": "Credit limit."
+          },
+          "PriceListID": {
+            "type": "string",
+            "description": "ID (GUID) of the price list.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "LocationID": {
+            "type": "string",
+            "description": "ID (GUID) of the branch.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "SalesEmployeeID": {
+            "type": "string",
+            "description": "ID (GUID) of the salesperson (user).",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "CreditEmployeeID": {
+            "type": "string",
+            "description": "ID (GUID) of the credit contact (user).",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "PaymentMethod": {
+            "type": "integer",
+            "description": "Payment method code."
+          },
+          "PaymentTerm": {
+            "type": "integer",
+            "description": "Payment term code."
+          },
+          "AccountingNumber": {
+            "type": "string",
+            "description": "Accounting account number."
+          },
+          "AccountNumber": {
+            "type": "string",
+            "description": "Bank account number."
+          },
+          "DefaultDiscount": {
+            "type": "number",
+            "description": "Default discount."
+          },
+          "Comment": {
+            "type": "string",
+            "description": "Comment."
+          },
+          "Source": {
+            "type": "string",
+            "description": "Lead source."
+          }
+        },
+        "required": [
+          "ID",
+          "LegalName",
+          "RFC"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/Clients",
+        "bodyMapping": {
+          "ID": "$ID",
+          "LegalName": "$LegalName",
+          "CommercialName": "$CommercialName",
+          "RFC": "$RFC",
+          "Email": "$Email",
+          "Telephone": "$Telephone",
+          "CreditDays": "$CreditDays",
+          "CreditAmount": "$CreditAmount",
+          "PriceListID": "$PriceListID",
+          "LocationID": "$LocationID",
+          "SalesEmployeeID": "$SalesEmployeeID",
+          "CreditEmployeeID": "$CreditEmployeeID",
+          "PaymentMethod": "$PaymentMethod",
+          "PaymentTerm": "$PaymentTerm",
+          "AccountingNumber": "$AccountingNumber",
+          "AccountNumber": "$AccountNumber",
+          "DefaultDiscount": "$DefaultDiscount",
+          "Comment": "$Comment",
+          "Source": "$Source"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "binderp_create_prospect",
+      "description": "Create a prospect (lead) with contact, company, email and phone. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": {
+            "type": "string",
+            "description": "Contact name."
+          },
+          "Company": {
+            "type": "string",
+            "description": "Company."
+          },
+          "Email": {
+            "type": "string",
+            "description": "Email."
+          },
+          "Phone": {
+            "type": "string",
+            "description": "Phone."
+          },
+          "PhoneExt": {
+            "type": "string",
+            "description": "Extension."
+          },
+          "Comments": {
+            "type": "string",
+            "description": "Comments."
+          },
+          "IsPublic": {
+            "type": "boolean",
+            "description": "true to share with all users."
+          }
+        },
+        "required": [
+          "Name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/Prospects",
+        "bodyMapping": {
+          "Name": "$Name",
+          "Company": "$Company",
+          "Email": "$Email",
+          "Phone": "$Phone",
+          "PhoneExt": "$PhoneExt",
+          "Comments": "$Comments",
+          "IsPublic": "$IsPublic"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "binderp_add_comment",
+      "description": "Add a comment to a client, prospect, order or other record. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ExternalID": {
+            "type": "string",
+            "description": "ID (GUID) of the client, prospect, order or other record the comment belongs to."
+          },
+          "Comment": {
+            "type": "string",
+            "description": "Comment text."
+          }
+        },
+        "required": [
+          "ExternalID",
+          "Comment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/Comments",
+        "bodyMapping": {
+          "ExternalID": "$ExternalID",
+          "Comment": "$Comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "binderp_create_product",
+      "description": "Create a product with code, title, cost, price and categories. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Title": {
+            "type": "string",
+            "description": "Product title."
+          },
+          "Code": {
+            "type": "string",
+            "description": "Product code."
+          },
+          "SKU": {
+            "type": "string",
+            "description": "SKU."
+          },
+          "Description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "Cost": {
+            "type": "number",
+            "description": "Cost."
+          },
+          "Price": {
+            "type": "number",
+            "description": "Base price."
+          },
+          "CurrencyId": {
+            "type": "string",
+            "description": "ID (GUID) of the currency.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "ExchangeRate": {
+            "type": "number",
+            "description": "Exchange rate when not MXN."
+          },
+          "Category1Id": {
+            "type": "string",
+            "description": "ID (GUID) of the category level 1.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "Category2Id": {
+            "type": "string",
+            "description": "ID (GUID) of the category level 2.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "Category3Id": {
+            "type": "string",
+            "description": "ID (GUID) of the category level 3.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "IEPS": {
+            "type": "number",
+            "description": "IEPS rate."
+          }
+        },
+        "required": [
+          "Title",
+          "Code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/Products",
+        "bodyMapping": {
+          "Title": "$Title",
+          "Code": "$Code",
+          "SKU": "$SKU",
+          "Description": "$Description",
+          "Cost": "$Cost",
+          "Price": "$Price",
+          "CurrencyId": "$CurrencyId",
+          "ExchangeRate": "$ExchangeRate",
+          "Category1Id": "$Category1Id",
+          "Category2Id": "$Category2Id",
+          "Category3Id": "$Category3Id",
+          "IEPS": "$IEPS"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "binderp_create_order",
+      "description": "Create a client order (pedido) with product and service lines. No CFDI is stamped. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ClientID": {
+            "type": "string",
+            "description": "ID (GUID) of the client.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "LocationID": {
+            "type": "string",
+            "description": "ID (GUID) of the branch.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "WarehouseID": {
+            "type": "string",
+            "description": "ID (GUID) of the warehouse.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "PriceListID": {
+            "type": "string",
+            "description": "ID (GUID) of the price list.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "CurrencyID": {
+            "type": "string",
+            "description": "ID (GUID) of the currency.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "ExchangeRate": {
+            "type": "number",
+            "description": "Exchange rate, 1 for MXN."
+          },
+          "VATRate": {
+            "type": "number",
+            "description": "VAT rate in percent, e.g. 16."
+          },
+          "Comments": {
+            "type": "string",
+            "description": "Comments."
+          },
+          "PurchaseOrder": {
+            "type": "string",
+            "description": "Client's purchase order number."
+          },
+          "Emails": {
+            "type": "array",
+            "description": "Emails to send the document to.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "Products": {
+            "type": "array",
+            "description": "Product lines: [{\"ID\": \"<product GUID>\", \"Qty\": 2, \"Price\": 150.0, \"VAT\": 16, \"Comments\": \"\"}]. VAT is the rate in percent.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "Services": {
+            "type": "array",
+            "description": "Service lines: [{\"ID\": \"<service GUID>\", \"Title\": \"Instalación\", \"Qty\": 1, \"Price\": 500.0, \"VAT\": 16}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "OrderDate": {
+            "type": "string",
+            "description": "Order date, YYYY-MM-DD."
+          },
+          "AddressID": {
+            "type": "string",
+            "description": "ID (GUID) of the delivery address.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          }
+        },
+        "required": [
+          "ClientID",
+          "LocationID",
+          "WarehouseID",
+          "PriceListID",
+          "CurrencyID",
+          "OrderDate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/Orders",
+        "bodyMapping": {
+          "ClientID": "$ClientID",
+          "LocationID": "$LocationID",
+          "WarehouseID": "$WarehouseID",
+          "PriceListID": "$PriceListID",
+          "CurrencyID": "$CurrencyID",
+          "ExchangeRate": "$ExchangeRate",
+          "VATRate": "$VATRate",
+          "Comments": "$Comments",
+          "PurchaseOrder": "$PurchaseOrder",
+          "Emails": "$Emails",
+          "Products": "$Products",
+          "Services": "$Services",
+          "OrderDate": "$OrderDate",
+          "AddressID": "$AddressID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "binderp_create_quote",
+      "description": "Create a quote (cotización) for a client or prospect. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "LocationID": {
+            "type": "string",
+            "description": "ID (GUID) of the branch.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "CurrencyID": {
+            "type": "string",
+            "description": "ID (GUID) of the currency.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "PriceListID": {
+            "type": "string",
+            "description": "ID (GUID) of the price list.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "ExchangeRate": {
+            "type": "number",
+            "description": "Exchange rate, 1 for MXN."
+          },
+          "VATRate": {
+            "type": "number",
+            "description": "VAT rate in percent."
+          },
+          "Items": {
+            "type": "array",
+            "description": "Lines: [{\"ID\": \"<product or service GUID>\", \"Title\": \"...\", \"Qty\": 1, \"Price\": 100, \"VAT\": 16, \"Type\": 0}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "ClientProspect": {
+            "type": "object",
+            "description": "Who the quote is for: {\"isNew\": false, \"Client\": {\"ClientId\": \"<GUID>\"}} or {\"isNew\": false, \"Prospect\": {\"ID\": \"<GUID>\"}}."
+          },
+          "Comments": {
+            "type": "string",
+            "description": "Comments."
+          },
+          "Emails": {
+            "type": "array",
+            "description": "Emails to send the quote to.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "LocationID",
+          "CurrencyID",
+          "PriceListID",
+          "Items",
+          "ClientProspect"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/Quotes",
+        "bodyMapping": {
+          "LocationID": "$LocationID",
+          "CurrencyID": "$CurrencyID",
+          "PriceListID": "$PriceListID",
+          "ExchangeRate": "$ExchangeRate",
+          "VATRate": "$VATRate",
+          "Items": "$Items",
+          "ClientProspect": "$ClientProspect",
+          "Comments": "$Comments",
+          "Emails": "$Emails"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "binderp_create_invoice",
+      "description": "Create a sale and, with IsFiscalInvoice true, stamp it as a CFDI with the SAT. A stamped CFDI is a legal tax document: it can only be undone by a formal cancellation. Payments are not registered by this tool. Installed switched off: confirm client, lines, taxes and CFDI use with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ClientID": {
+            "type": "string",
+            "description": "ID (GUID) of the client.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "LocationID": {
+            "type": "string",
+            "description": "ID (GUID) of the branch.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "WarehouseID": {
+            "type": "string",
+            "description": "ID (GUID) of the warehouse.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "PriceListID": {
+            "type": "string",
+            "description": "ID (GUID) of the price list.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "CurrencyID": {
+            "type": "string",
+            "description": "ID (GUID) of the currency.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "ExchangeRate": {
+            "type": "number",
+            "description": "Exchange rate, 1 for MXN."
+          },
+          "VATRate": {
+            "type": "number",
+            "description": "VAT rate in percent, e.g. 16."
+          },
+          "Comments": {
+            "type": "string",
+            "description": "Comments."
+          },
+          "PurchaseOrder": {
+            "type": "string",
+            "description": "Client's purchase order number."
+          },
+          "Emails": {
+            "type": "array",
+            "description": "Emails to send the document to.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "Products": {
+            "type": "array",
+            "description": "Product lines: [{\"ID\": \"<product GUID>\", \"Qty\": 2, \"Price\": 150.0, \"VAT\": 16, \"Comments\": \"\"}]. VAT is the rate in percent.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "Services": {
+            "type": "array",
+            "description": "Service lines: [{\"ID\": \"<service GUID>\", \"Title\": \"Instalación\", \"Qty\": 1, \"Price\": 500.0, \"VAT\": 16}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "InvoiceDate": {
+            "type": "string",
+            "description": "Invoice date, YYYY-MM-DD."
+          },
+          "CFDIUse": {
+            "type": "integer",
+            "description": "CFDI use code (uso del CFDI) as Bind numbers it."
+          },
+          "IsFiscalInvoice": {
+            "type": "boolean",
+            "description": "true to stamp a CFDI with the SAT; false for a non-fiscal sale."
+          },
+          "Serie": {
+            "type": "string",
+            "description": "Series to number the invoice with."
+          },
+          "CreditDays": {
+            "type": "integer",
+            "description": "Credit days."
+          },
+          "PaymentTerm": {
+            "type": "integer",
+            "description": "Payment term code."
+          },
+          "Reference": {
+            "type": "string",
+            "description": "Reference."
+          }
+        },
+        "required": [
+          "ClientID",
+          "LocationID",
+          "WarehouseID",
+          "PriceListID",
+          "CurrencyID",
+          "InvoiceDate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/Invoices",
+        "bodyMapping": {
+          "ClientID": "$ClientID",
+          "LocationID": "$LocationID",
+          "WarehouseID": "$WarehouseID",
+          "PriceListID": "$PriceListID",
+          "CurrencyID": "$CurrencyID",
+          "ExchangeRate": "$ExchangeRate",
+          "VATRate": "$VATRate",
+          "Comments": "$Comments",
+          "PurchaseOrder": "$PurchaseOrder",
+          "Emails": "$Emails",
+          "Products": "$Products",
+          "Services": "$Services",
+          "InvoiceDate": "$InvoiceDate",
+          "CFDIUse": "$CFDIUse",
+          "IsFiscalInvoice": "$IsFiscalInvoice",
+          "Serie": "$Serie",
+          "CreditDays": "$CreditDays",
+          "PaymentTerm": "$PaymentTerm",
+          "Reference": "$Reference"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

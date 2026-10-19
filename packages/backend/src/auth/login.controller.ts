@@ -21,6 +21,8 @@ import {
 } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
+import { findUserByEmail } from '../common/email.util';
+import type { User } from '../generated/prisma/client';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { SsoService } from '../identity-providers/sso.service';
 import { MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
@@ -270,10 +272,9 @@ export class LoginController {
       );
     }
 
-    // Find user by email
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-    });
+    // Find user by email, in any case: an address registered with capitals
+    // must still sign in when typed in lower case, and the other way round.
+    const user = await findUserByEmail<User>(this.prisma, email);
 
     if (!user) {
       this.logger.warn(`Login attempt for non-existent user: ${email}`);

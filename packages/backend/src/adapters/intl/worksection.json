@@ -51,6 +51,7 @@
       "clientSecret": "{{WORKSECTION_CLIENT_SECRET}}",
       "authorizationUrl": "https://worksection.com/oauth2/authorize",
       "tokenUrl": "https://worksection.com/oauth2/token",
+      "refreshUrl": "https://worksection.com/oauth2/refresh",
       "scopes": "projects_read projects_write tasks_read tasks_write comments_read comments_write costs_read costs_write tags_read tags_write files_read users_read contacts_read"
     }
   },

@@ -1,0 +1,384 @@
+{
+  "slug": "odoo-mcp",
+  "name": "Odoo (MCP server)",
+  "aliases": [
+    "Odoo MCP",
+    "Odoo AI",
+    "Odoo 19 MCP",
+    "Odoo 20 MCP"
+  ],
+  "description": "Connect Claude, ChatGPT or Copilot to Odoo through Odoo's own MCP server (Odoo AI, Odoo Online saas-19.4 and Odoo 20): search any model, group and total records, list models and fields, and, when your admin allows it, create and update records. Governed by the Odoo user and the AI Tools your admin exposes.",
+  "instructions": "## Odoo (MCP server)\nThis connector bridges the **Odoo MCP server**, the MCP endpoint Odoo itself serves at `https://<your database>/mcp` as part of the Odoo AI app. Odoo provides the tools (AI Tools, which are server actions in Odoo) and runs them with the rights of the user who owns the API key; AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**Which Odoo connector?**\n- **Odoo (MCP server)**, this one: for databases that have Odoo's own MCP server (Odoo Online from version saas-19.4, and Odoo 20). The tools, their schemas and which writes are allowed are governed in Odoo, by your Odoo admin.\n- **Odoo** (`odoo`, JSON-2 API): for Odoo 19 and newer on Odoo Online, Odoo.sh or your own server, when you want AnythingMCP's fixed tools for partners, sales orders, invoices and products, or your database has no MCP server (Odoo 19.0 itself has none).\n- **Odoo 14-18 (JSON-RPC)** (`odoo-jsonrpc`): for Odoo 14 to 18.\nYour version is shown at the bottom of Settings, and a database with an MCP server offers the **MCP** scope when you create an API key.\n\n**Setup (about 5 minutes)**\n1. In Odoo click your avatar > **My Preferences** (or **My Profile**) > **Security** > **Add API Key**, confirm your password, give the key a name, set **Scope** to **MCP**, and choose how long it is valid in **Expires**. Odoo shows the key once: copy it. Use a dedicated Odoo user whose access rights match what the assistant may see; the key acts as that user.\n2. Fill in the variables and install:\n   - `ODOO_URL`: the database address up to the host, for example `https://mycompany.odoo.com`. The connector calls `ODOO_URL/mcp`.\n   - `ODOO_MCP_API_KEY`: the key from step 1, sent as `Authorization: Bearer <key>` and stored encrypted.\n3. When the key expires, Odoo answers 401: create a new one and paste it here.\n\n**The tools come from your database.** At install AnythingMCP asks the Odoo MCP server which tools it exposes. By default Odoo exposes Get Models, Get Fields, Search, Read group and MCP Retrieve initial context, all read-only. An admin can expose more (Create Records, Update Records, menus, website and image tools) in developer mode under **Settings > Technical > Server Actions**, with **Available in MCP** on the tool's Usage tab; then open the connector here and click **Discover tools**. Create Records and Update Records install switched off here; turn them on per tool only when the assistant should change Odoo. Image generation spends Odoo AI credits.\n\n**Working with it**: call `odoo_mcp_ai_tool_mcp_retrieve_initial_context` once to learn the user, time zone and companies; find the model with `odoo_mcp_ai_tool_get_models` and its fields with `odoo_mcp_ai_tool_get_fields`; then query with `odoo_mcp_ai_tool_search` (domains such as `[('state','=','sale'),('date_order','>=','2026-10-01')]`, always with `fields` and a `limit`) or total with `odoo_mcp_ai_tool_read_group` (`groupby: [\"date_order:month\"]`, `aggregates: [\"amount_total:sum\"]`). Search returns 50 rows by default and at most 200.\n\n**Known Odoo quirk**: Odoo publishes Get Fields with an empty parameter list, yet the tool fails unless it gets both `model_name` and `include_description` (true or false). Always pass both, e.g. `{\"model_name\": \"res.partner\", \"include_description\": false}`.\n\n**Errors**: 401 means the key is wrong, expired or was created without the MCP scope; 404 at `/mcp` means this database has no MCP server (older version, or the AI app is not installed): use the **Odoo** or **Odoo 14-18 (JSON-RPC)** connector instead.",
+  "region": "intl",
+  "category": "erp",
+  "icon": "odoo",
+  "docsUrl": "https://www.odoo.com/documentation/master/applications/productivity/ai/mcp_server.html",
+  "prerequisites": "An Odoo database with Odoo's MCP server (Odoo Online saas-19.4 or later, or Odoo 20, with the AI app), and an API key with the MCP scope from My Preferences > Security > Add API Key. For Odoo 19.0, Odoo.sh or self-hosted databases without it, use the Odoo or Odoo 14-18 (JSON-RPC) connector.",
+  "requiredEnvVars": [
+    "ODOO_URL",
+    "ODOO_MCP_API_KEY"
+  ],
+  "envVarMeta": {
+    "ODOO_URL": {
+      "label": "Odoo address",
+      "kind": "address",
+      "secret": false,
+      "help": "The address you open Odoo at, up to the host: https://mycompany.odoo.com. Leave out /odoo, /web, /mcp and anything after the host.",
+      "example": "https://mycompany.odoo.com",
+      "pattern": "^https://(?!www\\.([^/]+\\.)?odoo\\.com)[^\\s/?#]+$",
+      "patternMessage": "Only the https address up to the host, e.g. https://mycompany.odoo.com (no www. on odoo.com, no /mcp, no trailing slash)."
+    },
+    "ODOO_MCP_API_KEY": {
+      "label": "API key (MCP scope)",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Odoo: avatar > My Preferences > Security > Add API Key, Scope MCP, then choose Expires. Odoo shows the key once.",
+      "pattern": "^[0-9a-f]{40}$",
+      "patternMessage": "An Odoo API key is 40 lowercase hexadecimal characters; paste it without Bearer, quotes or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Odoo refused the API key: it is wrong, expired, or was created without the MCP scope. Create a new key under My Preferences > Security > Add API Key with Scope MCP and paste it into ODOO_MCP_API_KEY.",
+    "not_found": {
+      "hint": "This Odoo database has no MCP server at ODOO_URL/mcp: it is older than saas-19.4, or the AI app is not installed. Use the JSON-2 Odoo connector for Odoo 19, or the JSON-RPC one for Odoo 14 to 18.",
+      "suggest": "odoo"
+    }
+  },
+  "connector": {
+    "name": "Odoo (MCP server)",
+    "type": "MCP",
+    "baseUrl": "{{ODOO_URL}}/mcp",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ODOO_MCP_API_KEY}}"
+    },
+    "config": {
+      "mcpToolPrefix": "odoo_mcp_"
+    }
+  },
+  "tools": [
+    {
+      "name": "odoo_mcp_ai_tool_mcp_retrieve_initial_context",
+      "description": "Odoo's AI Tool: MCP Retrieve initial context. Returns the signed-in user, their time zone, the active company and every company they can switch to, plus Odoo's general instructions. Call it once at the start of a conversation, before other Odoo tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "ai_tool_mcp_retrieve_initial_context",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "odoo_mcp_ai_tool_get_models",
+      "description": "Odoo's AI Tool: Get Models. Lists every Odoo model the user may access (no transient or abstract ones) with its technical name and description, e.g. res.partner, sale.order, account.move. Use it to find the right model before searching.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "ai_tool_get_models",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "odoo_mcp_ai_tool_get_fields",
+      "description": "Odoo's AI Tool: Get Fields. Lists the searchable fields of one model with their type and relations. Only fields it returns may be used in domains, group-bys and updates, so call it before building a domain on an unfamiliar model.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "description": "Technical model name, e.g. res.partner or account.move."
+          },
+          "include_description": {
+            "type": "boolean",
+            "description": "true to include each field's help text (longer answer), false for names and types only. Odoo needs it on every call."
+          }
+        },
+        "required": [
+          "model_name",
+          "include_description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ai_tool_get_fields",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "odoo_mcp_ai_tool_search",
+      "description": "Odoo's AI Tool: Search. Finds records of a model with an Odoo domain and returns {records, total_count} plus a hint when more rows remain. Only display_name comes back unless you list fields; at most 50 rows by default, 200 per call, page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "description": "Technical model name (e.g., 'sale.order', 'product.product', 'res.partner')"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Search domain. Use an empty list to match all records"
+          },
+          "fields": {
+            "type": "array",
+            "description": "list of fields to fetch. DEFAULT: display_name only: pass explicit field names to retrieve more (do NOT omit to get all fields).",
+            "items": {
+              "type": "string",
+              "description": "Technical name of a field available on the model. Related field paths (eg. 'partner_id.name') are not allowed"
+            }
+          },
+          "offset": {
+            "type": "number",
+            "description": "number of results to skip (default 0). Use with `limit` to paginate."
+          },
+          "limit": {
+            "type": "number",
+            "description": "max rows to return (default 50, max 200). Use `offset` to paginate."
+          },
+          "order": {
+            "type": "string",
+            "description": "Optional 'order by' specification. This field should have the form `field_name DESC` (or ASC for ascending order)"
+          }
+        },
+        "required": [
+          "model_name",
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ai_tool_search",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "odoo_mcp_ai_tool_read_group",
+      "description": "Odoo's AI Tool: Read group. Groups the records matching a domain by one or more fields (dates by day, week, month, quarter or year) and computes aggregates such as amount_total:sum or id:count. The tool for totals, statistics and breakdowns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "description": "Technical model name (e.g., 'sale.order', 'product.product', 'res.partner')"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Search domain. Use an empty list to match all records"
+          },
+          "groupby": {
+            "type": "array",
+            "description": "list of groupby descriptions by which the records will be grouped. A groupby description is either a field (then it will be grouped by that field) or a string `'field:granularity'`. Right now, the only supported granularities are `'day'`, `'week'`, `'month'`, `'quarter'` or `'year'`, and they only make sense for date/datetime fields. Additionally integer date parts are also supported: `'year_number'`, `'quarter_number'`, `'month_number'`, `'iso_week_number'`, `'day_of_year'`, `'day_of_month'`, 'day_of_week', 'hour_number', 'minute_number' and 'second_number'.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "aggregates": {
+            "type": "array",
+            "description": "list of aggregates specification. Each element is `'field:agg'` (aggregate field with aggregation function `'agg'`). The possible aggregation functions are the ones provided by `PostgreSQL`, `'count_distinct'` with the expected meaning and `'recordset'` to act like `'array_agg'` converted into a recordset. Only stored fields can be used for aggregation.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "having": {
+            "type": "string",
+            "description": "A domain where the valid 'fields' are the aggregates. The provided field names must exist in the aggregate elements. Example `[('amount_total:sum', '>', 1000)]`"
+          },
+          "offset": {
+            "type": "number",
+            "description": "optional number of groups to skip. Use with `limit` to paginate."
+          },
+          "limit": {
+            "type": "number",
+            "description": "max groups to return (default 100, max 500). Use `offset` to paginate."
+          },
+          "order": {
+            "type": "string",
+            "description": "optional 'order by' specification, for overriding the natural sort ordering of the groups. The order must be a valid PostgreSQL group by, it must use a valid `aggregate` or `groupby element. The provided fields must exist in the group by or aggregate elements. DO NOT make up any field name. i.e. For an aggregate `amount_total:sum`, the valid order is `amount_total:sum`."
+          }
+        },
+        "required": [
+          "model_name",
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ai_tool_read_group",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "odoo_mcp_ai_tool_create_records",
+      "description": "Odoo's AI Tool: Create Records. Creates one or more records of a model with the given field values, optionally with a preview link. Hidden in Odoo until an admin exposes it to MCP, and installed switched off here: confirm every record with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "description": "An explanation of the tool call. It MUST end with a question asking for user's CONFIRMATION."
+          },
+          "model_name": {
+            "type": "string",
+            "description": "technical name of the model (i.e. 'mail.message')"
+          },
+          "preview_menu_id": {
+            "type": "integer",
+            "description": "The id of a menu linked to the model specified in `model_name`, used to generate the preview link for created records. It must be a valid menu for that model, preferably its default view menu. This field should almost always be filled: only leave it empty if the model has absolutely no associated menu."
+          },
+          "values": {
+            "type": "array",
+            "description": "list of records to create along with their fields",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field_values": {
+                  "type": "array",
+                  "description": "list of values to assign to the fields of the record",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "description": "technical name of the field"
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The value to assign to the field. Use 'null' if the field is initialized using a x2m command"
+                      },
+                      "x2m_link_ids": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "description": "The id of a record to link"
+                          },
+                          {
+                            "type": "array",
+                            "description": "A list of existing records ids to link.",
+                            "items": {
+                              "type": "integer",
+                              "description": "The id of an existing record."
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "description": "Values to apply to the newly created record. field_values is a list of x2m_commands if the field is a one2many or a many2many, a value otherwise",
+                    "required": [
+                      "field"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "field_values"
+              ]
+            }
+          }
+        },
+        "required": [
+          "explanation",
+          "model_name",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ai_tool_create_records",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "odoo_mcp_ai_tool_update_records",
+      "description": "Odoo's AI Tool: Update Records. Changes field values on existing records that match a domain. Hidden in Odoo until an admin exposes it to MCP, and installed switched off here: confirm the records and values with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "description": "What will change and why, ending with a question asking the user to confirm."
+          },
+          "updates": {
+            "type": "array",
+            "description": "The updates: per model a domain or ids and the field values to set, as the tool's schema on your server describes.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "preview_menus": {
+            "type": "array",
+            "description": "Menus to open to preview the changed records, per model.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "explanation",
+          "updates"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ai_tool_update_records",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

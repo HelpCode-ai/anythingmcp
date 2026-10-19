@@ -211,6 +211,17 @@ function SetupContent() {
         setPhase('form');
         return;
       }
+      // A Shopee shop is authorized right after the keys are saved, through
+      // Shopee's own signed link.
+      if (slug === 'shopee') {
+        const id = await save();
+        const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
+        const auth = await connectors.shopeeAuthorize(id, token, returnTo);
+        if (!auth.authorizationUrl) throw new Error(auth.error || 'Could not start the authorization.');
+        productEvents.track('oauth_started', token, { adapterSlug: slug });
+        window.location.href = auth.authorizationUrl;
+        return;
+      }
       if (info.setupKind === 'oauth_browser') {
         const id = await save();
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;

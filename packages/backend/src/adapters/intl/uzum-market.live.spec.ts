@@ -31,6 +31,15 @@ describe('uzum-market adapter: static spec conformance', () => {
     expect(tool('uzum_market_list_shops').parameters.required ?? []).toEqual([]);
   });
 
+  it('explains the 500 a shop answers when the token has no rights on it', () => {
+    // Live, 19 Oct 2026: a token listed four shops; one answered every call,
+    // three answered 500 Whitelabel Error Page on every call, and so did any
+    // multi-shop call that included them.
+    const a2 = a as unknown as { instructions: string };
+    expect(a2.instructions).toMatch(/Whitelabel Error Page/);
+    expect(tool('uzum_market_list_shops').description).toMatch(/one at a time/);
+  });
+
   it('uses the current versions of the order and stock endpoints', () => {
     expect(tool('uzum_market_list_orders').endpointMapping.path).toBe('/v2/fbs/orders');
     expect(tool('uzum_market_list_stocks').endpointMapping.path).toBe('/v3/fbs/sku/stocks');
