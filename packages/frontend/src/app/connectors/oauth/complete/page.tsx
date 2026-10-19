@@ -24,6 +24,9 @@ function CompleteContent() {
 
   const state = params.get('state');
   const code = params.get('code');
+  // A Shopee shop authorization comes back through its own callback, with the
+  // shop id next to the code, and is completed by its own endpoint.
+  const shopeeShopId = params.get('provider') === 'shopee' ? params.get('shop_id') : null;
   // From the provider redirect, or from the answer when the exchange is refused.
   const [connectorId, setConnectorId] = useState<string | null>(params.get('connectorId'));
 
@@ -39,8 +42,9 @@ function CompleteContent() {
     // The code is single-use and bound to a verifier the server keeps, but it
     // still has no business staying in the address bar or the history.
     window.history.replaceState({}, '', '/connectors/oauth/complete');
-    connectors
-      .oauthComplete(state, code, token)
+    (shopeeShopId !== null
+      ? connectors.shopeeComplete(state, code, shopeeShopId, token)
+      : connectors.oauthComplete(state, code, token))
       .then((out) => {
         const fallback = `/connectors/${out.connectorId}?oauth=success&tools=${out.toolsImported}`;
         router.replace(out.returnTo || fallback);
@@ -51,7 +55,7 @@ function CompleteContent() {
         }
         setError(err.message || 'The authorization could not be completed.');
       });
-  }, [error, state, code, token, isLoading, router]);
+  }, [error, state, code, shopeeShopId, token, isLoading, router]);
 
   if (!error && !state) {
     return <p className="text-sm text-[var(--text-2)]">Nothing to complete here.</p>;
