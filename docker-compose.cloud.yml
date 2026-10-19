@@ -167,6 +167,13 @@ x-backend: &backend
     # Where replies go when SMTP_FROM is a noreply address.
     - SMTP_REPLY_TO=${SMTP_REPLY_TO:-}
     - SMTP_SECURE=${SMTP_SECURE:-false}
+    # Live support chat (Libredesk). Unset = no widget, no triage webhook.
+    - SUPPORT_CHAT_URL=${SUPPORT_CHAT_URL:-}
+    - SUPPORT_CHAT_INBOX_ID=${SUPPORT_CHAT_INBOX_ID:-}
+    - SUPPORT_CHAT_SECRET=${SUPPORT_CHAT_SECRET:-}
+    - LIBREDESK_API_KEY=${LIBREDESK_API_KEY:-}
+    - LIBREDESK_API_SECRET=${LIBREDESK_API_SECRET:-}
+    - LIBREDESK_WEBHOOK_SECRET=${LIBREDESK_WEBHOOK_SECRET:-}
   volumes:
     # One heap snapshot per process, written by the heap guard when the heap
     # crosses HEAP_SNAPSHOT_PERCENT. A volume so it outlives the container

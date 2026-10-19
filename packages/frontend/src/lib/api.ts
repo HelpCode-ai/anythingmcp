@@ -1501,6 +1501,15 @@ export function editionErrorCode(err: unknown): string | null {
   return code === EDITION_REQUIRED || code === SEAT_LIMIT ? code : null;
 }
 
+// Support chat (only on instances we operate; 404 elsewhere)
+export const support = {
+  widget: (token: string) =>
+    request<{ baseUrl: string; inboxId: string; userJwt: string }>('/api/support/widget', {
+      token,
+      skipAutoLogout: true,
+    }),
+};
+
 // License
 export const license = {
   getEdition: (token: string) =>
