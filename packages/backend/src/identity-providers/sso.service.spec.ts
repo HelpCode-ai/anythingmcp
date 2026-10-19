@@ -39,7 +39,7 @@ describe('SsoService', () => {
   beforeEach(() => {
     prisma = {
       userIdentity: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
-      user: { findUnique: jest.fn(), create: jest.fn() },
+      user: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
       organizationMember: { create: jest.fn() },
       ssoLoginAttempt: { updateMany: jest.fn(), findUnique: jest.fn() },
       $transaction: jest.fn((fn: any) => fn(prisma)),
@@ -130,6 +130,7 @@ describe('SsoService', () => {
       });
       // The users table is never consulted by email on the known-identity path.
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
     });
 
     it('refuses an unknown identity when JIT is off', async () => {
@@ -145,7 +146,7 @@ describe('SsoService', () => {
       // tenant could otherwise assert a victim's address and be handed their
       // account. Linking must be a deliberate, authenticated action.
       prisma.userIdentity.findUnique.mockResolvedValue(null);
-      prisma.user.findUnique.mockResolvedValue({ id: 'victim' });
+      prisma.user.findMany.mockResolvedValue([{ id: 'victim', email: goodClaims.email }]);
 
       await expect(resolve({ ...provider, jitProvisioning: true })).rejects.toThrow(
         expect.objectContaining({ reason: 'email_belongs_to_existing_account' }),
@@ -154,14 +155,38 @@ describe('SsoService', () => {
       expect(prisma.userIdentity.create).not.toHaveBeenCalled();
     });
 
+    it('treats an account stored with capitals as owning the address', async () => {
+      // The unique index is case-sensitive: without a case-insensitive check,
+      // a JIT sign-in for `user@…` would create a second account next to a
+      // local `USER@…` instead of refusing.
+      prisma.userIdentity.findUnique.mockResolvedValue(null);
+      prisma.user.findMany.mockResolvedValue([{ id: 'victim', email: goodClaims.email.toUpperCase() }]);
+
+      await expect(resolve({ ...provider, jitProvisioning: true })).rejects.toThrow(
+        expect.objectContaining({ reason: 'email_belongs_to_existing_account' }),
+      );
+      expect(prisma.user.findMany.mock.calls[0][0].where.OR).toContainEqual({
+        email: { equals: goodClaims.email, mode: 'insensitive' },
+      });
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
     it('provisions a passwordless VIEWER when JIT is on', async () => {
       prisma.userIdentity.findUnique.mockResolvedValue(null);
-      prisma.user.findUnique.mockResolvedValue(null);
       prisma.user.create.mockResolvedValue({ id: 'new-user' });
 
-      expect(await resolve({ ...provider, jitProvisioning: true })).toBe('new-user');
+      expect(
+        await service.resolveUser(
+          { ...provider, jitProvisioning: true },
+          'a-stable-object-id',
+          goodClaims.tid,
+          { ...goodClaims, email: ' New.User@Example.com ' },
+          {},
+        ),
+      ).toBe('new-user');
 
       const created = prisma.user.create.mock.calls[0][0].data;
+      expect(created.email).toBe('new.user@example.com');
       // No password: the account exists only through the provider, so there is
       // no second way in that bypasses its MFA and Conditional Access.
       expect(created.passwordHash).toBeNull();
@@ -184,7 +209,6 @@ describe('SsoService', () => {
 
     beforeEach(() => {
       prisma.userIdentity.findUnique.mockResolvedValue(null);
-      prisma.user.findUnique.mockResolvedValue(null);
       prisma.user.create.mockResolvedValue({ id: 'new-user' });
     });
 
