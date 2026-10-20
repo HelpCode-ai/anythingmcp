@@ -8,6 +8,7 @@ import {
 import { createHmac } from 'node:crypto';
 import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
+import { decodeResponseBody } from '../binary-response.util';
 import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { BearerTokenRenewalService } from './bearer-token-renewal.service';
@@ -248,6 +249,11 @@ export class RestEngine {
         ...resolvedEndpointHeaders,
       },
       timeout: 30000,
+      // The bytes as they arrived: a text body is decoded and parsed as axios
+      // always did, a file (image, PDF, …) becomes a BinaryBody instead of a
+      // string of replacement characters. See binary-response.util.ts.
+      responseType: 'arraybuffer',
+      transformResponse: [(data: unknown, headers?: unknown) => decodeResponseBody(data, headers)],
     };
     // A form-data body is a one-shot stream: every send (a retry, a redirect
     // that keeps the body) needs a fresh one, built by this.

@@ -600,6 +600,49 @@ describe('DynamicMcpTools: images in the response', () => {
   });
 });
 
+describe('DynamicMcpTools: binary responses', () => {
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
+  const PDF = Buffer.from('%PDF-1.7 not really a pdf but binary enough');
+  const file = (buf: Buffer, contentType: string, filename?: string) => ({
+    __amcpBinary: 1,
+    contentType,
+    bytes: buf.length,
+    ...(filename ? { filename } : {}),
+    base64: buf.toString('base64'),
+  });
+
+  it('attaches a downloaded image as image content and keeps the bytes out of the text and the audit log', async () => {
+    const { executor, audit } = build(makeTool(), { engineResult: file(JPEG, 'application/octet-stream') });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].type).toBe('text');
+    expect(res.content[0].text).not.toContain(JPEG.toString('base64'));
+    expect(JSON.parse(res.content[0].text).file).toMatchObject({ contentType: 'application/octet-stream', bytes: JPEG.length });
+    expect(res.content[1]).toEqual({ type: 'image', data: JPEG.toString('base64'), mimeType: 'image/jpeg' });
+    const logged = JSON.stringify(audit.logInvocation.mock.calls[0][0].output);
+    expect(logged).not.toContain(JPEG.toString('base64'));
+    expect(logged).toContain('binary data not stored');
+  });
+
+  it('attaches any other file as an embedded resource, and the response mapping does not touch it', async () => {
+    const tool = makeTool({ transform: { mode: 'select', select: { id: '$.id' } } });
+    const { executor } = build(tool, { engineResult: file(PDF, 'application/pdf', 'invoice.pdf') });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.content[1]).toEqual({
+      type: 'resource',
+      resource: { uri: 'file:///invoice.pdf', mimeType: 'application/pdf', blob: PDF.toString('base64') },
+    });
+    expect(JSON.parse(res.content[0].text).file.filename).toBe('invoice.pdf');
+  });
+
+  it('renders a cached binary body the same way', async () => {
+    const cached = JSON.stringify(file(JPEG, 'image/jpeg'));
+    const { executor } = build(makeTool({ cacheTtl: 60 }), { cached });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.content[1]).toMatchObject({ type: 'image', mimeType: 'image/jpeg' });
+  });
+});
+
 describe('DynamicMcpTools: the connector id reaches the engine', () => {
   function bridgeTool(authConfig: Record<string, unknown>): RegisteredTool {
     return {

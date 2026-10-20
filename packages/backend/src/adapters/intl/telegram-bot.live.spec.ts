@@ -32,9 +32,25 @@ describe('telegram-bot adapter — static spec conformance', () => {
     expect(a.connector.authType).toBe('NONE');
   });
 
-  it('all tools are POST except getMe (which is GET)', () => {
+  it('downloads a file from the /file/bot<token>/ host path, not the method path', () => {
+    const download = a.tools.find((t) => t.name === 'telegram_bot_download_file')!;
+    expect(download.endpointMapping).toEqual({
+      method: 'GET',
+      path: 'https://api.telegram.org/file/bot{{TELEGRAM_BOT_TOKEN}}/{file_path}',
+    });
+    const pattern = new RegExp(
+      (download as unknown as { parameters: { properties: { file_path: { pattern: string } } } }).parameters.properties
+        .file_path.pattern,
+    );
+    expect(pattern.test('photos/file_12.jpg')).toBe(true);
+    expect(pattern.test('documents/file_3.pdf')).toBe(true);
+    expect(pattern.test('../../bot123/sendMessage')).toBe(false);
+    expect(a.tools.find((t) => t.name === 'telegram_bot_get_file')!.endpointMapping.path).toBe('/getFile');
+  });
+
+  it('all tools are POST except getMe and the file download (GET)', () => {
     for (const t of a.tools) {
-      if (t.name === 'telegram_bot_get_me') {
+      if (t.name === 'telegram_bot_get_me' || t.name === 'telegram_bot_download_file') {
         expect(t.endpointMapping.method).toBe('GET');
       } else {
         expect(t.endpointMapping.method).toBe('POST');
@@ -120,7 +136,16 @@ describe('telegram-bot adapter: albums and media sends', () => {
   });
 
   it('keeps the bot token out of every tool path', () => {
-    for (const t of a.tools) expect(t.endpointMapping.path).toMatch(/^\/[A-Za-z]+$/);
+    // The file download lives on another path (/file/bot<token>/…), so it
+    // names the variable; every other tool is a bare method under the base URL.
+    for (const t of a.tools) {
+      if (t.name === 'telegram_bot_download_file') {
+        expect(t.endpointMapping.path).toContain('{{TELEGRAM_BOT_TOKEN}}');
+        expect(t.endpointMapping.path).not.toMatch(/bot\d+:/);
+      } else {
+        expect(t.endpointMapping.path).toMatch(/^\/[A-Za-z]+$/);
+      }
+    }
   });
 });
 

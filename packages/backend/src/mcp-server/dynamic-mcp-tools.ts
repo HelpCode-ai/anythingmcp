@@ -23,7 +23,7 @@ import {
   buildCallerContextVars,
   usesCallerContext,
 } from '../common/caller-context.util';
-import { applyResponseTransform } from '../connectors/response-transform.util';
+import { applyResponseTransform, type TransformOutcome } from '../connectors/response-transform.util';
 import {
   attachResponseMeta,
   type ResponseMeta,
@@ -38,15 +38,26 @@ import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { connectorErrorWhen } from '../connectors/error-when.util';
+import {
+  isBinaryBody,
+  readBinaryConfig,
+  renderBinaryBody,
+  withoutBinaryData,
+  type BinaryContent,
+} from '../connectors/binary-response.util';
 
 /**
  * The content of a tool result: one text item, then the images taken out of
- * the response by `responseMapping.images` (none for every other tool). The
- * text comes first so whatever reads `content[0].text` keeps working.
+ * the response by `responseMapping.images`, or the file a binary response
+ * carried (binary-response.util.ts). None for every other tool. The text
+ * comes first so whatever reads `content[0].text` keeps working.
  */
 export type ToolResultContent = [
   { type: 'text'; text: string },
-  ...{ type: 'image'; data: string; mimeType: string }[],
+  ...(
+    | { type: 'image'; data: string; mimeType: string }
+    | { type: 'resource'; resource: { uri: string; mimeType: string; blob: string } }
+  )[],
 ];
 import { ResponseBodyError } from '../connectors/engines/response-error.util';
 import { isMaskedEnvVar, secretContext } from '../connectors/connector-secrets.util';
@@ -496,7 +507,8 @@ export class DynamicMcpTools {
         intent: context?.intent,
         learnable: context?.learnable ?? false,
         input: params,
-        output: result as Record<string, unknown>,
+        // A file's bytes stay out of the call log: only what it was.
+        output: withoutBinaryData(result) as Record<string, unknown>,
         status: 'SUCCESS',
         durationMs,
         clientInfo: context ? JSON.stringify({
@@ -629,7 +641,18 @@ export class DynamicMcpTools {
     isError?: boolean;
     structured?: unknown;
   } {
-    const outcome = applyResponseTransform(raw, responseMapping);
+    // A file (image, PDF, …): described in the text and attached after it.
+    // A response mapping has nothing to shape in raw bytes, so it is skipped.
+    let binaryContent: BinaryContent[] = [];
+    const binary = isBinaryBody(raw);
+    if (isBinaryBody(raw)) {
+      const rendered = renderBinaryBody(raw, readBinaryConfig(responseMapping), toolName);
+      raw = rendered.value;
+      binaryContent = rendered.content;
+    }
+    const outcome: TransformOutcome = binary
+      ? { value: raw, applied: false }
+      : applyResponseTransform(raw, responseMapping);
 
     if (outcome.error) {
       if (outcome.fatal) {
@@ -673,7 +696,7 @@ export class DynamicMcpTools {
     }));
 
     return {
-      content: [{ type: 'text' as const, text: resultText }, ...images],
+      content: [{ type: 'text' as const, text: resultText }, ...images, ...binaryContent],
       structured: value,
     };
   }

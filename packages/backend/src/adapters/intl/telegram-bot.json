@@ -3,7 +3,7 @@
   "name": "Telegram Bot",
   "aliases": ["BotFather"],
   "description": "Send Telegram messages, photos, albums, documents, audio, video, animations, stickers, contacts, venues, locations and polls from any AI agent via the Telegram Bot API. 18 tools, bot-token auth. Outbound plus a lightweight read of recent updates (no long-polling).",
-  "instructions": "This connector uses the official Telegram Bot API (https://core.telegram.org/bots/api).\n\n**Setup**:\n1. In Telegram, open chat with **@BotFather** → `/newbot` → pick a display name and a username ending in `bot`.\n2. BotFather replies with an HTTP API token like `123456789:ABCDEFghijklmnopqrstuvwxyz`. **Treat as a secret**: anyone with it can send as your bot.\n3. Set `TELEGRAM_BOT_TOKEN` to the full token.\n\n**Authentication model** (Telegram-specific): the bot token goes in the URL path, NOT in a header. The base URL is `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` and every endpoint is appended as `/methodName`. The adapter substitutes the token via the `{{TELEGRAM_BOT_TOKEN}}` env-var template in `baseUrl`.\n\n**chat_id model**: every Telegram chat (user, group, channel) has a numeric `chat_id`. For groups and channels the bot must be ADDED first; for users, the user must have sent a `/start` to the bot at least once (Telegram's privacy rule). Once you have a chat_id (extract it from `getUpdates`), pin it.\n\n**Channels**: for **public channels** you can also pass `@channelusername` (with the `@`) instead of a numeric chat_id. Private channels REQUIRE the numeric ID, which always starts with `-100`.\n\n**Markdown vs HTML**: messages support 3 parse modes: `MarkdownV2` (current, escape special chars), `HTML` (`<b>`, `<i>`, `<a href>`), or no formatting. Telegram's `MarkdownV2` requires escaping `_ * [ ] ( ) ~ ` > # + - = | { } . !`; agents that don't escape will get 400 'can't parse entities'. The HTML mode is easier for agents to compose safely.\n\n**File send model**: media tools (sendPhoto, sendDocument, sendAudio, etc.) accept the media as:\n  - **HTTPS URL** (recommended on AnythingMCP): Telegram fetches it server-side. URL must be ≤ 5MB for photos, ≤ 20MB for documents via URL.\n  - **file_id**: a string returned from a previous send (caching: reuse the same file_id to re-send the same content without re-uploading).\n  - **multipart binary**: NOT supported by this connector in a single tool call. Pre-upload elsewhere and pass the resulting URL or file_id.\n\n**Albums**: `telegram_bot_send_album` sends 2 to 10 photos and videos as one grouped message (or 2 to 10 documents, or 2 to 10 audio files). Put the caption on the first item. If Telegram answers `failed to send message #N with the error message WEBPAGE_CURL_FAILED`, it could not download item N: the URL must be public and point straight at the file, not at a web page.\n\n**getUpdates vs webhooks**: this connector exposes `telegram_get_updates` (long-polling pull) for one-shot reading of recent inbound messages. For continuous inbound stream (chatbot), use Telegram's webhook (setWebhook) and host the receiver yourself, outside the MCP request/response model.\n\n**Rate limits**: 30 messages/sec to different chats, 1 msg/sec to the same chat, 20 messages/minute to the same group. On 429, honor the `retry_after` in the response.\n\n**Out of scope**: payments, inline mode, callback query answers (these usually require a long-running webhook), passport, game scores, sticker management.",
+  "instructions": "This connector uses the official Telegram Bot API (https://core.telegram.org/bots/api).\n\n**Setup**:\n1. In Telegram, open chat with **@BotFather** → `/newbot` → pick a display name and a username ending in `bot`.\n2. BotFather replies with an HTTP API token like `123456789:ABCDEFghijklmnopqrstuvwxyz`. **Treat as a secret**: anyone with it can send as your bot.\n3. Set `TELEGRAM_BOT_TOKEN` to the full token.\n\n**Authentication model** (Telegram-specific): the bot token goes in the URL path, NOT in a header. The base URL is `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` and every endpoint is appended as `/methodName`. The adapter substitutes the token via the `{{TELEGRAM_BOT_TOKEN}}` env-var template in `baseUrl`.\n\n**chat_id model**: every Telegram chat (user, group, channel) has a numeric `chat_id`. For groups and channels the bot must be ADDED first; for users, the user must have sent a `/start` to the bot at least once (Telegram's privacy rule). Once you have a chat_id (extract it from `getUpdates`), pin it.\n\n**Channels**: for **public channels** you can also pass `@channelusername` (with the `@`) instead of a numeric chat_id. Private channels REQUIRE the numeric ID, which always starts with `-100`.\n\n**Markdown vs HTML**: messages support 3 parse modes: `MarkdownV2` (current, escape special chars), `HTML` (`<b>`, `<i>`, `<a href>`), or no formatting. Telegram's `MarkdownV2` requires escaping `_ * [ ] ( ) ~ ` > # + - = | { } . !`; agents that don't escape will get 400 'can't parse entities'. The HTML mode is easier for agents to compose safely.\n\n**File send model**: media tools (sendPhoto, sendDocument, sendAudio, etc.) accept the media as:\n  - **HTTPS URL** (recommended on AnythingMCP): Telegram fetches it server-side. URL must be ≤ 5MB for photos, ≤ 20MB for documents via URL.\n  - **file_id**: a string returned from a previous send (caching: reuse the same file_id to re-send the same content without re-uploading).\n  - **multipart binary**: NOT supported by this connector in a single tool call. Pre-upload elsewhere and pass the resulting URL or file_id.\n\n**Albums**: `telegram_bot_send_album` sends 2 to 10 photos and videos as one grouped message (or 2 to 10 documents, or 2 to 10 audio files). Put the caption on the first item. If Telegram answers `failed to send message #N with the error message WEBPAGE_CURL_FAILED`, it could not download item N: the URL must be public and point straight at the file, not at a web page.\n\n**getUpdates vs webhooks**: this connector exposes `telegram_get_updates` (long-polling pull) for one-shot reading of recent inbound messages. For continuous inbound stream (chatbot), use Telegram's webhook (setWebhook) and host the receiver yourself, outside the MCP request/response model.\n\n**Rate limits**: 30 messages/sec to different chats, 1 msg/sec to the same chat, 20 messages/minute to the same group. On 429, honor the `retry_after` in the response.\n\n**Out of scope**: payments, inline mode, callback query answers (these usually require a long-running webhook), passport, game scores, sticker management.\n\n**Files the bot received**: a message in `telegram_bot_get_updates` carries a `file_id` (`photo[-1]` is the largest size, or `document`, `voice`, `video`). `telegram_bot_get_file` turns it into a `file_path`, and `telegram_bot_download_file` fetches the file. An image comes back as an image the assistant can see, any other file as an attachment. A `file_id` only works with the bot that received the file, and the Bot API serves files up to 20 MB.",
   "region": "intl",
   "category": "messaging",
   "icon": "telegram",
@@ -332,6 +332,42 @@
         "method": "POST",
         "path": "/getChat",
         "bodyMapping": { "chat_id": "$chat_id" }
+      }
+    },
+    {
+      "name": "telegram_bot_get_file",
+      "description": "Look up a file the bot received (photo, document, voice note, video) by its file_id, from a message in telegram_bot_get_updates. Returns file_path and file_size; pass file_path to telegram_bot_download_file. The link is valid for at least one hour, and the Bot API only serves files up to 20 MB.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": { "type": "string", "description": "file_id from the message, e.g. photo[-1].file_id (the largest size) or document.file_id." }
+        },
+        "required": ["file_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getFile",
+        "bodyMapping": { "file_id": "$file_id" }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "telegram_bot_download_file",
+      "description": "Download a file by the file_path telegram_bot_get_file returned. An image comes back as an image the assistant can see, any other file (PDF, audio, document) as an attached file with its type and size. Files over 4 MB are described, not attached.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "file_path from telegram_bot_get_file, e.g. photos/file_12.jpg.",
+            "pattern": "^(?!.*\\.\\.)[A-Za-z0-9_./-]+$"
+          }
+        },
+        "required": ["file_path"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.telegram.org/file/bot{{TELEGRAM_BOT_TOKEN}}/{file_path}"
       }
     },
     {

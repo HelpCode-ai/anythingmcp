@@ -608,6 +608,7 @@ the API actually returned.
 | `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap |
 | `cacheTtl` | Seconds to cache the **raw** upstream response; shaping happens on read |
 | `images` | Paths to base64 images in the response, returned to the client as MCP image content (see below) |
+| `binary` | How a file the API returns as raw bytes is handed over: `{ "as": "auto" \| "base64", "maxBytes": n }` (see below) |
 
 ### Images in the response (`images`)
 
@@ -635,6 +636,46 @@ text of the result:
   together at 12 MiB. An image over a limit is replaced by a placeholder that
   says why.
 - Tools without `images` are not affected.
+
+### Files in the response (`binary`)
+
+A REST tool that downloads a file gets its bytes, not text: an image, a PDF,
+an archive. Before October 2026 every body was decoded as UTF-8, which
+corrupted a file (a Telegram download from
+`https://api.telegram.org/file/bot<token>/<file_path>`, an invoice PDF).
+
+The engine decides from the response itself:
+
+- A text content type (`text/*`, JSON, XML, `image/svg+xml`, form data, CSV,
+  YAML) is decoded and parsed as before: JSON when it parses, the string
+  otherwise.
+- `application/octet-stream`, or no content type at all, is treated as text
+  when the bytes are valid UTF-8 without control characters, and as a file
+  otherwise.
+- Anything else is a file.
+
+A file is handed to the client after the text of the result:
+
+- A PNG, JPEG, GIF or WebP becomes MCP `image` content. The type is
+  recognised from the first bytes, so an image sent as
+  `application/octet-stream` still counts.
+- Any other file becomes an embedded `resource` with a `blob`, its content
+  type and its file name (from `Content-Disposition`).
+- The text describes the file (`contentType`, `bytes`, `size`, `filename`)
+  and never contains the bytes.
+
+A response mapping (`transform`, `images`, `decode`) does not apply to a
+file. Neither the call log nor the dashboard's tool test stores the bytes.
+
+```json
+{ "binary": { "as": "base64", "maxBytes": 2097152 } }
+```
+
+- `maxBytes` per file: 4 MiB by default, at most 10 MiB. A larger file is
+  described and not attached.
+- `as: "base64"` puts the base64 into the text (`file.base64`) instead of
+  attaching it, for a workflow that hands the file on to another tool.
+- Both keys are optional. A tool without `binary` gets the defaults.
 
 ### `select` leaf syntax
 
