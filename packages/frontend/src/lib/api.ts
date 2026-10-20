@@ -1366,6 +1366,11 @@ export const siteSettings = {
     request<Array<{ label: string; url: string }>>('/api/settings/footer-links', { token }),
 };
 
+export const versionApi = {
+  get: (token: string) =>
+    request<{ version: string; commit: string; buildDate: string | null; deploymentMode: string }>('/api/version', { token, skipAutoLogout: true }),
+};
+
 /** Fired after an admin saves the footer links, so the footer reloads them. */
 export const FOOTER_LINKS_CHANGED = 'amcp:footer-links-changed';
 

@@ -178,6 +178,17 @@ curl http://localhost:4000/health
 
 The container runs `prisma migrate deploy` on startup, then launches both backend and frontend.
 
+### Build provenance
+
+When building the image yourself, pass the commit and build date so the UI and startup log show real values instead of `dev`:
+
+```bash
+docker build \
+  --build-arg APP_COMMIT=$(git rev-parse HEAD) \
+  --build-arg APP_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  -t anythingmcp:local .
+```
+
 ### Without Docker
 
 ```bash

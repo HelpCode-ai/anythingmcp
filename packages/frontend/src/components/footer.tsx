@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/theme-context';
-import { siteSettings, FOOTER_LINKS_CHANGED } from '@/lib/api';
+import { siteSettings, versionApi, FOOTER_LINKS_CHANGED } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 
 function SunIcon({ size = 16 }: { size?: number }) {
@@ -38,6 +38,55 @@ interface FooterLink {
   url: string;
 }
 
+interface VersionInfo {
+  version: string;
+  commit: string;
+}
+
+/** Fetch the version once per session; every mount shares the same promise. */
+let versionPromise: Promise<VersionInfo | null> | null = null;
+
+function getVersionOnce(token: string): Promise<VersionInfo | null> {
+  if (!versionPromise) {
+    versionPromise = versionApi
+      .get(token)
+      .then((v) => ({ version: v.version, commit: v.commit }))
+      .catch(() => {
+        // A failed request must not poison the cache: a token that expired
+        // mid-session would hide the version until a full page reload.
+        versionPromise = null;
+        return null;
+      });
+  }
+  return versionPromise;
+}
+
+/** Shorten a 40-char SHA for display; pass anything else through. */
+function shortSha(c: string): string {
+  return /^[0-9a-f]{40}$/.test(c) ? c.slice(0, 7) : c;
+}
+
+function VersionBadge({ version }: { version: VersionInfo }) {
+  const sha = shortSha(version.commit);
+  return (
+    <span className="text-[var(--text-3)]">
+      v{version.version} ·{' '}
+      {/^[0-9a-f]{7}$/.test(sha) && version.commit.length === 40 ? (
+        <a
+          href={`https://github.com/HelpCode-ai/anythingmcp/commit/${version.commit}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-[var(--text)] hover:underline"
+        >
+          {sha}
+        </a>
+      ) : (
+        sha
+      )}
+    </span>
+  );
+}
+
 /** Links saved before the server checked the scheme: only web and mail links render. */
 function isSafeLink(url: unknown): boolean {
   return typeof url === 'string' && /^(https?:\/\/|mailto:)/i.test(url.trim());
@@ -47,6 +96,7 @@ export function Footer() {
   const { theme, setTheme } = useTheme();
   const { token } = useAuth();
   const [links, setLinks] = useState<FooterLink[]>([]);
+  const [version, setVersion] = useState<{ version: string; commit: string } | null>(null);
 
   // Signed in: the workspace's own links (what its admin saved). Signed out,
   // or if that call fails: the instance-wide links.
@@ -68,6 +118,20 @@ export function Footer() {
     };
   }, [token]);
 
+  useEffect(() => {
+    let active = true;
+    if (!token) {
+      setVersion(null);
+      return;
+    }
+    getVersionOnce(token).then((value) => {
+      if (active) setVersion(value);
+    });
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
   const themeOptions = [
     { value: 'light' as const, label: 'Light', icon: SunIcon },
     { value: 'dark' as const, label: 'Dark', icon: MoonIcon },
@@ -83,6 +147,12 @@ export function Footer() {
             <span>&copy; {new Date().getFullYear()} Anything<span className="text-[var(--brand)]">MCP</span></span>
             <span className="hidden sm:inline">·</span>
             <a href="https://helpcode.ai" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--text)] hover:underline">Powered by helpcode.ai</a>
+            {version && (
+              <>
+                <span className="hidden sm:inline">·</span>
+                <VersionBadge version={version} />
+              </>
+            )}
             {links.length > 0 && (
               <>
                 <span className="hidden sm:inline">·</span>

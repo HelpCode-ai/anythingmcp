@@ -18,6 +18,7 @@ import { startTracing } from './tracing';
 startTracing();
 
 import { NestFactory } from '@nestjs/core';
+import { APP_VERSION, APP_COMMIT, APP_BUILD_DATE } from './common/app-version';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
@@ -216,6 +217,9 @@ async function bootstrap() {
     });
   }
 
+  const mode = process.env.DEPLOYMENT_MODE || 'self-hosted';
+  const shortCommit = /^[0-9a-f]{40}$/.test(APP_COMMIT) ? APP_COMMIT.slice(0, 7) : APP_COMMIT;
+  logger.log(`AnythingMCP v${APP_VERSION} (commit ${shortCommit}, built ${APP_BUILD_DATE ?? 'unknown'}, mode ${mode})`);
   logger.log(`AnythingMCP backend running on: http://localhost:${port}`);
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
   logger.log(`MCP endpoint (global): http://localhost:${port}/mcp`);
