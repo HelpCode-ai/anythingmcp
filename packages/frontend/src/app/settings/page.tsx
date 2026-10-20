@@ -147,7 +147,7 @@ export default function SettingsPage() {
       const { authorizationUrl } = await sso.startLink(p.id, '/settings', token);
       // Top-level navigation, not fetch: the provider needs to render its own
       // sign-in page to the user.
-      window.location.href = authorizationUrl;
+      window.location.assign(authorizationUrl);
     } catch (err: any) {
       toast.show({ tone: 'error', title: 'Could not connect', description: err.message });
       setLinkBusy(null);

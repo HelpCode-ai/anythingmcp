@@ -128,6 +128,13 @@ const emptyForm = (): IdentityProviderInput & { config: Record<string, string> }
   roleSyncDefaultRoleIds: [],
 });
 
+// True when the client secret runs out within 30 days.
+function expiringSoon(p: IdentityProvider): boolean {
+  if (!p.clientSecretExpiresAt) return false;
+  const days = (new Date(p.clientSecretExpiresAt).getTime() - Date.now()) / 86_400_000;
+  return days < 30;
+}
+
 export default function IdentityProvidersPage() {
   const { token, user: currentUser, deploymentMode, deploymentModeLoaded } = useAuth();
   const toast = useToast();
@@ -370,13 +377,6 @@ export default function IdentityProvidersPage() {
     `${typeof window === 'undefined' ? '' : window.location.origin}/sso/${p.initiateId}`;
 
   const spec = PROVIDER_TYPES[form.type];
-  const expiringSoon = (p: IdentityProvider) => {
-    if (!p.clientSecretExpiresAt) return false;
-    const days =
-      (new Date(p.clientSecretExpiresAt).getTime() - Date.now()) / 86_400_000;
-    return days < 30;
-  };
-
   return (
     <div className="space-y-6">
       {locked && (

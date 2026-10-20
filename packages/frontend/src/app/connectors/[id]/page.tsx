@@ -290,6 +290,13 @@ export default function ConnectorDetailPage() {
   >([]);
   const [savingEnvVars, setSavingEnvVars] = useState(false);
 
+  const resetOauth1Fields = () => {
+    setEditOauth1Key('');
+    setEditOauth1Secret('');
+    setEditOauth1Token('');
+    setEditOauth1TokenSecret('');
+  };
+
   const fetchConnector = async () => {
     if (!token) return;
     try {
@@ -403,13 +410,6 @@ export default function ConnectorDetailPage() {
 
     fetchConnector();
   }, [token, id]);
-
-  const resetOauth1Fields = () => {
-    setEditOauth1Key('');
-    setEditOauth1Secret('');
-    setEditOauth1Token('');
-    setEditOauth1TokenSecret('');
-  };
 
   const buildAuthConfig = () => {
     // Only send authConfig if the user filled in credential fields;
