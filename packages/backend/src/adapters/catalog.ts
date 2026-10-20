@@ -27,6 +27,7 @@ import * as handelsregister from './de/handelsregister.json';
 import * as haufeX360 from './de/haufe-x360.json';
 import * as hereGeocoding from './de/here-geocoding.json';
 import * as hrworks from './de/hrworks.json';
+import * as idealo from './de/idealo.json';
 import * as immobilienscout24 from './de/immobilienscout24.json';
 import * as jtlFfn from './de/jtl-ffn.json';
 import * as jtlWawi from './de/jtl-wawi.json';
@@ -58,6 +59,7 @@ import * as sevdesk from './de/sevdesk.json';
 import * as shipcloud from './de/shipcloud.json';
 import * as shopware6 from './de/shopware-6.json';
 import * as sistrix from './de/sistrix.json';
+import * as sistrixMcp from './de/sistrix-mcp.json';
 import * as superchat from './de/superchat.json';
 import * as teamviewer from './de/teamviewer.json';
 import * as timetac from './de/timetac.json';
@@ -125,6 +127,7 @@ import * as browserbase from './intl/browserbase.json';
 import * as bubble from './intl/bubble.json';
 import * as buffer from './intl/buffer.json';
 import * as bugsnag from './intl/bugsnag.json';
+import * as calcom from './intl/calcom.json';
 import * as calendly from './intl/calendly.json';
 import * as canva from './intl/canva.json';
 import * as chargebee from './intl/chargebee.json';
@@ -145,6 +148,7 @@ import * as copper from './intl/copper.json';
 import * as crisp from './intl/crisp.json';
 import * as customerIo from './intl/customer-io.json';
 import * as customily from './intl/customily.json';
+import * as dadata from './intl/dadata.json';
 import * as daftra from './intl/daftra.json';
 import * as databricks from './intl/databricks.json';
 import * as datadog from './intl/datadog.json';
@@ -181,6 +185,7 @@ import * as fathom from './intl/fathom.json';
 import * as fhir from './intl/fhir.json';
 import * as figma from './intl/figma.json';
 import * as fillout from './intl/fillout.json';
+import * as finnhub from './intl/finnhub.json';
 import * as firebase from './intl/firebase.json';
 import * as firecrawl from './intl/firecrawl.json';
 import * as fireflies from './intl/fireflies.json';
@@ -258,6 +263,7 @@ import * as judgeMe from './intl/judge-me.json';
 import * as kashflow from './intl/kashflow.json';
 import * as keycrm from './intl/keycrm.json';
 import * as kieAi from './intl/kie-ai.json';
+import * as kittl from './intl/kittl.json';
 import * as klaviyo from './intl/klaviyo.json';
 import * as kommo from './intl/kommo.json';
 import * as koreaLaw from './intl/korea-law.json';
@@ -326,7 +332,9 @@ import * as oddsApi from './intl/odds-api.json';
 import * as odoo from './intl/odoo.json';
 import * as odooJsonrpc from './intl/odoo-jsonrpc.json';
 import * as odooMcp from './intl/odoo-mcp.json';
+import * as olx from './intl/olx.json';
 import * as omnisend from './intl/omnisend.json';
+import * as onecEnterprise from './intl/onec-enterprise.json';
 import * as onesignal from './intl/onesignal.json';
 import * as openai from './intl/openai.json';
 import * as opentable from './intl/opentable.json';
@@ -339,6 +347,7 @@ import * as ozon from './intl/ozon.json';
 import * as pagerduty from './intl/pagerduty.json';
 import * as pancake from './intl/pancake.json';
 import * as pandadoc from './intl/pandadoc.json';
+import * as payhip from './intl/payhip.json';
 import * as paypal from './intl/paypal.json';
 import * as pcloud from './intl/pcloud.json';
 import * as peopleDataLabs from './intl/people-data-labs.json';
@@ -769,6 +778,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   haufeX360 as unknown as AdapterDefinition,
   hereGeocoding as unknown as AdapterDefinition,
   hrworks as unknown as AdapterDefinition,
+  idealo as unknown as AdapterDefinition,
   immobilienscout24 as unknown as AdapterDefinition,
   jtlFfn as unknown as AdapterDefinition,
   jtlWawi as unknown as AdapterDefinition,
@@ -800,6 +810,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   shipcloud as unknown as AdapterDefinition,
   shopware6 as unknown as AdapterDefinition,
   sistrix as unknown as AdapterDefinition,
+  sistrixMcp as unknown as AdapterDefinition,
   superchat as unknown as AdapterDefinition,
   teamviewer as unknown as AdapterDefinition,
   timetac as unknown as AdapterDefinition,
@@ -867,6 +878,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   bubble as unknown as AdapterDefinition,
   buffer as unknown as AdapterDefinition,
   bugsnag as unknown as AdapterDefinition,
+  calcom as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
   canva as unknown as AdapterDefinition,
   chargebee as unknown as AdapterDefinition,
@@ -887,6 +899,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   crisp as unknown as AdapterDefinition,
   customerIo as unknown as AdapterDefinition,
   customily as unknown as AdapterDefinition,
+  dadata as unknown as AdapterDefinition,
   daftra as unknown as AdapterDefinition,
   databricks as unknown as AdapterDefinition,
   datadog as unknown as AdapterDefinition,
@@ -923,6 +936,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   fhir as unknown as AdapterDefinition,
   figma as unknown as AdapterDefinition,
   fillout as unknown as AdapterDefinition,
+  finnhub as unknown as AdapterDefinition,
   firebase as unknown as AdapterDefinition,
   firecrawl as unknown as AdapterDefinition,
   fireflies as unknown as AdapterDefinition,
@@ -1000,6 +1014,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   kashflow as unknown as AdapterDefinition,
   keycrm as unknown as AdapterDefinition,
   kieAi as unknown as AdapterDefinition,
+  kittl as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
   kommo as unknown as AdapterDefinition,
   koreaLaw as unknown as AdapterDefinition,
@@ -1068,7 +1083,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   odoo as unknown as AdapterDefinition,
   odooJsonrpc as unknown as AdapterDefinition,
   odooMcp as unknown as AdapterDefinition,
+  olx as unknown as AdapterDefinition,
   omnisend as unknown as AdapterDefinition,
+  onecEnterprise as unknown as AdapterDefinition,
   onesignal as unknown as AdapterDefinition,
   openai as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
@@ -1081,6 +1098,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   pagerduty as unknown as AdapterDefinition,
   pancake as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
+  payhip as unknown as AdapterDefinition,
   paypal as unknown as AdapterDefinition,
   pcloud as unknown as AdapterDefinition,
   peopleDataLabs as unknown as AdapterDefinition,

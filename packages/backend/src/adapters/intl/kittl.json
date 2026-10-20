@@ -1,0 +1,171 @@
+{
+  "slug": "kittl",
+  "name": "Kittl",
+  "description": "Create designs in Kittl from Claude, ChatGPT or Copilot through Kittl's official MCP server: generate images and videos, run Kittl AI workflows for ads, product shots and packaging, build brand kits from a website, render mockups, remove backgrounds, upscale and vectorize, and work with the Kittl workspace.",
+  "instructions": "This connector bridges the **Kittl MCP server**, Kittl's official remote MCP server at `https://mcp.kittl.com/mcp`. Kittl's own server provides the tools: image and video generation with the models Kittl offers, Kittl's AI workflows (ads, product shots, thumbnails, packaging), brand kits built from a website, product mockups, background removal, upscaling and vectorizing, and the user's workspace (projects, folders, library, team and remaining credits). AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**The tools come from the server.** Kittl signs you in before it lists anything, so the catalog's list (the tools shown on Kittl's MCP page) is installed first; once you authorize, AnythingMCP asks Kittl's server for its tools and takes their current names, descriptions and schemas, including the workspace tools (projects, folders, brand kits, team, credit balance) that are not in the snapshot. Kittl adds tools over time: open the connector and click **Discover tools** to pick up new ones.\n\n**Plan and credits**: connecting is free and works with any Kittl account, including the free plan. Generations, workflows and image edits spend the same **Kittl credits** as in the Kittl editor, so what you can make depends on the plan. **Before every generation, workflow run, mockup, background removal, upscale or vectorize, tell the user what will run (tool, model or workflow, number of results) and wait for a yes.** Never start several generations in a loop without asking. When the server has a tool for the remaining credits, check it before a large batch.\n\n**Setup (about 2 minutes)**:\n1. Install the connector. There is nothing to paste: no API key, client id or secret.\n2. On the connector page click **Authorize with Provider**. AnythingMCP reads Kittl's OAuth metadata, registers itself as a client (dynamic client registration) and sends you to the Kittl sign-in.\n3. Sign in with your Kittl account and approve access. Back in AnythingMCP the tools are listed again from the server.\n\n**Whose account it is**: the person who authorizes is the Kittl user for every caller of this connector. Everything the AI makes is saved in that user's Kittl workspace and paid from that account's credits. If several people share the connector, decide whose account it is before you authorize; a team account is usually the right choice. To cut access, delete the connector or its authorization in AnythingMCP. When calls start failing with an authorization error after it worked, click **Authorize with Provider** again.\n\n**Working with it**: results come back as links or images and are also saved in Kittl, so tell the user where to find them. For on-brand work, create or pick a brand kit first (`kittl_create_brand_kit_from_url`) and pass it to the workflow. Use `kittl_list_ai_workflow_presets` before `kittl_run_ai_workflow` to choose a workflow and see its inputs. Images the user wants to edit must be reachable by Kittl (a public URL or a file in their Kittl library). Do not generate images of real people without their consent or content that breaks Kittl's terms.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "kittl",
+  "docsUrl": "https://www.kittl.com/mcp",
+  "requiredEnvVars": [],
+  "envVarMeta": {},
+  "prerequisites": "- A Kittl account; connecting is free, while generations and image edits use the Kittl credits of your plan.\n- After saving, you click Authorize with Provider and sign in with Kittl; whoever signs in is the Kittl user (and credit balance) for everyone who uses this connector.",
+  "connector": {
+    "name": "Kittl",
+    "type": "MCP",
+    "baseUrl": "https://mcp.kittl.com/mcp",
+    "authType": "OAUTH2",
+    "config": {
+      "mcpToolPrefix": "kittl_",
+      "mcpOAuth": {
+        "registration": "dcr"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "kittl_list_ai_workflow_presets",
+      "description": "List Kittl's ready-made AI workflows (ads, product shots, thumbnails, packaging and more) with the inputs each one needs. Free; read it before kittl_run_ai_workflow. The argument schema comes from Kittl's server once you have authorized.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "list-ai-workflow-presets",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "kittl_run_ai_workflow",
+      "description": "Run one of Kittl's AI workflows from kittl_list_ai_workflow_presets with the user's inputs (prompt, images, brand kit) and return the results, which are also saved in the user's Kittl workspace. COSTS KITTL CREDITS from the user's plan: say which workflow runs and how many results, and wait for a yes. The argument schema comes from Kittl's server once you have authorized.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "run-ai-workflow",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "kittl_generate_media",
+      "description": "Generate images, or short videos from a prompt or a still, with one of the image and video models Kittl offers (picked automatically or by name). Results are saved to the user's Kittl workspace. COSTS KITTL CREDITS; video costs more than images. Confirm the prompt, model and number of results and wait for a yes. The argument schema comes from Kittl's server once you have authorized.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "generate-media",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "kittl_create_brand_kit_from_url",
+      "description": "Build a Kittl brand kit from a website address: Kittl reads the site's logo, colours and fonts and saves them as a brand kit in the user's workspace for on-brand designs. Creates a new brand kit; confirm the URL first. The argument schema comes from Kittl's server once you have authorized.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "create-brand-kit-from-url",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "kittl_render_mockup",
+      "description": "Place a design on a product mockup (t-shirt, hoodie, mug, poster, packaging) and return the rendered image, saved in the user's Kittl workspace. May use Kittl credits; confirm before running. The argument schema comes from Kittl's server once you have authorized.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "render-mockup",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "kittl_remove_image_background",
+      "description": "Remove the background of an image and return a cut-out with transparency, saved to the user's Kittl uploads. Uses Kittl credits; confirm before running. The argument schema comes from Kittl's server once you have authorized.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "remove-image-background",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "kittl_upscale_image",
+      "description": "Upscale an image for print (for example 4x) and return the larger version, saved to the user's Kittl uploads. Uses Kittl credits; confirm before running. The argument schema comes from Kittl's server once you have authorized.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "upscale-image",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "kittl_vectorize_image",
+      "description": "Convert a raster image, sketch or logo into a vector (SVG) that prints sharp at any size, saved to the user's Kittl workspace. Uses Kittl credits; confirm before running. The argument schema comes from Kittl's server once you have authorized.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "vectorize-image",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    }
+  ]
+}
