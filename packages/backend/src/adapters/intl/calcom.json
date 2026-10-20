@@ -1,0 +1,648 @@
+{
+  "slug": "calcom",
+  "name": "Cal.com",
+  "aliases": [
+    "Cal",
+    "cal.eu"
+  ],
+  "description": "Read a Cal.com scheduling account from Claude, ChatGPT or Copilot: event types, bookings with attendees, Cal Video recordings and transcripts, free time slots, availability schedules and connected calendars. Booking, rescheduling and cancelling are included but installed switched off.",
+  "instructions": "## Cal.com\nThis connector uses the **Cal.com API v2** (`https://api.cal.com/v2`, or `https://api.cal.eu/v2` for accounts in Cal.com's EU region) with a personal API key: the key owner's profile, event types, bookings with attendees, Cal Video recordings and transcripts, free slots, availability schedules and connected calendars. Creating, rescheduling and cancelling bookings are installed switched off.\n\n**Setup (about 2 minutes)**\n1. Sign in to Cal.com and open **Settings > Developer > API Keys** (https://app.cal.com/settings/developer/api-keys, or app.cal.eu for the EU region).\n2. Click **New**, give the key a name (for example AnythingMCP) and an expiry, and copy it. It starts with `cal_live_` (or `cal_test_` for test mode) and is shown once. Paste it into `CALCOM_API_KEY`.\n3. Set `CALCOM_API_HOST` to `https://api.cal.com`, or `https://api.cal.eu` if you sign in at app.cal.eu. A key only works on its own region (401 on the other one).\n\nThe key acts as the user who created it: it sees that user's event types and bookings, plus team bookings where the user is a host or admin. It is sent as `Authorization: Bearer <key>`.\n\n**Versioned endpoints.** Cal.com picks the response format by a `cal-api-version` header per endpoint (bookings 2024-08-13, event types 2024-06-14, slots 2024-09-04, schedules 2024-06-11). The tools send the right one; without it Cal.com answers in an older format.\n\n**Which tool first**\n- Who am I and which key: `calcom_get_me`.\n- Meetings: `calcom_list_bookings` (status `upcoming`, `past`, `cancelled`, `unconfirmed`; dates in ISO 8601) then `calcom_get_booking` with the booking **uid** (a string, not the numeric id).\n- Finding a time: `calcom_list_event_types` for the event type id, then `calcom_get_available_slots` with `start`, `end` and the `timeZone` the user thinks in. Slot times come back in that time zone; booking start times must be sent in UTC.\n- Working hours: `calcom_get_default_schedule` or `calcom_list_schedules`.\n\n**Pagination.** `calcom_list_bookings` pages with `take` and `skip`; the answer has `pagination.totalItems` and `hasNextPage`.\n\n**Writes (off by default).** `calcom_create_booking`, `calcom_reschedule_booking` and `calcom_cancel_booking` email real attendees and change real calendars. An admin can turn them on per tool. Before each call show the user the event type, time (in their time zone), attendee and reason, and wait for a yes. Nothing here takes or refunds payments.\n\n**Errors.** 401 `Invalid API Key`: wrong, expired or revoked key, or the key belongs to the other region. 404: wrong uid or id, or not visible to this user. 400: the `message` names the bad field (often a start time that is not a free slot).\n\n**Limits.** 120 requests a minute per API key by default; 429 means wait a minute.",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "calcom",
+  "docsUrl": "https://cal.com/docs/api-reference/v2/introduction",
+  "requiredEnvVars": [
+    "CALCOM_API_HOST",
+    "CALCOM_API_KEY"
+  ],
+  "prerequisites": "A Cal.com account (any plan) to create a personal API key under Settings > Developer > API Keys. The key acts as that user.",
+  "envVarMeta": {
+    "CALCOM_API_HOST": {
+      "label": "API host (region)",
+      "kind": "address",
+      "help": "https://api.cal.com for accounts at app.cal.com, https://api.cal.eu for accounts in the EU region at app.cal.eu. The connector adds /v2 itself.",
+      "example": "https://api.cal.com",
+      "pattern": "^https://api\\.cal\\.(com|eu)$",
+      "patternMessage": "Use exactly https://api.cal.com or https://api.cal.eu, without /v2, a path or a trailing slash."
+    },
+    "CALCOM_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Cal.com > Settings > Developer > API Keys > New. Copy the key when it is shown; it starts with cal_live_ (or cal_test_).",
+      "link": "https://app.cal.com/settings/developer/api-keys",
+      "pattern": "^cal_(live_|test_)?[A-Za-z0-9]{16,}$",
+      "patternMessage": "Paste the key alone, without Bearer: it starts with cal_live_ or cal_test_."
+    }
+  },
+  "verifyHints": {
+    "401": "Cal.com refused the API key. Check that it was copied whole, has not expired or been deleted under Settings > Developer > API Keys, and that CALCOM_API_HOST is your region (api.cal.eu for accounts at app.cal.eu).",
+    "403": "The key works, but this user may not see that booking, event type or team. Use a key of the organizer or of a team admin.",
+    "404": "Cal.com does not know this booking uid or id for the key's user. Booking tools need the uid string from calcom_list_bookings, not the numeric id.",
+    "rate_limited": "Cal.com allows about 120 requests a minute per API key. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "calcom_get_me"
+  },
+  "connector": {
+    "name": "Cal.com API v2",
+    "type": "REST",
+    "baseUrl": "{{CALCOM_API_HOST}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{CALCOM_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "calcom_get_me",
+      "description": "Read the Cal.com user the API key belongs to: id, username, email, name, time zone, week start, time format and default schedule id. The quickest check that the key and CALCOM_API_HOST belong together.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/me"
+      }
+    },
+    {
+      "name": "calcom_list_event_types",
+      "description": "List event types (the bookable meeting templates): id, title, slug, lengthInMinutes, description, locations, booking fields, buffers, minimum notice, scheduleId, hidden flag and bookingUrl. Without username it lists the key owner's own event types, hidden ones included. With username it lists that user's public event types; add eventSlug for one of them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Cal.com username whose event types to list (the part after cal.com/ in the booking link). Leave empty for your own."
+          },
+          "eventSlug": {
+            "type": "string",
+            "description": "Slug of one event type (e.g. 30min). Needs username."
+          },
+          "orgSlug": {
+            "type": "string",
+            "description": "Organization slug, only when the user belongs to a Cal.com organization."
+          },
+          "sortCreatedAt": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Order by creation date (oldest or newest first). Default: no explicit order."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/event-types",
+        "headers": {
+          "cal-api-version": "2024-06-14"
+        },
+        "queryParams": {
+          "username": "$username",
+          "eventSlug": "$eventSlug",
+          "orgSlug": "$orgSlug",
+          "sortCreatedAt": "$sortCreatedAt"
+        }
+      }
+    },
+    {
+      "name": "calcom_get_event_type",
+      "description": "Get one event type by its numeric id with all settings: length and allowed durations, locations, booking fields, buffers, booking window, limits, seats, confirmation policy, hosts and the schedule it uses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventTypeId": {
+            "type": "string",
+            "description": "Numeric event type id from calcom_list_event_types (e.g. 4403769)."
+          }
+        },
+        "required": [
+          "eventTypeId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/event-types/{eventTypeId}",
+        "headers": {
+          "cal-api-version": "2024-06-14"
+        }
+      }
+    },
+    {
+      "name": "calcom_list_bookings",
+      "description": "List bookings the key owner can see (as organizer, host or team admin), with uid, title, status, start and end, duration, event type, location or meeting URL, hosts, attendees with email and time zone, guests and booking field answers. Filter by status, attendee, event type, team or date ranges; page with take and skip (pagination.totalItems and hasNextPage in the answer).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: upcoming, recurring, past, cancelled, unconfirmed."
+          },
+          "attendeeEmail": {
+            "type": "string",
+            "description": "Only bookings with this attendee email."
+          },
+          "attendeeName": {
+            "type": "string",
+            "description": "Only bookings with this attendee name."
+          },
+          "eventTypeIds": {
+            "type": "string",
+            "description": "Comma-separated event type ids."
+          },
+          "teamIds": {
+            "type": "string",
+            "description": "Comma-separated team ids the key owner belongs to."
+          },
+          "afterStart": {
+            "type": "string",
+            "description": "Bookings starting after this date or time, ISO 8601 (e.g. 2026-10-01 or 2026-10-01T00:00:00Z)."
+          },
+          "beforeEnd": {
+            "type": "string",
+            "description": "Bookings ending before this date or time, ISO 8601."
+          },
+          "afterCreatedAt": {
+            "type": "string",
+            "description": "Bookings created after this date or time, ISO 8601."
+          },
+          "beforeCreatedAt": {
+            "type": "string",
+            "description": "Bookings created before this date or time, ISO 8601."
+          },
+          "afterUpdatedAt": {
+            "type": "string",
+            "description": "Bookings changed after this date or time, ISO 8601. Good for polling changes."
+          },
+          "sortStart": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort by start time."
+          },
+          "sortCreated": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort by booking creation time."
+          },
+          "take": {
+            "type": "integer",
+            "description": "Bookings per page (Cal.com default 100).",
+            "default": 25
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of bookings to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bookings",
+        "headers": {
+          "cal-api-version": "2024-08-13"
+        },
+        "queryParams": {
+          "status": "$status",
+          "attendeeEmail": "$attendeeEmail",
+          "attendeeName": "$attendeeName",
+          "eventTypeIds": "$eventTypeIds",
+          "teamsIds": "$teamIds",
+          "afterStart": "$afterStart",
+          "beforeEnd": "$beforeEnd",
+          "afterCreatedAt": "$afterCreatedAt",
+          "beforeCreatedAt": "$beforeCreatedAt",
+          "afterUpdatedAt": "$afterUpdatedAt",
+          "sortStart": "$sortStart",
+          "sortCreated": "$sortCreated",
+          "take": "$take",
+          "skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "calcom_get_booking",
+      "description": "Get one booking by uid: status, start and end, event type, location or meeting URL, hosts, attendees, guests, booking field answers, cancellation or rescheduling reason and metadata. The uid of a recurring booking returns all its occurrences.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bookingUid": {
+            "type": "string",
+            "description": "Booking uid from calcom_list_bookings (a string like 3vxuDTrPz8ZtVTeEc1sMrk), not the numeric id."
+          }
+        },
+        "required": [
+          "bookingUid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bookings/{bookingUid}",
+        "headers": {
+          "cal-api-version": "2024-08-13"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "calcom_get_booking_recordings",
+      "description": "List the Cal Video recordings of a booking with their download links. Only the organizer, a team admin or an organization admin can read them; meetings held on Zoom, Google Meet or Teams have no recordings here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bookingUid": {
+            "type": "string",
+            "description": "Booking uid from calcom_list_bookings."
+          }
+        },
+        "required": [
+          "bookingUid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bookings/{bookingUid}/recordings",
+        "headers": {
+          "cal-api-version": "2024-08-13"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "calcom_get_booking_transcripts",
+      "description": "Get download links for the Cal Video transcripts of a booking (made when someone clicked Transcribe during the call). The links work for one hour; call again for fresh ones.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bookingUid": {
+            "type": "string",
+            "description": "Booking uid from calcom_list_bookings."
+          }
+        },
+        "required": [
+          "bookingUid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bookings/{bookingUid}/transcripts",
+        "headers": {
+          "cal-api-version": "2024-08-13"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "calcom_get_available_slots",
+      "description": "Get the free time slots of an event type between two dates, after calendars, buffers, minimum notice and limits are applied. Identify the event type by eventTypeId, or by eventTypeSlug plus username (or teamSlug). The answer maps each date to a list of slots; format range adds end times. Use it before proposing times to someone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "First day or time to check, ISO 8601 in UTC (e.g. 2026-10-27 or 2026-10-27T08:00:00Z)."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day or time to check, ISO 8601 in UTC (e.g. 2026-10-31). A date alone means the end of that day."
+          },
+          "eventTypeId": {
+            "type": "integer",
+            "description": "Numeric event type id from calcom_list_event_types."
+          },
+          "eventTypeSlug": {
+            "type": "string",
+            "description": "Event type slug (e.g. 30min), with username or teamSlug instead of eventTypeId."
+          },
+          "username": {
+            "type": "string",
+            "description": "Owner's username, with eventTypeSlug."
+          },
+          "teamSlug": {
+            "type": "string",
+            "description": "Owning team's slug, with eventTypeSlug, for team event types."
+          },
+          "organizationSlug": {
+            "type": "string",
+            "description": "Organization slug, when the user or team is in a Cal.com organization."
+          },
+          "timeZone": {
+            "type": "string",
+            "description": "IANA time zone for the returned slot times (e.g. Europe/Berlin). Default UTC."
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Length in minutes, for event types that offer several durations."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "time",
+              "range"
+            ],
+            "description": "time (default): start times only; range: start and end."
+          },
+          "bookingUidToReschedule": {
+            "type": "string",
+            "description": "When looking for a new time for an existing booking: its uid, so its current slot counts as free."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/slots",
+        "headers": {
+          "cal-api-version": "2024-09-04"
+        },
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "eventTypeId": "$eventTypeId",
+          "eventTypeSlug": "$eventTypeSlug",
+          "username": "$username",
+          "teamSlug": "$teamSlug",
+          "organizationSlug": "$organizationSlug",
+          "timeZone": "$timeZone",
+          "duration": "$duration",
+          "format": "$format",
+          "bookingUidToReschedule": "$bookingUidToReschedule"
+        }
+      }
+    },
+    {
+      "name": "calcom_list_schedules",
+      "description": "List the key owner's availability schedules: id, name, time zone, whether it is the default, weekly availability (days with start and end times) and date overrides.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/schedules",
+        "headers": {
+          "cal-api-version": "2024-06-11"
+        }
+      }
+    },
+    {
+      "name": "calcom_get_default_schedule",
+      "description": "Get the key owner's default availability schedule: time zone, weekly working hours and date overrides. Event types without their own schedule use this one.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/schedules/default",
+        "headers": {
+          "cal-api-version": "2024-06-11"
+        }
+      }
+    },
+    {
+      "name": "calcom_get_schedule",
+      "description": "Get one availability schedule by id: name, time zone, weekly availability and date overrides.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scheduleId": {
+            "type": "integer",
+            "description": "Schedule id from calcom_list_schedules or an event type's scheduleId."
+          }
+        },
+        "required": [
+          "scheduleId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/schedules/{scheduleId}",
+        "headers": {
+          "cal-api-version": "2024-06-11"
+        }
+      }
+    },
+    {
+      "name": "calcom_list_calendars",
+      "description": "List the calendars connected to the key owner's Cal.com account (Google, Outlook, Apple, CalDAV) with the ones checked for conflicts and the destination calendar where new bookings are written.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/calendars"
+      }
+    },
+    {
+      "name": "calcom_create_booking",
+      "description": "Book a meeting on an event type for an attendee. The attendee and the host get confirmation emails and calendar invitations, and paid event types may ask the attendee to pay. Check the time with calcom_get_available_slots first, show the user the event type, time, attendee and guests, and wait for a yes. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start time in UTC, ISO 8601 (e.g. 2026-10-27T09:00:00Z), taken from calcom_get_available_slots."
+          },
+          "eventTypeId": {
+            "type": "integer",
+            "description": "Numeric event type id. Or give eventTypeSlug with username or teamSlug."
+          },
+          "eventTypeSlug": {
+            "type": "string",
+            "description": "Event type slug, with username or teamSlug."
+          },
+          "username": {
+            "type": "string",
+            "description": "Owner's username, with eventTypeSlug."
+          },
+          "teamSlug": {
+            "type": "string",
+            "description": "Owning team's slug, with eventTypeSlug."
+          },
+          "attendeeName": {
+            "type": "string",
+            "description": "Attendee's full name."
+          },
+          "attendeeEmail": {
+            "type": "string",
+            "description": "Attendee's email; the confirmation goes there."
+          },
+          "attendeeTimeZone": {
+            "type": "string",
+            "description": "Attendee's IANA time zone (e.g. Europe/Berlin)."
+          },
+          "attendeePhoneNumber": {
+            "type": "string",
+            "description": "Attendee's phone in international format, when the event type asks for it."
+          },
+          "attendeeLanguage": {
+            "type": "string",
+            "description": "Language of the emails to the attendee, e.g. en, de, it."
+          },
+          "guests": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extra guest emails."
+          },
+          "lengthInMinutes": {
+            "type": "integer",
+            "description": "Length, for event types with several durations."
+          },
+          "bookingFieldsResponses": {
+            "type": "object",
+            "description": "Answers to the event type's custom booking fields, keyed by field slug."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Your own key-value data stored on the booking (at most 50 keys)."
+          }
+        },
+        "required": [
+          "start",
+          "attendeeName",
+          "attendeeEmail",
+          "attendeeTimeZone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/bookings",
+        "headers": {
+          "cal-api-version": "2024-08-13"
+        },
+        "bodyMapping": {
+          "start": "$start",
+          "eventTypeId": "$eventTypeId",
+          "eventTypeSlug": "$eventTypeSlug",
+          "username": "$username",
+          "teamSlug": "$teamSlug",
+          "attendee": {
+            "name": "$attendeeName",
+            "email": "$attendeeEmail",
+            "timeZone": "$attendeeTimeZone",
+            "phoneNumber": "$attendeePhoneNumber",
+            "language": "$attendeeLanguage"
+          },
+          "guests": "$guests",
+          "lengthInMinutes": "$lengthInMinutes",
+          "bookingFieldsResponses": "$bookingFieldsResponses",
+          "metadata": "$metadata"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "calcom_reschedule_booking",
+      "description": "Move a booking to a new start time. Cal.com cancels the old booking, creates a new one with a new uid and emails the attendees. Check the new time with calcom_get_available_slots (pass bookingUidToReschedule), confirm with the user and wait for a yes. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bookingUid": {
+            "type": "string",
+            "description": "Uid of the booking to move."
+          },
+          "start": {
+            "type": "string",
+            "description": "New start time in UTC, ISO 8601."
+          },
+          "reschedulingReason": {
+            "type": "string",
+            "description": "Reason shown to the attendees."
+          },
+          "rescheduledBy": {
+            "type": "string",
+            "description": "Email of who reschedules; only for bookings that need confirmation (the owner's email skips it)."
+          }
+        },
+        "required": [
+          "bookingUid",
+          "start"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/bookings/{bookingUid}/reschedule",
+        "headers": {
+          "cal-api-version": "2024-08-13"
+        },
+        "encodePathParams": true,
+        "bodyMapping": {
+          "start": "$start",
+          "reschedulingReason": "$reschedulingReason",
+          "rescheduledBy": "$rescheduledBy"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "calcom_cancel_booking",
+      "description": "Cancel a booking. Attendees get a cancellation email and the calendar event is removed; it cannot be undone. A recurring booking's uid cancels every occurrence. Show the user which booking it is and wait for a yes. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bookingUid": {
+            "type": "string",
+            "description": "Uid of the booking to cancel."
+          },
+          "cancellationReason": {
+            "type": "string",
+            "description": "Reason shown in the cancellation email."
+          },
+          "cancelSubsequentBookings": {
+            "type": "boolean",
+            "description": "Recurring bookings only: true cancels this occurrence and all later ones."
+          }
+        },
+        "required": [
+          "bookingUid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/bookings/{bookingUid}/cancel",
+        "headers": {
+          "cal-api-version": "2024-08-13"
+        },
+        "encodePathParams": true,
+        "bodyMapping": {
+          "cancellationReason": "$cancellationReason",
+          "cancelSubsequentBookings": "$cancelSubsequentBookings"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

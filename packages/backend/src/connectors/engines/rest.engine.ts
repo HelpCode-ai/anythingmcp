@@ -149,6 +149,11 @@ export class RestEngine {
       // Response headers to hand back alongside the body, e.g. ["link"] for
       // cursor pagination. Opt-in per tool; see response-headers.util.ts.
       exposeHeaders?: string[];
+      // How a space in a query value goes on the wire: `+` (the default,
+      // what every connector has always sent) or `%20`. Set only by the
+      // OData engine for a connector with `config.odata.querySpaces: "%20"`
+      // (1C:Enterprise answers 400 to `+` inside $filter).
+      querySpaces?: '%20';
       // Hand back an XML body as the text it arrived as instead of parsing
       // it into an object. The OData engine needs `$metadata` verbatim.
       rawBody?: boolean;
@@ -297,7 +302,10 @@ export class RestEngine {
       // most standards-following APIs actually parse. The bracketed form is
       // silently ignored by them, so the request succeeds and quietly
       // returns the wrong columns. Serialize the standard way instead.
-      axiosConfig.paramsSerializer = serializeRepeatedParams;
+      axiosConfig.paramsSerializer =
+        endpointMapping.querySpaces === '%20'
+          ? serializeRepeatedParamsSpaces20
+          : serializeRepeatedParams;
     }
 
     // Request body
@@ -1165,12 +1173,14 @@ function safeEntries(params: URLSearchParams): Record<string, string> {
  * date, time or filter query parameter, and an API that string-matches its
  * own filter grammar is entitled to reject the re-spelled form.
  */
-function encodeQueryComponent(value: string): string {
-  return encodeURIComponent(value)
+function encodeQueryComponent(value: string, spaces: '+' | '%20' = '+'): string {
+  const encoded = encodeURIComponent(value)
     .replace(/%3A/gi, ':')
     .replace(/%24/g, '$')
-    .replace(/%2C/gi, ',')
-    .replace(/%20/g, '+');
+    .replace(/%2C/gi, ',');
+  // `%20` is opt-in (see `querySpaces`); a literal `+` in a value is still
+  // `%2B` either way.
+  return spaces === '%20' ? encoded : encoded.replace(/%20/g, '+');
 }
 
 /**
@@ -1252,11 +1262,28 @@ export function renderExtendedHmacTemplate(
 export function serializeRepeatedParams(
   params: Record<string, unknown>,
 ): string {
+  return serializeParams(params, '+');
+}
+
+/**
+ * serializeRepeatedParams with a space written as `%20` instead of `+`. Only
+ * used for a request that asks for it (`querySpaces: '%20'`).
+ */
+export function serializeRepeatedParamsSpaces20(
+  params: Record<string, unknown>,
+): string {
+  return serializeParams(params, '%20');
+}
+
+function serializeParams(
+  params: Record<string, unknown>,
+  spaces: '+' | '%20',
+): string {
   const parts: string[] = [];
   const push = (key: string, value: unknown) => {
     if (value === undefined || value === null) return;
     parts.push(
-      `${encodeQueryComponent(key)}=${encodeQueryComponent(String(value))}`,
+      `${encodeQueryComponent(key, spaces)}=${encodeQueryComponent(String(value), spaces)}`,
     );
   };
   // Every level below the top one is indexed: `k[0]`, `k[name]`.

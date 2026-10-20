@@ -87,6 +87,15 @@ x-backend: &backend
     - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
     - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.05}
     - SENTRY_VERIFY_TOKEN=${SENTRY_VERIFY_TOKEN:-}
+    # Prometheus /metrics — a separate listener, off by default (docs/operations/observability.md).
+    # METRICS_TOKEN is required once METRICS_ENABLED=true; the listener refuses to start without it.
+    # METRICS_TOOL_LABELS is always ignored here regardless of its value — no series may carry a
+    # connector id or tool name across tenant workspaces.
+    - METRICS_ENABLED=${METRICS_ENABLED:-false}
+    - METRICS_PORT=${METRICS_PORT:-9464}
+    - METRICS_HOST=${METRICS_HOST:-0.0.0.0}
+    - METRICS_TOKEN=${METRICS_TOKEN:-}
+    - METRICS_TOOL_LABELS=${METRICS_TOOL_LABELS:-false}
     - NEXT_PUBLIC_API_URL=https://${DOMAIN}
     - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
     - REDIS_URL=redis://redis:6379

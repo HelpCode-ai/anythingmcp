@@ -1,0 +1,559 @@
+{
+  "slug": "sistrix-mcp",
+  "name": "SISTRIX (MCP server)",
+  "aliases": [
+    "SISTRIX MCP",
+    "SISTRIX AI",
+    "Sichtbarkeitsindex MCP"
+  ],
+  "description": "Connect Claude, ChatGPT or Copilot to SISTRIX through SISTRIX's official MCP server: Visibility Index and history, ranking keywords and URLs, competitors, keyword data and SERPs, backlinks, AI visibility in ChatGPT and AI Overviews, and your Optimizer projects. Sign in with your SISTRIX login; no API key and no API credits.",
+  "region": "de",
+  "category": "analytics",
+  "icon": "sistrix",
+  "docsUrl": "https://www.sistrix.com/ask-sistrix/ai-basics/mcp/",
+  "prerequisites": "- A SISTRIX account (any package); no API key needed.\n- After saving, click Authorize with Provider and sign in with SISTRIX; whoever signs in is the SISTRIX user for everyone who uses this connector.\n- Requests count against SISTRIX's daily fair-use MCP quota, not against API credits.",
+  "instructions": "This connector bridges the **SISTRIX MCP server**, SISTRIX's official remote MCP server at `https://api.sistrix.com/mcp`. SISTRIX's own server provides the tools: the Visibility Index (Sichtbarkeitsindex) and its history, ranking keywords and URLs, competitors, keyword data and SERPs, search intent, backlinks, AI visibility (brands and sources in ChatGPT, Gemini, AI Overviews and AI Mode answers, prompt trackers, topic research) and your Optimizer projects. AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**Which SISTRIX connector?**\n- **SISTRIX (MCP server)**, this one: sign in with your SISTRIX login, **no API key and no API credits**. SISTRIX opened its MCP server to every package; requests count against a generous daily fair-use quota instead.\n- **SISTRIX** (`sistrix`): the classic REST API with an API key (Plus plan and higher), which spends API credits on every call.\n\n**The tools come from the server.** SISTRIX signs you in before it lists anything, so the catalog's list is installed first; once you authorize, AnythingMCP asks the server for its tools and takes their current names, descriptions and schemas. SISTRIX groups its data into a few tools that each take a `view` parameter (for example `domain` with view `visindex`), and it adds datasets as new views: after SISTRIX announces new data, open the connector and click **Discover tools**.\n\n**Setup (about 2 minutes)**:\n1. Install the connector. There is nothing to paste: no API key, client id or secret.\n2. On the connector page click **Authorize with Provider**. AnythingMCP reads SISTRIX's OAuth metadata, registers itself as a client (dynamic client registration) and sends you to the SISTRIX Toolbox login.\n3. Sign in and approve access. Back in AnythingMCP the tools are listed again from the server.\n\n**Whose account it is**: the person who authorizes is the SISTRIX user for every caller of this connector, and the Optimizer projects and AI trackers are that account's. All tools read; nothing is changed in SISTRIX.\n\n**Working with the data**\n- `country` is a lowercase code (de, at, ch, us, fr...). SISTRIX uses **uk** for the United Kingdom; an unsupported code is not rejected but returns other data, so check it.\n- Visibility Index history is weekly by default; daily values are a rotating sample, so use weekly values to judge an update.\n- Search intent scores are four independent 0-100 values, not shares that add up to 100.\n- Project and tracker hashes are opaque: list them first (`project` view `overview`, `ai_tracker_overview`).\n- Error 7010 means the daily MCP quota is used up; it resets the next day. Error 1000 means no data for that query.\n- SISTRIX's terms do not allow passing its data on to third parties without permission.",
+  "requiredEnvVars": [],
+  "envVarMeta": {},
+  "connector": {
+    "name": "SISTRIX (MCP server)",
+    "type": "MCP",
+    "baseUrl": "https://api.sistrix.com/mcp",
+    "authType": "OAUTH2",
+    "config": {
+      "mcpToolPrefix": "sistrix_mcp_",
+      "mcpOAuth": {
+        "registration": "dcr"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "sistrix_mcp_domain",
+      "description": "SEO figures of any domain, host, directory or URL, chosen with view: visindex (Visibility Index now, at a date, or its weekly or daily history), visindex_overview (how far the history goes, all-time high and low), kwcount and kwcount_top10 (ranking keywords), urlcount (ranking URLs), ranking_distribution (keywords per results page), traffic_estimation (top URLs by estimated clicks), competitors, ideas and opportunities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain, host, directory or URL, e.g. example.com."
+          },
+          "view": {
+            "type": "string",
+            "description": "Which dataset.",
+            "enum": [
+              "visindex",
+              "visindex_overview",
+              "kwcount",
+              "kwcount_top10",
+              "urlcount",
+              "ranking_distribution",
+              "traffic_estimation",
+              "competitors",
+              "ideas",
+              "opportunities"
+            ]
+          },
+          "country": {
+            "type": "string",
+            "description": "Country as a lowercase two-letter code, e.g. de, at, ch, us; SISTRIX writes the United Kingdom as uk, not gb. Default de."
+          },
+          "history": {
+            "type": "boolean",
+            "description": "true for the history instead of the current value."
+          },
+          "daily": {
+            "type": "boolean",
+            "description": "Daily instead of weekly values (visindex)."
+          },
+          "date": {
+            "type": "string",
+            "description": "A past date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows to return."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip."
+          }
+        },
+        "required": [
+          "domain",
+          "view"
+        ]
+      },
+      "endpointMapping": {
+        "method": "domain",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "sistrix_mcp_keyword",
+      "description": "Data about a search term, chosen with view: seo (the organic results page, optionally only one domain), metrics (competition, CPC, search volume, clicks, device split), traffic, competition, searchintent (four independent 0-100 intent scores), serpfeatures and traffic_estimation (clicks per position).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "The search term, e.g. laufschuhe."
+          },
+          "view": {
+            "type": "string",
+            "description": "Which dataset.",
+            "enum": [
+              "seo",
+              "metrics",
+              "traffic",
+              "competition",
+              "searchintent",
+              "serpfeatures",
+              "traffic_estimation"
+            ]
+          },
+          "country": {
+            "type": "string",
+            "description": "Country as a lowercase two-letter code, e.g. de, at, ch, us; SISTRIX writes the United Kingdom as uk, not gb. Default de."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Only results of this domain (view seo)."
+          },
+          "date": {
+            "type": "string",
+            "description": "A past date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows to return."
+          }
+        },
+        "required": [
+          "keyword",
+          "view"
+        ]
+      },
+      "endpointMapping": {
+        "method": "keyword",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "sistrix_mcp_keyword_domain_seo",
+      "description": "Every keyword a domain ranks for, with position and URL; filter by position range, SERP feature or regular expressions on keyword, URL or host. The main tool for striking-distance and content gap work.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain, host, directory or URL."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country as a lowercase two-letter code, e.g. de, at, ch, us; SISTRIX writes the United Kingdom as uk, not gb. Default de."
+          },
+          "from_pos": {
+            "type": "integer",
+            "description": "Lowest position, e.g. 11."
+          },
+          "to_pos": {
+            "type": "integer",
+            "description": "Highest position, e.g. 20."
+          },
+          "regex_keyword": {
+            "type": "string",
+            "description": "Only keywords matching this regular expression."
+          },
+          "regex_url": {
+            "type": "string",
+            "description": "Only URLs matching this regular expression."
+          },
+          "search": {
+            "type": "string",
+            "description": "One exact keyword."
+          },
+          "date": {
+            "type": "string",
+            "description": "A past date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows to return."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "keyword_domain_seo",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "sistrix_mcp_links",
+      "description": "Backlinks of a domain (no country), chosen with view: list (individual links with source, target and anchor text, filterable by regular expressions), linktexts (anchor texts) and linktargets (most linked URLs with link, domain, host, network and IP counts).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain, host or URL."
+          },
+          "view": {
+            "type": "string",
+            "description": "Which dataset.",
+            "enum": [
+              "list",
+              "linktexts",
+              "linktargets"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows to return."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip."
+          }
+        },
+        "required": [
+          "domain",
+          "view"
+        ]
+      },
+      "endpointMapping": {
+        "method": "links",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "sistrix_mcp_ai_check",
+      "description": "How brands and domains appear in AI answers (ChatGPT, Gemini, AI Overviews, AI Mode, Perplexity and others) without a configured tracker, chosen with view: overview, competitors, prompts (prompts with the answer text), prompts_count (history per day) and sources (cited hosts, domains or URLs).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brands": {
+            "type": "array",
+            "description": "Brand names, up to 100.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "domains": {
+            "type": "array",
+            "description": "Domains, up to 100.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "view": {
+            "type": "string",
+            "description": "Which dataset.",
+            "enum": [
+              "overview",
+              "competitors",
+              "prompts",
+              "prompts_count",
+              "sources"
+            ]
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code; omit for all countries."
+          },
+          "model": {
+            "type": "string",
+            "description": "Only this AI model."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows to return."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number."
+          }
+        },
+        "required": [
+          "view"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ai_check",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "sistrix_mcp_ai_tracker_overview",
+      "description": "The AI visibility trackers (prompt tracking) set up in the SISTRIX account, with their hash and name. Call it before ai_tracker.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "ai_tracker_overview",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "sistrix_mcp_ai_tracker",
+      "description": "Results of one configured AI tracker by its hash: visibility, competitors, sources, prompts and their environment, chosen with view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hash": {
+            "type": "string",
+            "description": "Tracker hash from ai_tracker_overview."
+          },
+          "view": {
+            "type": "string",
+            "description": "Which dataset, as the server lists them."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows to return."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number."
+          }
+        },
+        "required": [
+          "hash"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ai_tracker",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "sistrix_mcp_ai_prompt_answers",
+      "description": "The answers AI models gave to one prompt, with the brands and sources they mention.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The prompt text."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code."
+          },
+          "model": {
+            "type": "string",
+            "description": "Only this AI model."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows to return."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ai_prompt_answers",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "sistrix_mcp_ai_topicresearch",
+      "description": "Topics and prompts people ask AI assistants around a keyword, for content and GEO planning.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Topic or keyword."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows to return."
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ai_topicresearch",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "sistrix_mcp_project",
+      "description": "Your SISTRIX Optimizer projects, chosen with view: overview (all projects with hash and name; start here), ranking (tracked keyword rankings), visibilityindex (project Visibility Index), competitors and keyword_serps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "string",
+            "description": "Which dataset.",
+            "enum": [
+              "overview",
+              "ranking",
+              "visibilityindex",
+              "competitors",
+              "keyword_serps"
+            ]
+          },
+          "hash": {
+            "type": "string",
+            "description": "Project hash from view overview (not needed for overview)."
+          },
+          "date": {
+            "type": "string",
+            "description": "A past date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows to return."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip."
+          }
+        },
+        "required": [
+          "view"
+        ]
+      },
+      "endpointMapping": {
+        "method": "project",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "sistrix_mcp_project_onpage",
+      "description": "The onpage crawl of an Optimizer project, chosen with view: meta, overview, crawl, issue, urls, links, resources, resources_usage and cookies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hash": {
+            "type": "string",
+            "description": "Project hash from project view overview."
+          },
+          "view": {
+            "type": "string",
+            "description": "Which dataset.",
+            "enum": [
+              "meta",
+              "overview",
+              "crawl",
+              "issue",
+              "urls",
+              "links",
+              "resources",
+              "resources_usage",
+              "cookies"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows to return."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip."
+          }
+        },
+        "required": [
+          "hash",
+          "view"
+        ]
+      },
+      "endpointMapping": {
+        "method": "project_onpage",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    }
+  ]
+}

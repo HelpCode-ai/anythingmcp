@@ -1,0 +1,715 @@
+{
+  "slug": "finnhub",
+  "name": "Finnhub",
+  "aliases": [
+    "Finnhub.io",
+    "Finnhub Stock API"
+  ],
+  "description": "Give your AI live market data from Finnhub: stock, forex and crypto quotes, company profiles and key financials, company and market news, analyst recommendations, earnings and IPO calendars, insider transactions, SEC filings and market status. Works on Finnhub's free plan; read-only.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "finnhub",
+  "docsUrl": "https://finnhub.io/docs/api",
+  "prerequisites": "A Finnhub API key; the free plan (60 calls a minute) covers every tool except price history candles, which need a paid plan.",
+  "instructions": "## Finnhub\nThis connector reads the **Finnhub Stock API** (`https://finnhub.io/api/v1`) with your own key: quotes, company profiles and key figures, company and market news, analyst recommendations, earnings, IPO calendars, insider transactions, SEC filings and reported financials, market status, and the symbol lists of forex and crypto exchanges. **Read-only**: it places no orders and moves no money.\n\n**Setup (about 1 minute)**\n1. Sign up at https://finnhub.io/register (free) and copy the API key from the dashboard (https://finnhub.io/dashboard).\n2. Paste it into `FINNHUB_API_KEY`. It is sent in the `X-Finnhub-Token` header, never in the URL.\n\n**Free plan**: 60 calls a minute and 30 a second. Every tool here works on it except `finnhub_get_stock_candles` (price history), which needs a paid plan and answers 403 on free keys. Some data is shorter on free keys: company news one year back, earnings surprises the last 4 quarters, the earnings calendar one month back. Real-time quotes cover US stocks; other markets need a paid plan.\n\n**How to work**\n- Resolve the ticker first with `finnhub_search_symbols` (US tickers are plain, e.g. AAPL; other exchanges have a suffix, e.g. SAP.DE, VOD.L).\n- Forex and crypto quotes use the exchange symbol: list providers with `finnhub_list_forex_exchanges` / `finnhub_list_crypto_exchanges`, then their pairs, and pass e.g. `OANDA:EUR_USD` or `BINANCE:BTCUSDT` to `finnhub_get_quote`.\n- Quote fields are short: c current, d change, dp percent change, h high, l low, o open, pc previous close, t time in Unix seconds. Market capitalisation and shares outstanding in profiles are in millions.\n- Dates are YYYY-MM-DD; candles take Unix seconds.\n- Errors: 401 means the key is wrong; 403 \"You don't have access to this resource\" means the data is not on your plan; 429 means the per-minute limit was reached.\n\nMarket data is for information; tell the user it is not investment advice when they ask what to buy or sell.",
+  "requiredEnvVars": [
+    "FINNHUB_API_KEY"
+  ],
+  "envVarMeta": {
+    "FINNHUB_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "finnhub.io > Dashboard: the API key shown after signing up (free). Sent in the X-Finnhub-Token header.",
+      "link": "https://finnhub.io/dashboard",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "patternMessage": "Paste the API key alone, without token= or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Finnhub refused the API key. Copy it again from https://finnhub.io/dashboard.",
+    "403": "Finnhub accepted the key but this data is not on your plan (premium endpoint).",
+    "429": "Finnhub's rate limit (60 calls a minute on the free plan) was reached. Wait a minute."
+  },
+  "connector": {
+    "name": "Finnhub",
+    "type": "REST",
+    "baseUrl": "https://finnhub.io/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Finnhub-Token",
+      "apiKey": "{{FINNHUB_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "probe": {
+    "tool": "finnhub_get_market_status",
+    "params": {
+      "exchange": "US"
+    }
+  },
+  "tools": [
+    {
+      "name": "finnhub_search_symbols",
+      "description": "Find tickers by company name, symbol, ISIN or CUSIP: symbol, display symbol, description and security type. Start here when the user names a company. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Name, symbol, ISIN or CUSIP, e.g. apple or US0378331005."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Limit to one exchange code, e.g. US."
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q",
+          "exchange": "$exchange"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_quote",
+      "description": "Latest price of a stock, ETF, forex or crypto symbol: current (c), change (d), percent change (dp), day high (h) and low (l), open (o), previous close (pc) and time (t, Unix seconds). Real time for US stocks on the free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Symbol, e.g. AAPL, or for crypto and forex the exchange symbol such as BINANCE:BTCUSDT or OANDA:EUR_USD."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quote",
+        "queryParams": {
+          "symbol": "$symbol"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_company_profile",
+      "description": "Company profile: name, country, currency, exchange, industry, IPO date, logo, market capitalisation (millions), shares outstanding (millions), phone and website. By symbol, ISIN or CUSIP. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          },
+          "isin": {
+            "type": "string",
+            "description": "ISIN instead of the symbol."
+          },
+          "cusip": {
+            "type": "string",
+            "description": "CUSIP instead of the symbol."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/profile2",
+        "queryParams": {
+          "symbol": "$symbol",
+          "isin": "$isin",
+          "cusip": "$cusip"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_basic_financials",
+      "description": "Key figures of a company: 52-week high and low, beta, P/E, P/B, EPS, margins, ROE, dividend yield and more (metric), with annual and quarterly series (series). Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/metric",
+        "queryParams": {
+          "symbol": "$symbol",
+          "metric": "all"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_company_news",
+      "description": "News articles about one company between two dates: headline, source, summary, URL, image and time (Unix seconds). The free plan covers one year back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          },
+          "from": {
+            "type": "string",
+            "description": "From date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "description": "To date, YYYY-MM-DD.",
+            "format": "date"
+          }
+        },
+        "required": [
+          "symbol",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company-news",
+        "queryParams": {
+          "symbol": "$symbol",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_market_news",
+      "description": "Latest market news by category: general, forex, crypto or merger. Pass min_id to get only articles newer than one you have. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "News category.",
+            "enum": [
+              "general",
+              "forex",
+              "crypto",
+              "merger"
+            ]
+          },
+          "min_id": {
+            "type": "integer",
+            "description": "Only news with an id above this one."
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/news",
+        "queryParams": {
+          "category": "$category",
+          "minId": "$min_id"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_peers",
+      "description": "Companies in the same country and sector, industry or sub-industry as the given one, as a list of symbols. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          },
+          "grouping": {
+            "type": "string",
+            "description": "Grouping: sector, industry or subIndustry (default industry).",
+            "enum": [
+              "sector",
+              "industry",
+              "subIndustry"
+            ]
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/peers",
+        "queryParams": {
+          "symbol": "$symbol",
+          "grouping": "$grouping"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_recommendation_trends",
+      "description": "Analyst recommendations per month: number of strong buy, buy, hold, sell and strong sell ratings. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/recommendation",
+        "queryParams": {
+          "symbol": "$symbol"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_earnings_surprises",
+      "description": "Reported versus estimated EPS per quarter (actual, estimate, surprise, surprise percent). The free plan returns the last 4 quarters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of quarters."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/earnings",
+        "queryParams": {
+          "symbol": "$symbol",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_earnings_calendar",
+      "description": "Earnings release dates with EPS and revenue estimates and actuals, for a date range or one symbol. The free plan covers one month of history plus upcoming dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "From date, YYYY-MM-DD. Optional.",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "description": "To date, YYYY-MM-DD. Optional.",
+            "format": "date"
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Only this symbol, e.g. AAPL."
+          },
+          "international": {
+            "type": "boolean",
+            "description": "true to include non-US markets."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendar/earnings",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "symbol": "$symbol",
+          "international": "$international"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_ipo_calendar",
+      "description": "Recent and upcoming IPOs between two dates: symbol, name, exchange, date, price range, number of shares and status. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "From date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "description": "To date, YYYY-MM-DD.",
+            "format": "date"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendar/ipo",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_insider_transactions",
+      "description": "Insider buys and sells (SEC Form 3, 4, 5) for a company: who, share change, shares held, price, transaction code and dates. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          },
+          "from": {
+            "type": "string",
+            "description": "From date, YYYY-MM-DD. Optional.",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "description": "To date, YYYY-MM-DD. Optional.",
+            "format": "date"
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/insider-transactions",
+        "queryParams": {
+          "symbol": "$symbol",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_insider_sentiment",
+      "description": "Monthly insider sentiment of a US company: net share purchases (change) and the monthly share purchase ratio (mspr, -100 to 100). Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          },
+          "from": {
+            "type": "string",
+            "description": "From date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "description": "To date, YYYY-MM-DD.",
+            "format": "date"
+          }
+        },
+        "required": [
+          "symbol",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/insider-sentiment",
+        "queryParams": {
+          "symbol": "$symbol",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_financials_reported",
+      "description": "Financial statements as reported to the SEC (balance sheet, income and cash flow from 10-K and 10-Q), annual or quarterly, with the original XBRL concepts. Free plan; large answers, so narrow with from and to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          },
+          "cik": {
+            "type": "string",
+            "description": "SEC CIK instead of the symbol."
+          },
+          "access_number": {
+            "type": "string",
+            "description": "Access number of one filing."
+          },
+          "freq": {
+            "type": "string",
+            "description": "annual (default) or quarterly.",
+            "enum": [
+              "annual",
+              "quarterly"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "From date, YYYY-MM-DD. Optional.",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "description": "To date, YYYY-MM-DD. Optional.",
+            "format": "date"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/financials-reported",
+        "queryParams": {
+          "symbol": "$symbol",
+          "cik": "$cik",
+          "accessNumber": "$access_number",
+          "freq": "$freq",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_sec_filings",
+      "description": "SEC filings of a company: form type (10-K, 10-Q, 8-K...), filed and accepted dates and links to the documents. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          },
+          "cik": {
+            "type": "string",
+            "description": "SEC CIK instead of the symbol."
+          },
+          "form": {
+            "type": "string",
+            "description": "Only this form, e.g. 10-K or 8-K."
+          },
+          "from": {
+            "type": "string",
+            "description": "From date, YYYY-MM-DD. Optional.",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "description": "To date, YYYY-MM-DD. Optional.",
+            "format": "date"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/filings",
+        "queryParams": {
+          "symbol": "$symbol",
+          "cik": "$cik",
+          "form": "$form",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_market_status",
+      "description": "Whether an exchange is open right now, the session (pre-market, regular, post-market) and the holiday if any. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Exchange code, e.g. US, L (London), DE (XETRA), T (Tokyo)."
+          }
+        },
+        "required": [
+          "exchange"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/market-status",
+        "queryParams": {
+          "exchange": "$exchange"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_market_holidays",
+      "description": "Holidays and shortened trading days of an exchange. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Exchange code, e.g. US."
+          }
+        },
+        "required": [
+          "exchange"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/market-holiday",
+        "queryParams": {
+          "exchange": "$exchange"
+        }
+      }
+    },
+    {
+      "name": "finnhub_list_forex_exchanges",
+      "description": "Forex data providers Finnhub supports (e.g. oanda, fxcm), for finnhub_list_forex_symbols. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forex/exchange"
+      }
+    },
+    {
+      "name": "finnhub_list_forex_symbols",
+      "description": "Currency pairs of one forex provider with the symbol to use in finnhub_get_quote (e.g. OANDA:EUR_USD). Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Provider from finnhub_list_forex_exchanges, e.g. oanda."
+          }
+        },
+        "required": [
+          "exchange"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forex/symbol",
+        "queryParams": {
+          "exchange": "$exchange"
+        }
+      }
+    },
+    {
+      "name": "finnhub_list_crypto_exchanges",
+      "description": "Crypto exchanges Finnhub supports (e.g. BINANCE, COINBASE), for finnhub_list_crypto_symbols. Free plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crypto/exchange"
+      }
+    },
+    {
+      "name": "finnhub_list_crypto_symbols",
+      "description": "Crypto pairs of one exchange with the symbol to use in finnhub_get_quote (e.g. BINANCE:BTCUSDT). Free plan; long list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Exchange from finnhub_list_crypto_exchanges, e.g. binance."
+          }
+        },
+        "required": [
+          "exchange"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crypto/symbol",
+        "queryParams": {
+          "exchange": "$exchange"
+        }
+      }
+    },
+    {
+      "name": "finnhub_get_stock_candles",
+      "description": "Price history (OHLCV candles) of a stock between two Unix timestamps at a resolution of 1, 5, 15, 30 or 60 minutes, or D, W, M. PAID PLAN ONLY: Finnhub answers 403 on free keys; on a free plan use finnhub_get_quote and the 52-week figures of finnhub_get_basic_financials instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol as Finnhub lists it, e.g. AAPL; find it with finnhub_search_symbols."
+          },
+          "resolution": {
+            "type": "string",
+            "description": "Candle size.",
+            "enum": [
+              "1",
+              "5",
+              "15",
+              "30",
+              "60",
+              "D",
+              "W",
+              "M"
+            ]
+          },
+          "from": {
+            "type": "integer",
+            "description": "Start, Unix seconds."
+          },
+          "to": {
+            "type": "integer",
+            "description": "End, Unix seconds."
+          }
+        },
+        "required": [
+          "symbol",
+          "resolution",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock/candle",
+        "queryParams": {
+          "symbol": "$symbol",
+          "resolution": "$resolution",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    }
+  ]
+}

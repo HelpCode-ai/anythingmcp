@@ -9,7 +9,21 @@ import { ODataEntityType } from './edmx.parser';
 /** V2 `/Date(1719792000000)/` or `/Date(1719792000000+0120)/` → ISO 8601. */
 const V2_DATE = /^\/Date\((-?\d+)([+-]\d{4})?\)\/$/;
 
-export function normalizeODataValue(value: unknown): unknown {
+/**
+ * Opt-in readings for services that do not speak V2 / V4 JSON. Absent for
+ * every connector that does not ask for them, which then reads exactly as
+ * before.
+ */
+export interface ODataReadOptions {
+  /**
+   * OData V3 JSON as 1C:Enterprise sends it: paging in `odata.count` /
+   * `odata.nextLink`, control fields named `odata.*` and navigation links as
+   * `Field@navigationLinkUrl`.
+   */
+  v3Json?: boolean;
+}
+
+export function normalizeODataValue(value: unknown, opts?: ODataReadOptions): unknown {
   if (typeof value === 'string') {
     const m = V2_DATE.exec(value);
     if (m) {
@@ -18,8 +32,8 @@ export function normalizeODataValue(value: unknown): unknown {
     }
     return value;
   }
-  if (Array.isArray(value)) return value.map(normalizeODataValue);
-  if (value && typeof value === 'object') return normalizeODataRecord(value as Record<string, unknown>);
+  if (Array.isArray(value)) return value.map((v) => normalizeODataValue(v, opts));
+  if (value && typeof value === 'object') return normalizeODataRecord(value as Record<string, unknown>, opts);
   return value;
 }
 
@@ -28,20 +42,24 @@ export function normalizeODataValue(value: unknown): unknown {
  * navigation stubs, `@odata.*` control information) and unwrap V2's
  * `{ results: [...] }` around expanded collections.
  */
-export function normalizeODataRecord(rec: Record<string, unknown>): Record<string, unknown> {
+export function normalizeODataRecord(
+  rec: Record<string, unknown>,
+  opts?: ODataReadOptions,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(rec)) {
     if (k === '__metadata') continue;
     if (k.startsWith('@odata.') || k.includes('@odata.')) continue;
+    if (opts?.v3Json && (k.startsWith('odata.') || k.endsWith('@navigationLinkUrl'))) continue;
     if (v && typeof v === 'object' && !Array.isArray(v)) {
       const obj = v as Record<string, unknown>;
       if ('__deferred' in obj) continue;
       if (Array.isArray(obj.results) && Object.keys(obj).every((x) => x === 'results' || x === '__next' || x === '__count')) {
-        out[k] = obj.results.map(normalizeODataValue);
+        out[k] = obj.results.map((r) => normalizeODataValue(r, opts));
         continue;
       }
     }
-    out[k] = normalizeODataValue(v);
+    out[k] = normalizeODataValue(v, opts);
   }
   return out;
 }
@@ -53,29 +71,33 @@ export interface ODataPage {
 }
 
 /** Rows, total count and next link out of a V2 (`d`) or V4 (`value`) body. */
-export function readODataPage(body: unknown): ODataPage {
+export function readODataPage(body: unknown, opts?: ODataReadOptions): ODataPage {
   if (!body || typeof body !== 'object') return { rows: [] };
   const b = body as Record<string, any>;
   if (b.d !== undefined) {
     const d = b.d;
-    if (Array.isArray(d)) return { rows: d.map((r) => normalizeODataRecord(r)) };
+    if (Array.isArray(d)) return { rows: d.map((r) => normalizeODataRecord(r, opts)) };
     if (Array.isArray(d?.results)) {
       return {
-        rows: d.results.map((r: Record<string, unknown>) => normalizeODataRecord(r)),
+        rows: d.results.map((r: Record<string, unknown>) => normalizeODataRecord(r, opts)),
         count: d.__count !== undefined ? Number(d.__count) : undefined,
         nextLink: typeof d.__next === 'string' ? d.__next : undefined,
       };
     }
-    return { rows: [normalizeODataRecord(d)] };
+    return { rows: [normalizeODataRecord(d, opts)] };
   }
   if (Array.isArray(b.value)) {
+    // V3 JSON names its paging fields without the `@`; read them only when
+    // the connector asked for it, so a V4 body is never read differently.
+    const count = b['@odata.count'] !== undefined ? b['@odata.count'] : opts?.v3Json ? b['odata.count'] : undefined;
+    const nextLink = b['@odata.nextLink'] !== undefined ? b['@odata.nextLink'] : opts?.v3Json ? b['odata.nextLink'] : undefined;
     return {
-      rows: b.value.map((r: Record<string, unknown>) => normalizeODataRecord(r)),
-      count: b['@odata.count'] !== undefined ? Number(b['@odata.count']) : undefined,
-      nextLink: typeof b['@odata.nextLink'] === 'string' ? b['@odata.nextLink'] : undefined,
+      rows: b.value.map((r: Record<string, unknown>) => normalizeODataRecord(r, opts)),
+      count: count !== undefined ? Number(count) : undefined,
+      nextLink: typeof nextLink === 'string' ? nextLink : undefined,
     };
   }
-  return { rows: [normalizeODataRecord(b)] };
+  return { rows: [normalizeODataRecord(b, opts)] };
 }
 
 /**

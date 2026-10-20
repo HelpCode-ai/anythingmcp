@@ -110,6 +110,13 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Prometheus /metrics — a separate listener, off by default (docs/operations/observability.md).
+      # METRICS_TOKEN is required once METRICS_ENABLED=true; the listener refuses to start without it.
+      - METRICS_ENABLED=${METRICS_ENABLED:-false}
+      - METRICS_PORT=${METRICS_PORT:-9464}
+      - METRICS_HOST=${METRICS_HOST:-0.0.0.0}
+      - METRICS_TOKEN=${METRICS_TOKEN:-}
+      - METRICS_TOOL_LABELS=${METRICS_TOOL_LABELS:-false}
 
     depends_on:
       postgres:

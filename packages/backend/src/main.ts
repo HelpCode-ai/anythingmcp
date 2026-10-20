@@ -29,6 +29,7 @@ import { AppModule } from './app.module';
 import { mcpStrategy } from './mcp-server/mcp-strategy';
 import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
 import { validateRequiredSecretsAtStartup } from './common/secrets.util';
+import { startMetricsServer, stopMetricsServer } from './common/metrics';
 
 async function bootstrap() {
   // Fail fast if required secrets are missing or use known placeholder values.
@@ -171,6 +172,10 @@ async function bootstrap() {
   server.keepAliveTimeout = 65_000;
   server.headersTimeout = 66_000;
 
+  // Second, separate listener — never the main app or port 4000, since
+  // /health* is proxied publicly on both Cloud and self-hosted.
+  startMetricsServer();
+
   // A SIGTERM must end in an exit, every time, within a bounded time.
   //
   // It did not. `app.close()` calls `server.close()`, which resolves only
@@ -206,6 +211,7 @@ async function bootstrap() {
       }, cutConnectionsAfterMs);
       cutter.unref();
       try {
+        await stopMetricsServer();
         await app.close();
         logger.log('Shutdown complete.');
         process.exit(0);

@@ -1,0 +1,136 @@
+{
+  "slug": "onec-enterprise",
+  "name": "1C:Enterprise",
+  "aliases": [
+    "1C",
+    "1С",
+    "1C:Предприятие",
+    "1С:Предприятие",
+    "1C Enterprise",
+    "1C OData",
+    "1С:Бухгалтерия",
+    "1С:Управление торговлей",
+    "1С:ERP",
+    "1С:УНФ"
+  ],
+  "description": "Read your 1C:Enterprise 8.3 infobase (1С:Бухгалтерия, Управление торговлей, 1С:ERP, УНФ and other configurations) through its standard OData interface: catalogs, documents with their tabular sections, register balances, turnovers and slices, with the names from your configuration's own metadata. Read-only, Basic auth, your own server.",
+  "region": "intl",
+  "category": "erp",
+  "icon": "onec-enterprise",
+  "docsUrl": "https://its.1c.ru/db/v8doc#bookmark:dev:TI000001358",
+  "prerequisites": "- A 1C:Enterprise 8.3 infobase (platform 8.3.5 or newer) published on a web server with the standard OData interface switched on, and the objects to read added to its OData composition.\n- A dedicated 1C user with read-only rights and the right to use the standard OData interface.\n- On AnythingMCP Cloud the publication must be reachable on the public internet (HTTPS recommended); for a server inside your network, self-host AnythingMCP.",
+  "instructions": "## 1C:Enterprise (OData)\nThis connector reads a **1C:Enterprise 8.3** infobase through the **standard OData interface** (`/odata/standard.odata`) that the 1C platform itself publishes on your web server. It works with every configuration built on the platform: 1С:Бухгалтерия предприятия, Управление торговлей, 1С:ERP, Комплексная автоматизация, УНФ, Розница, ЗУП and custom ones, on your own server or with a 1C hosting provider that enables OData. The names of catalogs, documents, registers and fields come from the infobase's own metadata, so they are the ones your configuration uses (usually Russian). **Read-only**: the connector never creates, changes, posts or deletes anything.\n\n**Setup (about 30 minutes, needs your 1C administrator)**\n1. **Publish the infobase on a web server** (Apache or IIS with the platform's web server extension modules, platform 8.3.5 or newer). In the Designer: **Администрирование > Публикация на веб-сервере** (Administration > Publish to web server), give the publication a name in Latin letters, tick **Публиковать стандартный интерфейс OData** (Publish standard OData interface) and publish. With a 1C hosting provider (1cFresh, cloud rental), ask the provider to enable OData for your infobase.\n2. **Choose what OData may show.** Out of the box the interface exposes no objects. In typical configurations open **Администрирование > Синхронизация данных > Настройки стандартного интерфейса OData** (or **Все функции > Обработки > Настройка стандартного интерфейса OData**) and add the catalogs, documents and registers the assistant may read. In other configurations a developer calls `УстановитьСоставСтандартногоИнтерфейсаOData()`.\n3. **Create a dedicated 1C user** for the connector with read-only roles for those objects and the right to use the standard OData interface (the settings form in step 2 can create this user). Its rights are the real boundary: 1C checks them on every call.\n4. **Check in a browser**: open `<publication address>/odata/standard.odata/?$format=json` and sign in with that user. A JSON list of objects means OData works; an empty list means step 2 is missing.\n5. Fill in `ONEC_BASE_URL` (the publication address without `/odata`, e.g. `https://1c.example.com/trade`), `ONEC_USER` and `ONEC_PASSWORD`. Cyrillic user names work.\n\n**Network**: AnythingMCP Cloud reaches only addresses on the public internet, so publish over HTTPS on a public host. For a server inside your network, self-host AnythingMCP there (or connect it through a VPN) and add the host to `SSRF_ALLOWED_HOSTS`.\n\n**How to work**\n1. `onec_enterprise_guide` explains names, filters, registers and pitfalls at no cost.\n2. `onec_enterprise_describe_service` lists every published object (entity set) with its keys; `onec_enterprise_describe_entity` lists its fields and types.\n3. `onec_enterprise_query` reads a catalog, document or tabular section with `filter`, `orderby`, `select`, `top` and `skip`, checks field names against the metadata first and reports the total. Use it for lists.\n4. `onec_enterprise_get_entity` reads one object by `Ref_Key`, with its tabular sections inline.\n5. `onec_enterprise_get` takes an OData path with the query written out, for what the query tool cannot address: the virtual tables of registers (Balance, Turnovers, BalanceAndTurnovers, SliceLast, SliceFirst) and navigation from one object, e.g. a document's `Товары`.\n\n**Object names**: `Catalog_Номенклатура`, `Document_РеализацияТоваровУслуг`, its tabular section `Document_РеализацияТоваровУслуг_Товары`, `InformationRegister_КурсыВалют`, `AccumulationRegister_ТоварыНаСкладах`, `AccountingRegister_Хозрасчетный`, `ChartOfAccounts_Хозрасчетный`, `Constant_...`, `DocumentJournal_...`. Every catalog and document row has `Ref_Key` (a GUID), `DeletionMark`, and documents also `Number`, `Date` and `Posted`. A reference field `Контрагент` appears as `Контрагент_Key` holding the GUID of the referenced object.\n\n**Pitfalls**: always pass `$top` and `$select` on large catalogs and registers. Count only posted documents (`Posted eq true`) and leave out rows marked for deletion. Dates have no time zone: they are the infobase's local time. Amounts are in the document's currency (see `ВалютаДокумента_Key`) unless the field says otherwise.",
+  "requiredEnvVars": [
+    "ONEC_BASE_URL",
+    "ONEC_USER",
+    "ONEC_PASSWORD"
+  ],
+  "envVarMeta": {
+    "ONEC_BASE_URL": {
+      "label": "Publication address",
+      "kind": "address",
+      "help": "The address of the infobase's web publication, without /odata/standard.odata: the part you open the web client with, e.g. https://1c.example.com/trade. The connector adds /odata/standard.odata itself.",
+      "example": "https://1c.example.com/trade",
+      "pattern": "^https?://(?!.*/odata)[^\\s?#]+[^\\s?#/]$",
+      "patternMessage": "Use the publication address only, e.g. https://1c.example.com/trade, without /odata/standard.odata, a query or a trailing slash."
+    },
+    "ONEC_USER": {
+      "label": "1C user name",
+      "kind": "credential",
+      "help": "The 1C user the connector signs in as, exactly as in the infobase user list (Cyrillic names work). Give it read-only roles and the right to use the standard OData interface.",
+      "example": "OData"
+    },
+    "ONEC_PASSWORD": {
+      "label": "1C user password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that 1C user. Sent with HTTP Basic authentication; use HTTPS so it is not sent in clear text."
+    }
+  },
+  "verifyHints": {
+    "401": "1C refused the sign-in. Check ONEC_USER and ONEC_PASSWORD, and that the user has the right to use the standard OData interface.",
+    "403": "The 1C user signed in but may not read this. Give its role read rights on the object, or use another user.",
+    "404": "Nothing answered at ONEC_BASE_URL/odata/standard.odata. Check the publication address (without /odata) and that the publication has the standard OData interface switched on.",
+    "500": "The 1C server reported an error. On a file infobase this is usually missing write access of the web server account to the infobase folder."
+  },
+  "connector": {
+    "name": "1C:Enterprise",
+    "type": "ODATA",
+    "baseUrl": "{{ONEC_BASE_URL}}/odata/standard.odata",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{ONEC_USER}}",
+      "password": "{{ONEC_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "config": {
+      "odata": {
+        "version": "v2",
+        "toolPrefix": "onec_enterprise",
+        "maxRows": 1000,
+        "querySpaces": "%20",
+        "v3Json": true
+      }
+    }
+  },
+  "probe": {
+    "tool": "onec_enterprise_describe_service"
+  },
+  "tools": [
+    {
+      "name": "onec_enterprise_guide",
+      "description": "How to read 1C:Enterprise through OData: the workflow, object and field names, filter syntax, register virtual tables (balances, turnovers, slices), documents and pitfalls. Costs nothing; read it before the first query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "enum": [
+              "names",
+              "filters",
+              "registers",
+              "documents",
+              "pitfalls"
+            ],
+            "description": "Chapter to read. Omit for the overview."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "1C:Enterprise through the standard OData interface (OData v3).\n\n1. onec_enterprise_describe_service: every object published to OData, with its keys. If it is empty, the administrator has not added objects to the OData composition yet.\n2. onec_enterprise_describe_entity: the fields of one object and their types. Reference fields end in _Key and hold a GUID.\n3. onec_enterprise_query for lists, e.g. entity_set Catalog_Контрагенты, filter ИНН eq '7707083893', select Ref_Key,Description,ИНН, top 20. Sorting with orderby, paging with skip.\n4. onec_enterprise_get_entity reads one object by Ref_Key, with its tabular sections inline.\n5. onec_enterprise_get with an OData path written out, for register virtual tables (see registers) and navigation such as Document_РеализацияТоваровУслуг(guid'...')/Товары.\n\nChapters: names, filters, registers, documents, pitfalls.",
+        "staticResponses": {
+          "names": "Object names in the OData interface\n\n- Prefix by kind: Catalog_, Document_, DocumentJournal_, Constant_, ExchangePlan_, ChartOfAccounts_, ChartOfCharacteristicTypes_, ChartOfCalculationTypes_, InformationRegister_, AccumulationRegister_, AccountingRegister_, CalculationRegister_, BusinessProcess_, Task_. After it comes the metadata name from the configuration, usually Russian: Catalog_Номенклатура, Document_ПоступлениеТоваровУслуг.\n- Tabular sections are their own sets: Document_РеализацияТоваровУслуг_Товары (filter by Ref_Key to get one document's lines). They also come inline when you read the document itself.\n- Register records: AccumulationRegister_ТоварыНаСкладах_RecordType; virtual tables hang off the register name (see registers).\n- Standard fields: Ref_Key (GUID), DeletionMark, Description and Code for catalogs, Number, Date and Posted for documents, Parent_Key and IsFolder for hierarchical catalogs, Owner_Key for subordinate catalogs.\n- A reference attribute Контрагент is exposed as Контрагент_Key. A composite-type attribute has two fields: Value and Value_Type.\n- Enumerations come as their value names (e.g. 'Оплата'), not as GUIDs.",
+          "filters": "OData v3 filter syntax as 1C reads it\n\n- Comparison: eq, ne, gt, ge, lt, le. Logic: and, or, not, with parentheses.\n- Strings in single quotes; a quote inside is doubled: Description eq 'ООО ''Ромашка'''.\n- GUIDs: Контрагент_Key eq guid'0f8fad5b-d9cb-469f-a165-70867728950e'.\n- Dates: Date ge datetime'2026-01-01T00:00:00' and Date lt datetime'2026-02-01T00:00:00'.\n- Booleans: Posted eq true, DeletionMark eq false.\n- Text search: substringof('молоко', Description), startswith(Code, '00'), endswith(...).\n- Through a reference: Контрагент/ИНН eq '7707083893' (the field after / belongs to the referenced object).\n- Sorting: orderby Date desc. Paging: top and skip (nextSkip in the answer).\n- Only some fields: select Ref_Key,Number,Date,СуммаДокумента. Related data: expand Контрагент.\n- These go in the filter, orderby, select and expand arguments of onec_enterprise_query; in a path for onec_enterprise_get they are written as $filter=..., $orderby=... and so on.\n- 400 with 'Ошибка при разборе опции запроса' (error parsing the query option) means the filter syntax or a field name is wrong; check the field with describe_entity.",
+          "registers": "Registers and their virtual tables\n\nRead them with onec_enterprise_get; the parameters go in parentheses, not in $filter, so 1C filters before it aggregates.\n\n- Balances at a date: AccumulationRegister_ТоварыНаСкладах/Balance(Period=datetime'2026-10-20T23:59:59', Condition='Склад_Key eq guid''...''') returns КоличествоBalance per dimension. Without Period it is the current balance.\n- Turnovers in a period: AccumulationRegister_Продажи/Turnovers(StartPeriod=datetime'2026-09-01T00:00:00', EndPeriod=datetime'2026-09-30T23:59:59') returns СуммаTurnover, КоличествоTurnover; for balance registers also Receipt and Expense.\n- Both at once: .../BalanceAndTurnovers(StartPeriod=..., EndPeriod=...) with OpeningBalance, Receipt, Expense, ClosingBalance per resource.\n- Latest value per key: InformationRegister_КурсыВалют/SliceLast(Period=datetime'2026-10-20T00:00:00', Condition='Валюта_Key eq guid''...''') returns the latest rate on or before that date; SliceFirst the earliest from it.\n- Accounting register (e.g. Хозрасчетный): AccountingRegister_Хозрасчетный/Balance(Period=..., AccountCondition='Account_Key eq guid''...''') with СуммаBalanceDr, СуммаBalanceCr; Turnovers with СуммаTurnoverDr / СуммаTurnoverCr. Find account GUIDs in ChartOfAccounts_Хозрасчетный by Code (e.g. Code eq '62.01').\n- Inside Condition the whole condition is in single quotes, so every quote within it is doubled: guid''...''.\n- $select and $top still apply after the parentheses: .../Balance(...)?$select=Номенклатура_Key,КоличествоBalance&$top=200.",
+          "documents": "Documents\n\n- Lists: onec_enterprise_query with entity_set Document_РеализацияТоваровУслуг, filter Posted eq true and Date ge datetime'2026-09-01T00:00:00', select Ref_Key,Number,Date,Контрагент_Key,СуммаДокумента, orderby Date desc, top 100.\n- Lines of one document: onec_enterprise_query on Document_РеализацияТоваровУслуг_Товары with filter Ref_Key eq guid'...'. LineNumber orders them.\n- One document with everything: onec_enterprise_get_entity with entity_set and the Ref_Key.\n- Names of related objects: add $expand=Контрагент (or look the GUID up in Catalog_Контрагенты) instead of reporting GUIDs to the user.\n- Unposted documents (Posted false) and rows marked for deletion are drafts or junk: leave them out of totals unless the user asks.",
+          "pitfalls": "Pitfalls\n\n- 401: wrong user or password, or the user lacks the right to use the standard OData interface.\n- 404: the object is not in the OData composition, its name is misspelled, or the address is wrong (ONEC_BASE_URL is the publication address without /odata).\n- 400 'Ошибка при разборе опции запроса': filter syntax or field name; 400 on a virtual table: parameter names (Period, StartPeriod, EndPeriod, Condition) or quote doubling inside Condition.\n- 500 with 'нет доступа' on a file infobase: the web server account has no write access to the infobase folder (administrator task).\n- Large sets: always $top (up to a few hundred) and $select; aggregate with register virtual tables instead of summing thousands of document lines.\n- Dates are local infobase time without a zone. Amounts are in the document currency.\n- Data is what the 1C user may see; if something is missing, it may be a rights question, not missing data."
+        }
+      }
+    },
+    {
+      "name": "onec_enterprise_get",
+      "description": "Read from the 1C infobase with an OData path and query written out, for what onec_enterprise_query cannot address: register virtual tables (Balance, Turnovers, BalanceAndTurnovers, SliceLast, SliceFirst) and navigation from one object to related data, e.g. a document's tabular section. Returns the rows as JSON. Use onec_enterprise_query for plain lists of catalogs and documents; always include $top and $select on large objects.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string",
+            "description": "Path below the OData root, with the query written out. Examples: Catalog_Номенклатура?$filter=substringof('кабель', Description) and DeletionMark eq false&$select=Ref_Key,Code,Description&$top=50 ; Document_СчетНаОплатуПокупателю?$filter=Date ge datetime'2026-10-01T00:00:00'&$orderby=Date desc&$top=20 ; AccumulationRegister_ТоварыНаСкладах/Balance(Period=datetime'2026-10-20T23:59:59')?$top=200 ; Document_РеализацияТоваровУслуг(guid'0f8fad5b-d9cb-469f-a165-70867728950e')/Товары. Write spaces and Cyrillic as they are; do not add $format, the connector asks for JSON.",
+            "pattern": "^(?!.*\\.\\.)(?!.*//)(?!.*\\\\)[A-Za-z_\\u0400-\\u04FF][^#]*$"
+          }
+        },
+        "required": [
+          "resource"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{resource}"
+      }
+    }
+  ]
+}
