@@ -7,6 +7,7 @@ import {
   closest,
   formatKeyLiteral,
   normalizeODataRecord,
+  ODataReadOptions,
   readODataPage,
   serviceAllowed,
 } from '../odata/odata-values';
@@ -41,6 +42,18 @@ export interface ODataSettings {
   maxRows?: number;
   /** Prefix of the built-in tool names. */
   toolPrefix?: string;
+  /**
+   * `"%20"`: write a space in a query option (`$filter`, `$orderby`, ...) as
+   * `%20` instead of `+`. 1C:Enterprise answers 400 to `+`. Unset for every
+   * other connector, which keeps sending `+` as it always has.
+   */
+  querySpaces?: '%20';
+  /**
+   * Read OData V3 JSON (1C:Enterprise): `odata.count` / `odata.nextLink` on
+   * a page, and leave `odata.*` control fields and `Field@navigationLinkUrl`
+   * links out of the rows. Unset elsewhere: V2 and V4 bodies read as before.
+   */
+  v3Json?: boolean;
 }
 
 export interface ODataCallConfig {
@@ -321,7 +334,7 @@ export class ODataEngine {
     let page = 0;
     let body = await this.get(config, settings, `${service}/${resource}`, query, version);
     for (;;) {
-      const p = readODataPage(body);
+      const p = readODataPage(body, readOptions(settings));
       if (count === undefined && p.count !== undefined) count = p.count;
       rows.push(...p.rows);
       next = p.nextLink;
@@ -355,7 +368,7 @@ export class ODataEngine {
       $select: listParam(params.select).join(',') || undefined,
       $expand: typeof params.expand === 'string' && params.expand.trim() ? params.expand.trim() : undefined,
     }, model.version);
-    const page = readODataPage(body);
+    const page = readODataPage(body, readOptions(settings));
     return page.rows[0] ?? null;
   }
 
@@ -383,21 +396,25 @@ export class ODataEngine {
     }
     const { body } = await this.rest.executeWithMeta(
       config,
-      { ...endpointMapping, method, queryParams, headers } as any,
+      { ...endpointMapping, method, queryParams, headers, ...wireOptions(settings) } as any,
       { ...params, ...extra },
     );
+    const opts = readOptions(settings);
     if (body && typeof body === 'object' && !Array.isArray(body)) {
       const b = body as Record<string, any>;
       const isCollection =
         Array.isArray(b.value) || Array.isArray(b.d) || Array.isArray(b.d?.results);
       if (isCollection) {
-        const page = readODataPage(body);
+        const page = readODataPage(body, opts);
         return strip({ total: page.count, returned: page.rows.length, rows: page.rows, next: page.nextLink });
       }
       // A single entity: V2 wraps it in `d`, V4 sends it bare with @odata
-      // control information. Either way, hand back the entity itself.
-      if (b.d && typeof b.d === 'object') return normalizeODataRecord(b.d);
-      if (Object.keys(b).some((k) => k.startsWith('@odata.'))) return normalizeODataRecord(b);
+      // control information (V3 JSON with odata.*). Either way, hand back
+      // the entity itself.
+      if (b.d && typeof b.d === 'object') return normalizeODataRecord(b.d, opts);
+      if (Object.keys(b).some((k) => k.startsWith('@odata.') || (opts?.v3Json && k.startsWith('odata.')))) {
+        return normalizeODataRecord(b, opts);
+      }
     }
     return body;
   }
@@ -573,6 +590,7 @@ export class ODataEngine {
         queryParams,
         headers: { Accept: raw ? 'application/xml' : 'application/json' },
         rawBody: raw,
+        ...wireOptions(settings),
       } as any,
       params,
     );
@@ -622,6 +640,7 @@ export class ODataEngine {
         path: `${url.origin}${url.pathname}`,
         queryParams,
         headers: { Accept: 'application/json' },
+        ...wireOptions(settings),
       } as any,
       params,
     );
@@ -675,6 +694,9 @@ export function normalizeSettings(raw: unknown): ODataSettings {
     throw new Error(`sapClient must be a three-digit SAP client, got "${sapClient}".`);
   }
   const version = s.version === 'v2' || s.version === 'v4' ? s.version : 'auto';
+  if (s.querySpaces !== undefined && s.querySpaces !== '%20' && s.querySpaces !== '+') {
+    throw new Error(`querySpaces must be "%20" or "+", got "${String(s.querySpaces)}".`);
+  }
   return {
     version,
     sap: s.sap === true || !!sapClient,
@@ -683,7 +705,20 @@ export function normalizeSettings(raw: unknown): ODataSettings {
     services: Array.isArray(s.services) ? (s.services as unknown[]).filter((x): x is string => typeof x === 'string') : undefined,
     maxRows: typeof s.maxRows === 'number' && s.maxRows > 0 ? s.maxRows : undefined,
     toolPrefix: typeof s.toolPrefix === 'string' ? s.toolPrefix : undefined,
+    // Opt-in only; absent unless the connector sets them.
+    ...(s.querySpaces === '%20' ? { querySpaces: '%20' as const } : {}),
+    ...(s.v3Json === true ? { v3Json: true } : {}),
   };
+}
+
+/** What the REST engine needs to know about the wire; nothing by default. */
+function wireOptions(settings: ODataSettings): { querySpaces?: '%20' } {
+  return settings.querySpaces === '%20' ? { querySpaces: '%20' } : {};
+}
+
+/** How pages are read; undefined (the V2 / V4 reading) by default. */
+function readOptions(settings: ODataSettings): ODataReadOptions | undefined {
+  return settings.v3Json ? { v3Json: true } : undefined;
 }
 
 function servicePathFromUrl(url: string): string {
