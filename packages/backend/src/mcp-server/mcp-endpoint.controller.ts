@@ -15,10 +15,11 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
-import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
+import { McpServer, createMcpHandler, isLegacyRequest } from '@modelcontextprotocol/server';
 import {
   NodeStreamableHTTPServerTransport as StreamableHTTPServerTransport,
   toNodeHandler,
+  toWebRequest,
 } from '@modelcontextprotocol/node';
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
 import { McpPrincipalRateLimitGuard } from '../auth/mcp-principal-rate-limit.guard';
@@ -1314,6 +1315,20 @@ export class McpEndpointController {
       processGauges.dec('mcpRequestsInFlight');
     }
 
+    // The handler's stateless fallback for 2025-era requests builds its own
+    // transport and never receives `responseMode`, so with JSON enabled those
+    // requests still came back as `text/event-stream`, which Copilot Studio
+    // cannot parse. Serve them here with the transport they had before the
+    // library upgrade; modern envelope traffic still goes through the handler.
+    if (this.jsonResponseEnabled() && (await this.isLegacyRequest(req, body))) {
+      try {
+        await this.serveLegacyJson(req, res, body, buildServer(), label);
+      } finally {
+        processGauges.dec('mcpHandlersUnclosed');
+      }
+      return;
+    }
+
     const handler = createMcpHandler(() => buildServer(), {
       legacy: 'stateless',
       // Mapped from the old `enableJsonResponse` boolean, deliberately NOT to
@@ -1357,6 +1372,60 @@ export class McpEndpointController {
         // Ignore cleanup errors
       }
       processGauges.dec('mcpHandlersUnclosed');
+    }
+  }
+
+  /**
+   * Whether `createMcpHandler` would send this request to its 2025-era
+   * fallback. A request that cannot be classified is left to the handler,
+   * which answers it with the proper error. Without a parsed body the probe
+   * would have to read the request stream the transport still needs.
+   */
+  private async isLegacyRequest(req: Request, body: unknown): Promise<boolean> {
+    if (body === undefined) return false;
+    try {
+      return await isLegacyRequest(await toWebRequest(req, body), body);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Serves one 2025-era request statelessly with single-shot JSON responses:
+   * the transport and options the per-tenant endpoint used before the
+   * 2026-07-28 handler, which has no way to pass `enableJsonResponse` to its
+   * own fallback.
+   */
+  private async serveLegacyJson(
+    req: Request,
+    res: Response,
+    body: unknown,
+    mcpServer: McpServer,
+    label: string,
+  ): Promise<void> {
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+    try {
+      await mcpServer.connect(transport);
+      await transport.handleRequest(req, res, body);
+    } catch (error: any) {
+      this.logger.error(`Error handling MCP request (${label}): ${error.message}`);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: { code: -32603, message: 'Internal server error' },
+          id: null,
+        });
+      }
+    } finally {
+      try {
+        await transport.close();
+        await mcpServer.close();
+      } catch {
+        // Ignore cleanup errors
+      }
     }
   }
 

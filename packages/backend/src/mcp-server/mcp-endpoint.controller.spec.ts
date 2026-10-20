@@ -1375,3 +1375,88 @@ describe('McpEndpointController — resources and instructions follow the tool p
     await client.close();
   });
 });
+
+/**
+ * MCP_STREAMABLE_JSON_RESPONSE=true must give 2025-era clients plain JSON on
+ * the per-tenant endpoint: Microsoft Copilot Studio cannot parse an event
+ * stream. The 2026-07-28 handler's own fallback ignores `responseMode`, so the
+ * controller serves those requests itself. Driven over real HTTP.
+ */
+describe('McpEndpointController — stateless response framing', () => {
+  const OLD = process.env.MCP_STREAMABLE_JSON_RESPONSE;
+  let server: import('http').Server;
+  let url: string;
+
+  beforeAll(async () => {
+    const http = await import('http');
+    const controller = new McpEndpointController(
+      {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
+    ) as any;
+    const buildServer = () => {
+      const mcp = new McpServer({ name: 'framing', version: '1.0.0' });
+      mcp.registerTool('ping', { description: 'Ping' }, async () => ({
+        content: [{ type: 'text', text: 'pong' }],
+      }));
+      return mcp;
+    };
+    server = http.createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        void controller.serveStateless(req, res, JSON.parse(raw), buildServer, 'test');
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    url = `http://127.0.0.1:${(server.address() as any).port}/mcp/srv`;
+  });
+
+  afterAll(async () => {
+    if (OLD === undefined) delete process.env.MCP_STREAMABLE_JSON_RESPONSE;
+    else process.env.MCP_STREAMABLE_JSON_RESPONSE = OLD;
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  const post = (body: unknown) =>
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify(body),
+    });
+
+  const initialize = {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'copilot', version: '1' },
+    },
+  };
+
+  it('answers 2025-era initialize and tools/list with application/json when enabled', async () => {
+    process.env.MCP_STREAMABLE_JSON_RESPONSE = 'true';
+
+    const init = await post(initialize);
+    expect(init.status).toBe(200);
+    expect(init.headers.get('content-type')).toMatch(/^application\/json/);
+    expect(init.headers.get('mcp-session-id')).toBeNull();
+    expect((await init.json()).result.serverInfo.name).toBe('framing');
+
+    const list = await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
+    expect(list.headers.get('content-type')).toMatch(/^application\/json/);
+    expect((await list.json()).result.tools.map((t: any) => t.name)).toEqual(['ping']);
+  });
+
+  it('keeps the event stream when JSON is not enabled', async () => {
+    delete process.env.MCP_STREAMABLE_JSON_RESPONSE;
+
+    const init = await post(initialize);
+    expect(init.status).toBe(200);
+    expect(init.headers.get('content-type')).toMatch(/^text\/event-stream/);
+    expect(await init.text()).toContain('"serverInfo"');
+  });
+});
