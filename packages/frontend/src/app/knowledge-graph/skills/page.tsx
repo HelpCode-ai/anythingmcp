@@ -8,12 +8,20 @@ import {
   mcpServers as mcpServersApi,
   connectors as connectorsApi,
   type KgSkill,
+  type KgSkillVersion,
+  type KnowledgeFolder,
 } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, type Tone } from '@/components/ui/badge';
 import { ActionMenu } from '@/components/ui/action-menu';
+import {
+  KnowledgeFolderTree,
+  folderOptions,
+  useKnowledgeFolders,
+  type FolderSelection,
+} from '@/components/knowledge-folders';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
@@ -39,6 +47,8 @@ export default function SkillsPage() {
   const [connectorList, setConnectorList] = useState<Array<{ id: string; name: string }>>([]);
   const [target, setTarget] = useState<string>(''); // '' = connectors, else mcpServerId
   const [statusFilter, setStatusFilter] = useState<string>(''); // tab
+  const [folderSel, setFolderSel] = useState<FolderSelection>('');
+  const { folders, restrictionsAvailable, reload: reloadFolders } = useKnowledgeFolders(token);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [page, setPage] = useState(0);
@@ -59,6 +69,7 @@ export default function SkillsPage() {
         q: debouncedQuery || undefined,
         take: PAGE_SIZE,
         skip: page * PAGE_SIZE,
+        folderId: folderSel || undefined,
       })
       .then((r) => {
         setItems(r.items);
@@ -67,7 +78,7 @@ export default function SkillsPage() {
       })
       .catch((e) => setStatus(e.message || 'Failed to load'))
       .finally(() => setLoading(false));
-  }, [token, statusFilter, debouncedQuery, page]);
+  }, [token, statusFilter, debouncedQuery, page, folderSel]);
 
   useEffect(() => load(), [load]);
   useEffect(() => {
@@ -112,15 +123,37 @@ export default function SkillsPage() {
     try {
       const r = await knowledgeGraph.skills.consolidate(token, target || undefined);
       setStatus(
-        r.after < r.before
-          ? `Consolidated ${r.before} active skills into ${r.after}.`
-          : `Nothing to consolidate (${r.before} active skill(s)).`,
+        r.proposed
+          ? `Proposed ${r.proposed} merged skill(s) replacing ${r.replaced} active ones. Review them under Suggested: applying one deactivates the skills it replaces.`
+          : `Nothing to merge (${r.before} active skill(s)).`,
       );
       load();
     } catch (e: any) {
       setStatus(e.message || 'Consolidation failed');
     } finally {
       setConsolidating(false);
+    }
+  };
+
+  const [learning, setLearning] = useState(false);
+  const learnFromErrors = async () => {
+    if (!token) return;
+    setLearning(true);
+    setStatus('Looking for calls that failed and were fixed…');
+    try {
+      const r = await knowledgeGraph.skills.proposeFromErrors(token);
+      setStatus(
+        r.created
+          ? `Proposed ${r.created} skill(s) from fixed errors. Review them under Suggested.`
+          : 'No recurring fixed errors yet. Only calls of users who contribute to skill learning are used.',
+      );
+      setStatusFilter('pending');
+      setPage(0);
+      load();
+    } catch (e: any) {
+      setStatus(e.message || 'Could not look at the errors');
+    } finally {
+      setLearning(false);
     }
   };
 
@@ -137,7 +170,7 @@ export default function SkillsPage() {
     <AppShell
       backTo={{ label: 'Knowledge Graph', href: '/knowledge-graph' }}
       title="AI Skills"
-      maxWidth={860}
+      maxWidth={1120}
       actions={
         isAdmin && (
           <div className="flex flex-wrap items-center gap-2">
@@ -191,6 +224,12 @@ export default function SkillsPage() {
                   onSelect: consolidate,
                   disabled: consolidating || generating,
                 },
+                {
+                  label: learning ? 'Looking…' : 'Learn from fixed errors',
+                  icon: <GenerateIcon />,
+                  onSelect: learnFromErrors,
+                  disabled: learning,
+                },
               ]}
             />
             <Button variant="primary" size="sm" onClick={() => setShowNew((v) => !v)}>
@@ -212,22 +251,58 @@ export default function SkillsPage() {
       {/* The header already carries the way back to the graph, so this stays
           a description and nothing else. */}
       <p className="text-[13px] leading-relaxed text-[var(--text-2)] mb-4">
-        Rules inferred from the intents behind your tool calls, scoped to one connector or to a
-        whole MCP server. <span className="text-[var(--text)]">Active</span> skills are composed
-        into that server&apos;s instructions automatically.
+        Rules and procedures for recurring tasks, scoped to one connector or to a whole MCP
+        server. <span className="text-[var(--text)]">Active</span> skills reach that server&apos;s AI
+        clients on connect, as full text or as a list they open with{' '}
+        <code className="font-mono text-[12px]">skill_get</code> (set per server). Long procedures
+        are always opened on demand.
       </p>
+      {isAdmin && (
+        <div className="mb-3 flex flex-wrap items-center gap-2.5 max-md:hidden">
+          <Button variant="secondary" size="sm" onClick={learnFromErrors} disabled={learning}>
+            {learning ? 'Looking…' : 'Learn from fixed errors'}
+          </Button>
+          <span className="text-[12px] text-[var(--text-3)]">
+            Proposes a rule when calls failed and worked after an argument changed format. No AI model needed.
+          </span>
+        </div>
+      )}
       {status && <p className="text-[12px] text-[var(--text-3)] mb-3">{status}</p>}
 
+      <div className="grid gap-4 md:grid-cols-[230px_minmax(0,1fr)]">
+      <aside className="md:sticky md:top-4 md:self-start">
+        <KnowledgeFolderTree
+          token={token!}
+          kind="skill"
+          folders={folders}
+          restrictionsAvailable={restrictionsAvailable}
+          selected={folderSel}
+          onSelect={(f) => {
+            setFolderSel(f);
+            setPage(0);
+          }}
+          canEdit={isAdmin || user?.role === 'EDITOR'}
+          isAdmin={isAdmin}
+          onChanged={() => {
+            reloadFolders();
+            load();
+          }}
+        />
+      </aside>
+      <div className="min-w-0">
       {isAdmin && showNew && (
         <NewSkillForm
           token={token!}
           servers={servers}
           connectors={connectorList}
+          folders={folders}
+          defaultFolderId={folderSel && folderSel !== 'none' ? folderSel : ''}
           onCreated={() => {
             setShowNew(false);
             setStatus('Skill created (live for MCP).');
             setPage(0);
             load();
+            reloadFolders();
           }}
         />
       )}
@@ -294,7 +369,17 @@ export default function SkillsPage() {
           ) : (
             <div className="flex flex-col gap-2.5">
               {items.map((s) => (
-                <SkillCard key={s.id} s={s} isAdmin={isAdmin} token={token!} onChanged={onChanged} />
+                <SkillCard
+                  key={s.id}
+                  s={s}
+                  isAdmin={isAdmin}
+                  token={token!}
+                  folders={folders}
+                  onChanged={() => {
+                    onChanged();
+                    reloadFolders();
+                  }}
+                />
               ))}
             </div>
           )}
@@ -330,6 +415,8 @@ export default function SkillsPage() {
           )}
         </>
       )}
+      </div>
+      </div>
     </AppShell>
   );
 }
@@ -338,18 +425,38 @@ function SkillCard({
   s,
   isAdmin,
   token,
+  folders,
   onChanged,
 }: {
   s: KgSkill;
   isAdmin: boolean;
   token: string;
+  folders: KnowledgeFolder[];
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [folderId, setFolderId] = useState(s.folderId ?? '');
+  const folderPath = folders.find((f) => f.id === s.folderId)?.path;
   const [title, setTitle] = useState(s.title);
   const [whenToUse, setWhenToUse] = useState(s.whenToUse);
   const [instruction, setInstruction] = useState(s.instruction);
+  const [procedure, setProcedure] = useState(s.body ?? '');
   const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<KgSkillVersion[] | null>(null);
+  const [historyError, setHistoryError] = useState('');
+
+  const toggleHistory = async () => {
+    if (history) {
+      setHistory(null);
+      return;
+    }
+    setHistoryError('');
+    try {
+      setHistory(await knowledgeGraph.skills.versions(token, s.id));
+    } catch (e: any) {
+      setHistoryError(e.message || 'Could not load the history');
+    }
+  };
 
   const scope = s.mcpServer?.name
     ? `server: ${s.mcpServer.name}`
@@ -397,6 +504,28 @@ function SkillCard({
             className={cn(textareaCls, 'bg-[var(--surface-2)]')}
             placeholder="Instruction"
           />
+          <textarea
+            value={procedure}
+            onChange={(e) => setProcedure(e.target.value)}
+            rows={6}
+            maxLength={20000}
+            className={cn(textareaCls, 'bg-[var(--surface-2)] font-mono text-[12.5px]')}
+            placeholder="Full procedure (optional, markdown): steps, field rules, output format. Opened on demand with skill_get."
+          />
+          {folders.length > 0 && (
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              className={cn(inputCls, 'h-9 bg-[var(--surface-2)]')}
+              aria-label="Folder"
+            >
+              {folderOptions(folders).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.value ? `Folder: ${o.label}` : 'No folder'}
+                </option>
+              ))}
+            </select>
+          )}
           <div className="flex gap-2">
             <Button
               variant="primary"
@@ -404,7 +533,13 @@ function SkillCard({
               disabled={busy}
               onClick={() =>
                 run(async () => {
-                  await knowledgeGraph.skills.update(token, s.id, { title, whenToUse, instruction });
+                  await knowledgeGraph.skills.update(token, s.id, {
+                    title,
+                    whenToUse,
+                    instruction,
+                    body: procedure.trim() ? procedure : null,
+                    ...(folders.length > 0 ? { folderId: folderId || null } : {}),
+                  });
                   setEditing(false);
                 })
               }
@@ -431,8 +566,14 @@ function SkillCard({
             </Badge>
           </div>
           <p className="text-[11.5px] text-[var(--text-3)]">
-            {scope} · confidence {s.confidence.toFixed(2)}
+            {folderPath ? `${folderPath} · ` : ''}
+            {scope} · {sourceLabel(s.source, s.status)} · v{s.version ?? 1}
+            {s.source === 'llm' || s.source === 'consolidation' ? ` · confidence ${s.confidence.toFixed(2)}` : ''}
             {s.evidenceCount ? ` · ${s.evidenceCount} example(s)` : ''}
+            {' · '}
+            {s.useCount
+              ? `opened ${s.useCount}×${s.lastUsedAt ? `, last ${new Date(s.lastUsedAt).toLocaleDateString()}` : ''}`
+              : 'not opened yet'}
           </p>
         </div>
         {isAdmin && (
@@ -483,24 +624,78 @@ function SkillCard({
       <p className="text-[13px] leading-[1.55] text-[var(--text)]">
         <span className="text-[var(--text-3)]">Do:</span> {s.instruction}
       </p>
+      {s.status === 'pending' && (s.replaces?.length ?? 0) > 0 && (
+        <p className="mt-1 text-[12px] text-[var(--text-3)]">
+          Replaces {s.replaces!.length} active skills: applying it deactivates them (they stay, with their history).
+        </p>
+      )}
+      {s.body && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[12.5px] text-[var(--text-2)]">
+            Procedure ({s.body.length.toLocaleString()} characters)
+          </summary>
+          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 font-mono text-[12px] leading-relaxed text-[var(--text)]">
+            {s.body}
+          </pre>
+        </details>
+      )}
+      {(s.version ?? 1) > 1 && (
+        <div className="mt-2">
+          <button onClick={toggleHistory} className="text-[12px] text-[var(--brand)] hover:underline">
+            {history ? 'Hide history' : `History (${(s.version ?? 1) - 1} earlier version${(s.version ?? 1) > 2 ? 's' : ''})`}
+          </button>
+          {historyError && <p className="text-[12px] text-[var(--danger)]">{historyError}</p>}
+          {history && (
+            <ol className="mt-2 flex flex-col gap-2">
+              {history.map((v) => (
+                <li key={v.version} className="rounded-[9px] border border-[var(--border)] p-3 text-[12.5px]">
+                  <p className="mb-1 text-[11.5px] text-[var(--text-3)]">
+                    v{v.version} · replaced {new Date(v.createdAt).toLocaleString()}
+                  </p>
+                  <p className="font-medium text-[var(--text)]">{v.title}</p>
+                  {v.whenToUse && <p className="text-[var(--text-2)]">When: {v.whenToUse}</p>}
+                  <p className="text-[var(--text-2)]">Do: {v.instruction}</p>
+                  {v.body && (
+                    <p className="text-[var(--text-3)]">Procedure: {v.body.length.toLocaleString()} characters</p>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
     </Card>
   );
+}
+
+function sourceLabel(source?: string, status?: string): string {
+  if (source === 'llm') return 'AI-generated';
+  if (source === 'consolidation') return status === 'pending' ? 'merge proposal' : 'merged by AI';
+  if (source === 'errors') return 'learned from fixed errors';
+  if (source === 'finder') return 'from Skills Finder';
+  return 'written by hand';
 }
 
 function NewSkillForm({
   token,
   servers,
   connectors,
+  folders,
+  defaultFolderId,
   onCreated,
 }: {
   token: string;
   servers: Array<{ id: string; name: string }>;
   connectors: Array<{ id: string; name: string }>;
+  folders: KnowledgeFolder[];
+  defaultFolderId: string;
   onCreated: () => void;
 }) {
+  const [folderId, setFolderId] = useState(defaultFolderId);
   const [title, setTitle] = useState('');
   const [whenToUse, setWhenToUse] = useState('');
   const [instruction, setInstruction] = useState('');
+  const [procedure, setProcedure] = useState('');
   const [scope, setScope] = useState(''); // "srv:<id>" | "con:<id>" | ""
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
@@ -512,6 +707,8 @@ function NewSkillForm({
     setSaving(true);
     setErr('');
     const body: any = { title, whenToUse, instruction };
+    if (procedure.trim()) body.body = procedure;
+    if (folderId) body.folderId = folderId;
     if (scope.startsWith('srv:')) body.mcpServerId = scope.slice(4);
     else if (scope.startsWith('con:')) body.connectorId = scope.slice(4);
     try {
@@ -519,6 +716,7 @@ function NewSkillForm({
       setTitle('');
       setWhenToUse('');
       setInstruction('');
+      setProcedure('');
       setScope('');
       onCreated();
     } catch (e: any) {
@@ -551,6 +749,28 @@ function NewSkillForm({
           placeholder="Instruction for the agent (imperative guidance)"
           className={textareaCls}
         />
+        <textarea
+          value={procedure}
+          onChange={(e) => setProcedure(e.target.value)}
+          rows={5}
+          maxLength={20000}
+          placeholder="Full procedure (optional, markdown): steps, field rules, output format. The AI opens it with skill_get when the skill applies."
+          className={cn(textareaCls, 'font-mono text-[12.5px]')}
+        />
+        {folders.length > 0 && (
+          <select
+            value={folderId}
+            onChange={(e) => setFolderId(e.target.value)}
+            className={cn(inputCls, 'text-[var(--text)]')}
+            aria-label="Folder"
+          >
+            {folderOptions(folders).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.value ? `Folder: ${o.label}` : 'No folder (top level)'}
+              </option>
+            ))}
+          </select>
+        )}
         <select
           value={scope}
           onChange={(e) => setScope(e.target.value)}

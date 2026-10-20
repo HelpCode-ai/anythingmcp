@@ -11,6 +11,7 @@ import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { BearerTokenRenewalService } from './bearer-token-renewal.service';
+import { ShopeeTokenService, isShopeeAccessTokenRejected, isShopeeAuth } from './shopee-token.service';
 import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
@@ -90,6 +91,7 @@ export class RestEngine {
     private readonly oauth2TokenService: OAuth2TokenService,
     private readonly loginTokenService: LoginTokenService,
     @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
+    @Optional() private readonly shopeeTokens?: ShopeeTokenService,
   ) {}
 
   /**
@@ -457,8 +459,12 @@ export class RestEngine {
 
     // HMAC signing is here for the same reason: the canonical string most
     // of these APIs sign folds in the request body, which does not exist
-    // until the block above has run.
-    this.applyHmacSignature(axiosConfig, config);
+    // until the block above has run. A Shopee connector also signs the
+    // shop's access token and id (undefined for every other connector).
+    const hmacCredentials = isShopeeAuth(config.authType, config.authConfig)
+      ? await this.shopeeShopParams(config)
+      : undefined;
+    this.applyHmacSignature(axiosConfig, config, hmacCredentials);
     for (const h of headerNames(axiosConfig.headers)) {
       if (!headersBeforeSigning.includes(h)) credentialHeaders.add(h);
     }
@@ -528,11 +534,22 @@ export class RestEngine {
         const bundle = await this.loginTokenService.forceRelogin(
           authConfig,
           config.connectorId,
+          { proxyUrl: config.proxyUrl },
         );
         injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
         rebuildBody(axiosConfig, buildBody);
         const retryResponse = await outboundRequest(axiosConfig, outbound);
         return withMeta(retryResponse);
+      }
+      // Shopee refused the shop's access token (expired early, or replaced
+      // by another process's renewal): renew once, sign again, resend.
+      if (hmacCredentials && this.shopeeTokens && isShopeeAccessTokenRejected(error)) {
+        const renewed = await this.shopeeTokens.renewAfterRejection(config, sentAt);
+        if (renewed) {
+          this.applyHmacSignature(axiosConfig, config, renewed);
+          rebuildBody(axiosConfig, buildBody);
+          return withMeta(await outboundRequest(axiosConfig, outbound));
+        }
       }
       // A pasted token the provider ended for good (Meta 190 logged out,
       // expired, password changed): mark the connector, stop sending it,
@@ -698,6 +715,7 @@ export class RestEngine {
       authType: string;
       authConfig?: Record<string, unknown>;
       connectorId?: string;
+      proxyUrl?: string;
     },
   ): Promise<void> {
     if (!config.authConfig) return;
@@ -781,6 +799,7 @@ export class RestEngine {
         const bundle = await this.loginTokenService.getToken(
           config.authConfig as unknown as LoginTokenAuthConfig,
           config.connectorId,
+          { proxyUrl: config.proxyUrl },
         );
         injectLoginTokenHeaders(
           axiosConfig,
@@ -826,10 +845,26 @@ export class RestEngine {
    *   signature.timestampHeader  optional; receives the same timestamp that
    *                        went into the string, so the server can recompute it
    *   signature.extraHeaders     static headers sent alongside (e.g. a client key)
+   *
+   * Query signing, opt-in (Shopee Open Platform). None of these fields is set
+   * on an adapter written before them, and without them the code below runs
+   * exactly as it always has (rest.engine.hmac-pin.spec.ts pins it):
+   *   signature.placement       'header' (default) | 'query': the digest goes
+   *                             into the query parameter `paramName` instead
+   *   signature.paramName       default 'sign'
+   *   signature.timestampParam  sends the timestamp as this query parameter
+   *   signature.queryParams     static query parameters added to every call
+   *                             (a partner id), signed like the others
+   *   template variables        `${pathname}` (path without the query) and
+   *                             `${query.NAME}` (the value of a query
+   *                             parameter as sent, '' when absent)
+   * `credentialParams` are query parameters a token provider adds (Shopee's
+   * access_token and shop_id); they win over a tool's own parameters.
    */
   private applyHmacSignature(
     axiosConfig: AxiosRequestConfig,
     config: { authType: string; authConfig?: Record<string, unknown> },
+    credentialParams?: Record<string, string>,
   ): void {
     if (config.authType !== 'HMAC' || !config.authConfig) return;
     const sig = config.authConfig.signature as Record<string, unknown> | undefined;
@@ -840,6 +875,26 @@ export class RestEngine {
     const secret = String(sig.secret ?? '');
     const headerName = String(sig.headerName ?? 'Signature');
     const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const extended = usesExtendedHmac(sig, credentialParams);
+    if (extended) {
+      // Static and credential parameters first, so the query below (and the
+      // signature over it) includes them. A tool's own parameter of the same
+      // name cannot replace a credential.
+      const added: Record<string, unknown> = {};
+      const statics = sig.queryParams;
+      if (statics && typeof statics === 'object' && !Array.isArray(statics)) {
+        for (const [k, v] of Object.entries(statics as Record<string, unknown>)) {
+          if (v !== undefined && v !== null) added[k] = String(v);
+        }
+      }
+      Object.assign(added, credentialParams ?? {});
+      if (sig.timestampParam) added[String(sig.timestampParam)] = timestamp;
+      // A retry signs again: the previous signature is not part of the query.
+      const previous = { ...((axiosConfig.params as Record<string, unknown>) ?? {}) };
+      if (String(sig.placement ?? 'header') === 'query') delete previous[String(sig.paramName ?? 'sign')];
+      axiosConfig.params = { ...previous, ...added };
+    }
 
     // The body as it will actually go out. An object body is serialized the
     // way axios will serialize it, so the bytes signed are the bytes sent —
@@ -873,19 +928,38 @@ export class RestEngine {
 
     // Kaufland's documented string: the four parts joined by newlines, with
     // no newline after the timestamp.
-    const canonical = String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}')
-      .replace(/\\n/g, '\n')
-      .replace(/\$\{method\}/g, String(axiosConfig.method ?? 'GET').toUpperCase())
-      .replace(/\$\{url\}/g, url)
-      .replace(/\$\{path\}/g, path)
-      .replace(/\$\{body\}/g, body)
-      .replace(/\$\{timestamp\}/g, timestamp);
+    const canonical = extended
+      ? renderExtendedHmacTemplate(String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}'), {
+          method: String(axiosConfig.method ?? 'GET').toUpperCase(),
+          url,
+          path,
+          pathname: pathnameOf(url),
+          body,
+          timestamp,
+          query: params,
+        })
+      : String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}')
+          .replace(/\\n/g, '\n')
+          .replace(/\$\{method\}/g, String(axiosConfig.method ?? 'GET').toUpperCase())
+          .replace(/\$\{url\}/g, url)
+          .replace(/\$\{path\}/g, path)
+          .replace(/\$\{body\}/g, body)
+          .replace(/\$\{timestamp\}/g, timestamp);
 
     const digest = createHmac(algorithm, secret)
       .update(canonical, 'utf8')
       .digest(encoding as 'hex' | 'base64');
 
     const extra = (sig.extraHeaders as Record<string, string> | undefined) ?? {};
+    if (extended && String(sig.placement ?? 'header') === 'query') {
+      axiosConfig.params = { ...params, [String(sig.paramName ?? 'sign')]: digest };
+      axiosConfig.paramsSerializer = serializeRepeatedParams;
+      axiosConfig.headers = { ...axiosConfig.headers, ...extra };
+      if (sig.timestampHeader) {
+        (axiosConfig.headers as Record<string, string>)[String(sig.timestampHeader)] = timestamp;
+      }
+      return;
+    }
     axiosConfig.headers = {
       ...axiosConfig.headers,
       ...extra,
@@ -896,6 +970,25 @@ export class RestEngine {
         String(sig.timestampHeader)
       ] = timestamp;
     }
+  }
+
+  /**
+   * The shop parameters a Shopee call signs and sends (`access_token`,
+   * `shop_id`), renewed first when the token is about to expire. Undefined
+   * for every connector that is not `authType: HMAC` with
+   * `authConfig.tokenProvider: "shopee"`.
+   */
+  private async shopeeShopParams(config: {
+    baseUrl: string;
+    authType: string;
+    authConfig?: Record<string, unknown>;
+    connectorId?: string;
+  }): Promise<Record<string, string> | undefined> {
+    if (!isShopeeAuth(config.authType, config.authConfig)) return undefined;
+    if (!this.shopeeTokens) {
+      throw new Error('Shopee connectors need the Shopee token service, which is not available here.');
+    }
+    return this.shopeeTokens.getShopParams(config);
   }
 
   private applyOAuth1Signature(
@@ -1072,6 +1165,63 @@ function encodeQueryComponent(value: string): string {
     .replace(/%24/g, '$')
     .replace(/%2C/gi, ',')
     .replace(/%20/g, '+');
+}
+
+/**
+ * Whether an HMAC signature uses the query-signing options (see
+ * applyHmacSignature). False for every adapter written before them, which
+ * keeps them on the original code path.
+ */
+export function usesExtendedHmac(
+  sig: Record<string, unknown>,
+  credentialParams?: Record<string, string>,
+): boolean {
+  return (
+    sig.placement !== undefined ||
+    sig.paramName !== undefined ||
+    sig.timestampParam !== undefined ||
+    sig.queryParams !== undefined ||
+    credentialParams !== undefined
+  );
+}
+
+/** The path of a URL without its query; the input as given when it is relative. */
+function pathnameOf(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    const q = url.indexOf('?');
+    return q === -1 ? url : url.slice(0, q);
+  }
+}
+
+/**
+ * The canonical string of an extended HMAC template, in one pass: a value
+ * substituted for one variable is never read again as another (an access
+ * token cannot smuggle in `${body}`).
+ */
+export function renderExtendedHmacTemplate(
+  template: string,
+  vars: {
+    method: string;
+    url: string;
+    path: string;
+    pathname: string;
+    body: string;
+    timestamp: string;
+    query: Record<string, unknown>;
+  },
+): string {
+  return template
+    .replace(/\\n/g, '\n')
+    .replace(/\$\{(method|url|path|pathname|body|timestamp|query\.([^{}]+))\}/g, (_m, name: string, q?: string) => {
+      if (q !== undefined) {
+        const v = vars.query[q];
+        if (v === undefined || v === null) return '';
+        return Array.isArray(v) ? v.map(String).join(',') : String(v);
+      }
+      return String(vars[name as Exclude<keyof typeof vars, 'query'>]);
+    });
 }
 
 /**

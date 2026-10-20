@@ -1,0 +1,118 @@
+# Workspace memory
+
+Workspace memory lets AI clients save facts, preferences and notes and find
+them again later, in any client connected to an MCP server of the workspace
+(Claude, ChatGPT, Copilot, Cursor and others). It is available with an
+**Enterprise licence**, on AnythingMCP Cloud and on self-hosted instances.
+
+- **My memory** (personal): one user's items, for example "answer me in
+  Italian, numbers as tables". Only that user can read them, admins included.
+- **Company memory** (organization): knowledge for everyone, for example
+  "STAMMKUNDE means a customer with a framework agreement".
+
+Memory is served to AI clients as information written by people, never as
+instructions. Rules and procedures the AI must follow belong in
+[AI skills](knowledge-graph.md#ai-skills).
+
+## MCP tools
+
+The tools are offered on per-server endpoints (`/mcp/<serverId>`) only, and
+only those the user's access level allows. The shared `/mcp` endpoint is
+unchanged.
+
+claude.ai caches a connector's tool list: after memory is turned on for a user,
+refresh it under *Customize → Connectors →* the connector *→ ⋮ → Refresh tools
+list* before the memory tools appear in new chats.
+
+| Tool | Offered from | What it does |
+|---|---|---|
+| `memory_search(query?, scope?, limit?, about?, folder?)` | Read | Full-text search over the company memory and, from Personal up, the user's own items. An empty query returns the most recent items. |
+| `memory_save(content, kind?, scope?, tags?, about?, folder?)` | Personal | Saves a fact, preference or note. `scope: "organization"` is offered from Contribute. |
+| `memory_forget(id)` | Personal | Deletes one of the user's own personal items. Company memory is changed in the dashboard only. |
+
+### Memory and the knowledge graph
+
+An item can say what it is about, as the [knowledge graph](knowledge-graph.md)
+names it (`about: "customer"`, normalised like graph entities, so "Customers"
+becomes `customer`). `memory_save` and `memory_search` accept `about`, and the
+Memory page has an *About* field. When an AI client asks `kg_how_to_obtain`
+about an entity, the answer also lists the facts about it that the user may
+read (their memory access and folders apply), marked as information written by
+people.
+
+## Access per user
+
+Each user has one of these levels in a workspace (Settings → Users → *Memory*,
+one by one or for several selected users):
+
+| Level | Company memory | My memory | Propose to company memory |
+|---|---|---|---|
+| No access | – | – | – |
+| Read | read | – | – |
+| Personal | read | read and write | – |
+| Contribute | read | read and write | yes |
+| Default | the workspace default (Memory page → *Workspace settings*, initially Personal) | | |
+
+Users without a user identity (instance-level static credentials,
+client-credentials tokens) and deactivated users have no access.
+
+## Company memory from AI clients
+
+Memory page → *Workspace settings* → *Company memory from AI clients*:
+
+- **Needs approval** (default): what an AI client proposes waits under
+  *To review* until an admin or editor approves or rejects it.
+- **Saved automatically**: it is active right away.
+
+Either way, each item records who saved it and from which client, and admins
+and editors can edit or delete company memory on the Memory page. They can
+also add to it directly.
+
+## Folders
+
+Company memory and skills share one folder tree per workspace, so a topic
+such as "Sales / Quotes" holds both the procedures (skills) and the facts
+(memory). Folders are available in every edition.
+
+- Admins and editors create, rename, describe, move and delete folders from
+  the left column of the Memory page (Company memory tab) or the AI Skills
+  page. Folders go up to 4 levels deep. Deleting a folder moves its subfolders
+  and items to its parent; nothing is deleted.
+- Personal memory has no folders; use tags.
+- `memory_search(folder: "Sales")` searches a folder and its subfolders.
+  `memory_save` can file a company item in an existing folder. AI clients
+  never create folders. Results show each item's folder.
+
+### Limiting folders to roles (Enterprise)
+
+An admin can limit a folder to one or more custom roles (Settings → Roles,
+including roles synced from the identity provider): edit the folder → *Visible
+to*. The limit applies to the folder and everything below it, for skills and
+memory alike, on every path: instructions, `skills_list` / `skill_get`,
+prompts, `memory_search`, `kg_how_to_obtain` and the dashboard. Workspace
+admins see every folder. For everyone else a limited folder does not exist.
+
+Setting limits needs an Enterprise licence. Limits already set keep applying
+without it, so access never widens on its own. Every change is logged as
+`KNOWLEDGE_FOLDER_ACCESS_CHANGED`.
+
+## Privacy and safety
+
+- Content that looks like a password, token or key is refused.
+- An item holds up to 2,000 characters and 10 tags. A user keeps up to 1,000
+  personal items per workspace, a workspace up to 20,000 items.
+- Admins can erase a user's personal memory without reading it (Settings →
+  Users → select → *Erase personal memory*). Removing a user from a workspace
+  deletes their personal memory there; deleting the account deletes all of it.
+- Every change of access or settings and every erasure is recorded in the
+  security event log (`MEMORY_ACCESS_CHANGED`, `MEMORY_SETTINGS_CHANGED`,
+  `MEMORY_ERASED`).
+- Without the licence (or after it expires) the tools and the page are not
+  available; stored memory is kept, and admins can still erase personal memory.
+
+## Search
+
+Search uses PostgreSQL full text with the `simple` configuration (no stemming,
+so German, Italian and English behave alike), ranked by relevance, and falls
+back to a substring match for partial words and codes. No extra service or
+embedding provider is needed.

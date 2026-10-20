@@ -1,0 +1,2317 @@
+{
+  "slug": "monet",
+  "name": "Monet",
+  "aliases": [
+    "MONET apskaita",
+    "Monet buhalterinė apskaita",
+    "e.monet.lt"
+  ],
+  "description": "Connect MONET, the Lithuanian cloud accounting system, to Claude or ChatGPT: customers and vendors with balances and open items, sales and purchase invoices, items and stock, contracts, and every Monet report (ledger, trial balance, profit and loss, VAT, debts) as CSV. Multi-company logins for accountants.",
+  "instructions": "## Monet\nThis connector uses the **Monet API (MonetServices2, version 2)** of MONET, the Lithuanian cloud accounting system at e.monet.lt: companies, customers and vendors with their balances and open items, sales and purchase invoices, items and stock on hand, contracts, employee timetables, and every Monet report (general ledger, trial balance, profit and loss, VAT, debts, stock, fixed assets) as CSV or HTML.\n\n**Setup (about 5 minutes)**\n1. Use a Monet user that may see the companies the assistant should work with. A separate user for the integration is best, so its rights can be limited and its password changed without locking anyone out.\n2. Put the user name in `MONET_USERNAME` and the password in `MONET_PASSWORD`. The connector signs every call with HTTP Basic authentication against `https://e.monet.lt/DesktopModules/MonetServices2/API/V2`.\n3. If the login works in the browser but the API answers 401, ask Monet support (info@monet.lt) to enable API access for the user.\n\n**Several companies (accountants)**: one Monet login can serve several companies, and every call works in the login's *current* company. Call `monet_get_company` first; to work in another company, find it with `monet_list_companies` and switch with `monet_set_company`. The switch holds for this login everywhere until it is switched again, so tell the user which company you are in before reporting figures, and switch back if others share the login.\n\n**Reading data**\n- Lists page with `_page` (from 0) and `_size` (up to 300). Customers, vendors and invoices are searched by short code (trumpinys), number or name.\n- Invoice lists need a period: `_from` and `_to` as `YYYY-MM-DD`.\n- Balances and open items take the customer's or vendor's short code (`_accountNum`), as shown by the lists.\n- Reports: call `monet_get_report_parameters` with the report name to learn its keys (for example `from`, `to`, `ledger`, `periodCode`, `date`, `itemGroup`), then `monet_get_report` with `format` CSV and `parameters` as `[{\"key\": \"from\", \"values\": [\"2026-01-01\"]}, ...]`. LedgerTransReport, LedgerTrialBalanceReport, ProfitLossReport, CustVendDebtsOnDateReport and InventOnhandByDateReport answer most questions. Large periods give long reports: prefer a month at a time.\n\n**Writing**: creating and changing customers, vendors and items, adding dimensions and entering sales and purchase invoices are installed **switched off**. Turn on only what you need, per tool. Invoice tools post to the ledger unless `SkipPost` is true, and Monet numbers documents itself unless `InvoiceId` is given. The connector does not register payments or bank entries.\n\n**Errors**: 401 means the user name or password is wrong or the user has no API access; an empty list usually means the login is in a different company than expected.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "monet",
+  "docsUrl": "https://www.monet.lt/",
+  "prerequisites": "A MONET (e.monet.lt) user with access to the companies the assistant should see, and API access for that user (Monet support enables it if the login is refused).",
+  "requiredEnvVars": [
+    "MONET_USERNAME",
+    "MONET_PASSWORD"
+  ],
+  "envVarMeta": {
+    "MONET_USERNAME": {
+      "label": "Monet user name",
+      "kind": "credential",
+      "secret": false,
+      "help": "The user name you sign in to e.monet.lt with. A separate user for the integration is best."
+    },
+    "MONET_PASSWORD": {
+      "label": "Monet password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that Monet user. Stored encrypted."
+    }
+  },
+  "verifyHints": {
+    "401": "Monet refused the user name or password. Check MONET_USERNAME and MONET_PASSWORD by signing in at e.monet.lt; if the login works there, ask Monet support (info@monet.lt) to enable API access for this user.",
+    "403": "The Monet user may not read this. Give the user rights to the company, or switch company with monet_set_company."
+  },
+  "probe": {
+    "tool": "monet_get_company"
+  },
+  "connector": {
+    "name": "Monet",
+    "type": "REST",
+    "baseUrl": "https://e.monet.lt/DesktopModules/MonetServices2/API/V2",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{MONET_USERNAME}}",
+      "password": "{{MONET_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/GetCompany"
+  },
+  "tools": [
+    {
+      "name": "monet_get_company",
+      "description": "Read the company the Monet login currently works in (GetCompany): its name and code. Every other call reads and writes this company, so check it first when the account has several.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCompany"
+      }
+    },
+    {
+      "name": "monet_list_companies",
+      "description": "List the companies this Monet login can switch to (GetCompanyList), for accountants and groups with several companies under one login. Filter by part of the name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the company name. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCompanyList",
+        "queryParams": {
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_set_company",
+      "description": "Switch the current company of this Monet login to another one from monet_list_companies (SetCompany). All later calls of this login, from any client, then read and write that company until it is switched again. Changes no accounting data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_company": {
+            "type": "string",
+            "description": "Company id or code exactly as monet_list_companies returns it."
+          }
+        },
+        "required": [
+          "_company"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/SetCompany",
+        "queryParams": {
+          "_company": "$_company"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "monet_get_language",
+      "description": "Read the interface language set for this Monet login (GetLanguage), which also decides the language of report headings and some messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetLanguage"
+      }
+    },
+    {
+      "name": "monet_list_currencies",
+      "description": "List the currency codes defined in the current company (GetCurrencyCodeList), e.g. EUR, USD, PLN, to use on invoices and in filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the currency code. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCurrencyCodeList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_list_dimensions",
+      "description": "List dimensions (požymiai) of the current company (GetDimList): departments, projects or products used to split postings. Choose the kind with _type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_type": {
+            "type": "integer",
+            "description": "Kind of dimension: 0 department (padalinys), 1 project (projektas), 2 product (produktas).",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the dimension code or name. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetDimList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_type": "$_type",
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_list_ledger_accounts",
+      "description": "List the chart of accounts of the current company (GetLedgerList): account numbers and names, to read reports and post service lines to the right account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the account number or name. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetLedgerList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_list_vat_groups",
+      "description": "List the VAT codes (PVM kodai, item tax groups) of the current company (GetTaxItemGroupList), used on invoice lines and items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the VAT code. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetTaxItemGroupList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_list_warehouses",
+      "description": "List the warehouses (sandėliai) of the current company (GetLocationList), for stock quantities and item and invoice lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the warehouse code or name. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetLocationList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_list_item_groups",
+      "description": "List the item groups (prekių grupės) of the current company (GetItemGroupList), to filter items and stock reports by group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the group code or name. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetItemGroupList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_list_item_types",
+      "description": "List the item types (prekių tipai) defined in the current company (GetItemTypeList), such as stocked goods or services.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the type. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetItemTypeList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_list_customers",
+      "description": "List customers (klientai) of the current company (GetCustList) with their short code (account number), name, company and VAT codes, contacts and terms. Search by short code or name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the customer short code or name. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCustList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_list_vendors",
+      "description": "List vendors (tiekėjai) of the current company (GetVendList) with their short code, name, company and VAT codes, contacts and terms. Search by short code or name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the vendor short code or name. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetVendList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_get_customer_balance",
+      "description": "Read the balance a customer owes or has in credit (GetCustBalance), by customer short code. Positive amounts are receivables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_accountNum": {
+            "type": "string",
+            "description": "The customer's short code (account number), as in monet_list_customers, e.g. 0001."
+          }
+        },
+        "required": [
+          "_accountNum"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCustBalance",
+        "queryParams": {
+          "_accountNum": "$_accountNum"
+        }
+      }
+    },
+    {
+      "name": "monet_list_customer_open_items",
+      "description": "List a customer's open (not fully settled) invoices and payments (GetCustOpenPayments) with amounts, due dates and what is left to settle.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_accountNum": {
+            "type": "string",
+            "description": "The customer's short code (account number), as in monet_list_customers, e.g. 0001."
+          }
+        },
+        "required": [
+          "_accountNum"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCustOpenPayments",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_accountNum": "$_accountNum"
+        }
+      }
+    },
+    {
+      "name": "monet_get_vendor_balance",
+      "description": "Read the balance owed to a vendor (GetVendBalance), by vendor short code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_accountNum": {
+            "type": "string",
+            "description": "The vendor's short code (account number), as in monet_list_vendors, e.g. 0001."
+          }
+        },
+        "required": [
+          "_accountNum"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetVendBalance",
+        "queryParams": {
+          "_accountNum": "$_accountNum"
+        }
+      }
+    },
+    {
+      "name": "monet_list_vendor_open_items",
+      "description": "List a vendor's open (not fully settled) invoices and payments (GetVendOpenPayments) with amounts, due dates and what is left to pay.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_accountNum": {
+            "type": "string",
+            "description": "The vendor's short code (account number), as in monet_list_vendors, e.g. 0001."
+          }
+        },
+        "required": [
+          "_accountNum"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetVendOpenPayments",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_accountNum": "$_accountNum"
+        }
+      }
+    },
+    {
+      "name": "monet_list_sales_invoices",
+      "description": "List sales invoices (pardavimo sąskaitos faktūros) in a date range (GetCustInvoiceList), with number, customer, dates, amounts and VAT. Search by invoice number or customer name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_from": {
+            "type": "string",
+            "description": "Period start, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "_to": {
+            "type": "string",
+            "description": "Period end, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the invoice number or customer name. Leave out to list all."
+          }
+        },
+        "required": [
+          "_from",
+          "_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCustInvoiceList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search",
+          "_from": "$_from",
+          "_to": "$_to"
+        }
+      }
+    },
+    {
+      "name": "monet_list_purchase_invoices",
+      "description": "List purchase invoices (pirkimo sąskaitos faktūros) in a date range (GetVendInvoiceList), with number, vendor, dates, amounts and VAT. Search by invoice number or vendor name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_from": {
+            "type": "string",
+            "description": "Period start, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "_to": {
+            "type": "string",
+            "description": "Period end, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the invoice number or vendor name. Leave out to list all."
+          }
+        },
+        "required": [
+          "_from",
+          "_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetVendInvoiceList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search",
+          "_from": "$_from",
+          "_to": "$_to"
+        }
+      }
+    },
+    {
+      "name": "monet_get_sales_invoice_balance",
+      "description": "Read what is still open on one sales invoice of a customer (GetCustInvoiceBalanceCur), in the invoice currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_accountNum": {
+            "type": "string",
+            "description": "The customer's short code (account number), as in monet_list_customers, e.g. 0001."
+          },
+          "_invoiceId": {
+            "type": "string",
+            "description": "Sales invoice number, e.g. ADM-0000049."
+          }
+        },
+        "required": [
+          "_accountNum",
+          "_invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCustInvoiceBalanceCur",
+        "queryParams": {
+          "_accountNum": "$_accountNum",
+          "_invoiceId": "$_invoiceId"
+        }
+      }
+    },
+    {
+      "name": "monet_get_purchase_invoice_balance",
+      "description": "Read what is still open on one purchase invoice of a vendor (GetVendInvoiceBalanceCur), in the invoice currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_accountNum": {
+            "type": "string",
+            "description": "The vendor's short code (account number), as in monet_list_vendors, e.g. 0001."
+          },
+          "_invoiceId": {
+            "type": "string",
+            "description": "Purchase invoice number as registered in Monet."
+          }
+        },
+        "required": [
+          "_accountNum",
+          "_invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetVendInvoiceBalanceCur",
+        "queryParams": {
+          "_accountNum": "$_accountNum",
+          "_invoiceId": "$_invoiceId"
+        }
+      }
+    },
+    {
+      "name": "monet_list_items",
+      "description": "List items and services (prekės) of the current company (GetItemList) with number, name, group, type, unit and prices. Search by item number or name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_search": {
+            "type": "string",
+            "description": "Text to look for in the item number or name. Leave out to list all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetItemList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_search": "$_search"
+        }
+      }
+    },
+    {
+      "name": "monet_get_item",
+      "description": "Read one item with its stock on hand per warehouse (GetItem), by item number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "description": "Item number, as in monet_list_items."
+          },
+          "_showZero": {
+            "type": "boolean",
+            "description": "true to include warehouses where the item has no stock."
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetItem",
+        "queryParams": {
+          "itemId": "$itemId",
+          "_showZero": "$_showZero"
+        }
+      }
+    },
+    {
+      "name": "monet_list_stock_quantities",
+      "description": "List stock quantities on hand (ItemsQuantity): all items, or with _all false only the items whose stock changed today, which suits a daily sync.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "_all": {
+            "type": "boolean",
+            "description": "true for all items, false for only items whose stock changed today.",
+            "default": true
+          },
+          "_showZero": {
+            "type": "boolean",
+            "description": "true to include warehouses where the item has no stock."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ItemsQuantity",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "_all": "$_all",
+          "_showZero": "$_showZero"
+        }
+      }
+    },
+    {
+      "name": "monet_list_sales_contracts",
+      "description": "List sales contracts (sutartys) with their billing schedule (GetSalesSchedList), filtered by contract number and/or customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 300.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 300
+          },
+          "agreementNum": {
+            "type": "string",
+            "description": "Contract number, e.g. Agree-13."
+          },
+          "custAccount": {
+            "type": "string",
+            "description": "Customer short code, to list that customer's contracts."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetSalesSchedList",
+        "queryParams": {
+          "_page": "$_page",
+          "_size": "$_size",
+          "agreementNum": "$agreementNum",
+          "custAccount": "$custAccount"
+        }
+      }
+    },
+    {
+      "name": "monet_get_employee_timetable",
+      "description": "Read the work timetable of employees of a company for a period (GetCompanyWorkerTimeTable): hours per day per employment agreement.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_companyCode": {
+            "type": "string",
+            "description": "Company registration code, e.g. 301844037."
+          },
+          "_agreementId": {
+            "type": "string",
+            "description": "Comma-separated employment agreement ids, e.g. D_004,D_005."
+          },
+          "_dateFrom": {
+            "type": "string",
+            "description": "Period start, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "_dateTo": {
+            "type": "string",
+            "description": "Period end, YYYY-MM-DD.",
+            "format": "date"
+          }
+        },
+        "required": [
+          "_companyCode",
+          "_agreementId",
+          "_dateFrom",
+          "_dateTo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCompanyWorkerTimeTable",
+        "queryParams": {
+          "_companyCode": "$_companyCode",
+          "_agreementId": "$_agreementId",
+          "_dateFrom": "$_dateFrom",
+          "_dateTo": "$_dateTo"
+        }
+      }
+    },
+    {
+      "name": "monet_get_report_parameters",
+      "description": "List the parameters a Monet report takes (GetReportParameters): key, label, type (DateTime, String, Integer), whether it is required and whether several values are allowed. With loadValues true it also returns the values to choose from. Call it before monet_get_report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reportName": {
+            "type": "string",
+            "description": "Report name, e.g. LedgerTransReport (general ledger transactions), LedgerTransByDateReport, LedgerTrialBalanceReport (trial balance), LedgerBalanceReport, LedgerAlternativeReport, LedgerTurnoverDimReport (turnover by dimension), ProfitLossReport, LedgerCustInvoicesByTaxReport and LedgerVendInvoicesByTaxReport (invoices by VAT code), LedgerCustSumReport, LedgerTaxNotClosedReport, CustTransReport and VendTransReport (customer and vendor transactions), CustVendDebtsOnDateReport and VendDebtsOnDateReport (debts on a date), InventTurnoverReport (stock turnover), InventOnhandByDateReport (stock on a date), AssetTurnoverReport, AssetTransReport, AssetDepreciationReport."
+          },
+          "loadValues": {
+            "type": "boolean",
+            "description": "true to also return the allowed values of each parameter (accounts, groups, profiles)."
+          }
+        },
+        "required": [
+          "reportName"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetReportParameters",
+        "queryParams": {
+          "reportName": "$reportName",
+          "loadValues": "$loadValues"
+        }
+      }
+    },
+    {
+      "name": "monet_get_report",
+      "description": "Run a Monet report and get its content (GetReport): general ledger, trial balance, profit and loss, VAT, customer and vendor transactions and debts, stock and fixed asset reports. Use CSV or HTML to read the figures; PDF, EXCEL and WORD return a file. Read-only, Monet exposes it as a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Report name, e.g. LedgerTransReport (general ledger transactions), LedgerTransByDateReport, LedgerTrialBalanceReport (trial balance), LedgerBalanceReport, LedgerAlternativeReport, LedgerTurnoverDimReport (turnover by dimension), ProfitLossReport, LedgerCustInvoicesByTaxReport and LedgerVendInvoicesByTaxReport (invoices by VAT code), LedgerCustSumReport, LedgerTaxNotClosedReport, CustTransReport and VendTransReport (customer and vendor transactions), CustVendDebtsOnDateReport and VendDebtsOnDateReport (debts on a date), InventTurnoverReport (stock turnover), InventOnhandByDateReport (stock on a date), AssetTurnoverReport, AssetTransReport, AssetDepreciationReport."
+          },
+          "format": {
+            "type": "string",
+            "description": "Output format. CSV or HTML for figures the assistant can read.",
+            "enum": [
+              "CSV",
+              "HTML",
+              "PDF",
+              "EXCEL",
+              "WORD"
+            ],
+            "default": "CSV"
+          },
+          "language": {
+            "type": "string",
+            "description": "Report language: Lt, En-US, En-GB, Pl, Ru or Et.",
+            "enum": [
+              "Lt",
+              "En-US",
+              "En-GB",
+              "Pl",
+              "Ru",
+              "Et"
+            ]
+          },
+          "parameters": {
+            "type": "array",
+            "description": "Report parameters from monet_get_report_parameters, each with its key and a list of values, e.g. [{\"key\": \"from\", \"values\": [\"2026-01-01\"]}, {\"key\": \"to\", \"values\": [\"2026-01-31\"]}]. Dates as YYYY-MM-DD.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "Parameter key."
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Selected value or values."
+                }
+              },
+              "required": [
+                "key",
+                "values"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name",
+          "parameters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/GetReport",
+        "bodyMapping": {
+          "name": "$name",
+          "format": "$format",
+          "language": "$language",
+          "parameters": "$parameters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "monet_create_customer",
+      "description": "Create a customer (klientas) in the current company (InsertCust). Fields left out are left empty or at the company defaults. Installed switched off: changes the books, confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ID": {
+            "type": "string",
+            "description": "The customer's short code (trumpinys), unique in the company; required."
+          },
+          "Name": {
+            "type": "string",
+            "description": "Name."
+          },
+          "EnterpriseCode": {
+            "type": "string",
+            "description": "Company or personal code (įmonės / asmens kodas)."
+          },
+          "VATNum": {
+            "type": "string",
+            "description": "VAT payer code (PVM mokėtojo kodas)."
+          },
+          "Email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "Phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "CellularPhone": {
+            "type": "string",
+            "description": "Mobile phone number."
+          },
+          "Address": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "City": {
+            "type": "string",
+            "description": "City."
+          },
+          "ZipCode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "Country": {
+            "type": "string",
+            "description": "Country code, e.g. LT."
+          },
+          "Currency": {
+            "type": "string",
+            "description": "Default currency, e.g. EUR."
+          },
+          "PaymTerm": {
+            "type": "string",
+            "description": "Payment terms code."
+          },
+          "PaymMethod": {
+            "type": "string",
+            "description": "Payment method code."
+          },
+          "GroupId": {
+            "type": "string",
+            "description": "Group code."
+          },
+          "TaxGroup": {
+            "type": "string",
+            "description": "VAT group."
+          },
+          "Notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "BankAccount": {
+            "type": "string",
+            "description": "Bank account (IBAN)."
+          },
+          "CreditMax": {
+            "type": "number",
+            "description": "Credit limit."
+          },
+          "Blocked": {
+            "type": "integer",
+            "description": "Stopped: 0 no, 1 invoices, 2 payments, 3 all."
+          },
+          "URL": {
+            "type": "string",
+            "description": "Website."
+          }
+        },
+        "required": [
+          "ID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/InsertCust",
+        "bodyMapping": {
+          "ID": "$ID",
+          "Name": "$Name",
+          "EnterpriseCode": "$EnterpriseCode",
+          "VATNum": "$VATNum",
+          "Email": "$Email",
+          "Phone": "$Phone",
+          "CellularPhone": "$CellularPhone",
+          "Address": "$Address",
+          "City": "$City",
+          "ZipCode": "$ZipCode",
+          "Country": "$Country",
+          "Currency": "$Currency",
+          "PaymTerm": "$PaymTerm",
+          "PaymMethod": "$PaymMethod",
+          "GroupId": "$GroupId",
+          "TaxGroup": "$TaxGroup",
+          "Notes": "$Notes",
+          "BankAccount": "$BankAccount",
+          "CreditMax": "$CreditMax",
+          "Blocked": "$Blocked",
+          "URL": "$URL"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_update_customer",
+      "description": "Change an existing customer (klientas) in the current company (UpdateCust). Fields left out are left unchanged. Installed switched off: changes the books, confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ID": {
+            "type": "string",
+            "description": "The customer's short code (trumpinys), unique in the company; identifies the customer to change."
+          },
+          "Name": {
+            "type": "string",
+            "description": "Name."
+          },
+          "EnterpriseCode": {
+            "type": "string",
+            "description": "Company or personal code (įmonės / asmens kodas)."
+          },
+          "VATNum": {
+            "type": "string",
+            "description": "VAT payer code (PVM mokėtojo kodas)."
+          },
+          "Email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "Phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "CellularPhone": {
+            "type": "string",
+            "description": "Mobile phone number."
+          },
+          "Address": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "City": {
+            "type": "string",
+            "description": "City."
+          },
+          "ZipCode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "Country": {
+            "type": "string",
+            "description": "Country code, e.g. LT."
+          },
+          "Currency": {
+            "type": "string",
+            "description": "Default currency, e.g. EUR."
+          },
+          "PaymTerm": {
+            "type": "string",
+            "description": "Payment terms code."
+          },
+          "PaymMethod": {
+            "type": "string",
+            "description": "Payment method code."
+          },
+          "GroupId": {
+            "type": "string",
+            "description": "Group code."
+          },
+          "TaxGroup": {
+            "type": "string",
+            "description": "VAT group."
+          },
+          "Notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "BankAccount": {
+            "type": "string",
+            "description": "Bank account (IBAN)."
+          },
+          "CreditMax": {
+            "type": "number",
+            "description": "Credit limit."
+          },
+          "Blocked": {
+            "type": "integer",
+            "description": "Stopped: 0 no, 1 invoices, 2 payments, 3 all."
+          },
+          "URL": {
+            "type": "string",
+            "description": "Website."
+          }
+        },
+        "required": [
+          "ID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/UpdateCust",
+        "bodyMapping": {
+          "ID": "$ID",
+          "Name": "$Name",
+          "EnterpriseCode": "$EnterpriseCode",
+          "VATNum": "$VATNum",
+          "Email": "$Email",
+          "Phone": "$Phone",
+          "CellularPhone": "$CellularPhone",
+          "Address": "$Address",
+          "City": "$City",
+          "ZipCode": "$ZipCode",
+          "Country": "$Country",
+          "Currency": "$Currency",
+          "PaymTerm": "$PaymTerm",
+          "PaymMethod": "$PaymMethod",
+          "GroupId": "$GroupId",
+          "TaxGroup": "$TaxGroup",
+          "Notes": "$Notes",
+          "BankAccount": "$BankAccount",
+          "CreditMax": "$CreditMax",
+          "Blocked": "$Blocked",
+          "URL": "$URL"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_create_vendor",
+      "description": "Create a vendor (tiekėjas) in the current company (InsertVend). Fields left out are left empty or at the company defaults. Installed switched off: changes the books, confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ID": {
+            "type": "string",
+            "description": "The vendor's short code (trumpinys), unique in the company; required."
+          },
+          "Name": {
+            "type": "string",
+            "description": "Name."
+          },
+          "EnterpriseCode": {
+            "type": "string",
+            "description": "Company or personal code (įmonės / asmens kodas)."
+          },
+          "VATNum": {
+            "type": "string",
+            "description": "VAT payer code (PVM mokėtojo kodas)."
+          },
+          "Email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "Phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "CellularPhone": {
+            "type": "string",
+            "description": "Mobile phone number."
+          },
+          "Address": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "City": {
+            "type": "string",
+            "description": "City."
+          },
+          "ZipCode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "Country": {
+            "type": "string",
+            "description": "Country code, e.g. LT."
+          },
+          "Currency": {
+            "type": "string",
+            "description": "Default currency, e.g. EUR."
+          },
+          "PaymTerm": {
+            "type": "string",
+            "description": "Payment terms code."
+          },
+          "PaymMethod": {
+            "type": "string",
+            "description": "Payment method code."
+          },
+          "GroupId": {
+            "type": "string",
+            "description": "Group code."
+          },
+          "TaxGroup": {
+            "type": "string",
+            "description": "VAT group."
+          },
+          "Notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "BankAccount": {
+            "type": "string",
+            "description": "Bank account (IBAN)."
+          },
+          "CreditMax": {
+            "type": "number",
+            "description": "Credit limit."
+          },
+          "Blocked": {
+            "type": "integer",
+            "description": "Stopped: 0 no, 1 invoices, 2 payments, 3 all."
+          },
+          "URL": {
+            "type": "string",
+            "description": "Website."
+          }
+        },
+        "required": [
+          "ID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/InsertVend",
+        "bodyMapping": {
+          "ID": "$ID",
+          "Name": "$Name",
+          "EnterpriseCode": "$EnterpriseCode",
+          "VATNum": "$VATNum",
+          "Email": "$Email",
+          "Phone": "$Phone",
+          "CellularPhone": "$CellularPhone",
+          "Address": "$Address",
+          "City": "$City",
+          "ZipCode": "$ZipCode",
+          "Country": "$Country",
+          "Currency": "$Currency",
+          "PaymTerm": "$PaymTerm",
+          "PaymMethod": "$PaymMethod",
+          "GroupId": "$GroupId",
+          "TaxGroup": "$TaxGroup",
+          "Notes": "$Notes",
+          "BankAccount": "$BankAccount",
+          "CreditMax": "$CreditMax",
+          "Blocked": "$Blocked",
+          "URL": "$URL"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_update_vendor",
+      "description": "Change an existing vendor (tiekėjas) in the current company (UpdateVend). Fields left out are left unchanged. Installed switched off: changes the books, confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ID": {
+            "type": "string",
+            "description": "The vendor's short code (trumpinys), unique in the company; identifies the vendor to change."
+          },
+          "Name": {
+            "type": "string",
+            "description": "Name."
+          },
+          "EnterpriseCode": {
+            "type": "string",
+            "description": "Company or personal code (įmonės / asmens kodas)."
+          },
+          "VATNum": {
+            "type": "string",
+            "description": "VAT payer code (PVM mokėtojo kodas)."
+          },
+          "Email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "Phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "CellularPhone": {
+            "type": "string",
+            "description": "Mobile phone number."
+          },
+          "Address": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "City": {
+            "type": "string",
+            "description": "City."
+          },
+          "ZipCode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "Country": {
+            "type": "string",
+            "description": "Country code, e.g. LT."
+          },
+          "Currency": {
+            "type": "string",
+            "description": "Default currency, e.g. EUR."
+          },
+          "PaymTerm": {
+            "type": "string",
+            "description": "Payment terms code."
+          },
+          "PaymMethod": {
+            "type": "string",
+            "description": "Payment method code."
+          },
+          "GroupId": {
+            "type": "string",
+            "description": "Group code."
+          },
+          "TaxGroup": {
+            "type": "string",
+            "description": "VAT group."
+          },
+          "Notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "BankAccount": {
+            "type": "string",
+            "description": "Bank account (IBAN)."
+          },
+          "CreditMax": {
+            "type": "number",
+            "description": "Credit limit."
+          },
+          "Blocked": {
+            "type": "integer",
+            "description": "Stopped: 0 no, 1 invoices, 2 payments, 3 all."
+          },
+          "URL": {
+            "type": "string",
+            "description": "Website."
+          }
+        },
+        "required": [
+          "ID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/UpdateVend",
+        "bodyMapping": {
+          "ID": "$ID",
+          "Name": "$Name",
+          "EnterpriseCode": "$EnterpriseCode",
+          "VATNum": "$VATNum",
+          "Email": "$Email",
+          "Phone": "$Phone",
+          "CellularPhone": "$CellularPhone",
+          "Address": "$Address",
+          "City": "$City",
+          "ZipCode": "$ZipCode",
+          "Country": "$Country",
+          "Currency": "$Currency",
+          "PaymTerm": "$PaymTerm",
+          "PaymMethod": "$PaymMethod",
+          "GroupId": "$GroupId",
+          "TaxGroup": "$TaxGroup",
+          "Notes": "$Notes",
+          "BankAccount": "$BankAccount",
+          "CreditMax": "$CreditMax",
+          "Blocked": "$Blocked",
+          "URL": "$URL"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_delete_customer",
+      "description": "Delete a customer (DeleteCust) by short code. Monet refuses it while documents use the customer. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "description": "The customer's short code (account number), as in monet_list_customers, e.g. 0001."
+          }
+        },
+        "required": [
+          "_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/DeleteCust",
+        "queryParams": {
+          "_id": "$_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_delete_vendor",
+      "description": "Delete a vendor (DeleteVend) by short code. Monet refuses it while documents use the vendor. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "description": "The vendor's short code (account number), as in monet_list_vendors, e.g. 0001."
+          }
+        },
+        "required": [
+          "_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/DeleteVend",
+        "queryParams": {
+          "_id": "$_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_create_item",
+      "description": "Create an item or service (InsertItem). Without ItemId Monet numbers it. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ItemId": {
+            "type": "string",
+            "description": "Item number."
+          },
+          "Name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "BarCode": {
+            "type": "string",
+            "description": "Barcode."
+          },
+          "Group": {
+            "type": "string",
+            "description": "Item group code."
+          },
+          "Type": {
+            "type": "string",
+            "description": "Item type."
+          },
+          "Unit": {
+            "type": "string",
+            "description": "Unit, e.g. vnt."
+          },
+          "Price": {
+            "type": "number",
+            "description": "Sales price."
+          },
+          "PurchPrice": {
+            "type": "number",
+            "description": "Purchase price."
+          },
+          "TaxItemGroup": {
+            "type": "string",
+            "description": "Sales VAT code."
+          },
+          "PurchTaxItemGroup": {
+            "type": "string",
+            "description": "Purchase VAT code."
+          },
+          "Location": {
+            "type": "string",
+            "description": "Default sales warehouse."
+          },
+          "Vendor": {
+            "type": "string",
+            "description": "Vendor short code."
+          },
+          "Note": {
+            "type": "string",
+            "description": "Note."
+          },
+          "Blocked": {
+            "type": "integer",
+            "description": "1 to stop the item, 0 active."
+          },
+          "Dimension1": {
+            "type": "string",
+            "description": "Department dimension."
+          },
+          "Dimension2": {
+            "type": "string",
+            "description": "Project dimension."
+          },
+          "Dimension3": {
+            "type": "string",
+            "description": "Product dimension."
+          }
+        },
+        "required": [
+          "Name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/InsertItem",
+        "bodyMapping": {
+          "ItemId": "$ItemId",
+          "Name": "$Name",
+          "BarCode": "$BarCode",
+          "Group": "$Group",
+          "Type": "$Type",
+          "Unit": "$Unit",
+          "Price": "$Price",
+          "PurchPrice": "$PurchPrice",
+          "TaxItemGroup": "$TaxItemGroup",
+          "PurchTaxItemGroup": "$PurchTaxItemGroup",
+          "Location": "$Location",
+          "Vendor": "$Vendor",
+          "Note": "$Note",
+          "Blocked": "$Blocked",
+          "Dimension1": "$Dimension1",
+          "Dimension2": "$Dimension2",
+          "Dimension3": "$Dimension3"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_update_item",
+      "description": "Change an existing item (UpdateItem), identified by ItemId. Fields left out stay unchanged. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ItemId": {
+            "type": "string",
+            "description": "Item number."
+          },
+          "Name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "BarCode": {
+            "type": "string",
+            "description": "Barcode."
+          },
+          "Group": {
+            "type": "string",
+            "description": "Item group code."
+          },
+          "Type": {
+            "type": "string",
+            "description": "Item type."
+          },
+          "Unit": {
+            "type": "string",
+            "description": "Unit, e.g. vnt."
+          },
+          "Price": {
+            "type": "number",
+            "description": "Sales price."
+          },
+          "PurchPrice": {
+            "type": "number",
+            "description": "Purchase price."
+          },
+          "TaxItemGroup": {
+            "type": "string",
+            "description": "Sales VAT code."
+          },
+          "PurchTaxItemGroup": {
+            "type": "string",
+            "description": "Purchase VAT code."
+          },
+          "Location": {
+            "type": "string",
+            "description": "Default sales warehouse."
+          },
+          "Vendor": {
+            "type": "string",
+            "description": "Vendor short code."
+          },
+          "Note": {
+            "type": "string",
+            "description": "Note."
+          },
+          "Blocked": {
+            "type": "integer",
+            "description": "1 to stop the item, 0 active."
+          },
+          "Dimension1": {
+            "type": "string",
+            "description": "Department dimension."
+          },
+          "Dimension2": {
+            "type": "string",
+            "description": "Project dimension."
+          },
+          "Dimension3": {
+            "type": "string",
+            "description": "Product dimension."
+          }
+        },
+        "required": [
+          "ItemId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/UpdateItem",
+        "bodyMapping": {
+          "ItemId": "$ItemId",
+          "Name": "$Name",
+          "BarCode": "$BarCode",
+          "Group": "$Group",
+          "Type": "$Type",
+          "Unit": "$Unit",
+          "Price": "$Price",
+          "PurchPrice": "$PurchPrice",
+          "TaxItemGroup": "$TaxItemGroup",
+          "PurchTaxItemGroup": "$PurchTaxItemGroup",
+          "Location": "$Location",
+          "Vendor": "$Vendor",
+          "Note": "$Note",
+          "Blocked": "$Blocked",
+          "Dimension1": "$Dimension1",
+          "Dimension2": "$Dimension2",
+          "Dimension3": "$Dimension3"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_delete_item",
+      "description": "Delete an item (DeleteItem) by item number. Monet refuses it while documents use the item. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "description": "Item number."
+          }
+        },
+        "required": [
+          "_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/DeleteItem",
+        "queryParams": {
+          "_id": "$_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_create_dimension",
+      "description": "Add a dimension value (InsertDim): a department, project or product code used to split postings. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "string",
+            "description": "Code of the new dimension value."
+          },
+          "Name": {
+            "type": "string",
+            "description": "Name."
+          },
+          "Type": {
+            "type": "integer",
+            "description": "0 department, 1 project, 2 product.",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          }
+        },
+        "required": [
+          "Id",
+          "Type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/InsertDim",
+        "bodyMapping": {
+          "Id": "$Id",
+          "Name": "$Name",
+          "Type": "$Type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_create_sales_invoice",
+      "description": "Enter a sale of stocked items (PostSales): creates and, unless SkipPost, posts a sales invoice with item lines, moving stock out of the warehouse. The items must exist. Installed switched off: confirm the lines and totals with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "CustomerId": {
+            "type": "string",
+            "description": "Customer short code."
+          },
+          "InvoiceId": {
+            "type": "string",
+            "description": "Invoice number when numbered by hand; leave out to use the company's numbering."
+          },
+          "Date": {
+            "type": "string",
+            "description": "Invoice date, YYYY-MM-DD."
+          },
+          "DueDate": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "InclTax": {
+            "type": "boolean",
+            "description": "true when prices include VAT."
+          },
+          "Notes": {
+            "type": "string",
+            "description": "Note on the document."
+          },
+          "FullAmount": {
+            "type": "number",
+            "description": "Total including VAT, rounded to 2 decimals, to check against."
+          },
+          "FullTax": {
+            "type": "number",
+            "description": "Total VAT, rounded to 2 decimals, to check against."
+          },
+          "SkipPost": {
+            "type": "boolean",
+            "description": "true to save the document without posting it to the ledger."
+          },
+          "Dim": {
+            "type": "array",
+            "description": "Dimensions as [department, project, product], e.g. [\"VLN\", \"\", \"\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "CurrencyCode": {
+            "type": "string",
+            "description": "Currency, e.g. EUR."
+          },
+          "PaymentMode": {
+            "type": "string",
+            "description": "Payment method code."
+          },
+          "DocumentNum": {
+            "type": "string",
+            "description": "Document number."
+          },
+          "DeliveryCountry": {
+            "type": "string",
+            "description": "Delivery country, ISO alpha-2."
+          },
+          "SalesType": {
+            "type": "integer",
+            "description": "1 offer, 3 sales order (default), 4 returned goods.",
+            "enum": [
+              1,
+              3,
+              4
+            ]
+          },
+          "SalesOrderLines": {
+            "type": "array",
+            "description": "Item lines: [{\"ItemId\": \"P001\", \"Qty\": 2, \"Price\": 10.5, \"Location\": \"CENTR\", \"TaxItemGroup\": \"PVM1\"}]. ItemId and Qty are required; LinePercent is a discount in percent; Name overrides the item name.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "CustomerId",
+          "SalesOrderLines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/PostSales",
+        "bodyMapping": {
+          "CustomerId": "$CustomerId",
+          "InvoiceId": "$InvoiceId",
+          "Date": "$Date",
+          "DueDate": "$DueDate",
+          "InclTax": "$InclTax",
+          "Notes": "$Notes",
+          "FullAmount": "$FullAmount",
+          "FullTax": "$FullTax",
+          "SkipPost": "$SkipPost",
+          "Dim": "$Dim",
+          "CurrencyCode": "$CurrencyCode",
+          "PaymentMode": "$PaymentMode",
+          "DocumentNum": "$DocumentNum",
+          "DeliveryCountry": "$DeliveryCountry",
+          "SalesType": "$SalesType",
+          "SalesOrderLines": "$SalesOrderLines"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_create_sales_service_invoice",
+      "description": "Enter a sale of services (PostSalesService): creates and, unless SkipPost, posts a sales invoice with free-text service lines; no items are needed. Installed switched off: confirm the lines and totals with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "CustomerId": {
+            "type": "string",
+            "description": "Customer short code."
+          },
+          "InvoiceId": {
+            "type": "string",
+            "description": "Invoice number when numbered by hand; leave out to use the company's numbering."
+          },
+          "Date": {
+            "type": "string",
+            "description": "Invoice date, YYYY-MM-DD."
+          },
+          "DueDate": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "InclTax": {
+            "type": "boolean",
+            "description": "true when prices include VAT."
+          },
+          "Notes": {
+            "type": "string",
+            "description": "Note on the document."
+          },
+          "FullAmount": {
+            "type": "number",
+            "description": "Total including VAT, rounded to 2 decimals, to check against."
+          },
+          "FullTax": {
+            "type": "number",
+            "description": "Total VAT, rounded to 2 decimals, to check against."
+          },
+          "SkipPost": {
+            "type": "boolean",
+            "description": "true to save the document without posting it to the ledger."
+          },
+          "Dim": {
+            "type": "array",
+            "description": "Dimensions as [department, project, product], e.g. [\"VLN\", \"\", \"\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "Currency": {
+            "type": "string",
+            "description": "Currency, e.g. EUR."
+          },
+          "DocumentNum": {
+            "type": "string",
+            "description": "Document number."
+          },
+          "DocumentDate": {
+            "type": "string",
+            "description": "Document date, YYYY-MM-DD."
+          },
+          "DeliveryCountry": {
+            "type": "string",
+            "description": "Delivery country, ISO alpha-2."
+          },
+          "SalesServiceLines": {
+            "type": "array",
+            "description": "Service lines: [{\"Name\": \"Consulting\", \"Qty\": 1, \"Amount\": 100, \"LedgerAccount\": \"5001\", \"TaxItemGroup\": \"PVM1\"}]. LedgerAccount is the offset account.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "CustomerId",
+          "SalesServiceLines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/PostSalesService",
+        "bodyMapping": {
+          "CustomerId": "$CustomerId",
+          "InvoiceId": "$InvoiceId",
+          "Date": "$Date",
+          "DueDate": "$DueDate",
+          "InclTax": "$InclTax",
+          "Notes": "$Notes",
+          "FullAmount": "$FullAmount",
+          "FullTax": "$FullTax",
+          "SkipPost": "$SkipPost",
+          "Dim": "$Dim",
+          "Currency": "$Currency",
+          "DocumentNum": "$DocumentNum",
+          "DocumentDate": "$DocumentDate",
+          "DeliveryCountry": "$DeliveryCountry",
+          "SalesServiceLines": "$SalesServiceLines"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_create_purchase_invoice",
+      "description": "Enter a purchase of stocked items (PostPurch): registers a vendor invoice with item lines and receives the stock, posted unless SkipPost. The items must exist. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "VendorId": {
+            "type": "string",
+            "description": "Vendor short code."
+          },
+          "InvoiceId": {
+            "type": "string",
+            "description": "Invoice number when numbered by hand; leave out to use the company's numbering."
+          },
+          "Date": {
+            "type": "string",
+            "description": "Invoice date, YYYY-MM-DD."
+          },
+          "DueDate": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "InclTax": {
+            "type": "boolean",
+            "description": "true when prices include VAT."
+          },
+          "Notes": {
+            "type": "string",
+            "description": "Note on the document."
+          },
+          "FullAmount": {
+            "type": "number",
+            "description": "Total including VAT, rounded to 2 decimals, to check against."
+          },
+          "FullTax": {
+            "type": "number",
+            "description": "Total VAT, rounded to 2 decimals, to check against."
+          },
+          "SkipPost": {
+            "type": "boolean",
+            "description": "true to save the document without posting it to the ledger."
+          },
+          "Dim": {
+            "type": "array",
+            "description": "Dimensions as [department, project, product], e.g. [\"VLN\", \"\", \"\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "PurchOrderLines": {
+            "type": "array",
+            "description": "Item lines: [{\"ItemId\": \"P001\", \"Qty\": 10, \"Price\": 4.2, \"Location\": \"CENTR\"}]. ItemId and Qty are required.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "VendorId",
+          "PurchOrderLines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/PostPurch",
+        "bodyMapping": {
+          "VendorId": "$VendorId",
+          "InvoiceId": "$InvoiceId",
+          "Date": "$Date",
+          "DueDate": "$DueDate",
+          "InclTax": "$InclTax",
+          "Notes": "$Notes",
+          "FullAmount": "$FullAmount",
+          "FullTax": "$FullTax",
+          "SkipPost": "$SkipPost",
+          "Dim": "$Dim",
+          "PurchOrderLines": "$PurchOrderLines"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "monet_create_purchase_service_invoice",
+      "description": "Enter a purchase of services (PostPurchService): registers a vendor invoice with expense lines on ledger accounts, posted unless SkipPost. Installed switched off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "VendorId": {
+            "type": "string",
+            "description": "Vendor short code."
+          },
+          "InvoiceId": {
+            "type": "string",
+            "description": "Invoice number when numbered by hand; leave out to use the company's numbering."
+          },
+          "Date": {
+            "type": "string",
+            "description": "Invoice date, YYYY-MM-DD."
+          },
+          "DueDate": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "InclTax": {
+            "type": "boolean",
+            "description": "true when prices include VAT."
+          },
+          "Notes": {
+            "type": "string",
+            "description": "Note on the document."
+          },
+          "FullAmount": {
+            "type": "number",
+            "description": "Total including VAT, rounded to 2 decimals, to check against."
+          },
+          "FullTax": {
+            "type": "number",
+            "description": "Total VAT, rounded to 2 decimals, to check against."
+          },
+          "SkipPost": {
+            "type": "boolean",
+            "description": "true to save the document without posting it to the ledger."
+          },
+          "Dim": {
+            "type": "array",
+            "description": "Dimensions as [department, project, product], e.g. [\"VLN\", \"\", \"\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "Currency": {
+            "type": "string",
+            "description": "Currency, e.g. EUR."
+          },
+          "DocumentDate": {
+            "type": "string",
+            "description": "Document date, YYYY-MM-DD."
+          },
+          "PurchServiceLines": {
+            "type": "array",
+            "description": "Service lines: [{\"Name\": \"Rent\", \"Amount\": 500, \"LedgerAccount\": \"6301\", \"TaxItemGroup\": \"PVM1\"}]. Amount and LedgerAccount are required.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "VendorId",
+          "PurchServiceLines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/PostPurchService",
+        "bodyMapping": {
+          "VendorId": "$VendorId",
+          "InvoiceId": "$InvoiceId",
+          "Date": "$Date",
+          "DueDate": "$DueDate",
+          "InclTax": "$InclTax",
+          "Notes": "$Notes",
+          "FullAmount": "$FullAmount",
+          "FullTax": "$FullTax",
+          "SkipPost": "$SkipPost",
+          "Dim": "$Dim",
+          "Currency": "$Currency",
+          "DocumentDate": "$DocumentDate",
+          "PurchServiceLines": "$PurchServiceLines"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

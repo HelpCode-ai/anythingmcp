@@ -118,6 +118,19 @@ export class AdaptersController {
     return { items: await this.adaptersService.popularConnectors(req.user.organizationId) };
   }
 
+  @Get('match-url')
+  @ApiOperation({
+    summary: 'Catalog connectors for an API base URL',
+    description:
+      'The listed adapters whose API lives at the given URL (matched by host, then base path), best first, ' +
+      'so the custom connector form can offer the ready-made connector. An unparseable URL returns none.',
+  })
+  @ApiQuery({ name: 'url', required: true })
+  matchUrl(@Query('url') url: string | undefined) {
+    if (typeof url !== 'string') throw new BadRequestException('url is required');
+    return { matches: this.adaptersService.matchByUrl(url) };
+  }
+
   @Get('starter-pack')
   @ApiOperation({
     summary: 'Connectors offered to a new workspace',

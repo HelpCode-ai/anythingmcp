@@ -74,6 +74,19 @@ export const SecurityEvents = {
    */
   WORKSPACE_SESSIONS_REVOKED: 'WORKSPACE_SESSIONS_REVOKED',
   API_KEY_DEACTIVATED: 'API_KEY_DEACTIVATED',
+  /**
+   * Whether a member's requests may feed skill learning changed: an admin set
+   * their mode, or the member opted out / back in. One row per member.
+   */
+  LEARNING_CHANGED: 'LEARNING_CHANGED',
+  /** An admin changed what a member may do with workspace memory. One row per member. */
+  MEMORY_ACCESS_CHANGED: 'MEMORY_ACCESS_CHANGED',
+  /** The workspace's memory default access or organization write mode changed. */
+  MEMORY_SETTINGS_CHANGED: 'MEMORY_SETTINGS_CHANGED',
+  /** An admin erased a member's personal memory (without reading it). */
+  MEMORY_ERASED: 'MEMORY_ERASED',
+  /** The roles a knowledge folder (and its subtree) is limited to changed. */
+  KNOWLEDGE_FOLDER_ACCESS_CHANGED: 'KNOWLEDGE_FOLDER_ACCESS_CHANGED',
 
   // ── Consent plane: which AI client was authorized, by whom ──────────────
   CONSENT_GRANTED: 'CONSENT_GRANTED',

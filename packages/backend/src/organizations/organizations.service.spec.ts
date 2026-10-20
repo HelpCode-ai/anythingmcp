@@ -28,6 +28,7 @@ describe('OrganizationsService', () => {
         findUnique: jest.fn(async () => ({ organizationId: ORG })),
         update: jest.fn(async () => ({})),
       },
+      memoryItem: { deleteMany: jest.fn(async () => ({ count: 0 })) },
       securityEvent: {
         create: jest.fn(async (args: any) => {
           events.push(args.data);

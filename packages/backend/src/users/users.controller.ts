@@ -15,6 +15,7 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -26,6 +27,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { UserLifecycleService, LifecycleContext } from './user-lifecycle.service';
 import { SEAT_LIMIT, seatLimitMessage } from '../ee/licensing/edition.service';
+import { normalizeEmail, sameEmail } from '../common/email.util';
 
 class RevokeSessionsDto {
   @ApiPropertyOptional({
@@ -164,13 +166,21 @@ export class UsersController {
       // keep the old behaviour.
       if (process.env.DEPLOYMENT_MODE === 'cloud') {
         const current = await this.usersService.findById(req.user.sub);
-        if (dto.email.trim().toLowerCase() !== current?.email?.trim().toLowerCase()) {
+        if (!sameEmail(dto.email, current?.email)) {
           throw new BadRequestException(
             'Your email address cannot be changed here. Contact support@anythingmcp.com to change it.',
           );
         }
       } else {
-        data.email = dto.email;
+        // Stored normalised, and refused when another account already has
+        // the address in any case: the unique index only sees exact
+        // spellings, so `Name@Example.com` would otherwise sit next to
+        // `name@example.com` as a second account.
+        const owners = await this.usersService.findAllByEmail(dto.email);
+        if (owners.some((u) => u.id !== req.user.sub)) {
+          throw new ConflictException('Email already registered');
+        }
+        data.email = normalizeEmail(dto.email);
       }
     }
 

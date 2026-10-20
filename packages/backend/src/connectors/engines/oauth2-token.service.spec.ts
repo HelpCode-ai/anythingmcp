@@ -219,6 +219,42 @@ describe('OAuth2TokenService', () => {
       expect(postedBody).toContain('client_secret=client-secret');
     });
 
+    it('renews at refreshUrl when the provider has a separate refresh endpoint (Worksection)', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'ws-at', refresh_token: 'ws-rt2', expires_in: 86400 },
+      });
+
+      const result = await service.refreshToken({
+        tokenUrl: 'https://worksection.com/oauth2/token',
+        refreshUrl: 'https://worksection.com/oauth2/refresh',
+        refreshToken: 'ws-rt',
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+      });
+
+      expect(result).toBe('ws-at');
+      const [url, body] = mockedAxios.post.mock.calls[0] as any;
+      expect(url).toBe('https://worksection.com/oauth2/refresh');
+      expect(body).toContain('grant_type=refresh_token');
+      expect(body).toContain('refresh_token=ws-rt');
+      expect(body).toContain('client_id=client-id');
+      expect(body).toContain('client_secret=client-secret');
+    });
+
+    it('ignores refreshUrl for a machine grant, which always asks the token endpoint', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { access_token: 'cc-at', expires_in: 3600 } });
+
+      await service.refreshToken({
+        grant: 'client_credentials',
+        tokenUrl: 'https://auth.example.com/token',
+        refreshUrl: 'https://auth.example.com/refresh',
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+      });
+
+      expect(mockedAxios.post.mock.calls[0][0]).toBe('https://auth.example.com/token');
+    });
+
     it('should return null when tokenUrl is missing', async () => {
       const result = await service.refreshToken({
         refreshToken: 'rt-abc',

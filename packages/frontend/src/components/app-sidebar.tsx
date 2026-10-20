@@ -35,6 +35,9 @@ const KgIcon = () => (
   <I><circle cx="5" cy="6" r="2.4" /><circle cx="19" cy="6" r="2.4" /><circle cx="12" cy="18" r="2.4" /><path d="M7.2 7.2 10.6 16M16.8 7.2 13.4 16M7 6h10" /></I>
 );
 const SkillsIcon = () => <I d="m12 3 2.2 4.6 5 .7-3.6 3.5.9 5L12 14.9 7.5 16.8l.9-5L4.8 8.3l5-.7z" />;
+const MemoryIcon = () => (
+  <I><path d="M12 5a3 3 0 0 0-5.9-.8A3 3 0 0 0 4 9.5a3 3 0 0 0 .5 5.4A3 3 0 0 0 9 19a3 3 0 0 0 3-1.5M12 5a3 3 0 0 1 5.9-.8A3 3 0 0 1 20 9.5a3 3 0 0 1-.5 5.4A3 3 0 0 1 15 19a3 3 0 0 1-3-1.5M12 5v12.5" /></I>
+);
 const OnboardingIcon = () => <I><path d="M12 2v4M12 2a10 10 0 1 0 10 10" /><path d="m16 12-4 4-2-2" /></I>;
 const SettingsIcon = () => (
   <I><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></I>
@@ -49,6 +52,7 @@ const NAV_ICONS: Record<string, () => React.ReactNode> = {
   '/mcp-server': McpIcon,
   '/knowledge-graph': KgIcon,
   '/knowledge-graph/skills': SkillsIcon,
+  '/memory': MemoryIcon,
   '/welcome': OnboardingIcon,
 };
 

@@ -1,0 +1,1291 @@
+{
+  "slug": "rivile",
+  "name": "Rivile GAMA",
+  "aliases": [
+    "Rivilė",
+    "Rivile API v2",
+    "manorivile"
+  ],
+  "description": "Connect Rivile GAMA, the Lithuanian ERP and accounting system, to Claude or ChatGPT through the Rivile API v2: clients, products, stock balances and prices, purchase and sales documents, debts and payments, ledger balances and the chart of accounts, with T-SQL filters. Edits ship switched off.",
+  "instructions": "## Rivile GAMA\nThis connector uses the **Rivile API v2** (REST web services) of Rivile GAMA, the Lithuanian ERP and accounting system: clients, products and stock, purchase and sales documents, debts, payments, the general ledger and the chart of accounts. Every call goes to one address, `POST https://api.manorivile.lt/client/v2`, with a method name such as `GET_N08_LIST` and its parameters.\n\n**Setup**\n1. Rivile API v2 needs an API access agreement with Rivile, Rivile GAMA version 119 or later and the **Manorivile-Gateway** application installed on a computer or server that reaches your GAMA database (your Rivile partner installs it). The gateway must be running for any call to work: a 502 means it is stopped or cannot reach the database.\n2. Rivile issues the **API key** with the service. Paste it into `RIVILE_API_KEY`; the connector sends it in the `ApiKey` header. The part before the dot is the GAMA user the API works as, so the key sees what that user sees.\n\n**Table codes**: Rivile names tables with a letter and two digits, and fields with the table code plus a suffix: `N08_KODAS_KS` is the client code in table N08. The suffix tells which list a code points to: `_PS` products and services, `_US` units, `_IS` divisions, `_KS` clients, `_GS` groups, `_SS` ledger accounts, `_OS` objects. The tools here: N08 clients, N17 products and services, I17 stock balances, I33 prices, I06 purchase and sales documents (lines I07), I09 internal operations, I31 debit and credit operations, I44 detailed debts, T03 debt totals, I53 payment operations, I04 receipts and payments register, I02 ledger operations, N01 chart of accounts, N07 divisions, N06 objects, N25 purchase and sales codes, N63 VAT classifiers, N45 currencies, N51 contracts, B00 import and export operations. `rivile_call_read_method` reaches every other GET_ method.\n\n**Filters (`fil`)**: a T-SQL WHERE condition on the method's table, without the word WHERE: `n08_pav like '%ACME%'`, `i06_dok_data between '2026-01-01' and '2026-01-31' and i06_kodas_ks='121411842'`. Dates are `YYYY-MM-DD`, decimals use a dot, and codes are upper case, compared without trailing spaces. A wrong field name returns a 400 with the database's message.\n\n**Paging**: every list returns at most 100 records. Without a filter or page you get the first page, which for documents holds the newest. Rivile recommends filtering on the key of the last record you got rather than paging deep. Rivile bills the API by the number of requests, so prefer one well filtered call over many pages, and keep to 10 requests a second (429 means wait at least a second).\n\n**Writing**: the edit tools (clients, products, documents) are installed **switched off**. Each call changes one record; `oper` is I to create, U to update and D to delete. Turn a tool on only when the assistant should change Rivile, and confirm each change with the user. The connector has no payment, POS, gift card or payroll write tools.\n\n**Errors**: 401 means the API key is wrong or expired; a 400 saying the key \"neturi leidimo vykdyti metodą\" means the key is not allowed to run that method, which Rivile enables per key in your API agreement; 502 the Manorivile-Gateway is not running or cannot reach the database; 504 the database answered too slowly (narrow the filter); 400 lists the faulty field and Rivile's message.",
+  "region": "intl",
+  "category": "erp",
+  "icon": "rivile",
+  "docsUrl": "https://gidas.rivile.lt/internetiniai_moduliai/api_rest",
+  "prerequisites": "Rivile GAMA 119 or later with a Rivile API v2 agreement, the Manorivile-Gateway running next to your GAMA database, and the API key Rivile issued with the service.",
+  "requiredEnvVars": [
+    "RIVILE_API_KEY"
+  ],
+  "envVarMeta": {
+    "RIVILE_API_KEY": {
+      "label": "Rivile API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API key Rivile issued for API v2, in the form USERNAME.secret. The part before the dot is the GAMA user the API works as.",
+      "example": "XW3CDDX.Bfnjvrurjygzuj...",
+      "pattern": "^[A-Za-z0-9]+\\.[A-Za-z0-9]+$",
+      "patternMessage": "Paste the key alone, user name, dot and secret, without quotes or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Rivile refused the API key: it is wrong, expired or not given. Check RIVILE_API_KEY against the key Rivile issued.",
+    "502": "The Manorivile-Gateway did not answer: it is not running, or it cannot reach the Rivile GAMA database. Start it on the server next to the database and try again.",
+    "504": "The Rivile GAMA database answered too slowly. Try again, or narrow the filter.",
+    "400": "Rivile refused the request. If the message says the key \"neturi leidimo vykdyti metodą\", the key is not allowed to run that method: ask Rivile to enable it for your API key. Otherwise the message names the faulty field or filter.",
+    "rate_limited": "Rivile limits the API to 10 requests a second per key. Wait a second and try again."
+  },
+  "probe": {
+    "tool": "rivile_list_divisions"
+  },
+  "connector": {
+    "name": "Rivile GAMA",
+    "type": "REST",
+    "baseUrl": "https://api.manorivile.lt/client/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "ApiKey",
+      "apiKey": "{{RIVILE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "rivile_list_clients",
+      "description": "List clients (N08 client cards: customers and suppliers alike) with code, name, company and VAT codes, address, payment terms and type (N08_RUSIS). GET_N08_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: client cards only (default). A: with alternative addresses, delivery and bank details (N33).",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table N08 without the word WHERE, e.g. n08_kodas_ks='121411842' or n08_pav like '%ACME%'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for N08)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_N08_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_products",
+      "description": "List product and service cards (N17) with code, name, type (N17_TIPAS 1 product, 2 service), group, units and VAT. GET_N17_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table N17 without the word WHERE, e.g. n17_kodas_ps='PREKE1' or n17_pav like '%cement%'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for N17)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_N17_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_stock_balances",
+      "description": "List stock balances (I17): quantity, reserved quantity and value per product, unit, division (warehouse), object and series. Use group to sum per product, division, object or series. GET_I17_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I17 without the word WHERE, e.g. i17_kodas_ps='PREKE1' and i17_kodas_is='01'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I17)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          },
+          "group": {
+            "type": "string",
+            "description": "Sum balances by these fields, comma separated: I17_KODAS_PS (product), I17_KODAS_IS (division), I17_KODAS_OS (object), I17_SERIJA (series). Products are always grouped first. Slow on large databases."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I17_LIST",
+          "params": {
+            "fil": "$fil",
+            "pagenumber": "$pagenumber",
+            "group": "$group"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_product_prices",
+      "description": "List product prices per division (I33): sales prices, price lists and validity dates. GET_I33_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I33 without the word WHERE, e.g. i33_kodas_ps='PREKE1'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I33)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I33_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_documents",
+      "description": "List purchase and sales documents (I06 headers): invoices, receipts and returns with type (I06_OP_TIP), number, dates, client, amounts, VAT and currency. Without a filter, the 100 newest. GET_I06_LIST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: document headers only (default). A: with lines (I07), provisions (I08) and payments (I13).",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I06 without the word WHERE, e.g. i06_dok_data>='2026-01-01' and i06_kodas_ks='121411842'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I06)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I06_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_documents_extended",
+      "description": "List purchase and sales documents with division, client and product fields joined in (GET_I06_LIST_EXT), for sales by division, client or product without extra lookups. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I06 without the word WHERE, e.g. i06_op_data between '2026-01-01' and '2026-01-31'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I06)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I06_LIST_EXT",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_document_debts",
+      "description": "List what is still owed on purchase and sales documents not yet transferred (GET_I06_DEBT): client, document number, currency, debit and credit amounts. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields (default). A: all document fields.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I06 without the word WHERE, e.g. i06_kodas_ks='121411842'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I06)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I06_DEBT",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_internal_operations",
+      "description": "List internal operations (I09 headers with I10 lines): stock transfers between divisions, write-offs and other internal documents. GET_I09_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I09 without the word WHERE, e.g. i09_op_data>='2026-01-01'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I09)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I09_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_debt_operations",
+      "description": "List debit and credit operations (I31): offsets, debt transfers and other settlements between clients that are not invoices or payments. GET_I31_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I31 without the word WHERE, e.g. i31_kodas_ks='121411842'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I31)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I31_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_debts_detailed",
+      "description": "List detailed debts by document (I44): client, document number, document and due dates, debit and credit, currency and module (I44_MODUL, e.g. RO for sales). Best source for an aging or overdue list. GET_I44_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields (default). A: all fields.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I44 without the word WHERE, e.g. i44_kodas_ks='121411842' and i44_modul='RO'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I44)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I44_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_debts_summary",
+      "description": "List debt balances (T03): how much each client owes or is owed in total. GET_T03_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: one total per client (default). A: per client, document number, date and currency.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table T03 without the word WHERE, e.g. t03_kodas_ks='121411842'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for T03)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_T03_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_payment_operations",
+      "description": "List payment operations (I53): bank and cash payments and receipts with their lines and the documents they settle. GET_I53_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I53 without the word WHERE, e.g. i53_op_data>='2026-01-01'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I53)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I53_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_receipts_payments_register",
+      "description": "List the register of receipts and payments (I04): incoming and outgoing money per date, client and account. GET_I04_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I04 without the word WHERE, e.g. i04_op_data>='2026-01-01'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I04)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I04_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_ledger_operations",
+      "description": "List general ledger operations (I02 journal entries with their lines). For account balances on a date use rivile_get_account_balances. GET_I02_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I02 without the word WHERE, e.g. i02_kodas_dh='010000000001'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I02)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I02_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_get_account_balances",
+      "description": "Get general ledger account balances and turnover for a period (GET_I02_LIST_EXT), optionally summed by account, division, object or analytic dimension. Without dates it uses today. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "beg_date": {
+            "type": "string",
+            "description": "Period start, YYYY-MM-DD. Leave out for today.",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Period end, YYYY-MM-DD. Leave out for today.",
+            "format": "date"
+          },
+          "group": {
+            "type": "string",
+            "description": "Sum by: kodas_ss (account), kodas_zs, kodas_sm, kodas_is (division), kodas_os (object), kodas_os_c, dim01 to dim15. Leave out for no grouping."
+          },
+          "list": {
+            "type": "string",
+            "description": "H: detail accounts only. A: also group (parent) accounts.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table I02 without the word WHERE, e.g. i02_kodas_ss like '24%'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for I02)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_I02_LIST_EXT",
+          "params": {
+            "beg_date": "$beg_date",
+            "end_date": "$end_date",
+            "group": "$group",
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_chart_of_accounts",
+      "description": "List the chart of accounts (N01): account codes, names and types. GET_N01_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table N01 without the word WHERE, e.g. n01_kodas_ss like '6%'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for N01)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_N01_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_divisions",
+      "description": "List divisions (N07, padaliniai): warehouses, shops and departments that hold stock and prices. GET_N07_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table N07 without the word WHERE, e.g. n07_kodas_is='01'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for N07)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_N07_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_objects",
+      "description": "List objects (N06): cost centres or projects used to split documents and postings. GET_N06_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table N06 without the word WHERE, e.g. n06_kodas_os='OBJ1'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for N06)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_N06_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_purchase_sales_codes",
+      "description": "List purchase, sales and other codes (N25): service and cost codes used on document lines instead of products. GET_N25_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table N25 without the word WHERE, e.g. n25_kodas_ss='PASL1'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for N25)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_N25_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_vat_classifiers",
+      "description": "List VAT classifiers (N63, PVM klasifikatoriai) used on documents and for the i.SAF and VAT return. GET_N63_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table N63 without the word WHERE, e.g. n63_kodas='PVM1'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for N63)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_N63_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_currencies",
+      "description": "List currencies (N45) and their codes as used on documents and debts. GET_N45_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table N45 without the word WHERE, e.g. n45_kodas_vl='USD'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for N45)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_N45_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_contracts",
+      "description": "List contracts (N51) with client, dates, amounts and terms. GET_N51_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: contracts only (default). A: with addenda (N52).",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table N51 without the word WHERE, e.g. n51_kodas_ks='121411842'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for N51)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_N51_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_list_import_export_operations",
+      "description": "List import and export operations (B00): batches loaded into or exported from Rivile GAMA and their state. GET_B00_LIST, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string",
+            "description": "H: main fields only (default). A: with the related tables.",
+            "enum": [
+              "H",
+              "A"
+            ]
+          },
+          "fil": {
+            "type": "string",
+            "description": "Filter: a T-SQL WHERE condition on table B00 without the word WHERE, e.g. b00_data>='2026-01-01'. Leave out for no filter. Field names are the table code plus a suffix (see the Rivile field list for B00)."
+          },
+          "pagenumber": {
+            "type": "integer",
+            "description": "Page number; each page holds up to 100 records. Leave out for the first page (the 100 newest records). For more than a few pages, filter on the key of the last record instead.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "GET_B00_LIST",
+          "params": {
+            "list": "$list",
+            "fil": "$fil",
+            "pagenumber": "$pagenumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_call_read_method",
+      "description": "Call any other read method of the Rivile GAMA API by name (any GET_ method, or an MGAMA_GET_ method of the HR module), for data no dedicated tool covers, e.g. GET_I06_DOCS, GET_N32_LIST (price lists), GET_PS_KAIN (prices, promotions and discounts), GET_N18_LIST (units), GET_N19_LIST (groups), GET_N15_LIST (managers), GET_N60_LIST (persons), GET_I11_LIST (stock operations), GET_I15_LIST (production), GET_I25_LIST and GET_N39_LIST (fixed assets), GET_K56_LIST (CRM), GET_A06_LIST (employees). params is passed as the method documents it. GET_USER_PROC and GET_VIEWS_LIST are not accepted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "description": "Method name, starting with GET_ or MGAMA_GET_.",
+            "pattern": "^(MGAMA_)?GET_(?!USER_PROC$|VIEWS_LIST$)[A-Z0-9_]+$"
+          },
+          "params": {
+            "type": "object",
+            "description": "The method's params object, e.g. {\"list\": \"H\", \"fil\": \"n32_kodas='KAIN1'\", \"pagenumber\": 1}."
+          }
+        },
+        "required": [
+          "method"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "$method",
+          "params": "$params"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "rivile_edit_client",
+      "description": "Create, update or delete a client card (EDIT_N08). Without N08_KODAS_KS on create, Rivile numbers the client. Installed switched off: changes the books in Rivile GAMA, confirm with the user first. Each call changes one record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "oper": {
+            "type": "string",
+            "description": "Operation: I create, U update, D delete.",
+            "enum": [
+              "I",
+              "U",
+              "D"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "description": "The record, keyed by table, as the Rivile field list for N08 documents, e.g. {\"N08\": {\"N08_KODAS_KS\": \"121411842\", \"N08_PAV\": \"UAB Pavyzdys\", \"N08_RUSIS\": \"3\", \"N08_PVM_KODAS\": \"LT214118411\"}}."
+          }
+        },
+        "required": [
+          "oper",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "EDIT_N08",
+          "params": {
+            "oper": "$oper"
+          },
+          "data": "$data"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "rivile_edit_product",
+      "description": "Create, update or delete a product or service card (EDIT_N17). Installed switched off: changes the books in Rivile GAMA, confirm with the user first. Each call changes one record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "oper": {
+            "type": "string",
+            "description": "Operation: I create, U update, D delete.",
+            "enum": [
+              "I",
+              "U",
+              "D"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "description": "The record, keyed by table, as the Rivile field list for N17 documents, e.g. {\"N17\": {\"N17_KODAS_PS\": \"PREKE1\", \"N17_PAV\": \"Prekė\", \"N17_TIPAS\": \"1\", \"N17_KODAS_US\": \"VNT\"}}."
+          }
+        },
+        "required": [
+          "oper",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "EDIT_N17",
+          "params": {
+            "oper": "$oper"
+          },
+          "data": "$data"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "rivile_edit_document",
+      "description": "Update or delete the header of a purchase or sales document (EDIT_I06), or create one without lines. Installed switched off: changes the books in Rivile GAMA, confirm with the user first. Each call changes one record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "oper": {
+            "type": "string",
+            "description": "Operation: I create, U update, D delete.",
+            "enum": [
+              "I",
+              "U",
+              "D"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "description": "The record, keyed by table, as the Rivile field list for I06 documents, e.g. {\"I06\": {\"I06_KODAS_PO\": \"010R00000050\", \"I06_DOK_NR\": \"DOK-005\"}}."
+          }
+        },
+        "required": [
+          "oper",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "EDIT_I06",
+          "params": {
+            "oper": "$oper"
+          },
+          "data": "$data"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "rivile_create_document",
+      "description": "Create a purchase or sales document with its lines in one call (EDIT_I06_FULL): header I06 with lines I07. Installed switched off: posts to the books in Rivile GAMA, confirm the client, lines and totals with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "The document: {\"I06\": {\"I06_OP_TIP\": \"51\", \"I06_DOK_NR\": \"DOK-005\", \"I06_OP_DATA\": \"2026-10-19\", \"I06_DOK_DATA\": \"2026-10-19\", \"I06_KODAS_KS\": \"121411842\", \"I07\": [{\"I07_KODAS\": \"PREKE1\", \"I07_TIPAS\": \"1\", \"I07_KODAS_IS\": \"01\", \"I07_KIEKIS\": \"2\", \"I07_KAINA_BE\": \"10.00\"}]}}. I06_OP_TIP 51 is a sale, 1 a purchase."
+          },
+          "errorAction": {
+            "type": "string",
+            "description": "For several lines: EXIT stops at the first faulty line and keeps the rest, CONTINUE skips faulty lines. Leave out to reject the whole document on any error.",
+            "enum": [
+              "EXIT",
+              "CONTINUE"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "",
+        "bodyMapping": {
+          "method": "EDIT_I06_FULL",
+          "params": {
+            "oper": "I",
+            "errorAction": "$errorAction"
+          },
+          "data": "$data"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

@@ -231,6 +231,8 @@ export class DynamicMcpTools {
       mcpServerName?: string;
       connectorIds?: string[];
       intent?: string;
+      /** The caller contributes to skill learning (stamped on the log row). */
+      learnable?: boolean;
     },
   ): Promise<{
     content: ToolResultContent;
@@ -501,6 +503,7 @@ export class DynamicMcpTools {
         connectorId: tool.connectorId,
         usedProxy,
         intent: context?.intent,
+        learnable: context?.learnable ?? false,
         input: params,
         output: result as Record<string, unknown>,
         status: 'SUCCESS',
@@ -579,6 +582,7 @@ export class DynamicMcpTools {
         connectorId: tool.connectorId,
         usedProxy,
         intent: context?.intent,
+        learnable: context?.learnable ?? false,
         input: params,
         status: 'ERROR',
         durationMs,

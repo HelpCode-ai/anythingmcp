@@ -40,6 +40,8 @@ model Organization {
   kgEdges          KgEdge[]
   kgConnectorState KgConnectorState[]
   kgValueSeen      KgValueSeen[]
+  memoryItems      MemoryItem[]
+  knowledgeFolders KnowledgeFolder[]
   kgSkills         KgSkillSuggestion[]
   securityEvents   SecurityEvent[]
   productEvents    ProductEvent[]
@@ -66,6 +68,16 @@ model OrganizationMember {
   /// reactivation, and so the member list can say "deactivated" instead of
   /// making a leaver indistinguishable from someone who was never here.
   deactivatedAt  DateTime?    @map("deactivated_at")
+  /// Whether this member's requests may feed skill learning (intent capture):
+  /// `inherit` follows the workspace switch, `on` / `off` override it. Set by
+  /// an admin. Per membership, so one person can differ between workspaces.
+  learningMode   String       @default("inherit") @map("learning_mode")
+  /// The member's own opt-out. Wins over `learningMode`; a member can opt
+  /// out but never opt in against the admin.
+  learningOptOut Boolean      @default(false) @map("learning_opt_out")
+  /// What this member's AI clients may do with workspace memory:
+  /// inherit | none | read | personal | contribute. Set by an admin.
+  memoryAccess   String       @default("inherit") @map("memory_access")
 
   @@unique([userId, organizationId])
   @@index([userId])
@@ -171,6 +183,7 @@ model User {
   recoveryCodes            RecoveryCode[]
   scimGroupMemberships     IdentityProviderGroupMember[]
   mcpConnectionGrants      McpConnectionGrant[]
+  memoryItems              MemoryItem[] @relation("MemoryOwner")
 
   @@index([organizationId])
   @@map("users")
@@ -614,6 +627,10 @@ model McpServerConfig {
   version      String  @default("1.0.0")
   isActive     Boolean @default(true) @map("is_active")
   instructions String? @db.Text // custom instructions prepended to composed connector instructions
+  /// How applied skills reach the model on initialize: `auto` (full text
+  /// while small, else an index pointing to skill_get), `inline` (always the
+  /// full text) or `index` (always the index).
+  skillsDelivery String @default("auto") @map("skills_delivery")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -736,6 +753,11 @@ model ToolInvocation {
   // How many identical calls this row stands for: a failure repeating within
   // a minute is counted here instead of stored again (see AuditService).
   repeatCount Int @default(1) @map("repeat_count")
+
+  // Whether the caller contributed to skill learning when the call was made
+  // (stamped at capture time, so changing a member's setting later never
+  // pulls old calls in). Only learnable calls feed skill proposals.
+  learnable Boolean @default(false)
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -1368,12 +1390,51 @@ model KgSkillSuggestion {
   confidence    Float    @default(0)
   evidenceCount Int      @default(0) @map("evidence_count")
   status        String   @default("pending") // pending | applied | dismissed
+  // Where the skill came from: manual (UI/API) | llm (generated from
+  // intents) | consolidation (merged proposal) | errors (learned from calls
+  // that failed and were fixed) | finder (skills_save_to_workspace). Each
+  // generator only replaces its own pending rows.
+  source        String   @default("manual")
+  // For a consolidation proposal: the applied skills it replaces; applying
+  // it dismisses them.
+  replaces      Json     @default("[]")
+  // Optional long procedure (markdown). Never pasted into the instructions:
+  // served on demand by skill_get.
+  body          String?  @db.Text
+  // Incremented on every edit of title / whenToUse / instruction / body; the
+  // previous content is kept in kg_skill_versions.
+  version       Int      @default(1)
+  useCount      Int      @default(0) @map("use_count")
+  lastUsedAt    DateTime? @map("last_used_at")
+  versions      KgSkillVersion[]
+  // Optional folder in the workspace's knowledge tree (shared with memory).
+  folderId      String?          @map("folder_id")
+  folder        KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: NoAction)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([organizationId])
   @@map("kg_skill_suggestions")
+}
+
+// Earlier content of a workspace skill, written when an edit changes it.
+model KgSkillVersion {
+  id              String            @id @default(cuid())
+  skillId         String            @map("skill_id")
+  skill           KgSkillSuggestion @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  organizationId  String            @map("organization_id")
+  version         Int
+  title           String
+  whenToUse       String            @db.Text @map("when_to_use")
+  instruction     String            @db.Text
+  body            String?           @db.Text
+  editedByUserId  String?           @map("edited_by_user_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  @@unique([skillId, version])
+  @@index([organizationId])
+  @@map("kg_skill_versions")
 }
 
 // A submitted LLM batch job (cloud cron, cost-saver). Tracks the provider batch
@@ -1412,4 +1473,71 @@ model KgValueSeen {
   @@index([organizationId, valueHash])
   @@index([seenAt])
   @@map("kg_value_seen")
+}
+
+// Workspace memory (Enterprise): facts, preferences and notes AI clients save
+// and find again. `personal` items belong to one member and are readable only
+// by them; `organization` items are the company memory. Served as data, never
+// as instructions. `search_vector` is a generated tsvector (see migration).
+model MemoryItem {
+  id               String       @id @default(cuid())
+  organizationId   String       @map("organization_id")
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  scope            String // personal | organization
+  ownerUserId      String?      @map("owner_user_id")
+  owner            User?        @relation("MemoryOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  kind             String       @default("fact") // fact | preference | note
+  content          String       @db.Text
+  tags             Json         @default("[]")
+  status           String       @default("active") // active | pending | rejected
+  // { via: "mcp" | "ui", mcpServerId?, client? }
+  source           Json         @default("{}")
+  // Knowledge-graph entity the item is about (e.g. "customer"), normalised
+  // like graph entities; kg_how_to_obtain offers matching facts.
+  about            String?
+  // Optional folder (organization items only; personal memory has none).
+  folderId         String?          @map("folder_id")
+  folder           KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: NoAction)
+  createdByUserId  String?      @map("created_by_user_id")
+  approvedByUserId String?      @map("approved_by_user_id")
+  approvedAt       DateTime?    @map("approved_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+  // Generated column (STORED), so Prisma never writes it.
+  searchVector     Unsupported("tsvector")? @default(dbgenerated("to_tsvector('simple'::regconfig, content)")) @map("search_vector")
+
+  @@index([organizationId, scope, status])
+  @@index([organizationId, ownerUserId])
+  @@index([organizationId, about])
+  @@index([searchVector], type: Gin)
+  @@map("memory_items")
+}
+
+// A folder of the workspace's knowledge tree, shared by skills and the
+// company memory (e.g. "Sales / Quotes" holds quote procedures and facts).
+// `roleIds` limits it, and everything below it, to members holding one of
+// those custom roles (Enterprise); empty means the whole workspace.
+model KnowledgeFolder {
+  id             String            @id @default(cuid())
+  organizationId String            @map("organization_id")
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parentId       String?           @map("parent_id")
+  // NO ACTION, not cascade/set-null: a folder is only removed by the service,
+  // after moving its contents; a racing child or item makes the delete fail
+  // instead of silently reaching a wider audience. Workspace deletion still
+  // removes everything (all rows cascade from the organization).
+  parent         KnowledgeFolder?  @relation("KnowledgeFolderTree", fields: [parentId], references: [id], onDelete: NoAction)
+  children       KnowledgeFolder[] @relation("KnowledgeFolderTree")
+  name           String
+  description    String?           @db.Text
+  roleIds        Json              @default("[]") @map("role_ids")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  skills      KgSkillSuggestion[]
+  memoryItems MemoryItem[]
+
+  @@index([organizationId])
+  @@index([parentId])
+  @@map("knowledge_folders")
 }

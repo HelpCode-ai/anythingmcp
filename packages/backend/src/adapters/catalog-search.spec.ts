@@ -123,7 +123,7 @@ describe('catalog search — aliases', () => {
   });
 
   it('"facebook" finds the Meta connectors', () => {
-    expect(slugs('facebook').slice(0, 3).sort()).toEqual(['instagram', 'meta-ads', 'whatsapp-business']);
+    expect(slugs('facebook').slice(0, 4).sort()).toEqual(['instagram', 'meta-ads', 'meta-catalog', 'whatsapp-business']);
     expect(slugs('fb').slice(0, 2).sort()).toEqual(['instagram', 'meta-ads']);
   });
 

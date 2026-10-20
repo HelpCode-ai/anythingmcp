@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { mcpServers, connectors as connectorsApi, mcpKeys, productEvents, server as serverApi } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
@@ -50,6 +51,7 @@ export default function McpServerDetailPage() {
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
+  const [editSkillsDelivery, setEditSkillsDelivery] = useState<'auto' | 'inline' | 'index'>('auto');
   const [saveMsg, setSaveMsg] = useState('');
 
   // API key state
@@ -107,6 +109,7 @@ export default function McpServerDetailPage() {
       setEditName(srv.name);
       setEditDescription(srv.description || '');
       setEditInstructions(srv.instructions || '');
+      setEditSkillsDelivery(srv.skillsDelivery || 'auto');
       setAllConnectors(conns);
       const ids = new Set<string>(srv.connectors?.map((c: any) => c.connector.id) || []);
       currentIds.current = ids;
@@ -128,6 +131,7 @@ export default function McpServerDetailPage() {
         name: editName.trim(),
         description: editDescription.trim() || undefined,
         instructions: editInstructions.trim() || undefined,
+        skillsDelivery: editSkillsDelivery,
       }, token);
       setServer((prev: any) => ({ ...prev, ...updated }));
       setSaveMsg('Saved');
@@ -1159,6 +1163,29 @@ Auth: OAuth`;
               />
               <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
                 Sent to AI clients on connect, combined with connector-level instructions.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="skills-delivery" className="mb-1.5 block text-[12.5px] font-medium">
+                Workspace skills on connect
+              </label>
+              <select
+                id="skills-delivery"
+                value={editSkillsDelivery}
+                onChange={(e) => setEditSkillsDelivery(e.target.value as 'auto' | 'inline' | 'index')}
+                className="h-[38px] w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13.5px] outline-none focus:border-[var(--brand)]"
+              >
+                <option value="auto">Automatic: full text while short, otherwise a list to open on demand</option>
+                <option value="inline">Always the full text</option>
+                <option value="index">Always a list (the AI opens a skill with skill_get)</option>
+              </select>
+              <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
+                How this server&apos;s{' '}
+                <Link href="/knowledge-graph/skills" className="text-[var(--brand)] hover:underline">
+                  AI Skills
+                </Link>{' '}
+                reach the AI client. A list keeps the instructions short; long procedures are always
+                opened on demand.
               </p>
             </div>
             {saveMsg && (

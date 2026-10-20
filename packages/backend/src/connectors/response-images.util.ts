@@ -170,7 +170,8 @@ export function readImages(responseMapping: unknown): ImagesConfig | null {
 /*  Bytes                                                              */
 /* ------------------------------------------------------------------ */
 
-const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+/** Any character outside the base64 alphabet. A single-character class never backtracks, so it is safe on multi-megabyte strings. */
+const NOT_BASE64 = /[^A-Za-z0-9+/]/;
 const DATA_URL = /^data:([\w.+-]+\/[\w.+-]+)?(?:;[\w-]+=[\w.-]+)*;base64,/i;
 
 /** Standard, padded base64 of a base64 or base64url string; null when it is neither. */
@@ -181,7 +182,14 @@ function normalizeBase64(text: string): string | null {
   const pad = s.length % 4;
   if (pad === 1) return null;
   if (pad > 0 && !s.endsWith('=')) s += '='.repeat(4 - pad);
-  return BASE64.test(s) && s.length % 4 === 0 ? s : null;
+  if (s.length % 4 !== 0) return null;
+  // Up to two '=' of padding at the end, base64 alphabet before them. Checked
+  // without an anchored `+` regex: on a 7 MB image V8 overflows its stack
+  // backtracking through one.
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 61 /* = */) end--;
+  if (end === 0 || s.length - end > 2) return null;
+  return NOT_BASE64.test(s.slice(0, end)) ? null : s;
 }
 
 function decodedLength(b64: string): number {

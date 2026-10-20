@@ -566,6 +566,18 @@ export const connectors = {
       '/api/mcp-oauth/complete',
       { method: 'POST', token, body: { state, code } },
     ),
+  /** "Authorize with Provider" for a Shopee shop: the signed shop authorization link. */
+  shopeeAuthorize: (id: string, token: string, returnTo?: string) =>
+    request<{ authorizationUrl?: string; error?: string }>(
+      `/api/shopee/connectors/${id}/authorize`,
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
+    ),
+  /** Second half of a Shopee shop authorization: exchange the code Shopee sent back. */
+  shopeeComplete: (state: string, code: string, shopId: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
+      '/api/shopee/complete',
+      { method: 'POST', token, body: { state, code, shopId } },
+    ),
   oauthRedirectUri: (token: string) =>
     request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>
@@ -624,6 +636,15 @@ export type VerifyResult =
 
 export type ConnectorSetupStatus = 'ready' | 'needs_input' | 'needs_authorization';
 
+/** A catalog connector serving the API at a URL the user typed. */
+export interface CatalogUrlMatch {
+  slug: string;
+  name: string;
+  icon: string;
+  description: string;
+  toolCount: number;
+}
+
 export const adapters = {
   list: (token: string) =>
     request<any[]>('/api/adapters', { token }),
@@ -650,6 +671,12 @@ export const adapters = {
       token,
       body: { credentials, ...(connectorId ? { connectorId } : {}) },
     }),
+  /** Catalog connectors for the API at a base URL, best first. */
+  matchUrl: (url: string, token: string) =>
+    request<{ matches: CatalogUrlMatch[] }>(
+      `/api/adapters/match-url?url=${encodeURIComponent(url)}`,
+      { token },
+    ),
   popularConnectors: (token: string) =>
     request<{ items: PopularConnectorItem[] }>('/api/adapters/popular-connectors', { token }),
   starterPack: (token: string) =>
@@ -965,6 +992,17 @@ export interface KgSettings {
   edgeAutoApply: boolean;
 }
 
+export type LearningMode = 'inherit' | 'on' | 'off';
+
+export interface MemberLearning {
+  /** The workspace switch ("Capture user intent"). */
+  workspaceDefault: boolean;
+  mode: LearningMode;
+  optOut: boolean;
+  /** Whether this member's requests are used for skill learning right now. */
+  effective: boolean;
+}
+
 export interface KgSkillList {
   items: KgSkill[];
   total: number;
@@ -981,6 +1019,24 @@ export const knowledgeGraph = {
     ),
   getSettings: (token: string) =>
     request<KgSettings>('/api/knowledge-graph/settings', { token }),
+  learning: {
+    me: (token: string) =>
+      request<MemberLearning>('/api/knowledge-graph/learning/me', { token }),
+    setMine: (token: string, body: { optOut: boolean; clearIntents?: boolean }) =>
+      request<MemberLearning & { intentsCleared: number }>('/api/knowledge-graph/learning/me', {
+        token,
+        method: 'PUT',
+        body,
+      }),
+    setMembers: (
+      token: string,
+      body: { userIds: string[]; mode: LearningMode; clearIntents?: boolean },
+    ) =>
+      request<{ updated: number; notFound: string[]; intentsCleared: number }>(
+        '/api/knowledge-graph/learning/members',
+        { token, method: 'PUT', body },
+      ),
+  },
   updateSettings: (
     token: string,
     body: {
@@ -1048,9 +1104,10 @@ export const knowledgeGraph = {
   skills: {
     list: (
       token: string,
-      params?: { status?: string; q?: string; take?: number; skip?: number },
+      params?: { status?: string; q?: string; take?: number; skip?: number; folderId?: string },
     ) => {
       const qs = new URLSearchParams();
+      if (params?.folderId) qs.set('folderId', params.folderId);
       if (params?.status) qs.set('status', params.status);
       if (params?.q) qs.set('q', params.q);
       if (params?.take != null) qs.set('take', String(params.take));
@@ -1058,8 +1115,13 @@ export const knowledgeGraph = {
       const suffix = qs.toString() ? `?${qs.toString()}` : '';
       return request<KgSkillList>(`/api/knowledge-graph/skills${suffix}`, { token });
     },
+    proposeFromErrors: (token: string) =>
+      request<{ created: number; patterns: number }>('/api/knowledge-graph/skills/propose-from-errors', {
+        token,
+        method: 'POST',
+      }),
     consolidate: (token: string, mcpServerId?: string) =>
-      request<{ before: number; after: number; model?: string }>(
+      request<{ before: number; after: number; proposed?: number; replaced?: number; model?: string }>(
         '/api/knowledge-graph/skills/consolidate',
         { token, method: 'POST', body: mcpServerId ? { mcpServerId } : {} },
       ),
@@ -1072,6 +1134,8 @@ export const knowledgeGraph = {
         connectorId?: string | null;
         mcpServerId?: string | null;
         status?: string;
+        body?: string | null;
+        folderId?: string | null;
       },
     ) => request<KgSkill>('/api/knowledge-graph/skills', { token, method: 'POST', body }),
     generate: (token: string, mcpServerId?: string) =>
@@ -1087,8 +1151,17 @@ export const knowledgeGraph = {
     update: (
       token: string,
       id: string,
-      patch: { title?: string; whenToUse?: string; instruction?: string; status?: string },
+      patch: {
+        title?: string;
+        whenToUse?: string;
+        instruction?: string;
+        body?: string | null;
+        status?: string;
+        folderId?: string | null;
+      },
     ) => request<KgSkill>(`/api/knowledge-graph/skills/${id}`, { token, method: 'PATCH', body: patch }),
+    versions: (token: string, id: string) =>
+      request<KgSkillVersion[]>(`/api/knowledge-graph/skills/${id}/versions`, { token }),
     remove: (token: string, id: string) =>
       request<{ ok: boolean }>(`/api/knowledge-graph/skills/${id}`, { token, method: 'DELETE' }),
   },
@@ -1106,6 +1179,153 @@ export interface KgSkill {
   confidence: number;
   evidenceCount: number;
   status: string;
+  /** manual | llm | finder */
+  source?: string;
+  /** Optional full procedure (markdown), served on demand by skill_get. */
+  body?: string | null;
+  version?: number;
+  useCount?: number;
+  lastUsedAt?: string | null;
+  folderId?: string | null;
+  /** For a merge proposal: the active skills applying it deactivates. */
+  replaces?: string[];
+}
+
+export interface KnowledgeFolder {
+  id: string;
+  parentId: string | null;
+  name: string;
+  description: string | null;
+  /** Custom roles the folder (and its subtree) is limited to; empty = everyone. */
+  roleIds: string[];
+  /** "Sales / Quotes" */
+  path: string;
+  depth: number;
+  skillCount: number;
+  memoryCount: number;
+}
+
+export const knowledgeFolders = {
+  list: (token: string) =>
+    request<{ folders: KnowledgeFolder[]; restrictionsAvailable: boolean }>('/api/knowledge-folders', { token }),
+  create: (token: string, body: { name: string; parentId?: string | null; description?: string | null }) =>
+    request<KnowledgeFolder>('/api/knowledge-folders', { token, method: 'POST', body }),
+  update: (
+    token: string,
+    id: string,
+    body: { name?: string; parentId?: string | null; description?: string | null },
+  ) => request<KnowledgeFolder>(`/api/knowledge-folders/${id}`, { token, method: 'PATCH', body }),
+  remove: (token: string, id: string) =>
+    request<{ ok: boolean; movedTo: string | null }>(`/api/knowledge-folders/${id}`, { token, method: 'DELETE' }),
+  setRoles: (token: string, id: string, roleIds: string[]) =>
+    request<KnowledgeFolder>(`/api/knowledge-folders/${id}/roles`, { token, method: 'PUT', body: { roleIds } }),
+  move: (token: string, kind: 'skill' | 'memory', ids: string[], folderId: string | null) =>
+    request<{ moved: number }>('/api/knowledge-folders/move', {
+      token,
+      method: 'POST',
+      body: { kind, ids, folderId },
+    }),
+};
+
+export type MemoryAccessLevel = 'none' | 'read' | 'personal' | 'contribute';
+export type MemoryAccessSetting = 'inherit' | MemoryAccessLevel;
+export type MemoryScope = 'personal' | 'organization';
+
+export interface MemoryItem {
+  id: string;
+  scope: MemoryScope;
+  kind: 'fact' | 'preference' | 'note';
+  content: string;
+  tags: string[];
+  status: 'active' | 'pending' | 'rejected';
+  source: { via?: 'mcp' | 'ui'; mcpServerId?: string; client?: string };
+  ownerUserId: string | null;
+  folderId?: string | null;
+  /** Knowledge-graph entity the item is about, e.g. "customer". */
+  about?: string | null;
+  createdByUserId: string | null;
+  approvedByUserId: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryStatus {
+  licensed: boolean;
+  access: MemoryAccessLevel;
+  settings: { defaultAccess: MemoryAccessLevel; writeMode: 'approval' | 'auto' };
+  isCurator: boolean;
+}
+
+export const memory = {
+  status: (token: string) => request<MemoryStatus>('/api/memory/status', { token }),
+  list: (
+    token: string,
+    params: {
+      scope: MemoryScope;
+      status?: string;
+      q?: string;
+      take?: number;
+      skip?: number;
+      folderId?: string;
+    },
+  ) => {
+    const qs = new URLSearchParams({ scope: params.scope });
+    if (params.folderId) qs.set('folderId', params.folderId);
+    if (params.status) qs.set('status', params.status);
+    if (params.q) qs.set('q', params.q);
+    if (params.take != null) qs.set('take', String(params.take));
+    if (params.skip != null) qs.set('skip', String(params.skip));
+    return request<{ items: MemoryItem[]; total: number; pending: number; take: number; skip: number }>(
+      `/api/memory/items?${qs.toString()}`,
+      { token },
+    );
+  },
+  create: (
+    token: string,
+    body: {
+      content: string;
+      kind?: string;
+      scope?: MemoryScope;
+      tags?: string[];
+      folderId?: string | null;
+      about?: string | null;
+    },
+  ) => request<MemoryItem>('/api/memory/items', { token, method: 'POST', body }),
+  update: (
+    token: string,
+    id: string,
+    body: { content?: string; kind?: string; tags?: string[]; about?: string | null },
+  ) =>
+    request<MemoryItem>(`/api/memory/items/${id}`, { token, method: 'PATCH', body }),
+  remove: (token: string, id: string) =>
+    request<{ ok: boolean }>(`/api/memory/items/${id}`, { token, method: 'DELETE' }),
+  approve: (token: string, id: string) =>
+    request<MemoryItem>(`/api/memory/items/${id}/approve`, { token, method: 'POST' }),
+  reject: (token: string, id: string) =>
+    request<MemoryItem>(`/api/memory/items/${id}/reject`, { token, method: 'POST' }),
+  updateSettings: (
+    token: string,
+    body: { defaultAccess?: MemoryAccessLevel; writeMode?: 'approval' | 'auto' },
+  ) => request<MemoryStatus['settings']>('/api/memory/settings', { token, method: 'PUT', body }),
+  setAccess: (token: string, userIds: string[], access: MemoryAccessSetting) =>
+    request<{ updated: number; notFound: string[] }>('/api/memory/members/access', {
+      token,
+      method: 'PUT',
+      body: { userIds, access },
+    }),
+  erasePersonal: (token: string, userId: string) =>
+    request<{ erased: number }>(`/api/memory/members/${userId}/personal`, { token, method: 'DELETE' }),
+};
+
+export interface KgSkillVersion {
+  version: number;
+  title: string;
+  whenToUse: string;
+  instruction: string;
+  body: string | null;
+  editedByUserId: string | null;
+  createdAt: string;
 }
 
 // Server settings (public)
@@ -1474,6 +1694,15 @@ export function editionErrorCode(err: unknown): string | null {
   return code === EDITION_REQUIRED || code === SEAT_LIMIT ? code : null;
 }
 
+// Support chat (only on instances we operate; 404 elsewhere)
+export const support = {
+  widget: (token: string) =>
+    request<{ baseUrl: string; inboxId: string; userJwt: string }>('/api/support/widget', {
+      token,
+      skipAutoLogout: true,
+    }),
+};
+
 // License
 export const license = {
   getEdition: (token: string) =>
@@ -1613,7 +1842,7 @@ export const mcpServers = {
     request<{ calls30d: number; lastCallAt: string | null }>(`/api/mcp-servers/${id}/activity`, { token }),
   create: (data: { name: string; slug?: string; description?: string; instructions?: string }, token: string) =>
     request<any>('/api/mcp-servers', { method: 'POST', body: data, token }),
-  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean }, token: string) =>
+  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: 'auto' | 'inline' | 'index' }, token: string) =>
     request<any>(`/api/mcp-servers/${id}`, { method: 'PUT', body: data, token }),
   delete: (id: string, token: string) =>
     request(`/api/mcp-servers/${id}`, { method: 'DELETE', token }),

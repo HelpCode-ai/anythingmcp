@@ -48,6 +48,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/knowledge-graph', label: 'Knowledge Graph', keywords: ['knowledge graph', 'kg', 'graph', 'entities'] },
       { href: '/knowledge-graph/skills', label: 'AI Skills', keywords: ['ai skills', 'skills', 'prompts'] },
+      { href: '/memory', label: 'Memory', keywords: ['memory', 'remember', 'facts', 'preferences', 'knowledge'] },
     ],
   },
   {

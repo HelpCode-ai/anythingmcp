@@ -1,0 +1,913 @@
+{
+  "slug": "binance",
+  "name": "Binance",
+  "aliases": [
+    "Binance Spot",
+    "Binance Futures",
+    "币安"
+  ],
+  "description": "Let your AI read live crypto market data from Binance: spot prices and 24 hour changes of every pair, order books, recent trades and price history, and for USD-M futures the mark price, funding rates, open interest and long/short ratio. Public data, no account or key needed. Read-only: it cannot trade or move funds.",
+  "instructions": "## Binance\nThis connector reads **public market data from Binance**, the crypto exchange: spot prices, 24 hour and rolling statistics, order books, recent trades and price history as candles from the Spot API (`https://api.binance.com/api/v3`), and prices, candles, mark price and funding rates, open interest and the long/short ratio of USD-M futures from the Futures API (`https://fapi.binance.com`). **No account, API key or sign-in is needed**, and nothing to set up.\n\n**Read-only by design: this connector cannot trade or move funds.** It has no tool that places or cancels an order, buys, sells, converts, transfers, deposits or withdraws anything, and none can be switched on: it never signs a request and never sees a Binance account. It cannot see anyone's balances, orders, positions, trades or deposit addresses. When the user asks for any of that, say so plainly and point them to the Binance app or website.\n\n**Not financial advice.** Prices, volumes, funding rates and ratios are informational. Do not tell the user to buy, sell, hold, go long or go short; present the numbers, their time and where they came from, and mention that crypto prices move fast and that leveraged futures can lose more than the margin.\n\n**Where it works**: Binance refuses requests from the United States and some other restricted regions with HTTP 451 on both hosts. AnythingMCP Cloud calls Binance from the EU, so it works there; a self-hosted server in a restricted region gets 451 on every tool. Binance.US (`api.binance.us`) is a different exchange with its own prices and is not covered. For spot data only, a self-hosted server may point the connector's base URL at Binance's market-data mirror `https://data-api.binance.vision`, which serves the same spot routes; the futures tools always call `fapi.binance.com`.\n\n**Symbols**: Binance writes a pair as one word in capitals, base asset first: `BTCUSDT` (bitcoin priced in Tether), `ETHBTC`, `BNBEUR`. There is no dash and no slash. Many pairs do not exist (there is BTCEUR but no SOLCHF); a symbol that does not exist answers 400 with code -1121 \"Invalid symbol\". `binance_list_symbols` lists the spot pairs and `binance_futures_list_symbols` the futures contracts. Spot and futures are separate markets with their own prices: `BTCUSDT` on futures is the perpetual contract, not the spot pair. To ask for several spot pairs at once, pass `symbols` as JSON text, e.g. `[\"BTCUSDT\",\"ETHUSDT\"]`.\n\n**Valuing holdings**: the user can tell you what they hold (for example 0.5 BTC and 3 ETH). Multiply each amount by `binance_get_price` in a quote asset they use (BTCUSDT, ETHEUR) and add up; USDT and USDC are dollar stablecoins, close to but not exactly 1 USD. State the time of the prices.\n\n**Which tool**\n- Price now: `binance_get_price` (spot), `binance_futures_get_price` (futures last trade), `binance_get_avg_price` (average of the last minutes).\n- Change and volume: `binance_get_24h_ticker`, `binance_get_rolling_ticker` (any window from 1 minute to 7 days), `binance_futures_get_24h_ticker` (all contracts sorted by quote volume when no symbol is given).\n- Spread and depth: `binance_get_book_ticker`, `binance_get_order_book`, `binance_futures_get_order_book`.\n- Latest trades: `binance_get_recent_trades`.\n- History and charts: `binance_get_klines`, `binance_futures_get_klines`.\n- Funding: `binance_futures_get_mark_price` (current rate and next funding time; without a symbol, the most extreme rates first) and `binance_futures_get_funding_rate_history`.\n- Positioning: `binance_futures_get_open_interest`, `binance_futures_get_open_interest_history`, `binance_futures_get_long_short_ratio` (last 30 days only).\n- Pair rules (tick size, minimum order value): `binance_get_symbol_info`.\n- Current time on Binance: `binance_get_server_time`.\n\n**Numbers and times**: prices and quantities come as strings to keep every digit; `volume` is in the base asset, `quoteVolume` in the quote asset. Every time is Unix milliseconds in UTC (milliseconds since 1 January 1970): get the current value from `binance_get_server_time` (`serverTime`) and subtract (3600000 for an hour, 86400000 for a day) to build `startTime`. Convert to the user's time zone before quoting a time. Funding rates and long/short shares are fractions: 0.0001 is 0.01 %. Kline intervals are case-sensitive (`1m` is a minute, `1M` a month).\n\n**Limits**: Binance limits by IP address and counts each request by its weight (given in each tool's description): 6,000 weight per minute on spot, 2,400 on futures; the futures statistics allow 1,000 requests per 5 minutes and funding history 500 per 5 minutes. A Cloud server shares one IP among its users, so keep calls few: ask for several symbols in one call, keep `limit` small, and avoid calls without a symbol. On 429 stop and wait for the seconds in Retry-After; continuing after 429s gets the IP banned with HTTP 418 for 2 minutes up to 3 days.\n\n**Errors**\n- 400 with `code` and `msg`: a parameter is wrong; -1121 is an unknown symbol, -1100 or -1102 a malformed or missing parameter.\n- 451: Binance does not serve the server's region (see above). 403: Binance's firewall blocked the request, usually a rate limit.\n- 429 or 418: rate limit or IP ban; wait.\n\n**Out of scope here**: anything that needs a Binance account or a signed request (balances, orders, trades, positions, leverage, transfers, deposits, withdrawals, Earn, Convert, margin), COIN-M futures and options, WebSocket streams, and Binance.US.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "binance",
+  "docsUrl": "https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints",
+  "prerequisites": "Nothing: the connector reads Binance's public market data without an account or API key. Binance does not serve the United States and some other regions.",
+  "requiredEnvVars": [],
+  "verifyHints": {
+    "451": "Binance does not serve the region this server calls from (for example the United States). AnythingMCP Cloud calls from the EU; a self-hosted server in a restricted region cannot use this connector.",
+    "403": "Binance's firewall refused the request: either the server's region is restricted or the IP is rate limited. Wait a few minutes; if it persists, the region is blocked.",
+    "418": "Binance banned this IP for a while after too many requests (2 minutes up to 3 days). Wait before verifying again.",
+    "429": "Binance is rate limiting this IP. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "binance_get_server_time"
+  },
+  "connector": {
+    "name": "Binance public market data",
+    "type": "REST",
+    "baseUrl": "https://api.binance.com",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/v3/ping"
+  },
+  "tools": [
+    {
+      "name": "binance_get_server_time",
+      "description": "Read Binance's current server time as Unix milliseconds (weight 1). Needs nothing; use it to work out startTime and endTime for the kline, funding rate and statistics tools, and as a quick check that Binance answers from this server.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/time"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "serverTime": "$.serverTime"
+          }
+        }
+      }
+    },
+    {
+      "name": "binance_list_symbols",
+      "description": "List the spot trading pairs that are trading on Binance right now (symbol names only, about 1,400, e.g. BTCUSDT, ETHBTC, SOLEUR). Weight 20 and a large download: when you already know the symbol, call binance_get_symbol_info or a price tool instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/exchangeInfo",
+        "queryParams": {
+          "permissions": "SPOT",
+          "showPermissionSets": "false",
+          "symbolStatus": "TRADING"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{count: length(symbols), symbols: symbols[].symbol}",
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "binance_get_symbol_info",
+      "description": "Read the trading rules of one Binance spot pair: status, base and quote asset, precisions, order types and filters such as tick size (PRICE_FILTER), step size (LOT_SIZE) and minimum order value (NOTIONAL). Weight 20. A symbol that does not exist answers 400 with code -1121.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/exchangeInfo",
+        "queryParams": {
+          "symbol": "$symbol",
+          "showPermissionSets": "false"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "symbols": {
+              "$from": "$.symbols[*]",
+              "$select": {
+                "symbol": "symbol",
+                "status": "status",
+                "baseAsset": "baseAsset",
+                "baseAssetPrecision": "baseAssetPrecision",
+                "quoteAsset": "quoteAsset",
+                "quoteAssetPrecision": "quoteAssetPrecision",
+                "orderTypes": "orderTypes",
+                "isSpotTradingAllowed": "isSpotTradingAllowed",
+                "isMarginTradingAllowed": "isMarginTradingAllowed",
+                "filters": "filters"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "binance_get_price",
+      "description": "Read the latest spot price of one Binance pair, several pairs (symbols) or, with neither, every pair. Weight 2 for one symbol, 4 otherwise. Prices are strings in the quote asset (BTCUSDT is priced in USDT). Always returns a list of {symbol, price}. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
+          },
+          "symbols": {
+            "type": "string",
+            "pattern": "^\\[\"[A-Z0-9._-]{2,50}\"(,\"[A-Z0-9._-]{2,50}\"){0,99}\\]$",
+            "description": "Several symbols at once as a JSON array of strings with no spaces, e.g. [\"BTCUSDT\",\"ETHUSDT\"] (at most 100). Use either symbol or symbols, not both."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/ticker/price",
+        "queryParams": {
+          "symbol": "$symbol",
+          "symbols": "$symbols"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[@][].{symbol: symbol, price: price}",
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "binance_get_24h_ticker",
+      "description": "Read 24 hour statistics of Binance spot pairs: last price, change and change in percent, open, high, low, weighted average price, volume in the base asset (volume) and in the quote asset (quoteVolume), best bid and ask and trade count. Pass symbol, or symbols for up to 100 at once. Weight 2 for 1 to 20 symbols, 40 for 21 to 100, 80 without either (then every pair is returned and the answer is cut off, so always pass one). Always returns a list. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
+          },
+          "symbols": {
+            "type": "string",
+            "pattern": "^\\[\"[A-Z0-9._-]{2,50}\"(,\"[A-Z0-9._-]{2,50}\"){0,99}\\]$",
+            "description": "Several symbols at once as a JSON array of strings with no spaces, e.g. [\"BTCUSDT\",\"ETHUSDT\"] (at most 100). Use either symbol or symbols, not both."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/ticker/24hr",
+        "queryParams": {
+          "symbol": "$symbol",
+          "symbols": "$symbols"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[@][].{symbol: symbol, lastPrice: lastPrice, priceChange: priceChange, priceChangePercent: priceChangePercent, openPrice: openPrice, highPrice: highPrice, lowPrice: lowPrice, weightedAvgPrice: weightedAvgPrice, volume: volume, quoteVolume: quoteVolume, bidPrice: bidPrice, askPrice: askPrice, count: count, openTime: openTime, closeTime: closeTime}",
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "binance_get_rolling_ticker",
+      "description": "Read price change statistics of Binance spot pairs over a window other than 24 hours, from 1 minute to 7 days: open, high, low, last price, change in percent, volumes and trade count. Pass symbol, or symbols for up to 100. Weight 4 per symbol, at most 200. Always returns a list. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
+          },
+          "symbols": {
+            "type": "string",
+            "pattern": "^\\[\"[A-Z0-9._-]{2,50}\"(,\"[A-Z0-9._-]{2,50}\"){0,99}\\]$",
+            "description": "Several symbols at once as a JSON array of strings with no spaces, e.g. [\"BTCUSDT\",\"ETHUSDT\"] (at most 100). Use either symbol or symbols, not both."
+          },
+          "windowSize": {
+            "type": "string",
+            "pattern": "^([1-9]|[1-5][0-9])m$|^([1-9]|1[0-9]|2[0-3])h$|^[1-7]d$",
+            "default": "1d",
+            "description": "Window length: 1m to 59m, 1h to 23h, or 1d to 7d (default 1d). Units cannot be combined: 90m is not allowed, use 1h or 2h."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/ticker",
+        "queryParams": {
+          "symbol": "$symbol",
+          "symbols": "$symbols",
+          "windowSize": "$windowSize"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[@][].{symbol: symbol, lastPrice: lastPrice, priceChange: priceChange, priceChangePercent: priceChangePercent, openPrice: openPrice, highPrice: highPrice, lowPrice: lowPrice, weightedAvgPrice: weightedAvgPrice, volume: volume, quoteVolume: quoteVolume, count: count, openTime: openTime, closeTime: closeTime}",
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "binance_get_book_ticker",
+      "description": "Read the best bid and best ask (price and quantity) of one Binance spot pair, several (symbols) or all. Weight 2 for one symbol, 4 otherwise. Use it for the current spread. Always returns a list. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
+          },
+          "symbols": {
+            "type": "string",
+            "pattern": "^\\[\"[A-Z0-9._-]{2,50}\"(,\"[A-Z0-9._-]{2,50}\"){0,99}\\]$",
+            "description": "Several symbols at once as a JSON array of strings with no spaces, e.g. [\"BTCUSDT\",\"ETHUSDT\"] (at most 100). Use either symbol or symbols, not both."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/ticker/bookTicker",
+        "queryParams": {
+          "symbol": "$symbol",
+          "symbols": "$symbols"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[@][].{symbol: symbol, bidPrice: bidPrice, bidQty: bidQty, askPrice: askPrice, askQty: askQty}",
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "binance_get_avg_price",
+      "description": "Read the current average price of a Binance spot pair over the last few minutes (mins), the reference Binance uses for some order filters. Weight 2. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/avgPrice",
+        "queryParams": {
+          "symbol": "$symbol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "mins": "$.mins",
+            "price": "$.price",
+            "closeTime": "$.closeTime"
+          }
+        }
+      }
+    },
+    {
+      "name": "binance_get_order_book",
+      "description": "Read the order book of a Binance spot pair: the best bids and asks as [price, quantity] pairs, best first. limit sets the levels per side (default 20 here). Weight 5 up to 100 levels, 25 up to 500. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20,
+            "description": "Price levels per side (default 20, at most 500 here)."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/depth",
+        "queryParams": {
+          "symbol": "$symbol",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "lastUpdateId": "$.lastUpdateId",
+            "bids": "$.bids",
+            "asks": "$.asks"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "binance_get_recent_trades",
+      "description": "Read the most recent public trades of a Binance spot pair: price, quantity in the base asset, value in the quote asset, time (Unix milliseconds) and isBuyerMaker (true means the seller was the taker). Weight 25. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20,
+            "description": "Number of trades (default 20, at most 500 here)."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/trades",
+        "queryParams": {
+          "symbol": "$symbol",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[*].{id: id, price: price, qty: qty, quoteQty: quoteQty, time: time, isBuyerMaker: isBuyerMaker}",
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "binance_get_klines",
+      "description": "Read price history of a Binance spot pair as candles (klines), oldest first: open time, open, high, low, close, volume in the base asset, quote volume, trade count and taker buy volumes. Without startTime and endTime the most recent candles are returned. Weight 2. Market data is informational, not financial advice. Past prices say nothing certain about future ones.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1s",
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "2h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "3d",
+              "1w",
+              "1M"
+            ],
+            "description": "Candle length: 1s, 1m to 30m, 1h to 12h, 1d, 3d, 1w, or 1M (one month). Case-sensitive: 1m is a minute, 1M a month."
+          },
+          "startTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional start of the window as Unix milliseconds (UTC), e.g. 1792195200000. binance_get_server_time gives the current value."
+          },
+          "endTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional end of the window as Unix milliseconds (UTC)."
+          },
+          "timeZone": {
+            "type": "string",
+            "pattern": "^[+-]?(1[0-4]|0?[0-9])(:[0-5][0-9])?$",
+            "description": "Optional time zone for day, week and month candle boundaries, e.g. 8 or -1:00 or 05:45 (default 0, UTC). startTime and endTime stay in UTC."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100,
+            "description": "Number of candles (default 100, at most 500 here)."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/klines",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "startTime": "$startTime",
+          "endTime": "$endTime",
+          "timeZone": "$timeZone",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[*].{openTime: [0], open: [1], high: [2], low: [3], close: [4], volume: [5], closeTime: [6], quoteVolume: [7], trades: [8], takerBuyBaseVolume: [9], takerBuyQuoteVolume: [10]}",
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "binance_futures_list_symbols",
+      "description": "List the USD-M futures contracts trading on Binance right now (symbol names only), grouped into crypto perpetuals, perpetuals on stocks, commodities and other traditional assets (tradfiPerpetual) and quarterly delivery contracts. Weight 1 but a large download.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://fapi.binance.com/fapi/v1/exchangeInfo"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{perpetual: symbols[?status=='TRADING' && contractType=='PERPETUAL'].symbol, tradfiPerpetual: symbols[?status=='TRADING' && contractType=='TRADIFI_PERPETUAL'].symbol, delivery: symbols[?status=='TRADING' && (contractType=='CURRENT_QUARTER' || contractType=='NEXT_QUARTER')].symbol}",
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "binance_futures_get_price",
+      "description": "Read the latest traded price of one Binance USD-M futures contract, or of all with no symbol. Weight 1 for one symbol, 2 for all. This is the last trade price; the mark price used for liquidations comes from binance_futures_get_mark_price. Always returns a list. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://fapi.binance.com/fapi/v2/ticker/price",
+        "queryParams": {
+          "symbol": "$symbol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[@][].{symbol: symbol, price: price, time: time}",
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "binance_futures_get_24h_ticker",
+      "description": "Read 24 hour statistics of Binance USD-M futures contracts: last price, change in percent, open, high, low, weighted average price, volume in contracts' base asset and quoteVolume, sorted by quoteVolume, most traded first. Pass symbol for one contract (weight 1); without it every contract is returned (weight 40) and the answer keeps the most traded ones. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://fapi.binance.com/fapi/v1/ticker/24hr",
+        "queryParams": {
+          "symbol": "$symbol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "reverse(sort_by([@][], &to_number(quoteVolume)))[*].{symbol: symbol, lastPrice: lastPrice, priceChange: priceChange, priceChangePercent: priceChangePercent, openPrice: openPrice, highPrice: highPrice, lowPrice: lowPrice, weightedAvgPrice: weightedAvgPrice, volume: volume, quoteVolume: quoteVolume, count: count, openTime: openTime, closeTime: closeTime}",
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "binance_futures_get_klines",
+      "description": "Read price history of a Binance USD-M futures contract as candles (klines), oldest first: open time, open, high, low, close, volume, quote volume, trade count and taker buy volumes. Without startTime and endTime the most recent candles are returned. Weight 1 below 100 candles, 2 up to 499, 5 at 500. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "2h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "3d",
+              "1w",
+              "1M"
+            ],
+            "description": "Candle length: 1m to 30m, 1h to 12h, 1d, 3d, 1w, or 1M (one month). Case-sensitive."
+          },
+          "startTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional start of the window as Unix milliseconds (UTC), e.g. 1792195200000. binance_get_server_time gives the current value."
+          },
+          "endTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional end of the window as Unix milliseconds (UTC)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100,
+            "description": "Number of candles (default 100, at most 500 here)."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://fapi.binance.com/fapi/v1/klines",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "startTime": "$startTime",
+          "endTime": "$endTime",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[*].{openTime: [0], open: [1], high: [2], low: [3], close: [4], volume: [5], closeTime: [6], quoteVolume: [7], trades: [8], takerBuyBaseVolume: [9], takerBuyQuoteVolume: [10]}",
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "binance_futures_get_mark_price",
+      "description": "Read the mark price, index price and current funding rate of Binance USD-M perpetual contracts, with the time of the next funding (Unix milliseconds). lastFundingRate is a fraction per funding interval: 0.0001 is 0.01 %; positive means longs pay shorts. Pass symbol for one contract (weight 1); without it every contract is returned (weight 10), sorted by the size of the funding rate, most extreme first. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://fapi.binance.com/fapi/v1/premiumIndex",
+        "queryParams": {
+          "symbol": "$symbol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "reverse(sort_by([@][], &abs(to_number(lastFundingRate))))[*].{symbol: symbol, markPrice: markPrice, indexPrice: indexPrice, lastFundingRate: lastFundingRate, interestRate: interestRate, nextFundingTime: nextFundingTime, time: time}",
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "binance_futures_get_funding_rate_history",
+      "description": "Read past funding rates of a Binance USD-M perpetual contract, oldest first: funding time (Unix milliseconds), fundingRate as a fraction (0.0001 is 0.01 %) and the mark price at that time. Perpetuals fund every 8 or 4 hours, a few every hour. Without startTime and endTime the most recent records are returned. Shares a limit of 500 requests per 5 minutes per IP. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
+          },
+          "startTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional start of the window as Unix milliseconds (UTC), e.g. 1792195200000. binance_get_server_time gives the current value."
+          },
+          "endTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional end of the window as Unix milliseconds (UTC)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100,
+            "description": "Number of records (default 100, at most 500 here)."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://fapi.binance.com/fapi/v1/fundingRate",
+        "queryParams": {
+          "symbol": "$symbol",
+          "startTime": "$startTime",
+          "endTime": "$endTime",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[*].{symbol: symbol, fundingTime: fundingTime, fundingRate: fundingRate, markPrice: markPrice}",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "binance_futures_get_open_interest",
+      "description": "Read the current open interest of a Binance USD-M futures contract: the number of open contracts in the base asset (BTC for BTCUSDT) and the time. Weight 1. For history and the value in USD use binance_futures_get_open_interest_history. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://fapi.binance.com/fapi/v1/openInterest",
+        "queryParams": {
+          "symbol": "$symbol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "symbol": "$.symbol",
+            "openInterest": "$.openInterest",
+            "time": "$.time"
+          }
+        }
+      }
+    },
+    {
+      "name": "binance_futures_get_open_interest_history",
+      "description": "Read the open interest history of a Binance USD-M futures contract per period: sumOpenInterest in the base asset, sumOpenInterestValue in the quote asset, and the timestamp. Only the last 30 days are available; at most 1,000 requests per 5 minutes per IP. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "2h",
+              "4h",
+              "6h",
+              "12h",
+              "1d"
+            ],
+            "description": "Length of each data point, from 5m to 1d."
+          },
+          "startTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional start of the window as Unix milliseconds (UTC), e.g. 1792195200000. binance_get_server_time gives the current value."
+          },
+          "endTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional end of the window as Unix milliseconds (UTC)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 30,
+            "description": "Number of data points (default 30, at most 500)."
+          }
+        },
+        "required": [
+          "symbol",
+          "period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://fapi.binance.com/futures/data/openInterestHist",
+        "queryParams": {
+          "symbol": "$symbol",
+          "period": "$period",
+          "limit": "$limit",
+          "startTime": "$startTime",
+          "endTime": "$endTime"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[*].{symbol: symbol, sumOpenInterest: sumOpenInterest, sumOpenInterestValue: sumOpenInterestValue, timestamp: timestamp}",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "binance_futures_get_long_short_ratio",
+      "description": "Read the long/short account ratio of a Binance USD-M futures contract per period: the share of all accounts with a net long position (longAccount), with a net short one (shortAccount, both fractions), and their ratio. It counts accounts, not position size. Only the last 30 days are available; at most 1,000 requests per 5 minutes per IP. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "2h",
+              "4h",
+              "6h",
+              "12h",
+              "1d"
+            ],
+            "description": "Length of each data point, from 5m to 1d."
+          },
+          "startTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional start of the window as Unix milliseconds (UTC), e.g. 1792195200000. binance_get_server_time gives the current value."
+          },
+          "endTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional end of the window as Unix milliseconds (UTC)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 30,
+            "description": "Number of data points (default 30, at most 500)."
+          }
+        },
+        "required": [
+          "symbol",
+          "period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://fapi.binance.com/futures/data/globalLongShortAccountRatio",
+        "queryParams": {
+          "symbol": "$symbol",
+          "period": "$period",
+          "limit": "$limit",
+          "startTime": "$startTime",
+          "endTime": "$endTime"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[*].{symbol: symbol, longShortRatio: longShortRatio, longAccount: longAccount, shortAccount: shortAccount, timestamp: timestamp}",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "binance_futures_get_order_book",
+      "description": "Read the order book of a Binance USD-M futures contract: the best bids and asks as [price, quantity] pairs, best first. Weight 2 for up to 50 levels per side, 5 for 100, 10 for 500. Market data is informational, not financial advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
+          },
+          "limit": {
+            "type": "integer",
+            "enum": [
+              5,
+              10,
+              20,
+              50,
+              100,
+              500
+            ],
+            "default": 20,
+            "description": "Price levels per side: 5, 10, 20 (default), 50, 100 or 500."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://fapi.binance.com/fapi/v1/depth",
+        "queryParams": {
+          "symbol": "$symbol",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "lastUpdateId": "$.lastUpdateId",
+            "time": "$.T",
+            "bids": "$.bids",
+            "asks": "$.asks"
+          },
+          "maxBytes": 40000
+        }
+      }
+    }
+  ]
+}

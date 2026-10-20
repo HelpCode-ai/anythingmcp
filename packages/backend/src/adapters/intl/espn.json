@@ -1,0 +1,564 @@
+{
+  "slug": "espn",
+  "name": "ESPN",
+  "description": "ESPN public sports data, no API key: scoreboards, game summaries, news, teams, rosters, schedules, standings and injury reports for NFL, NBA, WNBA, MLB, NHL, college sports and major soccer leagues. Unofficial API without an SLA.",
+  "instructions": "## ESPN\nThis connector reads ESPN's public site API (`https://site.api.espn.com`), the same feed that powers the scoreboards on espn.com: scores and schedules, game details, news, teams, rosters, standings and injury reports. No API key is needed and every tool only reads.\n\n**Unofficial, no SLA.** ESPN does not document this API or promise anything about it. Fields, league slugs and limits can change without notice, there is no published rate limit, and ESPN can block heavy use. Keep calls few, do not poll every few seconds, and do not use it as the data feed of a commercial product: for that, license data from ESPN or a sports data provider. Content belongs to ESPN.\n\n**Sport and league.** Every tool takes `sport` and `league`:\n- football: `nfl`, `college-football`\n- basketball: `nba`, `wnba`, `mens-college-basketball`, `womens-college-basketball`\n- baseball: `mlb`\n- hockey: `nhl`\n- soccer: `eng.1` (Premier League), `esp.1` (LaLiga), `ger.1` (Bundesliga), `ita.1` (Serie A), `fra.1` (Ligue 1), `usa.1` (MLS), `uefa.champions`, `uefa.europa`, `fifa.world`\nAn unknown slug answers 400.\n\n**Typical flow.**\n1. `espn_get_scoreboard` for a day's games (dates `YYYYMMDD`; `YYYYMM` for a month). Each game has an event `id`.\n2. `espn_get_game_summary` with that id for the box score, leaders, scoring plays, lineups and injuries.\n3. `espn_list_teams` for team ids and abbreviations, then `espn_get_team`, `espn_get_team_roster` or `espn_get_team_schedule`.\n4. `espn_get_standings` for the table, `espn_get_news` for headlines, `espn_get_injuries` for a league's injury report.\n\n**Reading the data.** Times are ISO 8601 in UTC (`2026-10-19T00:15Z`): convert before quoting a kickoff. Scores are strings. The betting lines are what ESPN displays (usually one sportsbook); for real odds comparison use a betting odds connector. Standings columns differ by sport (soccer has points and goal difference, US leagues win percentage and games behind).",
+  "region": "intl",
+  "category": "sports",
+  "icon": "espn",
+  "docsUrl": "https://www.espn.com",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "espn_get_scoreboard",
+    "params": {
+      "sport": "football",
+      "league": "nfl"
+    }
+  },
+  "connector": {
+    "name": "ESPN",
+    "type": "REST",
+    "baseUrl": "https://site.api.espn.com",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "espn_get_scoreboard",
+      "description": "Games of one league on a day (default today): teams, scores, status and clock, venue, TV and the betting line ESPN shows. Pass dates as YYYYMMDD for one day, YYYYMM for a month or YYYY for a season; NFL and college football also take week with seasontype.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "enum": [
+              "football",
+              "basketball",
+              "baseball",
+              "hockey",
+              "soccer"
+            ],
+            "description": "ESPN sport path: football (NFL, college football), basketball (NBA, WNBA, college), baseball (MLB), hockey (NHL) or soccer."
+          },
+          "league": {
+            "type": "string",
+            "pattern": "^[a-z0-9.\\-]+$",
+            "description": "ESPN league slug for that sport: nfl or college-football; nba, wnba, mens-college-basketball or womens-college-basketball; mlb; nhl; soccer codes such as eng.1 (Premier League), esp.1 (LaLiga), ger.1 (Bundesliga), ita.1 (Serie A), fra.1 (Ligue 1), usa.1 (MLS), uefa.champions, fifa.world."
+          },
+          "dates": {
+            "type": "string",
+            "pattern": "^\\d{4}(\\d{2}(\\d{2})?)?$",
+            "description": "YYYYMMDD (one day), YYYYMM (a month) or YYYY. Ranges such as 20261001-20261018 are refused by ESPN. Leave out for today."
+          },
+          "week": {
+            "type": "integer",
+            "description": "Week number, for NFL and college football."
+          },
+          "seasontype": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "description": "1 preseason, 2 regular season, 3 postseason. Use with week."
+          },
+          "groups": {
+            "type": "string",
+            "description": "Conference group id for college sports, e.g. 80 for all FBS games, 50 for all Division I basketball games."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Maximum number of games (college days can have hundreds)."
+          }
+        },
+        "required": [
+          "sport",
+          "league"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis/site/v2/sports/{sport}/{league}/scoreboard",
+        "queryParams": {
+          "dates": "$dates",
+          "week": "$week",
+          "seasontype": "$seasontype",
+          "groups": "$groups",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{league: leagues[0].name, season: leagues[0].season.displayName, week: week.number, events: events[].{id: id, name: name, shortName: shortName, date: date, status: status.type.description, detail: status.type.shortDetail, state: status.type.state, completed: status.type.completed, clock: status.displayClock, period: status.period, venue: competitions[0].venue.fullName, broadcast: competitions[0].broadcast, note: competitions[0].notes[0].headline, competitors: competitions[0].competitors[].{id: team.id, team: team.displayName, abbreviation: team.abbreviation, homeAway: homeAway, score: score, winner: winner, record: records[0].summary}, odds: competitions[0].odds[0].{provider: provider.name, details: details, overUnder: overUnder}}}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "espn_get_game_summary",
+      "description": "One game in detail by ESPN event id: score by period, team box score stats, stat leaders, scoring plays, soccer key events and lineups, injuries and the betting lines ESPN lists. The event id comes from espn_get_scoreboard or espn_get_team_schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "enum": [
+              "football",
+              "basketball",
+              "baseball",
+              "hockey",
+              "soccer"
+            ],
+            "description": "ESPN sport path: football (NFL, college football), basketball (NBA, WNBA, college), baseball (MLB), hockey (NHL) or soccer."
+          },
+          "league": {
+            "type": "string",
+            "pattern": "^[a-z0-9.\\-]+$",
+            "description": "ESPN league slug for that sport: nfl or college-football; nba, wnba, mens-college-basketball or womens-college-basketball; mlb; nhl; soccer codes such as eng.1 (Premier League), esp.1 (LaLiga), ger.1 (Bundesliga), ita.1 (Serie A), fra.1 (Ligue 1), usa.1 (MLS), uefa.champions, fifa.world."
+          },
+          "event": {
+            "type": "string",
+            "pattern": "^\\d+$",
+            "description": "ESPN event id, e.g. 401772510."
+          }
+        },
+        "required": [
+          "sport",
+          "league",
+          "event"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis/site/v2/sports/{sport}/{league}/summary",
+        "queryParams": {
+          "event": "$event"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{game: header.competitions[0].{id: id, date: date, status: status.type.detail, state: status.type.state, neutralSite: neutralSite, competitors: competitors[].{id: id, team: team.displayName, abbreviation: team.abbreviation, homeAway: homeAway, score: score, winner: winner, record: record[0].summary, linescores: linescores[].displayValue}}, venue: gameInfo.venue.fullName, attendance: gameInfo.attendance, teamStats: boxscore.teams[].{team: team.displayName, stats: from_items(statistics[?label].[label, displayValue])}, leaders: leaders[].{team: team.displayName, leaders: leaders[].{category: displayName, athlete: leaders[0].athlete.displayName, value: leaders[0].displayValue}}, scoringPlays: scoringPlays[].{period: period.number, clock: clock.displayValue, team: team.abbreviation, type: type.text, text: text, awayScore: awayScore, homeScore: homeScore}, keyEvents: keyEvents[?type.type != 'kickoff' && type.type != 'halftime' && type.type != 'end-regular-time'].{type: type.text, clock: clock.displayValue, team: team.displayName, text: text}, lineups: rosters[].{team: team.displayName, formation: formation, players: roster[].{jersey: jersey, name: athlete.displayName, position: position.abbreviation, starter: starter, subbedIn: subbedIn, subbedOut: subbedOut}}, injuries: injuries[].{team: team.displayName, players: injuries[].{name: athlete.displayName, status: status, date: date}}, odds: pickcenter[].{provider: provider.name, details: details, overUnder: overUnder, spread: spread}}",
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "espn_get_news",
+      "description": "Latest ESPN headlines for a league, or for one team: headline, short description, publish time, byline and the link to the article on espn.com.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "enum": [
+              "football",
+              "basketball",
+              "baseball",
+              "hockey",
+              "soccer"
+            ],
+            "description": "ESPN sport path: football (NFL, college football), basketball (NBA, WNBA, college), baseball (MLB), hockey (NHL) or soccer."
+          },
+          "league": {
+            "type": "string",
+            "pattern": "^[a-z0-9.\\-]+$",
+            "description": "ESPN league slug for that sport: nfl or college-football; nba, wnba, mens-college-basketball or womens-college-basketball; mlb; nhl; soccer codes such as eng.1 (Premier League), esp.1 (LaLiga), ger.1 (Bundesliga), ita.1 (Serie A), fra.1 (Ligue 1), usa.1 (MLS), uefa.champions, fifa.world."
+          },
+          "team": {
+            "type": "string",
+            "pattern": "^\\d+$",
+            "description": "Numeric ESPN team id to get that team's news only."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Number of articles, default 10."
+          }
+        },
+        "required": [
+          "sport",
+          "league"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis/site/v2/sports/{sport}/{league}/news",
+        "queryParams": {
+          "team": "$team",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "articles[].{headline: headline, description: description, published: published, type: type, byline: byline, url: links.web.href}",
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "espn_list_teams",
+      "description": "All teams of a league with ESPN id, abbreviation, name and location. Use it to find the team id or abbreviation for the team tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "enum": [
+              "football",
+              "basketball",
+              "baseball",
+              "hockey",
+              "soccer"
+            ],
+            "description": "ESPN sport path: football (NFL, college football), basketball (NBA, WNBA, college), baseball (MLB), hockey (NHL) or soccer."
+          },
+          "league": {
+            "type": "string",
+            "pattern": "^[a-z0-9.\\-]+$",
+            "description": "ESPN league slug for that sport: nfl or college-football; nba, wnba, mens-college-basketball or womens-college-basketball; mlb; nhl; soccer codes such as eng.1 (Premier League), esp.1 (LaLiga), ger.1 (Bundesliga), ita.1 (Serie A), fra.1 (Ligue 1), usa.1 (MLS), uefa.champions, fifa.world."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Maximum number of teams. College leagues have several hundred; pass 1000 to get all."
+          }
+        },
+        "required": [
+          "sport",
+          "league"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis/site/v2/sports/{sport}/{league}/teams",
+        "queryParams": {
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "sports[0].leagues[0].teams[].team.{id: id, abbreviation: abbreviation, name: displayName, location: location, slug: slug}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "espn_get_team",
+      "description": "One team: name, current record (overall, home, away), standing summary, home venue and next game.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "enum": [
+              "football",
+              "basketball",
+              "baseball",
+              "hockey",
+              "soccer"
+            ],
+            "description": "ESPN sport path: football (NFL, college football), basketball (NBA, WNBA, college), baseball (MLB), hockey (NHL) or soccer."
+          },
+          "league": {
+            "type": "string",
+            "pattern": "^[a-z0-9.\\-]+$",
+            "description": "ESPN league slug for that sport: nfl or college-football; nba, wnba, mens-college-basketball or womens-college-basketball; mlb; nhl; soccer codes such as eng.1 (Premier League), esp.1 (LaLiga), ger.1 (Bundesliga), ita.1 (Serie A), fra.1 (Ligue 1), usa.1 (MLS), uefa.champions, fifa.world."
+          },
+          "team": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9\\-]+$",
+            "description": "ESPN team id (e.g. 12) or abbreviation (e.g. kc, lal, nyy). Ids come from espn_list_teams; soccer teams need the numeric id."
+          }
+        },
+        "required": [
+          "sport",
+          "league",
+          "team"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis/site/v2/sports/{sport}/{league}/teams/{team}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "team.{id: id, name: displayName, abbreviation: abbreviation, location: location, standing: standingSummary, record: record.items[].{type: type, summary: summary}, venue: franchise.venue.fullName, nextEvent: nextEvent[0].{id: id, name: name, date: date, status: competitions[0].status.type.description}}",
+          "maxBytes": 20000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "espn_get_team_roster",
+      "description": "Current roster of a team with ESPN athlete id, jersey, position, age, height, weight, experience, status and injury status, plus the head coach.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "enum": [
+              "football",
+              "basketball",
+              "baseball",
+              "hockey",
+              "soccer"
+            ],
+            "description": "ESPN sport path: football (NFL, college football), basketball (NBA, WNBA, college), baseball (MLB), hockey (NHL) or soccer."
+          },
+          "league": {
+            "type": "string",
+            "pattern": "^[a-z0-9.\\-]+$",
+            "description": "ESPN league slug for that sport: nfl or college-football; nba, wnba, mens-college-basketball or womens-college-basketball; mlb; nhl; soccer codes such as eng.1 (Premier League), esp.1 (LaLiga), ger.1 (Bundesliga), ita.1 (Serie A), fra.1 (Ligue 1), usa.1 (MLS), uefa.champions, fifa.world."
+          },
+          "team": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9\\-]+$",
+            "description": "ESPN team id (e.g. 12) or abbreviation (e.g. kc, lal, nyy). Ids come from espn_list_teams; soccer teams need the numeric id."
+          }
+        },
+        "required": [
+          "sport",
+          "league",
+          "team"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis/site/v2/sports/{sport}/{league}/teams/{team}/roster"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{team: team.displayName, season: season.displayName, coach: coach[0] && join(' ', coach[0].[firstName, lastName][?@]), athletes: [athletes[].items[], athletes[?items == null]][][].{id: id, name: displayName, jersey: jersey, position: position.abbreviation, age: age, height: displayHeight, weight: displayWeight, experience: experience.years, status: status.name, injury: injuries[0].status}}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "espn_get_team_schedule",
+      "description": "A team's schedule and results for a season: date, opponent, home or away, score, winner and status for each game, with the event id for espn_get_game_summary.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "enum": [
+              "football",
+              "basketball",
+              "baseball",
+              "hockey",
+              "soccer"
+            ],
+            "description": "ESPN sport path: football (NFL, college football), basketball (NBA, WNBA, college), baseball (MLB), hockey (NHL) or soccer."
+          },
+          "league": {
+            "type": "string",
+            "pattern": "^[a-z0-9.\\-]+$",
+            "description": "ESPN league slug for that sport: nfl or college-football; nba, wnba, mens-college-basketball or womens-college-basketball; mlb; nhl; soccer codes such as eng.1 (Premier League), esp.1 (LaLiga), ger.1 (Bundesliga), ita.1 (Serie A), fra.1 (Ligue 1), usa.1 (MLS), uefa.champions, fifa.world."
+          },
+          "team": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9\\-]+$",
+            "description": "ESPN team id (e.g. 12) or abbreviation (e.g. kc, lal, nyy). Ids come from espn_list_teams; soccer teams need the numeric id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season year, e.g. 2026. Leave out for the current season."
+          },
+          "seasontype": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "description": "1 preseason, 2 regular season (default), 3 postseason."
+          }
+        },
+        "required": [
+          "sport",
+          "league",
+          "team"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis/site/v2/sports/{sport}/{league}/teams/{team}/schedule",
+        "queryParams": {
+          "season": "$season",
+          "seasontype": "$seasontype"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{team: team.displayName, season: requestedSeason.displayName, byeWeek: byeWeek, events: events[].{id: id, date: date, name: shortName, week: week.text, seasonType: seasonType.name, status: competitions[0].status.type.description, venue: competitions[0].venue.fullName, competitors: competitions[0].competitors[].{team: team.displayName, homeAway: homeAway, score: score.displayValue, winner: winner}}}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "espn_get_standings",
+      "description": "League table or standings by conference: wins, losses, points, win percentage, games behind, streak and the other columns ESPN shows. Set level 3 for NFL, NBA, MLB or NHL divisions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "enum": [
+              "football",
+              "basketball",
+              "baseball",
+              "hockey",
+              "soccer"
+            ],
+            "description": "ESPN sport path: football (NFL, college football), basketball (NBA, WNBA, college), baseball (MLB), hockey (NHL) or soccer."
+          },
+          "league": {
+            "type": "string",
+            "pattern": "^[a-z0-9.\\-]+$",
+            "description": "ESPN league slug for that sport: nfl or college-football; nba, wnba, mens-college-basketball or womens-college-basketball; mlb; nhl; soccer codes such as eng.1 (Premier League), esp.1 (LaLiga), ger.1 (Bundesliga), ita.1 (Serie A), fra.1 (Ligue 1), usa.1 (MLS), uefa.champions, fifa.world."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season year, e.g. 2025. Leave out for the current season."
+          },
+          "level": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "description": "Grouping for US leagues: 1 whole league, 2 conferences (default), 3 divisions."
+          }
+        },
+        "required": [
+          "sport",
+          "league"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis/v2/sports/{sport}/{league}/standings",
+        "queryParams": {
+          "season": "$season",
+          "level": "$level"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{name: name, season: season.displayName, groups: children[].{name: name, entries: standings.entries[].{team: team.displayName, id: team.id, abbreviation: team.abbreviation, note: note.description, stats: from_items(stats[?displayValue != null && displayValue != ''].[name, displayValue])}, divisions: children[].{name: name, entries: standings.entries[].{team: team.displayName, id: team.id, stats: from_items(stats[?displayValue != null && displayValue != ''].[name, displayValue])}}}}",
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "espn_get_injuries",
+      "description": "Injury report of every team in a league (NFL, NBA, WNBA, MLB, NHL): player, position, status (Out, Questionable, Day-To-Day ...), date and a short note. Soccer leagues usually return an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "enum": [
+              "football",
+              "basketball",
+              "baseball",
+              "hockey",
+              "soccer"
+            ],
+            "description": "ESPN sport path: football (NFL, college football), basketball (NBA, WNBA, college), baseball (MLB), hockey (NHL) or soccer."
+          },
+          "league": {
+            "type": "string",
+            "pattern": "^[a-z0-9.\\-]+$",
+            "description": "ESPN league slug for that sport: nfl or college-football; nba, wnba, mens-college-basketball or womens-college-basketball; mlb; nhl; soccer codes such as eng.1 (Premier League), esp.1 (LaLiga), ger.1 (Bundesliga), ita.1 (Serie A), fra.1 (Ligue 1), usa.1 (MLS), uefa.champions, fifa.world."
+          }
+        },
+        "required": [
+          "sport",
+          "league"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis/site/v2/sports/{sport}/{league}/injuries"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "injuries[].{team: displayName, id: id, players: injuries[].{name: athlete.displayName, position: athlete.position.abbreviation, status: status, type: type.description, date: date, comment: shortComment}}",
+          "maxBytes": 120000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

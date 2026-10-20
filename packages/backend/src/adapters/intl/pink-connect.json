@@ -1,0 +1,405 @@
+{
+  "slug": "pink-connect",
+  "name": "Veepee Pink Connect",
+  "aliases": [
+    "Pink Connect",
+    "Veepee",
+    "Privalia",
+    "vente-privee",
+    "Veepee Marketplace",
+    "Privalia Marketplace"
+  ],
+  "description": "Sell on Veepee and Privalia through Pink Connect from an AI agent: orders with lines, addresses, tracking and refunds, offers per sales channel, customer messages, return requests and carriers. Replies, new order messages and return status changes are included, installed switched off.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "pink-connect",
+  "docsUrl": "https://www.pink-connect.com",
+  "instructions": "## Veepee Pink Connect\nThis connector uses **Pink Connect** (`https://api.pink-connect.com/v4`), the seller API of the Veepee group marketplaces (Veepee and Privalia, e.g. Veepee Italy and Privalia Italy): orders with lines, shipping and billing data, delivery details and refunds, your offers per sales channel, customer messages (notifications), return requests and the carrier list. Replying to customers, writing to them about an order and moving return requests are included but installed switched off.\n\n**Setup**\n1. Get the API token of your Pink Connect seller account from Veepee (shown in the Pink Connect portal at www.pink-connect.com, or sent by your Veepee marketplace contact).\n2. Paste it into `PINK_CONNECT_TOKEN`; it is sent as a Bearer token.\n3. Install and run `pink_connect_list_carriers`.\n\n**Sales channels**: each marketplace country site is a shop channel with a numeric id (`shopChannelId`, e.g. one for Veepee Italy and one for Privalia Italy). Every order carries `shopChannelId` and `shopChannelName`; read them from `pink_connect_list_orders` first. `pink_connect_list_offers` needs a channel id.\n\n**Orders**: `pink_connect_list_orders` returns the oldest orders first, so for recent ones always set `updated_from` (orders changed since then, e.g. `2026-10-01T00:00:00`), optionally `updated_to`. Filter one channel with `shop_channel_id`, or find one order by the marketplace's order number with `marketplace_code` and `marketplace_order_code` together. `limit` is at most 100 (default 20); page with `offset`. An order is about 2 KB, so keep pages small. Each order has `status` (e.g. SHIPPED, CANCELLED), `orderLines` with GTIN, SKU, price, tax rate, quantity and a status count per line (e.g. `{\"Shipped\": 1}`), `shippingInformation` and `billingInformation`, `deliveryDetails` (carrier, tracking number and URL, shipping date), `refunds` and `requestedShippingMethod`. `pink_connect_get_order` reads one order by its Pink Connect `orderId` (not the marketplace order number).\n\n**Offers**: `pink_connect_list_offers` lists your listings on one channel: GTIN, SKU, name, brand, selling and recommended price, discount and its dates, stock, price list and `marketplaceStatus` (in Spanish, e.g. \"Producto Publicado\"), 50 per page by default.\n\n**Customer messages**: `pink_connect_list_notifications` lists messages between customers and you (`from` CUSTOMER or SELLER, `status` READ or UNREAD) with subject, text, dates and attachments; filter by `order_id` or by update date. Without a filter Pink Connect scans the whole history and can take half a minute, so pass a date or an order. `pink_connect_get_notification` reads one message. `pink_connect_reply_notification` answers an existing message and `pink_connect_create_order_message` starts a new conversation on an order (use it only when there is none yet). Write in the customer's language.\n\n**Returns**: `pink_connect_list_return_requests` lists return requests with order and line, GTIN, SKU, quantity, reason (e.g. PRODUCT_DAMAGED, SIZE_DONT_FIT, INCORRECT_PRODUCT), type (e.g. HOMEPICKUP), request date and status: PENDING, PROCESSING, REJECTED, COMPLETE or CANCELLED. `pink_connect_update_return_request` moves one: PENDING to PROCESSING (accepted) or REJECTED, PROCESSING to COMPLETE (goods received). It does not refund; refunds are handled outside this connector.\n\n**Writes: switched off.** `pink_connect_reply_notification`, `pink_connect_create_order_message` and `pink_connect_update_return_request` reach real customers and are installed switched off; an admin turns them on deliberately. Before each call show the user the order, the message text or the return and its new status, and wait for a yes.\n\n**Errors**: 401 means a wrong or expired token. 400 `Invalid page size (max 100)` means a limit above 100. 422 messages are in Spanish (e.g. \"Canal de Venta no puede estar vacío\": the channel id is missing). A wrong path or unknown id answers an HTML 404 page.",
+  "prerequisites": "A seller account on Veepee or Privalia managed through Pink Connect, and its API token from Veepee.",
+  "requiredEnvVars": [
+    "PINK_CONNECT_TOKEN"
+  ],
+  "envVarMeta": {
+    "PINK_CONNECT_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Pink Connect API token of your seller account, from the Pink Connect portal (www.pink-connect.com) or your Veepee marketplace contact. Sent as a Bearer token.",
+      "link": "https://www.pink-connect.com",
+      "pattern": "^[A-Za-z0-9_.~-]{16,}$",
+      "patternMessage": "Paste the token alone, without Bearer, quotes or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Pink Connect refused the token. Check PINK_CONNECT_TOKEN, or ask Veepee for a new one.",
+    "404": "Pink Connect answered 404: the id does not exist for your account.",
+    "422": "Pink Connect refused a parameter; the message (in Spanish) names it, e.g. a missing sales channel id."
+  },
+  "probe": {
+    "tool": "pink_connect_list_carriers"
+  },
+  "connector": {
+    "name": "Pink Connect API v4",
+    "type": "REST",
+    "baseUrl": "https://api.pink-connect.com/v4",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{PINK_CONNECT_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "pink_connect_list_orders",
+      "description": "List Veepee and Privalia orders, oldest first: order id, marketplace and its order number, shop channel, status, order, update and shipping dates, totals and currency, shipping and billing address, order lines with GTIN, SKU, price and line status, delivery details with carrier and tracking, refunds. Set updated_from for recent orders. Up to 100 per call, page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updated_from": {
+            "type": "string",
+            "description": "Only orders updated at or after this time, e.g. 2026-10-01T00:00:00."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Only orders updated at or before this time, e.g. 2026-10-15T23:59:59."
+          },
+          "shop_channel_id": {
+            "type": "integer",
+            "description": "Only orders of this shop channel (shopChannelId of an order)."
+          },
+          "marketplace_code": {
+            "type": "string",
+            "description": "Marketplace code, e.g. veepee_it; only together with marketplace_order_code."
+          },
+          "marketplace_order_code": {
+            "type": "string",
+            "description": "The marketplace's own order number; only together with marketplace_code."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Orders per call, 1 to 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Orders to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "updateDateGTE": "$updated_from",
+          "updateDateLTE": "$updated_to",
+          "shopChannelId": "$shop_channel_id",
+          "marketplaceCode": "$marketplace_code",
+          "marketplaceOrderCode": "$marketplace_order_code",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "pink_connect_get_order",
+      "description": "Get one Veepee or Privalia order by its Pink Connect order id (orderId, not the marketplace order number): status, dates, totals, shipping and billing address, lines, delivery details with carrier and tracking, refunds and requested shipping method.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Pink Connect orderId from pink_connect_list_orders."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      }
+    },
+    {
+      "name": "pink_connect_list_offers",
+      "description": "List your offers on one Veepee or Privalia shop channel: GTIN, SKU, name, brand, selling price, recommended price, discount with start and end, stock, price list and marketplace status. 50 per call by default, page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_channel_id": {
+            "type": "integer",
+            "description": "Shop channel id (shopChannelId of an order)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Offers per call, 1 to 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Offers to skip, for paging."
+          }
+        },
+        "required": [
+          "shop_channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers",
+        "queryParams": {
+          "shopChannelId": "$shop_channel_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "pink_connect_list_carriers",
+      "description": "List the carriers Pink Connect knows, with id and name (about 200). The carrier id identifies the carrier in an order's delivery details. Changes rarely: read it once per conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carriers"
+      }
+    },
+    {
+      "name": "pink_connect_list_notifications",
+      "description": "List customer messages (notifications) on your Veepee and Privalia orders: id, order id, subject, text, from (CUSTOMER or SELLER), to, status READ or UNREAD, creation and update date and attachments. Filter by order or update date; without a filter the call can take half a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Only messages of this Pink Connect orderId."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Only messages updated at or after this time, e.g. 2026-10-09T00:00:00."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Only messages updated at or before this time."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Messages per call, 1 to 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Messages to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notifications",
+        "queryParams": {
+          "orderId": "$order_id",
+          "updateDateGTE": "$updated_from",
+          "updateDateLTE": "$updated_to",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "pink_connect_get_notification",
+      "description": "Get one customer message (notification) by id: order id, subject, text, sender and recipient, status, dates and attachments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "notification_id": {
+            "type": "string",
+            "description": "Notification id from pink_connect_list_notifications."
+          }
+        },
+        "required": [
+          "notification_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notifications/{notification_id}"
+      }
+    },
+    {
+      "name": "pink_connect_list_return_requests",
+      "description": "List return requests: return request id, order and order line, marketplace return id and order number, GTIN, SKU, quantity, reason and details, request date, status (PENDING, PROCESSING, REJECTED, COMPLETE, CANCELLED) and type (e.g. HOMEPICKUP). Up to 100 per call, page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "PROCESSING",
+              "REJECTED",
+              "COMPLETE",
+              "CANCELLED"
+            ],
+            "description": "Only return requests in this status."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Only return requests of this Pink Connect orderId."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Return requests per call, 1 to 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Return requests to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/return-requests",
+        "queryParams": {
+          "status": "$status",
+          "orderId": "$order_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "pink_connect_reply_notification",
+      "description": "Answer an existing customer message (notification) on Veepee or Privalia, with subject and text in the customer's language. Installed switched off; reaches a real customer: show the user the text and get a yes first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "notification_id": {
+            "type": "string",
+            "description": "Id of the message to answer."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject of the reply."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text of the reply, in the customer's language."
+          }
+        },
+        "required": [
+          "notification_id",
+          "subject",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notifications/{notification_id}",
+        "bodyMapping": {
+          "subject": "$subject",
+          "message": "$message"
+        },
+        "bodyEncoding": "form-data"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "pink_connect_create_order_message",
+      "description": "Start a new conversation with the customer of an order on Veepee or Privalia (subject and text in the customer's language). Use only when the order has no conversation yet; otherwise reply with pink_connect_reply_notification. Installed switched off; get a yes from the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Pink Connect orderId."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text, in the customer's language."
+          }
+        },
+        "required": [
+          "order_id",
+          "subject",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/notifications",
+        "bodyMapping": {
+          "subject": "$subject",
+          "message": "$message"
+        },
+        "bodyEncoding": "form-data"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "pink_connect_update_return_request",
+      "description": "Move a return request to a new status: PENDING to PROCESSING (accept) or REJECTED (refuse), PROCESSING to COMPLETE (goods received). Does not refund. Installed switched off; show the user the return and the new status and get a yes first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_request_id": {
+            "type": "string",
+            "description": "returnRequestId from pink_connect_list_return_requests."
+          },
+          "new_status": {
+            "type": "string",
+            "enum": [
+              "PROCESSING",
+              "REJECTED",
+              "COMPLETE"
+            ],
+            "description": "New status."
+          }
+        },
+        "required": [
+          "return_request_id",
+          "new_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/return-requests/{return_request_id}/{new_status}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

@@ -24,7 +24,7 @@ describe('McpServersService — caller-scoped instructions and resources', () =>
       mcpResource: { findMany: jest.fn().mockResolvedValue(resourceRows) },
     };
     const kgSkills = {
-      activeSkillsText: jest.fn(async (_s: string, ids: string[]) =>
+      activeSkillsText: jest.fn(async (_o: string, _s: string, ids: string[]) =>
         ids.length ? `## Workspace skills\n- for ${ids.join(',')}` : '## Workspace skills\n- server-wide',
       ),
     };
@@ -46,7 +46,7 @@ describe('McpServersService — caller-scoped instructions and resources', () =>
     expect(text).toContain('Use the CRM.');
     expect(text).not.toContain('Ledger rules.');
     expect(text).not.toContain('Fibu');
-    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('srv-1', ['c-crm']);
+    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-A', 'srv-1', ['c-crm'], 'auto', null);
   });
 
   it('scopes the assignment query to the visible ids AND the server organization', async () => {
@@ -64,7 +64,7 @@ describe('McpServersService — caller-scoped instructions and resources', () =>
     const text = await service.getComposedInstructions('srv-1', []);
     expect(text).toBe('SERVER-GUIDANCE\n\n## Workspace skills\n- server-wide');
     expect(prisma.mcpServerConnector.findMany).not.toHaveBeenCalled();
-    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('srv-1', []);
+    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-A', 'srv-1', [], 'auto', null);
   });
 
   it('getVisibleContent returns the visible connectors with instructions and their stored rows', async () => {
@@ -108,5 +108,40 @@ describe('McpServersService — caller-scoped instructions and resources', () =>
     expect(content.resources).toEqual([]);
     expect(prisma.mcpServerConnector.findMany).not.toHaveBeenCalled();
     expect(prisma.mcpResource.findMany).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A shared /mcp connection can reach connectors of several workspaces. Each
+ * workspace's skills are read with its own organization and only its own
+ * server and connector ids.
+ */
+describe('McpServersService — shared guide skills per workspace', () => {
+  it('reads each workspace\'s skills with its own organization and ids', async () => {
+    const prisma = {
+      mcpServerConfig: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'srv-a', name: 'A', instructions: null, organizationId: 'org-A' },
+        ]),
+      },
+      connector: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'c-a', name: 'CRM', instructions: null, organizationId: 'org-A' },
+          { id: 'c-b', name: 'Fibu', instructions: null, organizationId: 'org-B' },
+        ]),
+      },
+    };
+    const kgSkills = {
+      activeSkillsText: jest.fn(async (org: string) => `## Workspace skills\n- ${org}`),
+    };
+    const service = new McpServersService(prisma as any, kgSkills as any, {} as any);
+
+    const text = await service.getSharedGuide({ connectorIds: ['c-a', 'c-b'], serverIds: ['srv-a'] });
+
+    expect(kgSkills.activeSkillsText).toHaveBeenCalledTimes(2);
+    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-A', ['srv-a'], ['c-a'], 'full', null);
+    expect(kgSkills.activeSkillsText).toHaveBeenCalledWith('org-B', [], ['c-b'], 'full', null);
+    expect(text).toContain('- org-A');
+    expect(text).toContain('- org-B');
   });
 });

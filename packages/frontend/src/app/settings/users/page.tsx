@@ -4,7 +4,16 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useAuth } from '@/lib/auth-context';
-import { users, auth, roles } from '@/lib/api';
+import {
+  users,
+  auth,
+  roles,
+  knowledgeGraph,
+  memory as memoryApi,
+  type LearningMode,
+  type MemoryAccessLevel,
+  type MemoryAccessSetting,
+} from '@/lib/api';
 import { AppSelect } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,6 +22,31 @@ import { useEdition } from '@/lib/use-edition';
 import { EnterpriseNotice } from '@/components/enterprise-notice';
 
 const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
+
+const MEMORY_LEVEL_LABEL: Record<MemoryAccessLevel, string> = {
+  none: 'No access',
+  read: 'Read',
+  personal: 'Personal',
+  contribute: 'Contribute',
+};
+
+function memoryOptions(workspaceDefault: MemoryAccessLevel) {
+  return [
+    { value: 'inherit', label: `Default (${MEMORY_LEVEL_LABEL[workspaceDefault].toLowerCase()})` },
+    { value: 'none', label: 'No access' },
+    { value: 'read', label: 'Read company memory' },
+    { value: 'personal', label: 'Personal' },
+    { value: 'contribute', label: 'Contribute' },
+  ];
+}
+
+function learningOptions(workspaceDefault: boolean) {
+  return [
+    { value: 'inherit', label: `Default (${workspaceDefault ? 'on' : 'off'})` },
+    { value: 'on', label: 'On' },
+    { value: 'off', label: 'Off' },
+  ];
+}
 
 function getInvitationStatus(invite: any): 'pending' | 'expired' {
   return new Date(invite.expiresAt) < new Date() ? 'expired' : 'pending';
@@ -44,15 +78,30 @@ export default function SettingsUsersPage() {
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
+  // Skill learning: whose requests may feed AI skill suggestions.
+  const [learningDefault, setLearningDefault] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [eraseIntents, setEraseIntents] = useState(false);
+  const [learningSaving, setLearningSaving] = useState(false);
+
+  // Workspace memory (Enterprise): what each user's AI clients may do with it.
+  const [memoryDefault, setMemoryDefault] = useState<MemoryAccessLevel | null>(null);
+
   const loadData = async () => {
     if (!token) return;
     try {
-      const [userData, roleData, invitationData] = await Promise.all([
+      const [userData, roleData, invitationData, kgSettings] = await Promise.all([
         users.list(token),
         roles.list(token).catch(() => []),
         users.invitations(token).catch(() => []),
+        knowledgeGraph.getSettings(token).catch(() => null),
       ]);
+      memoryApi
+        .status(token)
+        .then((st) => setMemoryDefault(st.licensed ? st.settings.defaultAccess : null))
+        .catch(() => setMemoryDefault(null));
       setUserList(userData);
+      setLearningDefault(!!kgSettings?.captureIntent);
       setRoleList(roleData);
       setInvitationList(invitationData);
     } catch (err: any) {
@@ -77,6 +126,68 @@ export default function SettingsUsersPage() {
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
     }
+  };
+
+  const handleLearningChange = async (userIds: string[], mode: LearningMode) => {
+    if (!token || userIds.length === 0) return;
+    setLearningSaving(true);
+    try {
+      const clearIntents = mode !== 'on' && eraseIntents;
+      const result = await knowledgeGraph.learning.setMembers(token, { userIds, mode, clearIntents });
+      setUserList((prev) =>
+        prev.map((u) => (userIds.includes(u.id) ? { ...u, learningMode: mode } : u)),
+      );
+      const parts = [`Skill learning updated for ${userIds.length} user${userIds.length !== 1 ? 's' : ''}.`];
+      if (clearIntents) parts.push(`${result.intentsCleared} captured request(s) erased.`);
+      setMsg(parts.join(' '));
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    } finally {
+      setLearningSaving(false);
+    }
+  };
+
+  const handleMemoryChange = async (userIds: string[], access: MemoryAccessSetting) => {
+    if (!token || userIds.length === 0) return;
+    setLearningSaving(true);
+    try {
+      await memoryApi.setAccess(token, userIds, access);
+      setUserList((prev) =>
+        prev.map((u) => (userIds.includes(u.id) ? { ...u, memoryAccess: access } : u)),
+      );
+      setMsg(`Memory access updated for ${userIds.length} user${userIds.length !== 1 ? 's' : ''}.`);
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    } finally {
+      setLearningSaving(false);
+    }
+  };
+
+  const handleErasePersonalMemory = async (userIds: string[]) => {
+    if (
+      !token ||
+      userIds.length === 0 ||
+      !confirm(
+        `Erase the personal memory of ${userIds.length} user${userIds.length !== 1 ? 's' : ''} in this workspace?\n\nIt is deleted without being shown to you. This cannot be undone.`,
+      )
+    )
+      return;
+    try {
+      let erased = 0;
+      for (const id of userIds) erased += (await memoryApi.erasePersonal(token, id)).erased;
+      setMsg(`${erased} personal memory item(s) erased.`);
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const toggleSelected = (userId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
   };
 
   const handleDeactivate = async (userId: string, email: string) => {
@@ -362,18 +473,96 @@ export default function SettingsUsersPage() {
         </Card>
       )}
 
+      {selected.size > 0 && (
+        <Card className="p-4 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium text-[var(--text)]">
+            {selected.size} selected · Skill learning:
+          </span>
+          {learningOptions(learningDefault).map((o) => (
+            <Button
+              key={o.value}
+              variant="secondary"
+              size="sm"
+              disabled={learningSaving}
+              onClick={() => handleLearningChange([...selected], o.value as LearningMode)}
+            >
+              {o.label}
+            </Button>
+          ))}
+          <label className="flex items-center gap-2 text-xs text-[var(--text-2)]">
+            <input
+              type="checkbox"
+              checked={eraseIntents}
+              onChange={(e) => setEraseIntents(e.target.checked)}
+            />
+            When turning off, also erase the requests already captured from them
+          </label>
+          <button onClick={() => setSelected(new Set())} className="ml-auto text-xs underline text-[var(--text-2)]">
+            Clear selection
+          </button>
+          {memoryDefault && (
+            <div className="flex w-full flex-wrap items-center gap-3 border-t border-[var(--border)] pt-3">
+              <span className="text-sm font-medium text-[var(--text)]">Memory:</span>
+              {memoryOptions(memoryDefault).map((o) => (
+                <Button
+                  key={o.value}
+                  variant="secondary"
+                  size="sm"
+                  disabled={learningSaving}
+                  onClick={() => handleMemoryChange([...selected], o.value as MemoryAccessSetting)}
+                >
+                  {o.label}
+                </Button>
+              ))}
+              <Button
+                variant="danger"
+                size="sm"
+                className="ml-auto"
+                onClick={() => handleErasePersonalMemory([...selected])}
+              >
+                Erase personal memory
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
+
       {loading ? (
         <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
       ) : (
         <Card className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[840px] text-sm">
             <thead className="bg-[var(--surface-2)]">
               <tr className="text-[var(--text-2)]">
+                <th className="pl-4 py-3 w-8">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all users"
+                    checked={userList.length > 0 && selected.size === userList.length}
+                    onChange={(e) =>
+                      setSelected(e.target.checked ? new Set(userList.map((u) => u.id)) : new Set())
+                    }
+                  />
+                </th>
                 <th className="text-left px-4 py-3 font-semibold">Email</th>
                 <th className="text-left px-4 py-3 font-semibold">Name</th>
                 <th className="text-left px-4 py-3 font-semibold">Status</th>
                 <th className="text-left px-4 py-3 font-semibold">Role</th>
                 <th className="text-left px-4 py-3 font-semibold">MCP Role</th>
+                <th
+                  className="text-left px-4 py-3 font-semibold"
+                  title="Whether this user's requests to AI clients may be used to suggest workspace skills. Default follows Settings → Organization → Capture user intent."
+                >
+                  Skill learning
+                </th>
+                {memoryDefault && (
+                  <th
+                    className="text-left px-4 py-3 font-semibold"
+                    title="What this user's AI clients may do with workspace memory. Default follows the Memory page settings."
+                  >
+                    Memory
+                  </th>
+                )}
                 <th className="text-left px-4 py-3 font-semibold">Date</th>
                 <th className="text-right px-4 py-3 font-semibold">Actions</th>
               </tr>
@@ -381,6 +570,14 @@ export default function SettingsUsersPage() {
             <tbody>
               {userList.map((u) => (
                 <tr key={u.id} className="border-t border-[var(--border)]">
+                  <td className="pl-4 py-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${u.email}`}
+                      checked={selected.has(u.id)}
+                      onChange={() => toggleSelected(u.id)}
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <span className="font-mono text-xs text-[var(--text)]">{u.email}</span>
                     {u.id === currentUser?.id && (
@@ -422,6 +619,33 @@ export default function SettingsUsersPage() {
                       </span>
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <AppSelect
+                        value={u.learningMode ?? 'inherit'}
+                        disabled={learningSaving}
+                        onValueChange={(v) => handleLearningChange([u.id], v as LearningMode)}
+                        className="h-8 whitespace-nowrap rounded-[9px] border border-[var(--border)] px-2 text-xs bg-[var(--surface)] text-[var(--text)]"
+                        options={learningOptions(learningDefault)}
+                      />
+                      {u.learningOptOut && (
+                        <Badge tone="neutral" title="This user opted out themselves. Their requests are not used, whatever is set here.">
+                          opted out
+                        </Badge>
+                      )}
+                    </div>
+                  </td>
+                  {memoryDefault && (
+                    <td className="px-4 py-3">
+                      <AppSelect
+                        value={u.memoryAccess ?? 'inherit'}
+                        disabled={learningSaving}
+                        onValueChange={(v) => handleMemoryChange([u.id], v as MemoryAccessSetting)}
+                        className="h-8 whitespace-nowrap rounded-[9px] border border-[var(--border)] px-2 text-xs bg-[var(--surface)] text-[var(--text)]"
+                        options={memoryOptions(memoryDefault)}
+                      />
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-[var(--text-3)]">
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
@@ -459,6 +683,7 @@ export default function SettingsUsersPage() {
                 const status = getInvitationStatus(inv);
                 return (
                   <tr key={`inv-${inv.id}`} className="border-t border-[var(--border)] opacity-75">
+                    <td className="pl-4 py-3" />
                     <td className="px-4 py-3">
                       <span className="font-mono text-xs text-[var(--text)]">{inv.email}</span>
                     </td>
@@ -476,6 +701,14 @@ export default function SettingsUsersPage() {
                     <td className="px-4 py-3">
                       <span className="text-xs text-[var(--text-3)]">—</span>
                     </td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs text-[var(--text-3)]">Default</span>
+                    </td>
+                    {memoryDefault && (
+                      <td className="px-4 py-3">
+                        <span className="text-xs text-[var(--text-3)]">Default</span>
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-[var(--text-3)]">
                       <span title={`Expires: ${new Date(inv.expiresAt).toLocaleString()}`}>
                         {new Date(inv.createdAt).toLocaleDateString()}

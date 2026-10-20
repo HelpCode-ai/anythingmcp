@@ -12,15 +12,17 @@ const a = adapter as unknown as {
   };
   tools: Array<{
     name: string;
+    useProxy?: boolean;
     endpointMapping: { method: string; path: string; queryParams?: Record<string, string> };
   }>;
 };
 
 describe('playtomic adapter — static spec conformance', () => {
-  // Playtomic blocks the cloud's datacenter IP (403 HTML on login since
-  // Aug 2026), so the connector is not offered. Installed ones keep resolving.
-  it('is unlisted', () => {
-    expect(a.unlisted).toBe(true);
+  // Playtomic refuses datacenter IPs (403 HTML on login from the cloud), so
+  // every tool goes through the connector proxy; the login follows the tool.
+  it('is listed, and every tool is routed through the connector proxy', () => {
+    expect(a.unlisted).toBeUndefined();
+    expect(a.tools.every((t) => t.useProxy === true)).toBe(true);
   });
 
   it('is the full LOGIN_TOKEN variant in the sports category', () => {

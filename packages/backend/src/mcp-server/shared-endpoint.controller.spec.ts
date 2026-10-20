@@ -98,7 +98,7 @@ function build(
       resolve: jest.fn().mockResolvedValue(opts.grant ?? null),
       clientRedirectUris: jest.fn(async (id?: string) => (id ? (REDIRECTS[id] ?? []) : [])),
     } as any,
-    { create: jest.fn() } as any,
+    { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
   );
 
   // Capture the per-request server instead of serving HTTP, then talk to it
@@ -266,7 +266,7 @@ describe('shared /mcp in fixed mode', () => {
 
     const graph = await call(client, 'kg_how_to_obtain', { query: 'customer_id' });
     expect(graph.body).toEqual({ org: 'org-A' });
-    expect(kg.lookup).toHaveBeenCalledWith('org-A', 'customer_id', { connectorIds: ['conn-A1'] });
+    expect(kg.lookup).toHaveBeenCalledWith('org-A', 'customer_id', { connectorIds: ['conn-A1'], folders: null });
 
     const cfg = await call(client, 'anythingmcp_get_configuration_url');
     expect(cfg.body.servers[0].url).toMatch(/\/mcp\/srv-org-A$/);

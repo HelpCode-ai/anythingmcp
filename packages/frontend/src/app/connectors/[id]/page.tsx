@@ -894,6 +894,24 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  // Shopee shops are authorized through Shopee's own signed link, not OAuth2.
+  const handleShopeeAuthorize = async () => {
+    if (!token) return;
+    setAuthorizing(true);
+    try {
+      const result = await connectors.shopeeAuthorize(id, token);
+      if (result.authorizationUrl) {
+        window.location.href = result.authorizationUrl;
+      } else if (result.error) {
+        setMsg(result.error);
+      }
+    } catch (err: any) {
+      setMsg(`Authorization failed: ${err.message}`);
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
   const handleDiscoverTools = async () => {
     if (!token) return;
     setDiscovering(true);
@@ -1702,6 +1720,20 @@ export default function ConnectorDetailPage() {
                 </Button>
               )}
             </div>
+          </Card>
+        )}
+
+        {/* Shopee shop authorization (HMAC-signed, Shopee's own flow) */}
+        {connector.authType === 'HMAC' && (connector.config as any)?.adapterSlug === 'shopee' && (
+          <Card className="p-[22px]">
+            <h3 className="text-sm font-semibold mb-2">Shopee shop authorization</h3>
+            <p className="text-sm text-[var(--text-3)] mb-4">
+              Sign in with the shop account and approve this app. The tokens are stored encrypted and renewed
+              automatically. Authorize again when the authorization expires or the connector asks for it.
+            </p>
+            <Button variant="primary" size="lg" onClick={handleShopeeAuthorize} disabled={authorizing}>
+              {authorizing ? 'Redirecting...' : 'Authorize with Provider'}
+            </Button>
           </Card>
         )}
 
