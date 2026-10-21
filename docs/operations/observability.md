@@ -188,7 +188,7 @@ Off unless `METRICS_ENABLED=true`. When on, the backend starts a **second, separ
 | `METRICS_ENABLED` | `false` | Starts the listener. |
 | `METRICS_PORT` | `9464` | Metrics listener port. |
 | `METRICS_HOST` | `0.0.0.0` | Metrics listener bind host — a Prometheus container needs to reach it over the compose network, so the port is deliberately **not** published in `docker-compose.yml`. |
-| `METRICS_TOKEN` | unset | **Required** `Authorization: Bearer` token, compared with `timingSafeEqual`, whenever `METRICS_ENABLED=true` — on Cloud and self-hosted alike. Without it the listener refuses to start and logs an error; the default bind host `0.0.0.0` would otherwise serve `/metrics` to anyone who can reach the host. |
+| `METRICS_TOKEN` | unset | **Required** `Authorization: Bearer` token, compared with `timingSafeEqual`, whenever `METRICS_ENABLED=true` — on Cloud and self-hosted alike. Without it the listener refuses to start and logs an error; the default bind host `0.0.0.0` would otherwise serve `/metrics` to anyone who can reach the host. Shorter than 32 chars (the same bar as `JWT_SECRET`/`ENCRYPTION_KEY`) logs a one-time warning but still starts. |
 | `METRICS_TOOL_LABELS` | `false` | Adds `connector_id` (cuid, not name) and `tool` labels to the tool-call metrics. Self-hosted only — **always ignored on Cloud**, even if set, so no series can carry a connector or tool identity across tenant workspaces. |
 
 ### Metrics (prefix `anythingmcp_`)
