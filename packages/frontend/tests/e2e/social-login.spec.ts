@@ -1,0 +1,156 @@
+import { expect, test, type Page } from '@playwright/test';
+
+/**
+ * Cloud social sign-in (Google, Microsoft, GitHub) on /login and in Settings.
+ * The provider round trip itself happens on the backend; here the API is
+ * mocked and the provider URL is never actually opened.
+ */
+const USER = { id: 'u1', email: 'a@example.test', name: 'A', role: 'ADMIN', organizationId: 'o1', emailVerified: true };
+const PROVIDERS = [
+  { id: 'google', name: 'Google' },
+  { id: 'microsoft', name: 'Microsoft' },
+  { id: 'github', name: 'GitHub' },
+];
+
+function serverInfo(cloud: boolean) {
+  return {
+    deploymentMode: cloud ? 'cloud' : 'self-hosted',
+    mcpAuthMode: 'oauth2',
+    hasUsers: true,
+    registrationEnabled: true,
+    ssoProviders: [],
+    socialProviders: cloud ? PROVIDERS : [],
+  };
+}
+
+async function mockApi(
+  page: Page,
+  opts: { cloud?: boolean; onStart?: (body: any) => void; exchange?: object; extra?: (p: string) => object | null } = {},
+) {
+  // The provider is never contacted: hold any navigation to it.
+  await page.route('https://accounts.google.com/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Google</h1>' }),
+  );
+  await page.route(/\/(api|health)\//, async (route) => {
+    const p = new URL(route.request().url()).pathname;
+    if (p === '/health/server-info') return route.fulfill({ json: serverInfo(opts.cloud ?? true) });
+    if (p === '/api/auth/social/start') {
+      opts.onStart?.(route.request().postDataJSON());
+      return route.fulfill({ json: { authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?state=x' } });
+    }
+    if (p === '/api/auth/social/exchange') {
+      return route.fulfill({ json: opts.exchange ?? { accessToken: 't', user: USER, isNewUser: false } });
+    }
+    const extra = opts.extra?.(p);
+    if (extra) return route.fulfill({ json: extra });
+    return route.fulfill({ json: {} });
+  });
+}
+
+test.describe('social sign-in on /login', () => {
+  test('cloud offers the configured providers on sign-in and sign-up', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/login');
+    const box = page.getByTestId('social-providers');
+    await expect(box.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+    await expect(box.getByRole('button', { name: 'Continue with Microsoft' })).toBeVisible();
+    await expect(box.getByRole('button', { name: 'Continue with GitHub' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Register' }).click();
+    await expect(page.getByTestId('social-providers')).toContainText('By continuing you accept the');
+  });
+
+  test('sign-up leads with the providers and folds the email form', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/login?mode=register');
+    await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+    await expect(page.locator('#auth-email')).toBeHidden();
+    await page.getByRole('button', { name: 'Continue with email' }).click();
+    await expect(page.locator('#auth-email')).toBeVisible();
+    await expect(page.getByText('Email', { exact: true })).toBeVisible();
+  });
+
+  test('sign-in keeps the email form open next to the providers', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/login');
+    await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+    await expect(page.locator('#auth-email')).toBeVisible();
+  });
+
+  test('self-hosted shows no social buttons', async ({ page }) => {
+    await mockApi(page, { cloud: false });
+    await page.goto('/login');
+    await expect(page.locator('#auth-email')).toBeVisible();
+    await expect(page.getByTestId('social-providers')).toHaveCount(0);
+  });
+
+  test('a click starts the round trip with the redirect and goes to the provider', async ({ page }) => {
+    let started: any = null;
+    await mockApi(page, { onStart: (b) => (started = b) });
+    await page.goto('/login?redirect=%2Fconnectors');
+    await page.getByRole('button', { name: 'Continue with Google' }).click();
+    await page.waitForURL(/accounts\.google\.com/);
+    expect(started).toMatchObject({ provider: 'google', redirect: '/connectors' });
+  });
+
+  test('the one-time code from the callback signs in and follows the redirect', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/login?social=code-1&redirect=%2Fconnectors%2Fstore');
+    await page.waitForURL(/\/connectors\/store$/, { timeout: 15_000 });
+  });
+
+  test('a new workspace runs the licence step like a password sign-up', async ({ page }) => {
+    let trialCalls = 0;
+    await mockApi(page, {
+      exchange: { accessToken: 't', user: USER, isNewUser: true, needsLicenseSetup: true },
+      extra: (p) => {
+        if (p.endsWith('/license/activate-trial') || p.endsWith('/license/trial')) {
+          trialCalls += 1;
+          return { trialStarted: true, trialDaysLeft: 7, plan: 'cloud_trial', expiresAt: null };
+        }
+        return null;
+      },
+    });
+    await page.goto('/login?social=code-2');
+    await expect.poll(() => trialCalls, { timeout: 15_000 }).toBeGreaterThan(0);
+  });
+
+  test('a refused sign-in shows the message from the callback', async ({ page }) => {
+    await mockApi(page);
+    await page.goto(`/login?error=${encodeURIComponent('Sign-in was cancelled.')}`);
+    await expect(page.getByText('Sign-in was cancelled.')).toBeVisible();
+  });
+});
+
+test.describe('sign-in methods in Settings', () => {
+  test.beforeEach(async ({ context, page, baseURL }) => {
+    await context.addCookies([{ name: 'amcp_token', value: 't', url: baseURL! }]);
+    await page.addInitScript((user) => {
+      localStorage.setItem('amcp_token', 't');
+      localStorage.setItem('amcp_user', JSON.stringify(user));
+    }, USER);
+  });
+
+  test('lists the providers and offers a password to a passwordless account', async ({ page }) => {
+    await mockApi(page, {
+      extra: (p) =>
+        p === '/api/auth/social/identities'
+          ? {
+              hasPassword: false,
+              providers: [
+                { id: 'google', name: 'Google', connected: true, email: 'a@example.test', connectedAt: null, lastLoginAt: null },
+                { id: 'github', name: 'GitHub', connected: false, email: null, connectedAt: null, lastLoginAt: null },
+              ],
+            }
+          : p === '/api/users/me'
+            ? USER
+            : null,
+    });
+    await page.goto('/settings');
+    const card = page.getByTestId('sign-in-methods');
+    await expect(card).toContainText('a@example.test');
+    await expect(card.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+    await expect(card.getByRole('link', { name: 'Set a password' })).toBeVisible();
+  });
+});

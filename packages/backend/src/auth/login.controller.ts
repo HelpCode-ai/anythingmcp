@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Query,
+  Param,
   Body,
   Req,
   Res,
@@ -32,6 +33,8 @@ import { ProductEvents, ProductEventService } from '../audit/product-event.servi
 import { LicenseGuardService } from '../license/license-guard.service';
 import { CardTrialEligibilityService } from '../license/card-trial-eligibility.service';
 import { POST_APPROVE_SOURCE } from '../license/license-checkout';
+import { SOCIAL_BIND_COOKIE, SocialAuthError, SocialAuthService } from './social/social-auth.service';
+import { setSocialBindCookie } from './social/social-auth.controller';
 import {
   AMCP_MARK_SVG as AMCP_MARK,
   claudeMark,
@@ -99,7 +102,22 @@ export class LoginController {
     @Optional() private readonly productEvents?: ProductEventService,
     @Optional() private readonly licenseGuard?: LicenseGuardService,
     @Optional() private readonly cardTrialEligibility?: CardTrialEligibilityService,
+    @Optional() private readonly social?: SocialAuthService,
   ) {}
+
+  /** Cloud social sign-in buttons, when this deployment has any. */
+  private socialProviders(): { id: string; name: string }[] {
+    if (!this.deployment.isCloud() || !this.social) return [];
+    return this.social.enabledProviders();
+  }
+
+  private frontendUrl(): string {
+    return (
+      this.configService.get<string>('FRONTEND_URL') ||
+      this.configService.get<string>('SERVER_URL') ||
+      'http://localhost:3000'
+    ).replace(/\/$/, '');
+  }
 
   /** The trust row under every page of the flow. */
   private trust(): TrustRowOptions {
@@ -170,6 +188,7 @@ export class LoginController {
         : null;
 
     const ssoProviders = sessionUser ? [] : await this.loadSsoProviders(req);
+    const socialProviders = sessionUser ? [] : this.socialProviders();
     const requestedServer = consent
       ? await this.requestedServerName(req, sessionUser?.id)
       : null;
@@ -184,10 +203,72 @@ export class LoginController {
         consent,
         csrfToken,
         ssoProviders,
+        socialProviders,
         sessionUser,
         requestedServer,
       }),
     );
+  }
+
+  /**
+   * Where Google, Microsoft and GitHub send the browser back (Cloud only).
+   *
+   * Lives here, not on the dashboard API, because the MCP authorization flow
+   * has to finish exactly where a password sign-in on this page finishes:
+   * through `completeSignIn`, with the server picker and the first-connector
+   * step. The dashboard and Settings surfaces are sent on to the frontend.
+   */
+  @Get('social/:provider/callback')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async socialCallback(
+    @Param('provider') provider: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const frontend = this.frontendUrl();
+    if (!this.deployment.isCloud() || !this.social) {
+      return res.status(404).send('Not found');
+    }
+    // The URL the provider redirected to, rebuilt on the configured origin: a
+    // spoofed Host or x-forwarded-host must not reach the token exchange.
+    const currentUrl = new URL(`${frontend}${req.originalUrl}`);
+    const clearBinding = () => res.clearCookie(SOCIAL_BIND_COOKIE, { path: '/auth/social' });
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    try {
+      const result = await this.social.complete(
+        provider,
+        currentUrl,
+        {
+          bindingToken: req.cookies?.[SOCIAL_BIND_COOKIE],
+          oauthSessionId: req.cookies?.oauth_session,
+        },
+        { ip: req.ip, userAgent: req.headers['user-agent'] },
+      );
+      clearBinding();
+      if (result.kind === 'MCP') {
+        this.logger.log(`Authorization signed in with ${provider}: ${result.user.email}`);
+        return this.completeSignIn(req, res, result.user);
+      }
+      if (result.kind === 'LINK') {
+        return res.redirect(
+          `${frontend}${result.returnTo}${result.returnTo.includes('?') ? '&' : '?'}linked=${encodeURIComponent(result.provider)}`,
+        );
+      }
+      const redirect = result.returnTo !== '/' ? `&redirect=${encodeURIComponent(result.returnTo)}` : '';
+      return res.redirect(`${frontend}/login?social=${encodeURIComponent(result.handoffCode)}${redirect}`);
+    } catch (err) {
+      clearBinding();
+      await this.social.logFailure(err, provider, { ip: req.ip, userAgent: req.headers['user-agent'] });
+      const message = err instanceof SocialAuthError ? err.userMessage : 'Sign-in failed. Please try again.';
+      const surface = err instanceof SocialAuthError ? err.surface : null;
+      if (surface === 'MCP') {
+        return res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
+      }
+      if (surface === 'LINK') {
+        return res.redirect(`${frontend}/settings?linkError=${encodeURIComponent(message)}`);
+      }
+      return res.redirect(`${frontend}/login?error=${encodeURIComponent(message)}`);
+    }
   }
 
   @Post('login')
@@ -244,6 +325,29 @@ export class LoginController {
         return res.redirect(
           `/auth/login?error=${encodeURIComponent('Single sign-on is unavailable. Please contact your administrator.')}`,
         );
+      }
+    }
+
+    // "Continue with Google / Microsoft / GitHub" (Cloud). Also a submit button
+    // on this form, so it too has passed the CSRF check.
+    if (body.action?.startsWith('social:')) {
+      if (!this.social || this.socialProviders().length === 0) {
+        return res.redirect(`/auth/login?error=${encodeURIComponent('This sign-in option is not available.')}`);
+      }
+      try {
+        const { authorizationUrl, bindingToken } = await this.social.start({
+          provider: body.action.slice('social:'.length),
+          surface: 'MCP',
+          oauthSessionId: req.cookies?.oauth_session,
+        });
+        setSocialBindCookie(req, res, bindingToken);
+        res.clearCookie('login_csrf');
+        return res.redirect(authorizationUrl);
+      } catch (error: any) {
+        this.logger.warn(`MCP social sign-in start failed: ${error?.reason ?? error}`);
+        const message =
+          error instanceof SocialAuthError ? error.userMessage : 'This sign-in option is not available right now.';
+        return res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
       }
     }
 
@@ -934,12 +1038,15 @@ export class LoginController {
     consent: ConsentContext | null;
     csrfToken: string;
     ssoProviders: { id: string; name: string; type: string }[];
+    /** Cloud social sign-in providers. Ids are fixed strings, names are ours. */
+    socialProviders?: { id: string; name: string }[];
     sessionUser?: SessionUser | null;
     /** The MCP server the client asked for, when the signed-in user may see its name. */
     requestedServer?: string | null;
   }): string {
     const { error, serverName, consent, csrfToken, ssoProviders, sessionUser, requestedServer } =
       params;
+    const socialProviders = params.socialProviders ?? [];
     const server = this.escapeHtml(serverName);
     const client = consent ? this.escapeHtml(consent.clientName) : '';
     const known = consent ? knownClientFor(consent.redirectHost) : null;
@@ -966,6 +1073,23 @@ export class LoginController {
               `</button>`,
           )
           .join('') + '<div class="divider"><span>or</span></div>'
+      : '';
+
+    // Cloud social sign-in, same shape as the SSO buttons: a submit button on
+    // the CSRF-protected form. Signing in here also creates the account, so
+    // the terms line sits under the buttons.
+    const socialHtml = socialProviders.length
+      ? socialProviders
+          .map(
+            (p) =>
+              `<button type="submit" name="action" value="social:${this.escapeHtml(p.id)}" formnovalidate class="sso">` +
+              providerMarkSvg(p.id) +
+              `<span>Continue with ${this.escapeHtml(p.name)}</span>` +
+              `</button>`,
+          )
+          .join('') +
+        `<p class="links">New here? Continuing creates your account and accepts the <a href="https://anythingmcp.com/en/agb" target="_blank" rel="noopener">Terms</a> and <a href="https://anythingmcp.com/datenschutz" target="_blank" rel="noopener">Privacy Policy</a>.</p>` +
+        '<div class="divider"><span>or use your email</span></div>'
       : '';
 
     // The pair of tiles shows the client's logo only when the code goes back
@@ -1072,7 +1196,7 @@ export class LoginController {
       <div class="acct"><span>Signed in as <strong>${this.escapeHtml(sessionUser.email)}</strong></span><a href="/auth/login?switch=1">Switch account</a></div>
       ${buttons('<button type="submit" name="action" value="approve-session" autofocus>Allow access</button>')}`
       : `
-      ${ssoHtml}
+      ${socialHtml}${ssoHtml}
       <label for="email">Email</label>
       <input type="email" id="email" name="email" required autofocus autocomplete="email" placeholder="you@company.com">
       <label for="password">Password</label>

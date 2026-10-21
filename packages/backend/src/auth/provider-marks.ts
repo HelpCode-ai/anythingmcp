@@ -54,6 +54,9 @@ const MARKS: Record<string, string> = {
     '</svg>',
 };
 
+// Cloud social sign-in uses provider ids rather than enterprise IdP types.
+MARKS.MICROSOFT = MARKS.ENTRA;
+
 /** Neutral key: generic OIDC and anything we do not recognise. */
 const FALLBACK_MARK =
   '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +

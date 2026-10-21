@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Optional } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -14,6 +14,7 @@ import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { UsersService } from '../users/users.service';
 import { DeploymentService } from '../common/deployment.service';
+import { SocialProviderRegistry } from '../auth/social/social-providers';
 
 @ApiTags('Health')
 @Controller('health')
@@ -25,6 +26,7 @@ export class HealthController {
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
     private readonly deployment: DeploymentService,
+    @Optional() private readonly socialProviders?: SocialProviderRegistry,
   ) {}
 
   @Get('server-info')
@@ -52,8 +54,14 @@ export class HealthController {
         ).map((p) => ({ name: p.name, type: p.type, startUrl: `/sso/${p.initiateId}` }))
       : [];
 
+    // Cloud social sign-in buttons (Google, Microsoft, GitHub). Platform
+    // configuration, the same for everyone, so listing it reveals nothing
+    // about any workspace. Always empty on a self-hosted instance.
+    const socialProviders = this.deployment.isCloud() ? (this.socialProviders?.enabled() ?? []) : [];
+
     return {
       ssoProviders,
+      socialProviders,
       mcpAuthMode: authMode,
       serverUrl,
       mcpEndpoint: '/mcp',

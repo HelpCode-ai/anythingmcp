@@ -137,6 +137,14 @@ x-backend: &backend
     # `-32001 Session not found` errors Copilot hits against stateful servers.
     - MCP_STREAMABLE_JSON_RESPONSE=${MCP_STREAMABLE_JSON_RESPONSE:-true}
     - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-true}
+    # Social sign-in (Google, Microsoft, GitHub). A provider appears on the
+    # sign-in pages only when both of its variables are set; unset = off.
+    - SOCIAL_GOOGLE_CLIENT_ID=${SOCIAL_GOOGLE_CLIENT_ID:-}
+    - SOCIAL_GOOGLE_CLIENT_SECRET=${SOCIAL_GOOGLE_CLIENT_SECRET:-}
+    - SOCIAL_MICROSOFT_CLIENT_ID=${SOCIAL_MICROSOFT_CLIENT_ID:-}
+    - SOCIAL_MICROSOFT_CLIENT_SECRET=${SOCIAL_MICROSOFT_CLIENT_SECRET:-}
+    - SOCIAL_GITHUB_CLIENT_ID=${SOCIAL_GITHUB_CLIENT_ID:-}
+    - SOCIAL_GITHUB_CLIENT_SECRET=${SOCIAL_GITHUB_CLIENT_SECRET:-}
     - LICENSE_API_URL=${LICENSE_API_URL:-https://anythingmcp.com}
     # Operator analytics — cloud build only. Leave unset on self-hosted.
     - GTM_ID=${GTM_ID:-}

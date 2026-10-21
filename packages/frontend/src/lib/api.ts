@@ -1340,6 +1340,8 @@ export const server = {
       registrationEnabled: boolean;
       /** Empty in cloud: listing providers publicly would enumerate workspaces. */
       ssoProviders: SsoProviderButton[];
+      /** Cloud social sign-in (Google, Microsoft, GitHub). Empty on self-hosted. */
+      socialProviders?: SocialProviderButton[];
       oauthEndpoints: { wellKnown: string; authorize: string; token: string; register: string } | null;
     }>('/health/server-info'),
 };
@@ -1555,6 +1557,53 @@ export const sso = {
       method: 'DELETE',
       token,
     }),
+};
+
+export interface SocialProviderButton {
+  /** 'google' | 'microsoft' | 'github' */
+  id: string;
+  name: string;
+}
+
+export interface SocialConnection extends SocialProviderButton {
+  connected: boolean;
+  email: string | null;
+  connectedAt: string | null;
+  lastLoginAt: string | null;
+}
+
+/** Cloud social sign-in. */
+export const social = {
+  /**
+   * Begins a sign-in or sign-up. Returns the provider URL for the caller to
+   * navigate to; the response also sets the cookie that binds the round trip
+   * to this browser.
+   */
+  start: (provider: string, redirect?: string, attribution?: unknown) =>
+    request<{ authorizationUrl: string }>('/api/auth/social/start', {
+      method: 'POST',
+      body: { provider, ...(redirect && redirect !== '/' ? { redirect } : {}), ...(attribution ? { attribution } : {}) },
+    }),
+
+  /** Trades the one-time code from the sign-in redirect for a session. */
+  exchange: (code: string) =>
+    request<{ accessToken: string; user: any; needsLicenseSetup?: boolean; isNewUser: boolean }>(
+      '/api/auth/social/exchange',
+      { method: 'POST', body: { code }, skipAutoLogout: true },
+    ),
+
+  identities: (token: string) =>
+    request<{ hasPassword: boolean; providers: SocialConnection[] }>('/api/auth/social/identities', { token }),
+
+  startLink: (provider: string, redirect: string | undefined, token: string) =>
+    request<{ authorizationUrl: string }>(`/api/auth/social/link/${provider}`, {
+      method: 'POST',
+      body: { redirect },
+      token,
+    }),
+
+  unlink: (provider: string, token: string) =>
+    request<{ unlinked: boolean }>(`/api/auth/social/link/${provider}`, { method: 'DELETE', token }),
 };
 
 export interface RecoveryCodeStatus {

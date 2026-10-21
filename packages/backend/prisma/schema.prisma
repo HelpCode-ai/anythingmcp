@@ -169,6 +169,7 @@ model User {
 
   roleAssignments          UserRoleAssignment[]
   identities               UserIdentity[]
+  socialIdentities         SocialIdentity[]
   securityEventsAsActor    SecurityEvent[] @relation("SecurityEventActor")
   securityEventsAsTarget   SecurityEvent[] @relation("SecurityEventTarget")
   productEvents            ProductEvent[]
@@ -1131,6 +1132,74 @@ model SsoLoginAttempt {
   @@index([providerId])
   @@index([expiresAt])
   @@map("sso_login_attempts")
+}
+
+/// Links a user to an account at a platform-wide social provider (Cloud only:
+/// Google, Microsoft, GitHub). Deliberately separate from `UserIdentity`, whose
+/// providers belong to one organization; these belong to the platform.
+///
+/// SECURITY: the key is (provider, subject), never the email. The email is
+/// stored for display only.
+model SocialIdentity {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// 'google' | 'microsoft' | 'github'. A string so a provider can be added
+  /// without a migration.
+  provider String
+  /// The provider's immutable subject: Google/Microsoft `sub`, GitHub user id.
+  subject  String
+  /// Microsoft only: the `tid` claim.
+  tenantId String? @map("tenant_id")
+  /// Display only, never a lookup key.
+  email    String?
+
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([provider, subject])
+  /// One account per provider per user, so unlinking has a single row to remove.
+  @@unique([userId, provider])
+  @@index([userId])
+  @@map("social_identities")
+}
+
+/// Server-side state for one round trip to a social provider: the CSRF
+/// `state`, the `nonce` and the PKCE verifier, plus a hash of the cookie that
+/// binds the round trip to the browser that started it. Consumed exactly once.
+model SocialLoginAttempt {
+  id                 String @id @default(cuid())
+  state              String @unique
+  nonce              String
+  codeVerifier       String @map("code_verifier")
+  provider           String
+  /// 'DASHBOARD', 'LINK' or 'MCP'.
+  surface            String
+  /// sha256 of the `amcp_social_bind` cookie value. The plaintext never leaves
+  /// the browser and this server's response.
+  browserBindingHash String @map("browser_binding_hash")
+
+  /// LINK only: the signed-in user, captured when the flow starts.
+  linkUserId     String? @map("link_user_id")
+  /// MCP only: the pending mcp-nest session, asserted on return.
+  oauthSessionId String? @map("oauth_session_id")
+  /// Internal path to return to, validated before use.
+  returnTo       String? @map("return_to")
+  /// Sign-up attribution captured by the dashboard (UTM, click ids).
+  attribution    Json?
+
+  /// sha256 of the one-time code the SPA exchanges for a session.
+  handoffCodeHash String? @unique @map("handoff_code_hash")
+  resolvedUserId  String? @map("resolved_user_id")
+  isNewUser       Boolean @default(false) @map("is_new_user")
+
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("social_login_attempts")
 }
 
 // ── Security Audit Log ──────────────────────────────────────────────────────

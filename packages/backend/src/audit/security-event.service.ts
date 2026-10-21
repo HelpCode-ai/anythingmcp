@@ -35,6 +35,19 @@ export const SecurityEvents = {
   IDENTITY_LINKED: 'IDENTITY_LINKED',
   IDENTITY_UNLINKED: 'IDENTITY_UNLINKED',
   JIT_PROVISIONED: 'JIT_PROVISIONED',
+  /** Cloud social sign-in (Google, Microsoft, GitHub). */
+  SOCIAL_LOGIN_SUCCESS: 'SOCIAL_LOGIN_SUCCESS',
+  SOCIAL_LOGIN_FAILED: 'SOCIAL_LOGIN_FAILED',
+  /** A workspace was created through a social provider. */
+  SOCIAL_SIGNUP: 'SOCIAL_SIGNUP',
+  SOCIAL_IDENTITY_LINKED: 'SOCIAL_IDENTITY_LINKED',
+  SOCIAL_IDENTITY_UNLINKED: 'SOCIAL_IDENTITY_UNLINKED',
+  /**
+   * A provider-verified email took over a local account whose address had
+   * never been verified: its password and sessions were dropped, because
+   * whoever set them never proved they own the mailbox.
+   */
+  SOCIAL_ACCOUNT_RECLAIMED: 'SOCIAL_ACCOUNT_RECLAIMED',
   /** A bearer token was refused — e.g. an MCP-issued token sent to the dashboard API. */
   TOKEN_REJECTED: 'TOKEN_REJECTED',
   /** A request to /api/scim/v2 carried no valid bearer. */

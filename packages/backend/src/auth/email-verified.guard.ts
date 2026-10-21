@@ -38,6 +38,9 @@ export class EmailVerifiedGuard implements CanActivate {
     '/api/auth/forgot-password',
     '/api/auth/reset-password',
     '/api/auth/accept-invite',
+    // Social sign-in: starting it and exchanging its one-time code.
+    '/api/auth/social/start',
+    '/api/auth/social/exchange',
     // Unverified users must reach support (e.g. the code never arrived).
     '/api/support/widget',
     '/health',

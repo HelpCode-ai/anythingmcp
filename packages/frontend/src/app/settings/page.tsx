@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { users, server, sso, knowledgeGraph, ApiError, type LinkableProvider, type MemberLearning } from '@/lib/api';
+import { users, server, sso, social, knowledgeGraph, ApiError, type LinkableProvider, type MemberLearning, type SocialConnection } from '@/lib/api';
+import { ProviderMark } from '@/components/provider-mark';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useToast } from '@/components/toast';
 import { Button } from '@/components/ui/button';
@@ -48,6 +50,9 @@ export default function SettingsPage() {
   // Connected accounts
   const [linkable, setLinkable] = useState<LinkableProvider[]>([]);
   const [linkBusy, setLinkBusy] = useState<string | null>(null);
+  // Cloud social sign-in (Google, Microsoft, GitHub).
+  const [socialConnections, setSocialConnections] = useState<SocialConnection[]>([]);
+  const [hasPassword, setHasPassword] = useState(true);
 
   // Load server info
   useEffect(() => {
@@ -117,10 +122,26 @@ export default function SettingsPage() {
     sso.myProviders(token).then(setLinkable).catch(() => setLinkable([]));
   };
 
+  const loadSocial = () => {
+    if (!token || !isCloud) return;
+    social
+      .identities(token)
+      .then((r) => {
+        setSocialConnections(r.providers);
+        setHasPassword(r.hasPassword);
+      })
+      .catch(() => setSocialConnections([]));
+  };
+
   useEffect(() => {
     loadLinkable();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useEffect(() => {
+    loadSocial();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, isCloud]);
 
   // The callback lands back here with the outcome in the query string. Read it
   // once and strip it, so a refresh does not replay the same toast.
@@ -135,6 +156,7 @@ export default function SettingsPage() {
     } else {
       toast.show({ tone: 'success', title: 'Account connected' });
       loadLinkable();
+      loadSocial();
     }
     window.history.replaceState({}, '', window.location.pathname);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,6 +189,33 @@ export default function SettingsPage() {
       await sso.unlink(p.id, token);
       toast.show({ tone: 'success', title: 'Account disconnected' });
       loadLinkable();
+    } catch (err: any) {
+      toast.show({ tone: 'error', title: 'Could not disconnect', description: err.message });
+    } finally {
+      setLinkBusy(null);
+    }
+  };
+
+  const handleSocialLink = async (p: SocialConnection) => {
+    if (!token) return;
+    setLinkBusy(`social:${p.id}`);
+    try {
+      const { authorizationUrl } = await social.startLink(p.id, '/settings', token);
+      window.location.assign(authorizationUrl);
+    } catch (err: any) {
+      toast.show({ tone: 'error', title: 'Could not connect', description: err.message });
+      setLinkBusy(null);
+    }
+  };
+
+  const handleSocialUnlink = async (p: SocialConnection) => {
+    if (!token) return;
+    if (!confirm(`Disconnect ${p.name}? You will no longer be able to sign in with it.`)) return;
+    setLinkBusy(`social:${p.id}`);
+    try {
+      await social.unlink(p.id, token);
+      toast.show({ tone: 'success', title: 'Account disconnected' });
+      loadSocial();
     } catch (err: any) {
       toast.show({ tone: 'error', title: 'Could not disconnect', description: err.message });
     } finally {
@@ -438,6 +487,55 @@ export default function SettingsPage() {
                     : p.linked
                       ? 'Disconnect'
                       : 'Connect'}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Sign-in methods (Cloud social sign-in) */}
+      {isCloud && socialConnections.length > 0 && (
+        <Card className="p-[22px]" data-testid="sign-in-methods">
+          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Sign-in methods</h3>
+          <p className="text-sm text-[var(--text-2)] mb-4">
+            Sign in to AnythingMCP with one of these accounts instead of your password.
+          </p>
+          {!hasPassword && (
+            <p className="text-sm text-[var(--text-2)] mb-4">
+              Your account has no password yet.{' '}
+              <Link href="/forgot-password" className="text-[var(--brand)] underline">
+                Set a password
+              </Link>{' '}
+              to also sign in with your email address.
+            </p>
+          )}
+          <div className="space-y-2 max-w-md">
+            {socialConnections.map((p) => (
+              <div
+                key={p.id}
+                className="rounded-[9px] border border-[var(--border)] p-3 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0 flex items-center gap-2.5">
+                  <ProviderMark type={p.id} />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-[var(--text)]">{p.name}</div>
+                    <div className="text-[11.5px] text-[var(--text-3)] mt-0.5 truncate">
+                      {p.connected
+                        ? [p.email, p.lastLoginAt ? `last used ${new Date(p.lastLoginAt).toLocaleDateString()}` : null]
+                            .filter(Boolean)
+                            .join(' · ') || 'Connected'
+                        : 'Not connected'}
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant={p.connected ? 'secondary' : 'primary'}
+                  disabled={linkBusy === `social:${p.id}`}
+                  onClick={() => (p.connected ? handleSocialUnlink(p) : handleSocialLink(p))}
+                >
+                  {linkBusy === `social:${p.id}` ? 'Working...' : p.connected ? 'Disconnect' : 'Connect'}
                 </Button>
               </div>
             ))}

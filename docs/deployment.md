@@ -374,6 +374,9 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `METRICS_PORT` | No | Port for the metrics listener (default: `9464`) |
 | `METRICS_HOST` | No | Bind host for the metrics listener (default: `0.0.0.0`) |
 | `METRICS_TOKEN` | **Required when `METRICS_ENABLED=true`** | Bearer token required to scrape `/metrics`, compared with `timingSafeEqual` |
+| `SOCIAL_GOOGLE_CLIENT_ID` / `SOCIAL_GOOGLE_CLIENT_SECRET` | No | Cloud only (ignored on self-hosted): enables "Continue with Google". Redirect URI `<FRONTEND_URL>/auth/social/google/callback` |
+| `SOCIAL_MICROSOFT_CLIENT_ID` / `SOCIAL_MICROSOFT_CLIENT_SECRET` | No | Cloud only: enables "Continue with Microsoft" (personal and work accounts). Redirect URI `<FRONTEND_URL>/auth/social/microsoft/callback`; add the `email` and `xms_edov` optional ID-token claims |
+| `SOCIAL_GITHUB_CLIENT_ID` / `SOCIAL_GITHUB_CLIENT_SECRET` | No | Cloud only: enables "Continue with GitHub". Callback URL `<FRONTEND_URL>/auth/social/github/callback` |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
 
 ---
