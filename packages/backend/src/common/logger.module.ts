@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { LoggerModule as PinoLoggerModule } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
+import { serializeRequest, serializeResponse } from './log-serializers';
 
 /**
  * Structured logging — Pino over the default NestJS console logger.
@@ -12,9 +13,10 @@ import type { IncomingMessage, ServerResponse } from 'http';
  *  - Per-request correlation id: read from X-Request-Id, generated when
  *    missing, attached to every log line and echoed back on the response so
  *    a client can quote it when reporting bugs.
- *  - Authorization, cookies and X-API-Key headers are redacted.
- *  - The MCP endpoint is logged at trace level: it is a high-traffic JSON-RPC
- *    surface and we don't need a line per request unless debugging.
+ *  - Requests and responses are logged without their headers (see
+ *    log-serializers.ts): method, path, MCP method, client, address and
+ *    status only, so no credential header can reach a line. The redaction
+ *    below stays as a second line of defence.
  */
 @Module({
   imports: [
@@ -34,6 +36,10 @@ import type { IncomingMessage, ServerResponse } from 'http';
           const id = incoming && incoming.length <= 128 ? incoming : randomUUID();
           res.setHeader('X-Request-Id', id);
           return id;
+        },
+        serializers: {
+          req: serializeRequest,
+          res: serializeResponse,
         },
         customProps: (req: IncomingMessage) => ({
           // Surface authenticated identity (set by passport / mcp-auth guards)

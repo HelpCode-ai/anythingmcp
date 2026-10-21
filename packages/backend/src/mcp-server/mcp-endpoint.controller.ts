@@ -16,7 +16,7 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
-import { McpServer, createMcpHandler, isLegacyRequest } from '@modelcontextprotocol/server';
+import { McpServer, isLegacyRequest } from '@modelcontextprotocol/server';
 import {
   NodeStreamableHTTPServerTransport as StreamableHTTPServerTransport,
   toNodeHandler,
@@ -25,6 +25,7 @@ import {
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
 import { McpPrincipalRateLimitGuard } from '../auth/mcp-principal-rate-limit.guard';
 import { mcpHttpTransport } from './mcp-strategy';
+import { createQuietMcpHandler } from './mcp-handler.util';
 import { toolVisibilityRole } from './mcp-server.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
@@ -1296,7 +1297,8 @@ export class McpEndpointController {
       return;
     }
 
-    const handler = createMcpHandler(() => buildServer(), {
+    // Built per request; its JSON-mode warning is logged once per process.
+    const handler = createQuietMcpHandler(() => buildServer(), {
       legacy: 'stateless',
       // Mapped from the old `enableJsonResponse` boolean, deliberately NOT to
       // 'auto'. 'auto' answers with JSON whenever it can and upgrades to SSE

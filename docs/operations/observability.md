@@ -8,9 +8,10 @@ Every HTTP request emits one JSON line at completion (or earlier on error), tagg
 
 - `req.id` — UUID, present on the response as `X-Request-Id`. Quote it in bug reports.
 - `userId` / `orgId` / `authMethod` — propagated from the authenticated request.
-- `req.method`, `req.url`, `res.statusCode`, `responseTime`.
+- `req.method`, `req.url` (path only, no query string), `res.statusCode`, `responseTime`.
+- `req.mcpMethod` (the `Mcp-Method` header, on MCP requests), `req.userAgent`, `req.ip` (first `X-Forwarded-For` hop, else the socket address).
 
-Sensitive fields are stripped at the pino layer:
+Request and response headers are not logged (`packages/backend/src/common/log-serializers.ts` keeps only the fields above), so no credential header can reach a line. As a second line of defence, pino also strips:
 - headers: `authorization`, `cookie`, `x-api-key`, `set-cookie`.
 - bodies: any `password`, `token`, `refreshToken`, `accessToken`, `apiKey`, `secret` field.
 
