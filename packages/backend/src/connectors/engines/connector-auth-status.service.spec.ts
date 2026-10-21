@@ -21,6 +21,11 @@ function fakePrisma(row: Record<string, any>) {
     connector: {
       findUnique: jest.fn(async ({ where }: any) => (where.id === row.id ? { ...row } : null)),
       update: jest.fn(async ({ data }: any) => Object.assign(row, data)),
+      findMany: jest.fn(async ({ where }: any) =>
+        row.authStatus === where.authStatus && row.tokenExpiresAt && row.tokenExpiresAt <= where.tokenExpiresAt.lte
+          ? [{ id: row.id, authStatusRef: row.authStatusRef ?? null, tokenExpiresAt: row.tokenExpiresAt }]
+          : [],
+      ),
       updateMany: jest.fn(async ({ where, data }: any) => {
         if (!matches(row, where)) return { count: 0 };
         Object.assign(row, data);
@@ -120,6 +125,63 @@ describe('ConnectorAuthStatusService', () => {
     await flush();
     expect(JSON.stringify(row)).not.toContain('rt-dead');
     expect(issue.ref).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  describe('expireLapsedTokens', () => {
+    const ref = credentialRef('EAAshortlived');
+    const expiresAt = new Date('2026-10-20T17:00:00Z');
+    const warn = { status: 'expiring' as const, code: 'meta_expiring', message: 'This is a short-lived token.', ref };
+
+    it('turns a warning whose token has expired into needs_reauth and emails the owner once', async () => {
+      await service.mark('conn-1', warn);
+      row.tokenExpiresAt = expiresAt;
+      await flush();
+      expect(email.sendConnectorAuthEmail).not.toHaveBeenCalled();
+
+      const later = new Date('2026-10-21T10:00:00Z');
+      expect(await service.expireLapsedTokens(later)).toBe(1);
+      await flush();
+      expect(row).toMatchObject({ authStatus: 'needs_reauth', authStatusCode: 'token_expired', authStatusRef: ref });
+      expect(row.authStatusMessage).toMatch(/expired on 2026-10-20 17:00 UTC and could not be renewed/);
+      expect(row.authNotifiedAt).toBeInstanceOf(Date);
+      expect(email.sendConnectorAuthEmail).toHaveBeenCalledTimes(1);
+
+      // The next sweep finds nothing left to do.
+      expect(await service.expireLapsedTokens(later)).toBe(0);
+      await flush();
+      expect(email.sendConnectorAuthEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves a warning alone until its token has expired', async () => {
+      await service.mark('conn-1', warn);
+      row.tokenExpiresAt = expiresAt;
+      expect(await service.expireLapsedTokens(new Date('2026-10-20T16:59:00Z'))).toBe(0);
+      expect(row.authStatus).toBe('expiring');
+    });
+
+    it('only looks at expiring warnings, never at other connectors with an expiry', async () => {
+      await service.expireLapsedTokens(new Date());
+      expect(prisma.connector.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { authStatus: 'expiring', tokenExpiresAt: { lte: expect.any(Date) } } }),
+      );
+    });
+  });
+
+  it('runs the expiry sweep on a timer that does not keep the process alive', () => {
+    jest.useFakeTimers();
+    try {
+      const spy = jest.spyOn(service, 'expireLapsedTokens').mockResolvedValue(0);
+      service.onModuleInit();
+      jest.advanceTimersByTime(2 * 60 * 1000);
+      expect(spy).toHaveBeenCalledTimes(1);
+      jest.advanceTimersByTime(60 * 60 * 1000);
+      expect(spy).toHaveBeenCalledTimes(2);
+      service.onModuleDestroy();
+      jest.advanceTimersByTime(3 * 60 * 60 * 1000);
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('works without an email service (self-hosted without SMTP)', async () => {

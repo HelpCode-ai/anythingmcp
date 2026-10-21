@@ -189,6 +189,30 @@ describe('BearerTokenRenewalService', () => {
     expect(mockedAxios.get).toHaveBeenCalledTimes(1);
   });
 
+  it('once a short-lived token has expired, marks the connector as needing a new token instead of warning', async () => {
+    const expiresAt = Date.now() + 3_600_000;
+    graph({ '/debug_token': () => ({ data: { expires_at: Math.floor(expiresAt / 1000) } }) });
+    expect(await service.getToken(withoutSecret(), 'conn-lapsed')).toBe(SHORT);
+    expect(authStatus.mark).toHaveBeenLastCalledWith(
+      'conn-lapsed',
+      expect.objectContaining({ status: 'expiring', code: 'meta_expiring' }),
+    );
+
+    // Two hours later, nobody has pasted a new token.
+    const now = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValue(now + 2 * 3_600_000);
+    // The call still goes out: Meta's answer has the last word.
+    expect(await service.getToken(withoutSecret(), 'conn-lapsed')).toBe(SHORT);
+    expect(authStatus.mark).toHaveBeenLastCalledWith('conn-lapsed', {
+      status: 'needs_reauth',
+      code: 'token_expired',
+      message: expect.stringMatching(/expired on .* UTC and could not be renewed.*Paste a new token/),
+      ref: credentialRef(SHORT),
+    });
+    await service.getToken(withoutSecret(), 'conn-lapsed');
+    expect(authStatus.mark).toHaveBeenCalledTimes(2);
+  });
+
   it('records a refused exchange as a warning and keeps using the pasted token', async () => {
     graph({
       '/debug_token': () => graphError(190, undefined, 400),

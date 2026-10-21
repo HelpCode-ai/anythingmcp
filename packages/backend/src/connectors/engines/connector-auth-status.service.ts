@@ -1,6 +1,7 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { pbkdf2Sync } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
+import { connectorPageUrl } from '../../common/url.util';
 import { EmailService } from '../../settings/email.service';
 
 /**
@@ -18,7 +19,9 @@ import { EmailService } from '../../settings/email.service';
  * Statuses:
  *   needs_reauth  blocking: calls fail at once with `message` until the
  *                 credential changes (`ref` is a hash of the one refused)
- *   expiring      a warning: the token works, but stops at tokenExpiresAt
+ *   expiring      a warning: the token works, but stops at tokenExpiresAt;
+ *                 once that time has passed it becomes needs_reauth
+ *                 (token_expired), on the next call or the hourly sweep
  *
  * Nothing here is ever a secret: `ref` is a truncated SHA-256.
  */
@@ -52,19 +55,87 @@ export function credentialRef(value: unknown): string | undefined {
   return ref;
 }
 
+/** How often connectors whose token expired while still marked `expiring` are looked for. */
+const EXPIRY_SWEEP_MS = 60 * 60 * 1000;
+/** First sweep after boot: late enough to stay out of the startup work. */
+const EXPIRY_SWEEP_FIRST_MS = 2 * 60 * 1000;
+/** Connectors handled per sweep; the rest wait for the next one. */
+const EXPIRY_SWEEP_BATCH = 200;
+
+/** The status message of a token past its expiry that nothing could renew. */
+export function expiredTokenHint(expiresAt: Date, connectorId: string): string {
+  const when = expiresAt.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+  const page = connectorPageUrl(connectorId);
+  return (
+    `The access token expired on ${when} and could not be renewed; retrying will not help. ` +
+    `Paste a new token into the connector's variables in AnythingMCP${page ? ` (${page})` : ''}. ` +
+    'For Meta, a System User token with expiry Never does not expire, and a user token is renewed ' +
+    'automatically when the app id and secret are set.'
+  );
+}
+
 /** The credential a status is recorded against: the refresh token, else the pasted token. */
 export function authCredentialRef(authConfig: Record<string, unknown> | undefined): string | undefined {
   return credentialRef(authConfig?.refreshToken) ?? credentialRef(authConfig?.token);
 }
 
 @Injectable()
-export class ConnectorAuthStatusService {
+export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ConnectorAuthStatusService.name);
+  private sweepTimer?: ReturnType<typeof setInterval>;
+  private firstSweep?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly email?: EmailService,
   ) {}
+
+  onModuleInit(): void {
+    const sweep = () => void this.expireLapsedTokens();
+    this.firstSweep = setTimeout(sweep, EXPIRY_SWEEP_FIRST_MS);
+    this.firstSweep.unref?.();
+    this.sweepTimer = setInterval(sweep, EXPIRY_SWEEP_MS);
+    this.sweepTimer.unref?.();
+  }
+
+  onModuleDestroy(): void {
+    if (this.firstSweep) clearTimeout(this.firstSweep);
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+  }
+
+  /**
+   * An `expiring` warning whose token has expired is no longer a warning.
+   * The next call notices it too (Meta refuses the token, or the renewal
+   * service sees the expiry), but a connector nobody calls stayed `expiring`
+   * for good and its owner was never told: a meta-ads token that expired on
+   * 20 Oct 2026 at 17:00 was still a warning, with no email, a day later.
+   * Each one becomes needs_reauth against the same credential, which sends
+   * the single owner email like any other refusal. Returns how many moved.
+   */
+  async expireLapsedTokens(now: Date = new Date()): Promise<number> {
+    let rows: Array<{ id: string; authStatusRef: string | null; tokenExpiresAt: Date | null }>;
+    try {
+      rows = await this.prisma.connector.findMany({
+        where: { authStatus: 'expiring', tokenExpiresAt: { lte: now } },
+        select: { id: true, authStatusRef: true, tokenExpiresAt: true },
+        orderBy: { tokenExpiresAt: 'asc' },
+        take: EXPIRY_SWEEP_BATCH,
+      });
+    } catch (err: any) {
+      this.logger.warn(`Could not look for expired connector tokens: ${err?.message ?? err}`);
+      return 0;
+    }
+    for (const row of rows) {
+      if (!row.tokenExpiresAt) continue;
+      await this.mark(row.id, {
+        status: 'needs_reauth',
+        code: 'token_expired',
+        message: expiredTokenHint(row.tokenExpiresAt, row.id),
+        ref: row.authStatusRef ?? undefined,
+      });
+    }
+    return rows.length;
+  }
 
   /**
    * Record an issue. A repeat of the stored one (same status, code and

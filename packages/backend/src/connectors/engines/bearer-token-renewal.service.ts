@@ -6,7 +6,7 @@ import { decrypt, encrypt } from '../../common/crypto/encryption.util';
 import { getRequiredSecret } from '../../common/secrets.util';
 import { connectorPageUrl } from '../../common/url.util';
 import { getAdapter } from '../../adapters/catalog';
-import { ConnectorAuthStatusService, credentialRef } from './connector-auth-status.service';
+import { ConnectorAuthStatusService, credentialRef, expiredTokenHint } from './connector-auth-status.service';
 
 /**
  * Renewal of pasted bearer tokens that expire, for providers that let a
@@ -411,7 +411,12 @@ export class BearerTokenRenewalService {
     await this.authStatus?.clear(connectorId, { onlyCodes: WARNING_CODES });
   }
 
-  /** A token that will stop working soon and cannot be renewed here: say so. */
+  /**
+   * A token that will stop working soon and cannot be renewed here: say so.
+   * One that already has is no longer a warning: the connector needs a new
+   * token, and its owner gets the single email (an expired token cannot be
+   * exchanged). The call still goes out; Meta's answer has the last word.
+   */
   private async warnIfExpiring(
     connectorId: string,
     st: TokenState,
@@ -419,6 +424,18 @@ export class BearerTokenRenewalService {
     failure?: string,
   ): Promise<void> {
     if (typeof st.expiresAt !== 'number') return;
+    if (st.expiresAt <= Date.now()) {
+      const message = expiredTokenHint(new Date(st.expiresAt), connectorId);
+      if (this.warned.get(connectorId) === message) return;
+      this.warned.set(connectorId, message);
+      await this.authStatus?.mark(connectorId, {
+        status: 'needs_reauth',
+        code: 'token_expired',
+        message,
+        ref: st.sourceRef,
+      });
+      return;
+    }
     const within = (spec.renewWithinDays ?? DEFAULT_RENEW_WITHIN_DAYS) * DAY_MS;
     if (st.expiresAt - Date.now() > within) return;
     if (!failure && this.shouldRenew(st, spec)) return; // will be renewed on this call
