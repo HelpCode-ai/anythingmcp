@@ -29,6 +29,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { mcpStrategy } from './mcp-server/mcp-strategy';
 import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
+import { McpEmailVerificationFilter } from './auth/mcp-email-verification';
 import { validateRequiredSecretsAtStartup } from './common/secrets.util';
 import { startMetricsServer, stopMetricsServer } from './common/metrics';
 
@@ -104,8 +105,9 @@ async function bootstrap() {
     }),
   );
 
-  // Add WWW-Authenticate header to MCP 401 responses for OAuth discovery
-  app.useGlobalFilters(new McpAuthExceptionFilter());
+  // Add WWW-Authenticate header to MCP 401 responses for OAuth discovery,
+  // and answer an unverified cloud user's MCP client with what to do.
+  app.useGlobalFilters(new McpAuthExceptionFilter(), new McpEmailVerificationFilter());
 
   // Global validation
   app.useGlobalPipes(

@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { EmailVerifiedGuard } from './email-verified.guard';
+import { McpEmailVerificationRequiredException } from './mcp-email-verification';
 
 /**
  * Global guards run before the route's AuthGuard('jwt'), so req.user is unset
@@ -8,7 +9,9 @@ import { EmailVerifiedGuard } from './email-verified.guard';
 describe('EmailVerifiedGuard', () => {
   function makeGuard(opts: { cloud?: boolean; verified?: boolean }) {
     const prisma = {
-      user: { findUnique: jest.fn(async () => ({ emailVerified: opts.verified ?? false })) },
+      user: {
+        findUnique: jest.fn(async () => ({ emailVerified: opts.verified ?? false, email: 'jane.doe@example.com' })),
+      },
     };
     const auth = {
       verifyToken: jest.fn((t: string) => {
@@ -35,8 +38,17 @@ describe('EmailVerifiedGuard', () => {
   it('tells an AI client on /mcp what the person has to do', async () => {
     const { guard } = makeGuard({ verified: false });
     const refusal = guard.canActivate(ctx({ path: '/mcp/srv1', headers: { authorization: 'Bearer good' } }));
+    await expect(refusal).rejects.toBeInstanceOf(McpEmailVerificationRequiredException);
     await expect(refusal).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(refusal).rejects.toThrow(/confirm the email address.*sign in at https:\/\//);
+    await expect(refusal).rejects.toThrow(/not been verified.*ja\*\*\*@example\.com.*Sign in at https:\/\/\S+\/login/);
+    await expect(refusal).rejects.not.toThrow(/jane\.doe/);
+  });
+
+  it('keeps the plain refusal off /mcp', async () => {
+    const { guard } = makeGuard({ verified: false });
+    const refusal = guard.canActivate(ctx({ path: '/api/connectors', headers: { authorization: 'Bearer good' } }));
+    await expect(refusal).rejects.not.toBeInstanceOf(McpEmailVerificationRequiredException);
+    await expect(refusal).rejects.toThrow('Email verification required');
   });
 
   it('lets a verified user through', async () => {

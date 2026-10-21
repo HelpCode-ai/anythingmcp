@@ -3,6 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { AuthService } from './auth.service';
 import { resolveUserIdFromTokenPayload } from './resolve-user-id.util';
+import {
+  emailVerificationNotice,
+  McpEmailVerificationRequiredException,
+} from './mcp-email-verification';
 
 /**
  * In cloud mode, users must verify their email before they can access any
@@ -80,21 +84,20 @@ export class EmailVerifiedGuard implements CanActivate {
 
     const dbUser = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { emailVerified: true },
+      select: { emailVerified: true, email: true },
     });
     // Unknown user: not ours to judge (see the class comment).
     if (!dbUser) return true;
     if (!dbUser.emailVerified) {
       if (path.startsWith('/mcp')) {
         this.logger.warn(`Refused ${path}: user ${userId} has not verified their email`);
-        // An AI client shows this text to the person, who otherwise only sees
-        // the connection fail: on 9-10 Oct 2026 seven people who had connected
-        // Claude retried up to 122 times without knowing what was missing.
-        const dashboard = (this.configService.get<string>('FRONTEND_URL') || 'https://cloud.anythingmcp.com').replace(/\/+$/, '');
-        throw new ForbiddenException(
-          'Email verification required: confirm the email address of your AnythingMCP account ' +
-            `with the link we sent when you signed up, or sign in at ${dashboard} to get a new ` +
-            'link. Then try again; nothing else needs to change.',
+        // The person otherwise only sees the connection fail: on 9-10 Oct
+        // 2026 seven people who had connected Claude retried up to 122 times
+        // without knowing what was missing. McpEmailVerificationFilter turns
+        // this into an MCP answer the client shows and the model can read.
+        const dashboard = this.configService.get<string>('FRONTEND_URL') || 'https://cloud.anythingmcp.com';
+        throw new McpEmailVerificationRequiredException(
+          emailVerificationNotice(dashboard, dbUser.email),
         );
       }
       throw new ForbiddenException('Email verification required');
