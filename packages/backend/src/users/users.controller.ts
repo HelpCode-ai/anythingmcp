@@ -93,11 +93,19 @@ class UpdateUserRoleDto {
   role: UserRole;
 }
 
+/** How recent a sign-in must be to delete an account that has no password. */
+const FRESH_SESSION_MS = 10 * 60 * 1000;
+
 class DeleteSelfDto {
-  @ApiProperty({ description: 'Account password (re-confirmation).', format: 'password' })
+  @ApiPropertyOptional({
+    description:
+      'Account password (re-confirmation). Accounts without a password (social sign-in) confirm with a fresh sign-in instead.',
+    format: 'password',
+  })
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  password: string;
+  password?: string;
 
   @ApiProperty({
     description: 'Must equal the literal string "DELETE" — protection against accidental calls.',
@@ -195,20 +203,44 @@ export class UsersController {
     const user = await this.usersService.findById(req.user.sub);
     if (!user) throw new UnauthorizedException('User not found');
 
-    // An IdP-provisioned user has no password to confirm with. Refuse rather
-    // than hand null to bcrypt — and rather than skip the confirmation, which
-    // would make account deletion a one-click action on a stolen session.
-    if (!user.passwordHash) {
+    if (user.passwordHash) {
+      if (!dto.password) throw new UnauthorizedException('Invalid password');
+      const isValid = await this.authService.comparePassword(dto.password, user.passwordHash);
+      if (!isValid) throw new UnauthorizedException('Invalid password');
+    } else if (await this.usersService.hasSocialIdentity(user.id)) {
+      // Signed up with Google, Microsoft or GitHub: there is no password to
+      // re-type, so the confirmation is a sign-in that just happened. A stolen
+      // session that is more than a few minutes old cannot delete the account.
+      if (!this.isFreshSession(req)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'reauth_required',
+          message: 'For your security, sign in again to confirm, then delete your account within 10 minutes.',
+        });
+      }
+    } else {
+      // An IdP-provisioned user has no password to confirm with. Refuse rather
+      // than hand null to bcrypt — and rather than skip the confirmation, which
+      // would make account deletion a one-click action on a stolen session.
       throw new UnauthorizedException(
         'This account has no password. Account deletion is not available for SSO-only accounts.',
       );
     }
 
-    const isValid = await this.authService.comparePassword(dto.password, user.passwordHash);
-    if (!isValid) throw new UnauthorizedException('Invalid password');
-
     await this.usersService.deleteSelf(req.user.sub);
     return { message: 'Account deleted' };
+  }
+
+  /** Whether the bearer token on this request was issued in the last 10 minutes. */
+  private isFreshSession(req: any): boolean {
+    const header: string | undefined = req?.headers?.authorization;
+    if (!header?.startsWith('Bearer ')) return false;
+    try {
+      const iat = (this.authService.verifyToken(header.slice(7).trim()) as any)?.iat;
+      return typeof iat === 'number' && Date.now() - iat * 1000 <= FRESH_SESSION_MS;
+    } catch {
+      return false;
+    }
   }
 
   @Put('me/password')

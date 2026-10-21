@@ -45,6 +45,8 @@ export default function SettingsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // A passwordless (social) account confirms deletion with a fresh sign-in.
+  const [deleteNeedsReauth, setDeleteNeedsReauth] = useState(false);
   const [blockingOrgs, setBlockingOrgs] = useState<{ id: string; name: string }[] | null>(null);
 
   // Connected accounts
@@ -244,12 +246,18 @@ export default function SettingsPage() {
     setDeleteError(null);
     setBlockingOrgs(null);
     try {
-      await users.deleteSelf({ password: deletePassword, confirm: 'DELETE' }, token);
+      await users.deleteSelf(
+        hasPassword ? { password: deletePassword, confirm: 'DELETE' } : { confirm: 'DELETE' },
+        token,
+      );
       logout();
     } catch (err: any) {
       if (err instanceof ApiError) {
-        if (err.status === 401) {
-          setDeleteError('Incorrect password.');
+        if (err.status === 403 && err.body?.code === 'reauth_required') {
+          setDeleteNeedsReauth(true);
+          setDeleteError(err.message);
+        } else if (err.status === 401) {
+          setDeleteError(hasPassword ? 'Incorrect password.' : err.message || 'Failed to delete account.');
         } else if (err.status === 409 && Array.isArray(err.body?.blockingOrganizations)) {
           setBlockingOrgs(err.body.blockingOrganizations);
           setDeleteError(err.body?.error || 'You are the only admin of these organizations.');
@@ -263,8 +271,29 @@ export default function SettingsPage() {
     }
   };
 
+  /** Sign in again with a connected provider, then come back to this dialog. */
+  const reauthForDelete = async () => {
+    const provider = socialConnections.find((p) => p.connected);
+    if (!provider) return;
+    try {
+      const { authorizationUrl } = await social.start(provider.id, '/settings?delete=1');
+      window.location.assign(authorizationUrl);
+    } catch (err: any) {
+      setDeleteError(err?.message || 'Could not start the sign-in.');
+    }
+  };
+
+  // Back from that sign-in: reopen the dialog.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('delete') !== '1') return;
+    setDeleteOpen(true);
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
+
   const resetDeleteDialog = () => {
     setDeleteOpen(false);
+    setDeleteNeedsReauth(false);
     setDeletePassword('');
     setDeleteConfirm('');
     setDeleteError(null);
@@ -629,7 +658,11 @@ export default function SettingsPage() {
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Delete account</Dialog.Title>
             <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
-              This action cannot be undone. Enter your password and type <strong>DELETE</strong> to confirm.
+              {hasPassword ? (
+                <>This action cannot be undone. Enter your password and type <strong>DELETE</strong> to confirm.</>
+              ) : (
+                <>This action cannot be undone. Type <strong>DELETE</strong> to confirm. If you signed in more than 10 minutes ago, you will be asked to sign in again first.</>
+              )}
             </Dialog.Description>
 
             {blockingOrgs && blockingOrgs.length > 0 && (
@@ -647,15 +680,17 @@ export default function SettingsPage() {
             )}
 
             <div className="space-y-3">
-              <div>
-                <label className={labelClass}>Password</label>
-                <input
-                  type="password"
-                  value={deletePassword}
-                  onChange={(e) => setDeletePassword(e.target.value)}
-                  className={inputClass}
-                />
-              </div>
+              {hasPassword && (
+                <div>
+                  <label className={labelClass}>Password</label>
+                  <input
+                    type="password"
+                    value={deletePassword}
+                    onChange={(e) => setDeletePassword(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              )}
               <div>
                 <label className={labelClass}>Type <code className="font-mono">DELETE</code> to confirm</label>
                 <input
@@ -669,6 +704,11 @@ export default function SettingsPage() {
               {deleteError && !blockingOrgs && (
                 <p className="text-sm text-[var(--danger)]">{deleteError}</p>
               )}
+              {deleteNeedsReauth && socialConnections.some((p) => p.connected) && (
+                <Button variant="secondary" onClick={reauthForDelete}>
+                  Sign in again with {socialConnections.find((p) => p.connected)?.name}
+                </Button>
+              )}
             </div>
 
             <div className="flex gap-2 justify-end mt-6">
@@ -678,7 +718,7 @@ export default function SettingsPage() {
               <Button
                 variant="danger"
                 onClick={handleDeleteAccount}
-                disabled={deleting || deleteConfirm !== 'DELETE' || !deletePassword}
+                disabled={deleting || deleteConfirm !== 'DELETE' || (hasPassword && !deletePassword)}
               >
                 {deleting ? 'Deleting…' : 'Delete my account'}
               </Button>

@@ -153,4 +153,37 @@ test.describe('sign-in methods in Settings', () => {
     await expect(card.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
     await expect(card.getByRole('link', { name: 'Set a password' })).toBeVisible();
   });
+
+  test('a passwordless account deletes without a password, after a fresh sign-in', async ({ page }) => {
+    let deleteBody: any = null;
+    await mockApi(page, {
+      extra: (p) =>
+        p === '/api/auth/social/identities'
+          ? {
+              hasPassword: false,
+              providers: [
+                { id: 'google', name: 'Google', connected: true, email: 'a@example.test', connectedAt: null, lastLoginAt: null },
+              ],
+            }
+          : p === '/api/users/me'
+            ? USER
+            : null,
+    });
+    await page.route('**/api/users/me', async (route) => {
+      if (route.request().method() !== 'DELETE') return route.fallback();
+      deleteBody = route.request().postDataJSON();
+      return route.fulfill({
+        status: 403,
+        json: { statusCode: 403, code: 'reauth_required', message: 'For your security, sign in again to confirm.' },
+      });
+    });
+    await page.goto('/settings');
+    await page.getByRole('button', { name: 'Delete my account' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('input[type="password"]')).toHaveCount(0);
+    await dialog.locator('input[type="text"]').fill('DELETE');
+    await dialog.getByRole('button', { name: 'Delete my account' }).click();
+    await expect(dialog.getByRole('button', { name: 'Sign in again with Google' })).toBeVisible();
+    expect(deleteBody).toEqual({ confirm: 'DELETE' });
+  });
 });

@@ -43,6 +43,11 @@ export class UsersService {
     return this.prisma.user.create({ data: { ...data, email: normalizeEmail(data.email) } });
   }
 
+  /** Whether the user can sign in with Google, Microsoft or GitHub (Cloud). */
+  async hasSocialIdentity(userId: string): Promise<boolean> {
+    return (await this.prisma.socialIdentity.count({ where: { userId } })) > 0;
+  }
+
   async count(): Promise<number> {
     return this.prisma.user.count();
   }

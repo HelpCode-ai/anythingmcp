@@ -214,7 +214,7 @@ export const users = {
       `/api/users/${id}/revoke-sessions`,
       { method: 'POST', body: data, token },
     ),
-  deleteSelf: (data: { password: string; confirm: 'DELETE' }, token: string) =>
+  deleteSelf: (data: { password?: string; confirm: 'DELETE' }, token: string) =>
     request<{ message: string }>('/api/users/me', {
       method: 'DELETE',
       body: data,
