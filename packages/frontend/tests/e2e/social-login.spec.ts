@@ -43,6 +43,10 @@ async function mockApi(
     }
     const extra = opts.extra?.(p);
     if (extra) return route.fulfill({ json: extra });
+    // An active licence, so the licence wall never covers the page.
+    if (p.endsWith('/license/status')) {
+      return route.fulfill({ json: { plan: 'team', status: 'active', expiresAt: null, features: {} } });
+    }
     return route.fulfill({ json: {} });
   });
 }
