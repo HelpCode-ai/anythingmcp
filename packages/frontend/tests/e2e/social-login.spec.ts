@@ -119,6 +119,35 @@ test.describe('social sign-in on /login', () => {
     await expect.poll(() => trialCalls, { timeout: 15_000 }).toBeGreaterThan(0);
   });
 
+  test('a spent code in an already signed-in browser goes on instead of showing an error', async ({ page, context, baseURL }) => {
+    await context.addCookies([{ name: 'amcp_token', value: 't', url: baseURL! }]);
+    await page.addInitScript((user) => {
+      localStorage.setItem('amcp_token', 't');
+      localStorage.setItem('amcp_user', JSON.stringify(user));
+    }, USER);
+    await mockApi(page, {
+      extra: (p) => (p === '/api/users/me' ? USER : null),
+    });
+    await page.route('**/api/auth/social/exchange', (route) =>
+      route.fulfill({ status: 401, json: { statusCode: 401, message: 'This sign-in link has expired. Please try again.' } }),
+    );
+    await page.goto('/login?social=spent&redirect=%2Fconnectors');
+    await page.waitForURL(/\/connectors$/, { timeout: 15_000 });
+  });
+
+  test('the code is taken out of the address bar before it is spent', async ({ page }) => {
+    let urlDuringExchange = '';
+    await mockApi(page);
+    await page.route('**/api/auth/social/exchange', async (route) => {
+      urlDuringExchange = page.url();
+      return route.fulfill({ status: 401, json: { statusCode: 401, message: 'This sign-in link has expired. Please try again.' } });
+    });
+    await page.goto('/login?social=code-3');
+    await expect(page.getByText('This sign-in link has expired. Please try again.')).toBeVisible();
+    expect(urlDuringExchange).not.toContain('social=');
+    expect(page.url()).not.toContain('social=');
+  });
+
   test('a refused sign-in shows the message from the callback', async ({ page }) => {
     await mockApi(page);
     await page.goto(`/login?error=${encodeURIComponent('Sign-in was cancelled.')}`);

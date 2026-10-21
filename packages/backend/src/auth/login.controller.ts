@@ -188,7 +188,9 @@ export class LoginController {
         : null;
 
     const ssoProviders = sessionUser ? [] : await this.loadSsoProviders(req);
-    const socialProviders = sessionUser ? [] : this.socialProviders();
+    // Only inside a pending authorization: the round trip is bound to it, so
+    // without one (an old bookmark, an expired session) the button could only fail.
+    const socialProviders = sessionUser || !consent ? [] : this.socialProviders();
     const requestedServer = consent
       ? await this.requestedServerName(req, sessionUser?.id)
       : null;
