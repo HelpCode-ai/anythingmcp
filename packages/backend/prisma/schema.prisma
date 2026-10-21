@@ -468,6 +468,7 @@ model Connector {
   kgNodes         KgNode[]
   kgState         KgConnectorState?
   kgSkills        KgSkillSuggestion[]
+  kgValuesSeen    KgValueSeen[]
 
   @@index([organizationId])
   @@map("connectors")
@@ -1460,6 +1461,10 @@ model KgValueSeen {
   organizationId String       @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   connectorId    String       @map("connector_id")
+  // Deleting a connector deletes its values. Without the relation they stayed
+  // behind and every correlate pass tried to create nodes for the deleted
+  // connector (21.8k foreign-key errors a day on cloud by 21 Oct 2026).
+  connector      Connector    @relation(fields: [connectorId], references: [id], onDelete: Cascade)
   valueHash      String       @map("value_hash")
   entity         String
   field          String
@@ -1472,6 +1477,7 @@ model KgValueSeen {
   @@unique([organizationId, connectorId, valueHash, entity, field, direction], map: "kg_value_seen_occurrence_key")
   @@index([organizationId, valueHash])
   @@index([seenAt])
+  @@index([connectorId])
   @@map("kg_value_seen")
 }
 
