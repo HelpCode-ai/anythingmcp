@@ -89,7 +89,7 @@ test.describe('social sign-in on /login', () => {
     await mockApi(page, { onStart: (b) => (started = b) });
     await page.goto('/login?redirect=%2Fconnectors');
     await page.getByRole('button', { name: 'Continue with Google' }).click();
-    await page.waitForURL(/accounts\.google\.com/);
+    await page.waitForURL((url) => url.host === 'accounts.google.com');
     expect(started).toMatchObject({ provider: 'google', redirect: '/connectors' });
   });
 
