@@ -1,5 +1,6 @@
 import { storage } from './storage';
 import { safeRedirect } from './safe-redirect';
+import { startTrialPath } from './checkout-source';
 
 /**
  * The card trial on AnythingMCP Cloud: right after sign-up an admin is offered
@@ -206,6 +207,44 @@ export function cardTrialEligible(input: {
     return Number.isFinite(end) && end >= (input.now ?? Date.now()) + MIN_CARD_TRIAL_MS;
   }
   return typeof license.trialDaysLeft === 'number' && license.trialDaysLeft > 2;
+}
+
+/**
+ * Whether the licence is a free trial that has not ended yet, however little
+ * of it is left.
+ */
+export function trialRunning(license: TrialStatusLike | null | undefined, now: number = Date.now()): boolean {
+  if (!license || license.plan !== 'trial' || license.status !== 'active') return false;
+  if (!license.expiresAt) return (license.trialDaysLeft ?? 0) > 0;
+  const end = new Date(license.expiresAt).getTime();
+  return Number.isFinite(end) && end > now;
+}
+
+/**
+ * Where a plan button on the public pricing page takes someone who already
+ * has a workspace. The site cannot tell who is signed in to the Cloud, so the
+ * button always opens sign-up (`/login?mode=register&plan=…`); the Cloud can,
+ * and treats the click as the purchase it is:
+ * - an admin on a running trial: /start-trial, with the plan preselected (a
+ *   card trial with 48 hours or more left, otherwise the plan billed today);
+ * - an admin with a paid plan: Settings → License, to change it rather than
+ *   buy a second one;
+ * - an ended trial or licence: the dashboard, where the licence wall sells the
+ *   plan in place;
+ * - anyone else (only an admin can subscribe): the dashboard.
+ */
+export function purchaseDestination(input: {
+  role: string | null | undefined;
+  license: TrialStatusLike | null | undefined;
+  now?: number;
+}): string {
+  const { role, license } = input;
+  if (role !== 'ADMIN' || !license) return '/';
+  if (trialRunning(license, input.now)) return startTrialPath('pricing_signed_in');
+  if (license.status === 'active' && license.plan && license.plan !== 'trial' && license.plan !== 'community') {
+    return '/settings/license';
+  }
+  return '/';
 }
 
 /** 'shown': sent to /start-trial once; 'skipped' / 'checkout': chose. */

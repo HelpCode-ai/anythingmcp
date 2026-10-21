@@ -34,6 +34,11 @@ export const CHECKOUT_SOURCES = [
   'chat_setup',
   /** /start-trial opened without a known source. */
   'start_trial',
+  /**
+   * A plan button on the public pricing page, clicked by someone already
+   * signed in: /login sends them on to /start-trial instead of a sign-up.
+   */
+  'pricing_signed_in',
   /** Any checkout the page did not name (the backend's default). */
   'app',
 ] as const;

@@ -9,6 +9,8 @@ import {
   formatPlanPrice,
   formatTrialEnd,
   parsePlanIntent,
+  purchaseDestination,
+  trialRunning,
   yearlyPerMonth,
   yearlySaving,
 } from '../../src/lib/card-trial';
@@ -63,6 +65,32 @@ test.describe('card-trial helpers', () => {
     ).toBe(false);
   });
 
+  test('a plan button clicked with a workspace leads to the purchase, not a sign-up', () => {
+    const now = Date.UTC(2026, 9, 21, 12);
+    const trial = (hours: number) => ({
+      plan: 'trial',
+      status: 'active',
+      expiresAt: new Date(now + hours * 3_600_000).toISOString(),
+    });
+    expect(trialRunning(trial(120), now)).toBe(true);
+    expect(trialRunning(trial(2), now)).toBe(true);
+    expect(trialRunning(trial(-1), now)).toBe(false);
+    expect(trialRunning({ plan: 'cloud_starter', status: 'active' }, now)).toBe(false);
+    expect(trialRunning(null, now)).toBe(false);
+
+    // Any running trial, however short: /start-trial sells it (card trial or billed today).
+    expect(purchaseDestination({ role: 'ADMIN', license: trial(120), now })).toBe('/start-trial?source=pricing_signed_in');
+    expect(purchaseDestination({ role: 'ADMIN', license: trial(20), now })).toBe('/start-trial?source=pricing_signed_in');
+    // A paid plan is changed, never bought twice.
+    expect(purchaseDestination({ role: 'ADMIN', license: { plan: 'cloud_starter', status: 'active' }, now })).toBe('/settings/license');
+    // Ended: the licence wall on the dashboard sells it in place.
+    expect(purchaseDestination({ role: 'ADMIN', license: trial(-1), now })).toBe('/');
+    expect(purchaseDestination({ role: 'ADMIN', license: { plan: 'cloud_team', status: 'expired' }, now })).toBe('/');
+    expect(purchaseDestination({ role: 'ADMIN', license: null, now })).toBe('/');
+    // Only an admin can subscribe the workspace.
+    expect(purchaseDestination({ role: 'EDITOR', license: trial(120), now })).toBe('/');
+  });
+
   test('the card trial ends with the free trial, and needs 48 hours of it left', () => {
     const now = Date.UTC(2026, 9, 1, 12);
     const inFiveDays = new Date(now + 5 * 86_400_000).toISOString();
@@ -109,19 +137,23 @@ async function cloudSession(
     pricingToken?: string | null;
     /** The marketing site's /api/price-estimate for this visitor. */
     priceEstimate?: Record<string, unknown>;
+    /** No session in the browser; signing in with the form starts one. */
+    signedOut?: boolean;
   } = {},
 ) {
   const user = opts.user ?? ADMIN;
   const posted: unknown[] = [];
   const origin = test.info().project.use.baseURL ?? 'http://localhost:3100';
-  await page.context().addCookies([{ name: 'amcp_token', value: 't', url: origin }]);
+  if (!opts.signedOut) await page.context().addCookies([{ name: 'amcp_token', value: 't', url: origin }]);
   await page.addInitScript(
-    ({ user, seed }) => {
-      localStorage.setItem('amcp_token', 't');
-      localStorage.setItem('amcp_user', JSON.stringify(user));
+    ({ user, seed, signedOut }) => {
+      if (!signedOut) {
+        localStorage.setItem('amcp_token', 't');
+        localStorage.setItem('amcp_user', JSON.stringify(user));
+      }
       for (const [k, v] of Object.entries(seed)) localStorage.setItem(k, v);
     },
-    { user, seed: opts.seed ?? {} },
+    { user, seed: opts.seed ?? {}, signedOut: !!opts.signedOut },
   );
   await page.route(/\/(api|health)\//, async (route) => {
     const req = route.request();
@@ -132,6 +164,7 @@ async function cloudSession(
       return json({ deploymentMode: 'cloud', mcpAuthMode: 'oauth2', hasUsers: true, registrationEnabled: true, ssoProviders: [] });
     }
     if (p === '/api/price-estimate') return json(opts.priceEstimate ?? { currency: null, vat: true });
+    if (p.endsWith('/auth/login') && req.method() === 'POST') return json({ accessToken: 't', user });
     if (p.endsWith('/license/checkout-link') && req.method() === 'POST') {
       const body = req.postDataJSON();
       posted.push(body);
@@ -278,7 +311,8 @@ test.describe('card-trial offer (cloud)', () => {
 
   test('the plan picked on the pricing page survives sign-up and is preselected', async ({ page }) => {
     await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' } });
-    // Signed out on the register page first (the cookie is irrelevant there).
+    // The register link the pricing page opens; the intent is kept whatever
+    // happens next (signed in, as here, the page hands over to /start-trial).
     await page.goto('/login?mode=register&plan=cloud_team&period=yearly');
     await expect
       .poll(() => page.evaluate(() => localStorage.getItem('amcp_plan_intent')), { timeout: 15_000 })
@@ -418,5 +452,92 @@ test.describe('an address that had a subscription (cloud)', () => {
     await cta.click();
     await expect(page).toHaveURL(/\/start-trial\?source=trial_banner$/);
     expect(posted).toEqual([]);
+  });
+});
+
+/**
+ * The pricing page cannot see the Cloud session, so its plan buttons always
+ * open sign-up. Someone who already has a workspace is recognised there and
+ * sent on to buy the plan they clicked.
+ */
+test.describe('a plan button clicked by someone already signed in (cloud)', () => {
+  const SHOWN = { 'amcp_card_trial_prompt:u1': 'shown' };
+  const REGISTER_STARTER = '/login?mode=register&plan=cloud_starter&period=monthly';
+
+  test('a running trial goes to the card trial with the plan preselected, not to sign-up', async ({ page }) => {
+    const { posted } = await cloudSession(page, { seed: SHOWN });
+    await page.goto('/login?mode=register&plan=cloud_team&period=yearly');
+    await expect(page).toHaveURL(/\/start-trial\?source=pricing_signed_in$/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Your free trial' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /Team/ })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('radio', { name: 'Yearly' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByText('Create your free account')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Start free trial with card' }).click();
+    await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
+    expect(posted).toEqual([{ plan: 'team', billingPeriod: 'yearly', trial: true, source: 'pricing_signed_in' }]);
+  });
+
+  test('a trial in its last 48 hours is told the plan is billed today, then checks out without a trial', async ({ page }) => {
+    const { posted } = await cloudSession(page, {
+      seed: SHOWN,
+      eligibility: 'none',
+      license: { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() + 20 * 3_600_000).toISOString(), trialDaysLeft: 1 },
+    });
+    await page.goto(REGISTER_STARTER);
+    await expect(page).toHaveURL(/\/start-trial\?source=pricing_signed_in$/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Keep your workspace running' })).toBeVisible();
+    await expect(page.getByText(/too soon to carry on with a card trial/)).toBeVisible();
+    await expect(page.getByText('Your plan starts today and is billed today.')).toBeVisible();
+    await expect(page.getByText(/had an AnythingMCP subscription before/)).toHaveCount(0);
+    await expect(page.getByText('€0 today', { exact: false })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Continue to checkout' }).click();
+    await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
+    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'pricing_signed_in' }]);
+  });
+
+  test('an ended trial lands on the licence wall with the clicked plan preselected', async ({ page }) => {
+    await cloudSession(page, {
+      seed: SHOWN,
+      license: { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - 86_400_000).toISOString(), trialDaysLeft: 0 },
+    });
+    await page.goto('/login?mode=register&plan=cloud_team&period=monthly');
+    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('radio', { name: /Team/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('a paid plan goes to Settings → License, never to a second checkout', async ({ page }) => {
+    const { posted } = await cloudSession(page, {
+      seed: SHOWN,
+      license: { plan: 'cloud_starter', status: 'active', expiresAt: null, features: {} },
+    });
+    await page.goto(REGISTER_STARTER);
+    await expect(page).toHaveURL(/\/settings\/license$/, { timeout: 15_000 });
+    await expect(page.getByText('You already have a plan', { exact: true })).toBeVisible();
+    expect(posted).toEqual([]);
+  });
+
+  test('a non-admin is sent to the dashboard and told to ask an admin', async ({ page }) => {
+    await cloudSession(page, { user: { ...ADMIN, role: 'EDITOR' }, seed: SHOWN });
+    await page.goto(REGISTER_STARTER);
+    await expect(page.getByText('Ask a workspace admin', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page).not.toHaveURL(/\/(login|start-trial)/);
+  });
+
+  test('signed out in this browser, signing in from the sign-up link leads to the purchase too', async ({ page }) => {
+    await cloudSession(page, { seed: SHOWN, signedOut: true });
+    await page.goto('/login?mode=login&plan=cloud_starter&period=monthly');
+    await page.getByPlaceholder('admin@example.com').fill('admin@example.test');
+    await page.getByPlaceholder('Min. 8 characters').fill('Secret-123');
+    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+    await expect(page).toHaveURL(/\/start-trial\?source=pricing_signed_in$/, { timeout: 15_000 });
+    await expect(page.getByRole('radio', { name: /Starter/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('without a plan in the link, the sign-up page is left alone', async ({ page }) => {
+    await cloudSession(page, { seed: SHOWN });
+    await page.goto('/login?mode=register');
+    await expect(page.getByText('Create your free account')).toBeVisible({ timeout: 15_000 });
   });
 });

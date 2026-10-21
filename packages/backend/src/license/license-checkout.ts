@@ -43,6 +43,8 @@ export const CHECKOUT_BILLING_PERIODS = ['monthly', 'yearly'] as const;
  * - trial_limit / starter_pack: "add a card" next to the connector limit.
  * - chat_setup: the plan link the setup tools give the AI in a chat.
  * - start_trial: /start-trial opened without a known source.
+ * - pricing_signed_in: a plan button on the public pricing page, clicked by
+ *   someone already signed in to the Cloud (sent on to /start-trial).
  * - app: a caller that did not say (DEFAULT_CHECKOUT_SOURCE).
  */
 export const CHECKOUT_SOURCES = [
@@ -58,6 +60,7 @@ export const CHECKOUT_SOURCES = [
   'starter_pack',
   'chat_setup',
   'start_trial',
+  'pricing_signed_in',
   'app',
 ] as const;
 export type CheckoutSource = (typeof CHECKOUT_SOURCES)[number];

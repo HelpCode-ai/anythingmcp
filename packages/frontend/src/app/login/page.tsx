@@ -21,6 +21,7 @@ import { pushSignUpVerified } from '@/lib/conversion';
 import {
   cardTrialEligible,
   parsePlanIntent,
+  purchaseDestination,
   readCardTrialPrompt,
   savePlanIntent,
   parsePromoCode,
@@ -99,7 +100,7 @@ function LoginForm() {
   }, [setupStep, authToken]);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const { login, token: sessionToken, user: sessionUser, isLoading: sessionLoading } = useAuth();
   const toast = useToast();
 
   const redirectTo = safeRedirect(searchParams.get('redirect'));
@@ -125,6 +126,14 @@ function LoginForm() {
   const promoParam = searchParams.get('promo');
   const [ssoProviders, setSsoProviders] = useState<SsoProviderButton[]>([]);
   const [ssoExchanging, setSsoExchanging] = useState(Boolean(ssoCode));
+  // A plan button on the pricing page (`?plan=cloud_starter`): a sign-up for
+  // a visitor, a purchase for someone who already has a workspace.
+  const hasPlanIntent = parsePlanIntent(planParam, periodParam) !== null;
+  // Set while a signed-in visitor is being sent on to buy, instead of the form.
+  const [handingOff, setHandingOff] = useState(false);
+  // The session found on arrival is looked at once. One this form creates
+  // later (a sign-up, a sign-in) is not: those flows decide for themselves.
+  const arrivalChecked = useRef(false);
 
   useEffect(() => {
     server.info().then((info) => {
@@ -191,6 +200,63 @@ function LoginForm() {
     writeCardTrialPrompt(u.id, 'shown');
     router.push(startTrialPath('signup_prompt'));
     return true;
+  };
+
+  /**
+   * Cloud only: someone with a workspace who came from a plan button on the
+   * pricing page wants to buy that plan, not a second account or trial. Sends
+   * them where the purchase happens (see purchaseDestination); false when the
+   * licence could not be read, and the caller carries on as before.
+   */
+  const goToPurchase = async (accessToken: string, u: { role?: string } | null | undefined): Promise<boolean> => {
+    try {
+      const status = await license.getStatus(accessToken);
+      const target = purchaseDestination({ role: u?.role, license: status });
+      if (u?.role !== 'ADMIN') {
+        toast.show({
+          title: 'Ask a workspace admin',
+          description: 'Only an admin can choose a plan for this workspace.',
+          tone: 'info',
+          durationMs: 9000,
+        });
+      } else if (target === '/settings/license') {
+        toast.show({
+          title: 'You already have a plan',
+          description: 'Change it here rather than buying a second one.',
+          tone: 'info',
+          durationMs: 9000,
+        });
+      }
+      router.replace(target);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Already signed in when the pricing page's plan button opened sign-up: the
+  // site cannot see the Cloud session, so this is where it is recognised.
+  useEffect(() => {
+    if (sessionLoading || !infoLoaded || arrivalChecked.current) return;
+    arrivalChecked.current = true;
+    if (!isCloudMode || !hasPlanIntent || ssoCode || redirectTo !== '/' || !sessionToken || !sessionUser) return;
+    setHandingOff(true);
+    // A session that no longer works (expired token) signs out on the 401 and
+    // gets the form back.
+    void goToPurchase(sessionToken, sessionUser).then((ok) => {
+      if (!ok) setHandingOff(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionLoading, infoLoaded]);
+
+  /**
+   * After signing in to a workspace that already had its licence: on to the
+   * purchase when the visitor came from a plan button, otherwise where they
+   * were going.
+   */
+  const afterSignIn = async (accessToken: string, u: { role?: string } | null | undefined) => {
+    if (isCloudMode && hasPlanIntent && redirectTo === '/' && (await goToPurchase(accessToken, u))) return;
+    goTo(redirectTo);
   };
 
   // Surface a failure the SSO callback redirected back with.
@@ -332,7 +398,7 @@ function LoginForm() {
             // that already holds a licence (a running trial, a paid plan) goes
             // straight in, instead of being told it has "0 days" left.
             if (!trialResult.trialStarted) {
-              goTo(redirectTo);
+              await afterSignIn(result.accessToken, result.user);
               return;
             }
             setTrialDaysLeft(trialResult.trialDaysLeft);
@@ -344,7 +410,7 @@ function LoginForm() {
           setAuthToken(result.accessToken);
           setSetupStep('license-choice');
         } else {
-          goTo(redirectTo);
+          await afterSignIn(result.accessToken, result.user);
         }
       }
     } catch (err: any) {
@@ -463,6 +529,14 @@ function LoginForm() {
   };
 
   // ── Email Verification Step ─────────────────────────────────────────────
+
+  if (handingOff) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
+        <div className="text-sm text-[var(--text-2)]">Opening your plan…</div>
+      </div>
+    );
+  }
 
   if (setupStep === 'verify-email') {
     return (

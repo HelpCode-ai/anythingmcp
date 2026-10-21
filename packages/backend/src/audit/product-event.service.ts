@@ -131,8 +131,9 @@ export const ProductEvents = {
    * The card-trial page (/start-trial) was opened, once per page load.
    * metadata.source = the entry point that led there (CHECKOUT_SOURCES in
    * license-checkout.ts, e.g. 'first_success_banner', 'first_success_email',
-   * 'trial_banner'), metadata.kind = 'trial' (card trial on offer) or 'pay'
-   * (the address had a subscription, the plan is billed today). Answers how
+   * 'trial_banner'), metadata.kind = 'trial' (card trial on offer), 'pay'
+   * (the address had a subscription, the plan is billed today) or 'ending'
+   * (under 48 hours of the free trial left, billed today too). Answers how
    * many clicks on each entry point, emails included, reach the page.
    */
   START_TRIAL_VIEWED: 'start_trial_viewed',
