@@ -120,6 +120,9 @@ describe('SupportTriageService', () => {
     expect(userPrompt).toContain('My Etsy connector says unauthorized');
     expect(userPrompt).not.toContain('internal');
     expect(userPrompt).not.toContain('org-secret');
+    // The catalog connectors the customer names, so the reply never says we lack one.
+    expect(userPrompt).toContain('Etsy (/connectors/setup/etsy)');
+    expect(chat.mock.calls[0][1]).toMatch(/never used to connect an AI assistant/);
     expect(desk.addTags).toHaveBeenCalledWith('c1', ['connector-error', 'cloud', 'trial', 'ai-triaged']);
     expect(desk.setPriority).toHaveBeenCalledWith('c1', 'Medium');
     expect(desk.assignTeam).toHaveBeenCalledWith('c1', 1);

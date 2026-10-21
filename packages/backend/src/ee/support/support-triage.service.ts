@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { chatJson, resolveLlmConfig, LlmConfig } from '../../knowledge-graph/llm-client';
 import { redactPii } from '../../knowledge-graph/redact';
+import { catalogMentions, catalogMentionsLine } from './support-catalog';
 import { LibredeskClient } from './libredesk.client';
 import { supportTriageConfig } from './support-config';
 import { redactSecrets } from './support-redact';
@@ -63,7 +64,7 @@ const SYSTEM_PROMPT = `You triage support conversations for AnythingMCP, a produ
 
 Typical problems: OAuth apps whose redirect URI is not set to <instance URL>/api/mcp-oauth/callback; API keys pasted in the wrong field or with spaces; expired or revoked tokens ("needs_reauth"); the AI client not connected to the MCP URL; trial ended; plan or invoice questions; requests for a connector we do not have yet.
 
-You receive the customer's messages and a snapshot of their workspace (plan, trial end, connectors, connector issues of the last 24 hours). Return ONLY a JSON object:
+You receive the customer's messages, a snapshot of their workspace (plan, trial end, connectors and their names, connector issues of the last 24 hours, last_tool_call: the day of the latest successful tool call or "never") and the catalog connectors the messages name. Return ONLY a JSON object:
 {
   "category": one of ${TRIAGE_CATEGORIES.map((c) => `"${c}"`).join(', ')},
   "priority": "Low" | "Medium" | "High",
@@ -74,7 +75,13 @@ You receive the customer's messages and a snapshot of their workspace (plan, tri
 
 Priority: High when the customer cannot use the product at all, for billing problems, and for enterprise customers; Low for feature and connector requests; otherwise Medium.
 
-Rules for suggested_reply: short, friendly, concrete next steps; use the workspace snapshot when it explains the problem; never promise refunds, cancellations, discounts, deadlines or features; never offer a call or meeting; for billing write that a person will check and reply; do not invent settings or URLs you are not sure of; no em dashes.`;
+Rules for suggested_reply: short, friendly, concrete next steps; use the workspace snapshot when it explains the problem; never promise refunds, cancellations, discounts, deadlines or features; never offer a call or meeting; for billing write that a person will check and reply; do not invent settings or URLs you are not sure of; no em dashes.
+
+Facts to get right:
+- When the catalog line names a connector, we have it: never write that we do not; point to its setup page. Only when it names none and the workspace has none may you say a person will check whether we support the app.
+- Connectors installed but last_tool_call "never" means no AI assistant is connected yet: the next step is adding the MCP server URL (MCP Servers page) to the assistant, e.g. in Claude Customize → Connectors → Add custom connector.
+- The redirect URI <instance URL>/api/mcp-oauth/callback is only for connectors that sign in with OAuth, entered in the provider's developer console. It is never used to connect an AI assistant, for API-key or bot-token connectors (Telegram, for example), or for webhooks.
+- If the customer pasted a password, token or key, say once that it is now visible in the chat and should be revoked or regenerated, and that new ones go only into the connector page.`;
 
 /**
  * Tags, prioritises and annotates every new support conversation. Runs only
@@ -140,6 +147,7 @@ export class SupportTriageService {
     const user = [
       `Channel: ${channel || 'unknown'}`,
       `Workspace snapshot: ${JSON.stringify(snapshot)}`,
+      catalogMentionsLine(catalogMentions(customerText)),
       'Customer messages:',
       redactPii(redactSecrets(customerText)).slice(0, MAX_CUSTOMER_TEXT),
     ].join('\n');
@@ -220,7 +228,9 @@ const KNOWN_ATTRS = [
   'trial_ends_at',
   'role',
   'connectors',
+  'connector_names',
   'connector_issues',
+  'last_tool_call',
   'signed_up_at',
   'email_verified',
 ] as const;
@@ -305,8 +315,9 @@ export function triageNote(r: TriageResult, attrs: Record<string, string>): stri
     ['Organization', attrs.organization_name],
     ['Plan', [attrs.plan, attrs.license_status].filter(Boolean).join(', ')],
     ['Trial ends', attrs.trial_ends_at],
-    ['Connectors', attrs.connectors],
+    ['Connectors', [attrs.connectors, attrs.connector_names].filter(Boolean).join(': ')],
     ['Connector issues', attrs.connector_issues],
+    ['Last AI tool call', attrs.last_tool_call],
     ['Email verified', attrs.email_verified],
   ].filter(([, v]) => v);
   const parts = [

@@ -125,6 +125,24 @@ describe('SupportIdentityService', () => {
     expect(attrs.connector_issues).not.toContain('FAKE-not-a-real-credential-0000');
   });
 
+  it('names the connectors and the day of the last successful tool call', async () => {
+    const { svc, prisma } = build();
+    prisma.toolInvocation.findFirst.mockImplementation(async (q: any) =>
+      q.where.status === 'SUCCESS' ? { createdAt: new Date('2026-10-20T08:00:00Z') } : null,
+    );
+    const attrs = await svc.contactAttributes('u1', 'org1');
+    expect(attrs.connector_names).toContain('Etsy');
+    expect(attrs.last_tool_call).toBe('2026-10-20');
+    const q = prisma.toolInvocation.findFirst.mock.calls.find((c: any[]) => c[0].where.status === 'SUCCESS')[0];
+    expect(q.where.organizationId).toBe('org1');
+  });
+
+  it('says "never" when no AI client has called a tool yet', async () => {
+    const { svc, prisma } = build();
+    prisma.toolInvocation.findFirst.mockResolvedValue(null);
+    expect((await svc.contactAttributes('u1', 'org1')).last_tool_call).toBe('never');
+  });
+
   it('filters every query by the caller organization', async () => {
     const { svc, prisma, license } = build();
     await svc.contactAttributes('u1', 'org1');

@@ -20,6 +20,7 @@ const CONTEXT_CACHE_MAX = 5_000;
 const JWT_TTL_SECONDS = 60 * 60;
 const ERROR_WINDOW_MS = 24 * 60 * 60_000;
 const MAX_ISSUES = 5;
+const MAX_NAMES = 15;
 const ISSUES_MAX_CHARS = 900;
 
 /**
@@ -116,8 +117,22 @@ export class SupportIdentityService {
 
     const inactive = connectors.filter((c) => !c.isActive).length;
     attrs.connectors = inactive ? `${connectors.length} (${inactive} inactive)` : String(connectors.length);
+    if (connectors.length) attrs.connector_names = connectorNames(connectors);
     attrs.connector_issues = await this.connectorIssues(organizationId, connectors);
+    // "never" with connectors installed is the most common blocker: no AI
+    // client is connected to the workspace's MCP server yet.
+    attrs.last_tool_call = await this.lastToolCall(organizationId);
     return attrs;
+  }
+
+  /** Day of the workspace's latest successful tool call, or "never". */
+  private async lastToolCall(organizationId: string): Promise<string> {
+    const last = await this.prisma.toolInvocation.findFirst({
+      where: { organizationId, status: 'SUCCESS' },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    return last?.createdAt instanceof Date ? last.createdAt.toISOString().slice(0, 10) : 'never';
   }
 
   /**
@@ -160,6 +175,13 @@ export class SupportIdentityService {
     const text = lines.join(' | ');
     return text.length > ISSUES_MAX_CHARS ? `${text.slice(0, ISSUES_MAX_CHARS - 1)}…` : text;
   }
+}
+
+/** The installed connectors' names, bounded. */
+export function connectorNames(connectors: Array<{ name: string }>): string {
+  const names = connectors.slice(0, MAX_NAMES).map((c) => c.name.slice(0, 60));
+  const more = connectors.length - names.length;
+  return names.join(', ') + (more > 0 ? ` and ${more} more` : '');
 }
 
 export function splitName(name: string | null | undefined, email: string): { first: string; last: string } {
