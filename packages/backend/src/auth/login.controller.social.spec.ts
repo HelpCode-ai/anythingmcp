@@ -61,7 +61,15 @@ function makeController(deployment = CLOUD, social: any = makeSocial()) {
     { comparePassword: jest.fn(), verifyToken: jest.fn(() => { throw new Error('no'); }) } as any,
     { user: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) } } as any,
     config as any,
-    { getOAuthSession: jest.fn(), getClient: jest.fn() } as any,
+    {
+      // A pending authorization exists for the `oauth_session` cookie 's1'.
+      getOAuthSession: jest.fn(async (id: string) =>
+        id === 's1'
+          ? { sessionId: 's1', state: 'x', clientId: 'c1', redirectUri: 'https://claude.ai/api/mcp/auth_callback', expiresAt: Date.now() + 60_000 }
+          : undefined,
+      ),
+      getClient: jest.fn(async () => ({ client_id: 'c1', client_name: 'Claude', redirect_uris: ['https://claude.ai/api/mcp/auth_callback'] })),
+    } as any,
     { startMcp: jest.fn() } as any,
     deployment as any,
     { grantServers: jest.fn(), grantWholeOrganization: jest.fn(), listSelectableTargets: jest.fn() } as any,
@@ -89,7 +97,7 @@ describe('LoginController — social sign-in on the MCP consent page', () => {
   it('offers the enabled providers on cloud, above the password form', async () => {
     const { controller } = makeController();
     const res = makeRes();
-    await controller.showLoginPage(undefined as any, undefined as any, makeReq(), res);
+    await controller.showLoginPage(undefined as any, undefined as any, makeReq({ cookies: { oauth_session: 's1' } }), res);
     const html: string = res._sent;
     expect(html).toContain('value="social:google"');
     expect(html).toContain('Continue with Microsoft');
@@ -102,6 +110,13 @@ describe('LoginController — social sign-in on the MCP consent page', () => {
 
   it('offers none on a self-hosted instance', async () => {
     const { controller } = makeController(SELF_HOSTED);
+    const res = makeRes();
+    await controller.showLoginPage(undefined as any, undefined as any, makeReq({ cookies: { oauth_session: 's1' } }), res);
+    expect(res._sent).not.toContain('social:');
+  });
+
+  it('offers none without a pending authorization, where the round trip could only fail', async () => {
+    const { controller } = makeController();
     const res = makeRes();
     await controller.showLoginPage(undefined as any, undefined as any, makeReq(), res);
     expect(res._sent).not.toContain('social:');

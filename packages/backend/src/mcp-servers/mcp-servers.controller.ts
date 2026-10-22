@@ -156,7 +156,12 @@ export class McpServersController {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
     this.assertOrgMatch(server, req);
-    return server;
+    const apiKeys = await this.mcpServersService.listOwnKeysForServer(
+      id,
+      req.user.sub,
+      req.user.organizationId,
+    );
+    return { ...server, apiKeys };
   }
 
   @Get(':id/activity')

@@ -356,8 +356,14 @@ function LoginForm() {
   // server info: the licence step that follows depends on the deployment.
   const exchangedSocialCode = useRef<string | null>(null);
   useEffect(() => {
-    if (!socialCode || !infoLoaded || exchangedSocialCode.current === socialCode) return;
+    if (!socialCode || !infoLoaded || sessionLoading || exchangedSocialCode.current === socialCode) return;
     exchangedSocialCode.current = socialCode;
+    // The code works once. Take it out of the address bar straight away, so a
+    // reload or the Back button does not spend it again and show "expired" to
+    // someone who is in fact signed in.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('social');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
     (async () => {
       try {
         const result = await social.exchange(socialCode);
@@ -366,12 +372,18 @@ function LoginForm() {
         if (result.isNewUser) pushSignUpVerified(String(result.user?.id ?? socialCode), 'social');
         await finishSignIn(result, !!result.needsLicenseSetup);
       } catch (err: any) {
+        // A spent code with a live session: this browser already signed in
+        // with it (an old tab, a bookmark). Carry on rather than alarm.
+        if (sessionToken) {
+          goTo(redirectTo);
+          return;
+        }
         setError(err.message || 'Sign-in failed');
         setSsoExchanging(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socialCode, infoLoaded]);
+  }, [socialCode, infoLoaded, sessionLoading]);
 
   /** "Continue with <provider>": off to the provider, as a full navigation. */
   const startSocial = async (provider: string) => {

@@ -136,20 +136,30 @@ export class McpServersService {
             },
           },
         },
-        apiKeys: {
-          select: {
-            id: true,
-            name: true,
-            key: true,
-            isActive: true,
-            lastUsedAt: true,
-            createdAt: true,
-          },
-          orderBy: { createdAt: 'desc' },
-        },
         _count: { select: { connectors: true, apiKeys: true } },
       },
     });
+  }
+
+  /**
+   * The caller's own API keys for one server, masked to the last 8 characters.
+   * Keys are bearer credentials: never return another member's key, and never
+   * a full key after creation (POST /api/mcp-keys shows it once).
+   */
+  async listOwnKeysForServer(mcpServerId: string, userId: string, organizationId: string) {
+    const keys = await this.prisma.mcpApiKey.findMany({
+      where: { mcpServerId, userId, organizationId },
+      select: {
+        id: true,
+        name: true,
+        key: true,
+        isActive: true,
+        lastUsedAt: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return keys.map((k) => ({ ...k, key: `mcp_${'•'.repeat(24)}${k.key.slice(-8)}` }));
   }
 
   async create(userId: string, organizationId: string, data: { name: string; slug?: string; description?: string; instructions?: string }) {
