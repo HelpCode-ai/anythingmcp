@@ -42,6 +42,7 @@ import * as moco from './de/moco.json';
 import * as ninaWarnung from './de/nina-warnung.json';
 import * as openplz from './de/openplz.json';
 import * as openproject from './de/openproject.json';
+import * as ottoAds from './de/otto-ads.json';
 import * as ottoMarket from './de/otto-market.json';
 import * as oxomi from './de/oxomi.json';
 import * as paperlessNgx from './de/paperless-ngx.json';
@@ -167,6 +168,7 @@ import * as dropboxSign from './intl/dropbox-sign.json';
 import * as dynamics365BusinessCentral from './intl/dynamics365-business-central.json';
 import * as dynamics365Sales from './intl/dynamics365-sales.json';
 import * as easypost from './intl/easypost.json';
+import * as ebayBrowse from './intl/ebay-browse.json';
 import * as ebaySell from './intl/ebay-sell.json';
 import * as ecwid from './intl/ecwid.json';
 import * as egnyte from './intl/egnyte.json';
@@ -793,6 +795,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   ninaWarnung as unknown as AdapterDefinition,
   openplz as unknown as AdapterDefinition,
   openproject as unknown as AdapterDefinition,
+  ottoAds as unknown as AdapterDefinition,
   ottoMarket as unknown as AdapterDefinition,
   oxomi as unknown as AdapterDefinition,
   paperlessNgx as unknown as AdapterDefinition,
@@ -918,6 +921,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   dynamics365BusinessCentral as unknown as AdapterDefinition,
   dynamics365Sales as unknown as AdapterDefinition,
   easypost as unknown as AdapterDefinition,
+  ebayBrowse as unknown as AdapterDefinition,
   ebaySell as unknown as AdapterDefinition,
   ecwid as unknown as AdapterDefinition,
   egnyte as unknown as AdapterDefinition,
