@@ -20,11 +20,14 @@
   "envVarMeta": {
     "EBAY_CLIENT_ID": {
       "label": "App ID (client ID)",
+      "kind": "credential",
       "help": "developer.ebay.com, your production keyset: the App ID.",
       "link": "https://developer.ebay.com/my/keys"
     },
     "EBAY_CLIENT_SECRET": {
       "label": "Cert ID (client secret)",
+      "kind": "credential",
+      "secret": true,
       "help": "The Cert ID of the same keyset.",
       "link": "https://developer.ebay.com/my/keys"
     },

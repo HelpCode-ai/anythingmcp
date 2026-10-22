@@ -26,6 +26,7 @@
     "OTTO_ADS_CLIENT_SECRET": {
       "label": "Client secret",
       "kind": "credential",
+      "secret": true,
       "help": "Shown once when the app's secret is created; rotate it in OTTO Partner Connect if lost.",
       "link": "https://portal.otto.market"
     }
