@@ -144,6 +144,13 @@ export const ProductEvents = {
    */
   START_TRIAL_CHECKOUT_STARTED: 'start_trial_checkout_started',
   /**
+   * "Continue without payment details" (or "Try free without payment
+   * details") was pressed: metadata.source and metadata.kind as above. Tells
+   * "chose the no-card trial" apart from "closed the tab", which records
+   * nothing.
+   */
+  START_TRIAL_SKIPPED: 'start_trial_skipped',
+  /**
    * The app minted a Stripe Checkout link (POST /api/license/checkout-link).
    * metadata.via = the entry point it came from (CHECKOUT_SOURCES, 'app' when
    * the page did not say), metadata.kind = 'trial' (card trial) or 'pay'.
@@ -271,10 +278,13 @@ export class ProductEventService {
 // `verified`: whether a completed setup made a successful call.
 // `source`: the entry point that led to /start-trial (start_trial_viewed,
 // start_trial_checkout_started); only the CHECKOUT_SOURCES values are kept.
+// `device`: 'mobile' (a touch screen) or 'desktop', on start_trial_viewed;
+// nothing finer, and any other value is dropped.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
-  'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source',
+  'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device',
 ] as const;
+const DEVICE_KINDS = new Set(['mobile', 'desktop']);
 const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;
 /** The values of `match` (see catalog-search.ts). */
@@ -293,7 +303,9 @@ function boundMetadata(
           ? (SEARCH_MATCH_KINDS.has(metadata[key] as string) ? metadata[key] : null)
           : key === 'source'
             ? (KNOWN_CHECKOUT_SOURCES.has(metadata[key] as string) ? metadata[key] : null)
-            : metadata[key];
+            : key === 'device'
+              ? (DEVICE_KINDS.has(metadata[key] as string) ? metadata[key] : null)
+              : metadata[key];
     if (typeof v === 'string') entries.push([key, v.slice(0, 200)]);
     else if (typeof v === 'number' || typeof v === 'boolean') entries.push([key, v]);
   }

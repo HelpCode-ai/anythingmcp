@@ -16,6 +16,7 @@ import {
   WinbackOffer,
   activationReminderEmail,
   cardTrialOfferEmail,
+  cloudPageUrl,
   connectorAuthEmail,
   existingAccountEmail,
   invitationEmail,
@@ -28,6 +29,7 @@ import {
 } from './email-templates';
 import { buildUnsubscribeUrl, unsubscribeSecret } from './unsubscribe-token';
 import { createEmailLinkToken } from '../common/email-link-token';
+import { isSocialProviderId } from '../auth/social/social-providers';
 
 /** The longest an email waits for the trust numbers before going out without fresh ones. */
 const STATS_WAIT_MS = 3000;
@@ -93,6 +95,29 @@ export class EmailService {
 
   private marketingUrl(): string {
     return (process.env.MARKETING_URL || 'https://anythingmcp.com').replace(/\/+$/, '');
+  }
+
+  /**
+   * The provider the recipient signs in with (Google, Microsoft, GitHub), so
+   * the email's dashboard links sign them in with it (cloudPageUrl). Cloud
+   * only, where social sign-in exists. The most recently used one wins; null
+   * for password accounts, unknown addresses and any lookup error.
+   */
+  private async signInProvider(to: string): Promise<string | null> {
+    if (!this.deployment.isCloud()) return null;
+    const user = await findUserByEmail<{ email: string; socialIdentities?: Array<{ provider: string }> }>(
+      this.prisma,
+      to,
+      {
+        socialIdentities: {
+          select: { provider: true },
+          orderBy: [{ lastLoginAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
+          take: 1,
+        },
+      },
+    ).catch(() => null);
+    const provider = user?.socialIdentities?.[0]?.provider;
+    return isSocialProviderId(provider) ? provider : null;
   }
 
   /**
@@ -524,7 +549,13 @@ export class EmailService {
 
     const { ctx, headers } = await this.marketing(to);
     const email = onboardingReminderEmail(
-      { name, dayNumber, aiClient: opts?.aiClient, cloudUrl: this.cloudUrl() },
+      {
+        name,
+        dayNumber,
+        aiClient: opts?.aiClient,
+        cloudUrl: this.cloudUrl(),
+        signInWith: await this.signInProvider(to),
+      },
       ctx,
     );
 
@@ -608,10 +639,8 @@ export class EmailService {
     }
 
     const { ctx, headers } = await this.marketing(to);
-    const email = activationReminderEmail(
-      { name, connectorUrl: `${this.cloudUrl()}${connectorPath}`, variant },
-      ctx,
-    );
+    const connectorUrl = cloudPageUrl(this.cloudUrl(), connectorPath, await this.signInProvider(to));
+    const email = activationReminderEmail({ name, connectorUrl, variant }, ctx);
 
     try {
       await transport.transporter.sendMail({
@@ -684,7 +713,8 @@ export class EmailService {
 
     const { ctaPath, ...rest } = input;
     const { ctx, headers } = await this.marketing(to);
-    const email = cardTrialOfferEmail({ ...rest, ctaUrl: `${this.cloudUrl()}${ctaPath}` }, ctx);
+    const ctaUrl = cloudPageUrl(this.cloudUrl(), ctaPath, await this.signInProvider(to));
+    const email = cardTrialOfferEmail({ ...rest, ctaUrl }, ctx);
 
     try {
       await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email, headers) });

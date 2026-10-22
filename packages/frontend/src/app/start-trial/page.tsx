@@ -57,6 +57,18 @@ import { parseCheckoutSource, type CheckoutSource } from '@/lib/checkout-source'
  * start_trial_checkout_started (the button), so each entry point's clicks,
  * emails included, can be read against the checkouts it produced.
  */
+/**
+ * 'mobile' on a touch screen, otherwise 'desktop': all start_trial_viewed
+ * records of the device, so the card-trial page can be read per device.
+ */
+function deviceKind(): 'mobile' | 'desktop' {
+  try {
+    return window.matchMedia('(pointer: coarse)').matches ? 'mobile' : 'desktop';
+  } catch {
+    return 'desktop';
+  }
+}
+
 export default function StartTrialPage() {
   const { token, user, isLoading, deploymentMode, deploymentModeLoaded } = useAuth();
   const localPricing = useLocalPricing(deploymentMode === 'cloud');
@@ -123,7 +135,7 @@ export default function StartTrialPage() {
         setReady(true);
         if (!viewReported.current) {
           viewReported.current = true;
-          productEvents.track('start_trial_viewed', token, { source: from, kind: pageKind });
+          productEvents.track('start_trial_viewed', token, { source: from, kind: pageKind, device: deviceKind() });
         }
       })
       .catch(() => {
@@ -151,6 +163,7 @@ export default function StartTrialPage() {
 
   const handleSkip = () => {
     if (user) writeCardTrialPrompt(user.id, 'skipped');
+    if (token) productEvents.track('start_trial_skipped', token, { source, kind: paysToday ? 'pay' : 'trial' });
     // Back to the AI client's authorization if one is waiting; otherwise the
     // dashboard decides what comes next (usually the /welcome wizard).
     leave('/');

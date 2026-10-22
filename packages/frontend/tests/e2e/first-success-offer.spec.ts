@@ -174,7 +174,7 @@ test.describe('first-success offer (cloud)', () => {
     await expect(page.getByRole('button', { name: 'Start free trial' })).toBeVisible({ timeout: 15_000 });
     expect(events.map((e) => e.event)).toEqual(['card_trial_offer_shown', 'card_trial_offer_clicked', 'start_trial_viewed']);
     expect(events[0].metadata).toEqual({ via: 'dashboard' });
-    expect(events[2].metadata).toEqual({ source: 'first_success_banner', kind: 'trial' });
+    expect(events[2].metadata).toEqual({ source: 'first_success_banner', kind: 'trial', device: 'desktop' });
 
     await page.getByRole('button', { name: 'Start free trial' }).click();
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
@@ -192,6 +192,17 @@ test.describe('first-success offer (cloud)', () => {
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
     expect(checkouts).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: true, source: 'first_success_email' }]);
     expect(events.find((e) => e.event === 'start_trial_viewed')?.metadata).toEqual({
+      source: 'first_success_email',
+      kind: 'trial',
+      device: 'desktop',
+    });
+  });
+
+  test('skipping the card trial is recorded with its source', async ({ page }) => {
+    const { events } = await cloudSession(page);
+    await page.goto('/start-trial?source=first_success_email');
+    await page.getByRole('button', { name: 'Continue without payment details' }).click({ timeout: 15_000 });
+    await expect.poll(() => events.find((e) => e.event === 'start_trial_skipped')?.metadata).toEqual({
       source: 'first_success_email',
       kind: 'trial',
     });

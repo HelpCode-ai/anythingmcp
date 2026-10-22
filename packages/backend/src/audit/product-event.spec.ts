@@ -81,6 +81,28 @@ describe('POST /api/product-events — /start-trial funnel', () => {
     ]);
   });
 
+  it('records a skip, and a coarse device on the view', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, {
+      event: 'start_trial_viewed',
+      metadata: { source: 'signup_prompt', kind: 'trial', device: 'mobile' },
+    });
+    await controller.record(req, { event: 'start_trial_skipped', metadata: { source: 'signup_prompt', kind: 'trial' } });
+    expect(stored().map((e: any) => [e.event, e.metadata])).toEqual([
+      ['start_trial_viewed', { kind: 'trial', source: 'signup_prompt', device: 'mobile' }],
+      ['start_trial_skipped', { kind: 'trial', source: 'signup_prompt' }],
+    ]);
+  });
+
+  it('drops a device value other than mobile or desktop', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, {
+      event: 'start_trial_viewed',
+      metadata: { source: 'signup_prompt', kind: 'trial', device: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)' },
+    });
+    expect(stored()[0].metadata).toEqual({ kind: 'trial', source: 'signup_prompt' });
+  });
+
   it('drops a source that is not a known checkout entry point', async () => {
     const { controller, req, stored } = build();
     await controller.record(req, {
