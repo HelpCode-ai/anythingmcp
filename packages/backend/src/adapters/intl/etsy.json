@@ -406,7 +406,7 @@
     },
     {
       "name": "etsy_get_listings_by_shop_section",
-      "description": "List listings filtered by a shop section.",
+      "description": "List the shop's listings filed under one or more of its sections (section ids from etsy_list_shop_sections).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -416,7 +416,7 @@
           },
           "shop_section_ids": {
             "type": "string",
-            "description": "Comma-separated section IDs."
+            "description": "Comma-separated section IDs (etsy_list_shop_sections)."
           },
           "limit": {
             "type": "integer",
@@ -434,7 +434,8 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/shops/{shop_id}/shop-sections/listings/active",
+        "path": "/shops/{shop_id}/shop-sections/listings",
+        "encodePathParams": true,
         "queryParams": {
           "shop_section_ids": "$shop_section_ids",
           "limit": "$limit",

@@ -35,6 +35,17 @@ describe('etsy adapter — static spec conformance', () => {
     expect(a.tools.filter((t) => t.useProxy)).toEqual([]);
   });
 
+  /**
+   * getListingsByShopSectionId is GET /shops/{shop_id}/shop-sections/listings
+   * in Etsy's OpenAPI spec. The adapter had `/active` appended and got 404
+   * "Resource not found" on all 37 calls (19 workspaces, 8-22 Oct 2026).
+   */
+  it('lists a shop section with the path from the Etsy OpenAPI spec', () => {
+    const tool = (adapter as any).tools.find((t: any) => t.name === 'etsy_get_listings_by_shop_section');
+    expect(tool.endpointMapping.path).toBe('/shops/{shop_id}/shop-sections/listings');
+    expect(tool.endpointMapping.queryParams.shop_section_ids).toBe('$shop_section_ids');
+  });
+
   it('targets the official Etsy Open API v3 base URL', () => {
     expect(a.connector.baseUrl).toBe('https://openapi.etsy.com/v3/application');
   });
