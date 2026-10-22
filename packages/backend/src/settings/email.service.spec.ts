@@ -13,7 +13,13 @@ describe('EmailService', () => {
   const sendMail = jest.fn().mockResolvedValue({});
   const ENV = { ...process.env };
 
-  function make(opts: { cloud?: boolean; stats?: any; user?: { id: string; email: string } | null } = {}) {
+  function make(
+    opts: {
+      cloud?: boolean;
+      stats?: any;
+      user?: { id: string; email: string; socialIdentities?: Array<{ provider: string }> } | null;
+    } = {},
+  ) {
     const siteSettings = { getSmtpConfig: jest.fn().mockResolvedValue(null), get: jest.fn() };
     const orgSettings = { getJson: jest.fn().mockResolvedValue(null) };
     const prisma = {
@@ -225,6 +231,65 @@ describe('EmailService', () => {
     const mail = sent();
     expect(mail.html).not.toMatch(/Frankfurt|DPA|Claude Directory|AI tool calls/);
     expect(mail.html).toContain('Open source');
+  });
+
+  describe('dashboard links for someone who signs in with Google, Microsoft or GitHub', () => {
+    const google = { id: 'user-1', email: 'A@b.com', socialIdentities: [{ provider: 'google' }] };
+    const viaGoogle = (path: string) =>
+      `https://cloud.anythingmcp.com/login?continueWith=google&redirect=${encodeURIComponent(path)}`;
+    const offer = {
+      name: 'Ada',
+      connectorName: 'Etsy',
+      nextSteps: [],
+      trialEndsAt: new Date('2026-10-29T10:00:00Z'),
+      cardTrial: true,
+      ctaPath: '/start-trial?source=first_success_email',
+    };
+
+    it('sign in with that provider in the card-trial offer, activation and onboarding emails', async () => {
+      const { service, prisma } = make({ user: google });
+      await service.sendCardTrialOfferEmail('a@b.com', offer);
+      expect(sendMail.mock.calls[0][0].text).toContain(viaGoogle('/start-trial?source=first_success_email'));
+      await service.sendActivationReminderEmail('a@b.com', 'Ada', '/connectors/c1');
+      expect(sendMail.mock.calls[1][0].text).toContain(viaGoogle('/connectors/c1'));
+      await service.sendOnboardingReminderEmail('a@b.com', 'Ada', 1);
+      expect(sendMail.mock.calls[2][0].text).toContain(viaGoogle('/welcome'));
+      await service.sendOnboardingReminderEmail('a@b.com', 'Ada', 1, { aiClient: 'Claude' });
+      expect(sendMail.mock.calls[3][0].text).toContain(viaGoogle('/connectors/store'));
+      // The MCP endpoint is not a dashboard page: never wrapped.
+      expect(sendMail.mock.calls[3][0].text).toContain('https://cloud.anythingmcp.com/mcp.');
+      // The most recently used provider, looked up with the address in any case.
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
+            socialIdentities: expect.objectContaining({ select: { provider: true }, take: 1 }),
+          }),
+        }),
+      );
+    });
+
+    it('link straight to the page for a password account', async () => {
+      const { service } = make({ user: { id: 'user-1', email: 'a@b.com', socialIdentities: [] } });
+      await service.sendCardTrialOfferEmail('a@b.com', offer);
+      expect(sent().text).toContain('https://cloud.anythingmcp.com/start-trial?source=first_success_email');
+      expect(sent().text).not.toContain('continueWith');
+    });
+
+    it('ignore a provider this build does not know, and a failed lookup', async () => {
+      const { service, prisma } = make({ user: { id: 'user-1', email: 'a@b.com', socialIdentities: [{ provider: 'facebook' }] } });
+      await service.sendActivationReminderEmail('a@b.com', 'Ada', '/connectors/c1');
+      expect(sendMail.mock.calls[0][0].text).toContain('https://cloud.anythingmcp.com/connectors/c1');
+      prisma.user.findMany.mockRejectedValue(new Error('db down'));
+      await expect(service.sendActivationReminderEmail('a@b.com', 'Ada', '/connectors/c1')).resolves.toBe(true);
+      expect(sendMail.mock.calls[1][0].text).toContain('https://cloud.anythingmcp.com/connectors/c1');
+      expect(sendMail.mock.calls[1][0].text).not.toContain('continueWith');
+    });
+
+    it('never on a self-hosted instance, which has no social sign-in', async () => {
+      const { service } = make({ cloud: false, user: google });
+      await service.sendActivationReminderEmail('a@b.com', 'Ada', '/connectors/c1');
+      expect(sent().text).not.toContain('continueWith');
+    });
   });
 
   it('still sends when the trust numbers are unavailable', async () => {
