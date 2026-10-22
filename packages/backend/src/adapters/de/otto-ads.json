@@ -1,0 +1,1182 @@
+{
+  "slug": "otto-ads",
+  "name": "OTTO Sponsored Product Ads",
+  "aliases": [
+    "OTTO Ads",
+    "OTTO Werbung"
+  ],
+  "description": "OTTO Market Sponsored Product Ads: campaigns, advertised SKUs (targets), keywords and bids, plus SPA reporting (campaign and product KPIs, CSV reports) for advertisers on otto.de. OAuth 2.0 client credentials with the advertising scope.",
+  "region": "de",
+  "category": "advertising",
+  "icon": "otto-market",
+  "docsUrl": "https://api.otto.market/docs/functional-interfaces/sponsored-product-ads",
+  "prerequisites": "An OTTO Market partner account that books Sponsored Product Ads, and an app in OTTO Partner Connect with the advertising interface enabled.",
+  "instructions": "**Getting credentials**\n1. In **OTTO Partner Connect** create an app for your own account (or open the one you use for the Partner API) and enable the **Sponsored Product Ads** interfaces. You receive a **client id** and a **client secret**.\n2. Set `OTTO_ADS_CLIENT_ID` and `OTTO_ADS_CLIENT_SECRET`. AnythingMCP runs OTTO's client-credentials flow against `https://api.otto.market/v1/token` with the scope `advertising-services`; a token lasts 30 minutes and is fetched again when it expires.\n3. Orders, products, stock and returns are a separate scope and live in the **OTTO Market** connector. Keeping ads apart means an app without the advertising interface keeps working there.\n\n**Money is in euro cents.** Budgets, bids and costs are `{\"amount\": 160, \"currency\": \"EUR\"}` = 1.60 EUR. The minimum bid and budget amount is 20 (0.20 EUR). Report columns `TOTAL_COSTS` and `TOTAL_SALES` are cents too.\n\n**Bids live in two places.** AUTOMATIC campaigns bid per target (SKU); MANUAL campaigns bid per positive keyword. Negative keywords (no bid) work in both and belong to one target: to exclude a search term for a whole campaign, add it to every target.\n\n**Writes are asynchronous.** Every create, update and delete answers `202` with `changeRequest.requestId`. Poll `otto_ads_get_change_request` (wait a second, then double the wait) until `ACCEPTED` or `REJECTED`; a rejection carries `rejectionReason`. Only one change request per campaign may be `PENDING`: a second write to the same campaign before the first is done fails with `409`. A status change to the status a campaign already has is rejected (\"Invalid status transition PAUSED to PAUSED\"), so read the campaign first.\n\n**Paging.** List tools return `nextCursor`; pass it back as `cursor` until it is `null`. `limit` is 1 to 1000 (default 100).\n\n**Reporting.** KPIs cover at most the last 90 days and never today. OTTO attributes sales up to 14 days after the click, including other articles of the same brand (`totalSalesSeller`), so recent days still change. A campaign without impressions in the range answers 404 \"Data not found\". CSV reports: request one, poll `otto_ads_get_report_status` until `READY`, then `otto_ads_download_report`. At most 200 reports per 24 hours across all report types; a file is kept 24 hours.\n\n**Writes change live advertising and spend money**: `otto_ads_create_campaign`, `otto_ads_update_campaign`, `otto_ads_add_targets`, `otto_ads_update_target_bids`, `otto_ads_add_keywords`, `otto_ads_update_keywords`. `otto_ads_delete_keywords` is installed switched off. Confirm amounts with the user before writing.\n\nThe read tools were checked against a live advertiser account; the write tools follow OTTO's documentation and a working production integration.",
+  "requiredEnvVars": [
+    "OTTO_ADS_CLIENT_ID",
+    "OTTO_ADS_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "OTTO_ADS_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "OTTO Partner Connect, your app, with the Sponsored Product Ads interfaces enabled.",
+      "link": "https://portal.otto.market"
+    },
+    "OTTO_ADS_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "help": "Shown once when the app's secret is created; rotate it in OTTO Partner Connect if lost.",
+      "link": "https://portal.otto.market"
+    }
+  },
+  "verifyHints": {
+    "auth_failed": "OTTO refused the client id or secret, or the app does not have the Sponsored Product Ads interface enabled. Check the app in OTTO Partner Connect."
+  },
+  "connector": {
+    "name": "OTTO Sponsored Product Ads",
+    "type": "REST",
+    "baseUrl": "https://api.otto.market",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{OTTO_ADS_CLIENT_ID}}",
+      "clientSecret": "{{OTTO_ADS_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.otto.market/v1/token",
+      "tokenAuthMethod": "client_secret_post",
+      "scope": "advertising-services"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/v1/sponsored-product-ads/campaigns?limit=1"
+  },
+  "probe": {
+    "tool": "otto_ads_list_campaigns",
+    "params": {
+      "limit": 1
+    }
+  },
+  "tools": [
+    {
+      "name": "otto_ads_list_campaigns",
+      "description": "List Sponsored Product Ads campaigns: campaignId, name, status (PENDING, WAITING, ACTIVE, PAUSED, ENDED, CANCELED), campaignType (AUTOMATIC or MANUAL), budget (euro cents), budgetType, pacing, start and end date. Page with cursor = nextCursor until it is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Campaigns per page, 1 to 1000. Default 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/sponsored-product-ads/campaigns",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_get_campaign",
+      "description": "Read one campaign: status, type, budget (euro cents), budgetType, pacing and dates. Read it before changing its status: setting the status it already has is rejected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID) from otto_ads_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/sponsored-product-ads/campaigns/{campaign_id}"
+      }
+    },
+    {
+      "name": "otto_ads_list_targets",
+      "description": "List the targets (advertised SKUs) of a campaign with targetId, sku and bid. Only AUTOMATIC campaigns have a bid per target; in MANUAL campaigns bid is null and the bids sit on the keywords. Page with cursor = nextCursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Targets per page, 1 to 1000. Default 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/sponsored-product-ads/campaigns/{campaign_id}/targets",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_get_target",
+      "description": "Read one target (advertised SKU) of a campaign with its bid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "target_id": {
+            "type": "string",
+            "description": "targetId (UUID) from otto_ads_list_targets."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "target_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/sponsored-product-ads/campaigns/{campaign_id}/targets/{target_id}"
+      }
+    },
+    {
+      "name": "otto_ads_list_keywords",
+      "description": "List the keywords of one target: keywordId, keyword, matchType (EXACT, PHRASE, BROAD), keywordType (POSITIVE or NEGATIVE) and bid (euro cents, positive keywords only). Targets of AUTOMATIC campaigns can carry negative keywords too. Page with cursor = nextCursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "target_id": {
+            "type": "string",
+            "description": "targetId (UUID)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Keywords per page, 1 to 1000. Default 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "target_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/sponsored-product-ads/campaigns/{campaign_id}/targets/{target_id}/keywords",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_get_change_request",
+      "description": "Status of an asynchronous write: PENDING, ACCEPTED or REJECTED. ACCEPTED lists the affected entityIds; REJECTED carries rejectionReason. Poll with a growing wait (1 s, 2 s, 4 s...) to avoid 429.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "changeRequest.requestId (UUID) returned by a write."
+          }
+        },
+        "required": [
+          "request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/sponsored-product-ads/change-requests/{request_id}"
+      }
+    },
+    {
+      "name": "otto_ads_get_campaign_kpis",
+      "description": "KPIs of one campaign for a date range: views, clicks, costs, attributed sales, ordered SKUs, click-through rate, cost per click and return on ad spend. Costs and sales are euro cents. At most the last 90 days, never today; without dates OTTO uses the last 7 days. A campaign without data in the range answers 404 \"Data not found\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, within the last 90 days."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, yesterday at the latest."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spa-reporting/campaign-performance",
+        "queryParams": {
+          "campaignId": "$campaign_id",
+          "fromDate": "$from_date",
+          "toDate": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_get_product_kpis",
+      "description": "KPIs of one SKU inside one campaign for a date range, the same metrics as the campaign KPIs plus totalSalesSeller (attributed sales of other articles of the same brand). Euro cents; at most the last 90 days, never today; default the last 7 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "sku": {
+            "type": "string",
+            "description": "The advertised SKU, as in otto_ads_list_targets."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, within the last 90 days."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, yesterday at the latest."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spa-reporting/product-performance",
+        "queryParams": {
+          "campaignId": "$campaign_id",
+          "sku": "$sku",
+          "fromDate": "$from_date",
+          "toDate": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_request_campaign_report",
+      "description": "Start a CSV campaign report across campaigns and days. Returns a reportId; poll otto_ads_get_report_status with report_type \"campaign\" until READY, then otto_ads_download_report. Does not change any campaign, but counts against OTTO's quota of 200 reports per 24 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "A name for the report."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, within the last 90 days."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, yesterday at the latest."
+          },
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "TOTAL_VIEWS",
+                "TOTAL_CLICKS",
+                "TOTAL_COSTS",
+                "TOTAL_SALES",
+                "TOTAL_ORDERED_SKUS",
+                "CAMPAIGN_ID",
+                "EVENT_DATE_CET"
+              ]
+            },
+            "description": "Columns of the CSV. TOTAL_COSTS and TOTAL_SALES are euro cents."
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "EVENT_DATE_CET",
+                "CAMPAIGN_ID"
+              ]
+            },
+            "description": "Group rows by day and/or campaign."
+          },
+          "filters": {
+            "type": "array",
+            "description": "Optional filters, combined with AND, e.g. [{\"column\": \"CAMPAIGN_ID\", \"operator\": \"=\", \"value\": \"<uuid>\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "column": {
+                  "type": "string",
+                  "enum": [
+                    "CAMPAIGN_ID",
+                    "SKU"
+                  ]
+                },
+                "operator": {
+                  "type": "string",
+                  "enum": [
+                    "=",
+                    "!=",
+                    ">=",
+                    "<=",
+                    ">",
+                    "<"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "column",
+                "operator",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name",
+          "from_date",
+          "to_date",
+          "columns"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/spa-reporting/campaign-performance",
+        "bodyMapping": {
+          "name": "$name",
+          "fromDate": "$from_date",
+          "toDate": "$to_date",
+          "configuration": {
+            "format": "CSV",
+            "columns": "$columns",
+            "groupBy": "$group_by",
+            "filters": "$filters"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "otto_ads_request_keyword_report",
+      "description": "Start a CSV keyword report: performance per keyword and per actual search term, the basis for new negative keywords and bid changes. Returns a reportId; poll otto_ads_get_report_status with report_type \"keyword\" until READY, then otto_ads_download_report. Counts against the quota of 200 reports per 24 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "A name for the report."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, within the last 90 days."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, yesterday at the latest."
+          },
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "TOTAL_VIEWS",
+                "TOTAL_CLICKS",
+                "TOTAL_COSTS",
+                "TOTAL_SALES",
+                "TOTAL_ORDERED_SKUS",
+                "CAMPAIGN_ID",
+                "EVENT_DATE_CET",
+                "KEYWORD",
+                "SEARCHTERM",
+                "MATCH_TYPE"
+              ]
+            },
+            "description": "Columns of the CSV. SEARCHTERM is what the shopper typed; KEYWORD is the keyword that matched it."
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "KEYWORD",
+                "SEARCHTERM",
+                "EVENT_DATE_CET",
+                "MATCH_TYPE"
+              ]
+            },
+            "description": "Group rows by keyword, search term, day and/or match type."
+          },
+          "filters": {
+            "type": "array",
+            "description": "Optional filters, combined with AND.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "column": {
+                  "type": "string",
+                  "enum": [
+                    "CAMPAIGN_ID",
+                    "SKU",
+                    "MATCH_TYPE"
+                  ]
+                },
+                "operator": {
+                  "type": "string",
+                  "enum": [
+                    "=",
+                    "!=",
+                    ">=",
+                    "<=",
+                    ">",
+                    "<"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "column",
+                "operator",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name",
+          "from_date",
+          "to_date",
+          "columns"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/spa-reporting/keyword-performance",
+        "bodyMapping": {
+          "name": "$name",
+          "fromDate": "$from_date",
+          "toDate": "$to_date",
+          "configuration": {
+            "format": "CSV",
+            "columns": "$columns",
+            "groupBy": "$group_by",
+            "filters": "$filters"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "otto_ads_request_product_report",
+      "description": "Start a CSV product report: performance per advertised SKU. Returns a reportId; poll otto_ads_get_report_status with report_type \"product\" until READY, then otto_ads_download_report. Counts against the quota of 200 reports per 24 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "A name for the report."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, within the last 90 days."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, yesterday at the latest."
+          },
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "TOTAL_VIEWS",
+                "TOTAL_CLICKS",
+                "TOTAL_COSTS",
+                "TOTAL_SALES",
+                "TOTAL_ORDERED_SKUS",
+                "TOTAL_SALES_SELLER",
+                "CAMPAIGN_ID",
+                "SKU",
+                "EVENT_DATE_CET"
+              ]
+            },
+            "description": "Columns of the CSV. TOTAL_SALES_SELLER = attributed sales of other articles of the same brand."
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "EVENT_DATE_CET",
+                "CAMPAIGN_ID",
+                "SKU"
+              ]
+            },
+            "description": "Group rows by day, campaign and/or SKU."
+          },
+          "filters": {
+            "type": "array",
+            "description": "Optional filters, combined with AND.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "column": {
+                  "type": "string",
+                  "enum": [
+                    "CAMPAIGN_ID",
+                    "SKU"
+                  ]
+                },
+                "operator": {
+                  "type": "string",
+                  "enum": [
+                    "=",
+                    "!=",
+                    ">=",
+                    "<=",
+                    ">",
+                    "<"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "column",
+                "operator",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name",
+          "from_date",
+          "to_date",
+          "columns"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/spa-reporting/product-performance",
+        "bodyMapping": {
+          "name": "$name",
+          "fromDate": "$from_date",
+          "toDate": "$to_date",
+          "configuration": {
+            "format": "CSV",
+            "columns": "$columns",
+            "groupBy": "$group_by",
+            "filters": "$filters"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "otto_ads_get_report_status",
+      "description": "Status of a requested report: IN_PROGRESS, READY or FAILED (request a new one after FAILED). report_type must match the tool that requested it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_type": {
+            "type": "string",
+            "enum": [
+              "campaign",
+              "keyword",
+              "product"
+            ],
+            "description": "Which kind of report it is."
+          },
+          "report_id": {
+            "type": "string",
+            "description": "reportId returned when the report was requested."
+          }
+        },
+        "required": [
+          "report_type",
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spa-reporting/{report_type}-performance/status",
+        "queryParams": {
+          "reportId": "$report_id"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_download_report",
+      "description": "Download a READY report as CSV text. 404 means it is not ready yet, 410 that it expired (files are kept 24 hours).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "description": "reportId of a READY report."
+          }
+        },
+        "required": [
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spa-reporting/reports/download",
+        "queryParams": {
+          "reportId": "$report_id"
+        },
+        "headers": {
+          "Accept": "text/csv, application/json"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_create_campaign",
+      "description": "Create a campaign. AUTOMATIC campaigns bid per target (SKU); MANUAL campaigns bid per keyword. Add SKUs afterwards with otto_ads_add_targets and, for MANUAL, keywords with otto_ads_add_keywords. Asynchronous: poll otto_ads_get_change_request with the returned requestId. Starts real advertising spend from startDate; confirm budget and dates with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1 to 250 characters; no $ § \" # * or parentheses, except a trailing (2)."
+          },
+          "campaign_type": {
+            "type": "string",
+            "enum": [
+              "AUTOMATIC",
+              "MANUAL"
+            ],
+            "description": "AUTOMATIC bids per target (SKU), MANUAL bids per keyword. Cannot be changed later."
+          },
+          "budget": {
+            "type": "object",
+            "description": "Euro cents: {\"amount\": 1000, \"currency\": \"EUR\"} = 10.00 EUR. Minimum amount 20.",
+            "properties": {
+              "amount": {
+                "type": "integer",
+                "minimum": 20
+              },
+              "currency": {
+                "type": "string",
+                "enum": [
+                  "EUR"
+                ]
+              }
+            },
+            "required": [
+              "amount",
+              "currency"
+            ]
+          },
+          "budget_type": {
+            "type": "string",
+            "enum": [
+              "DAILY",
+              "WEEKLY",
+              "MONTHLY",
+              "LIFETIME"
+            ],
+            "description": "Period the budget applies to. Cannot be changed later; LIFETIME needs an end_date."
+          },
+          "pacing": {
+            "type": "string",
+            "enum": [
+              "ASAP",
+              "EVEN"
+            ],
+            "description": "ASAP spends as fast as possible, EVEN spreads the budget over the period."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, today or later."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD. Omit for an ongoing campaign; required for a LIFETIME budget."
+          }
+        },
+        "required": [
+          "name",
+          "campaign_type",
+          "budget",
+          "budget_type",
+          "pacing",
+          "start_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/sponsored-product-ads/campaigns",
+        "bodyMapping": {
+          "name": "$name",
+          "campaignType": "$campaign_type",
+          "budget": "$budget",
+          "budgetType": "$budget_type",
+          "pacing": "$pacing",
+          "startDate": "$start_date",
+          "endDate": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_update_campaign",
+      "description": "Change a campaign: status (ACTIVE, PAUSED, WAITING), budget (euro cents), pacing, name, start or end date. Send only what changes; budgetType and campaignType cannot be changed. Read the campaign first: setting the status it already has is rejected. Asynchronous: poll otto_ads_get_change_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "PAUSED",
+              "WAITING"
+            ],
+            "description": "ACTIVE to run, PAUSED to stop, WAITING to hold until the start date. Must differ from the current status."
+          },
+          "budget": {
+            "type": "object",
+            "description": "Euro cents: {\"amount\": 1000, \"currency\": \"EUR\"}. Minimum amount 20.",
+            "properties": {
+              "amount": {
+                "type": "integer",
+                "minimum": 20
+              },
+              "currency": {
+                "type": "string",
+                "enum": [
+                  "EUR"
+                ]
+              }
+            },
+            "required": [
+              "amount",
+              "currency"
+            ]
+          },
+          "pacing": {
+            "type": "string",
+            "enum": [
+              "ASAP",
+              "EVEN"
+            ],
+            "description": "ASAP spends as fast as possible, EVEN spreads the budget over the period."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name, same rules as on create."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, today or later."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, tomorrow or later."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/sponsored-product-ads/campaigns/{campaign_id}",
+        "headers": {
+          "Content-Type": "application/merge-patch+json"
+        },
+        "bodyMapping": {
+          "status": "$status",
+          "budget": "$budget",
+          "pacing": "$pacing",
+          "name": "$name",
+          "startDate": "$start_date",
+          "endDate": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_add_targets",
+      "description": "Add SKUs to a campaign. Each item is {\"sku\": \"...\", \"bid\": {\"amount\": 50, \"currency\": \"EUR\"}}; the bid (euro cents) is required in AUTOMATIC campaigns and ignored in MANUAL ones. Asynchronous: poll otto_ads_get_change_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "targets": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string"
+                },
+                "bid": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 20
+                    },
+                    "currency": {
+                      "type": "string",
+                      "enum": [
+                        "EUR"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                }
+              },
+              "required": [
+                "sku"
+              ]
+            },
+            "description": "SKUs to advertise, each with a bid in euro cents for AUTOMATIC campaigns."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "targets"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/sponsored-product-ads/campaigns/{campaign_id}/targets",
+        "bodyMapping": {
+          "targets": "$targets"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_update_target_bids",
+      "description": "Change target bids in an AUTOMATIC campaign. Each item is {\"targetId\": \"...\", \"bid\": {\"amount\": 160, \"currency\": \"EUR\"}} (160 = 1.60 EUR). Asynchronous: poll otto_ads_get_change_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "targets": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "targetId": {
+                  "type": "string"
+                },
+                "bid": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 20
+                    },
+                    "currency": {
+                      "type": "string",
+                      "enum": [
+                        "EUR"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                }
+              },
+              "required": [
+                "targetId",
+                "bid"
+              ]
+            },
+            "description": "Targets with their new bid in euro cents."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "targets"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/sponsored-product-ads/campaigns/{campaign_id}/targets",
+        "headers": {
+          "Content-Type": "application/merge-patch+json"
+        },
+        "bodyMapping": {
+          "targets": "$targets"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_add_keywords",
+      "description": "Add keywords to one target. NEGATIVE keywords (no bid) exclude search terms in AUTOMATIC and MANUAL campaigns; POSITIVE keywords need a bid in euro cents and belong to MANUAL campaigns. keywordType cannot be changed later. Each item: {\"keyword\": \"...\", \"matchType\": \"EXACT|PHRASE|BROAD\", \"keywordType\": \"POSITIVE|NEGATIVE\", \"bid\": {...}}. Asynchronous: poll otto_ads_get_change_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "target_id": {
+            "type": "string",
+            "description": "targetId (UUID)."
+          },
+          "keywords": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "keyword": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "matchType": {
+                  "type": "string",
+                  "enum": [
+                    "EXACT",
+                    "PHRASE",
+                    "BROAD"
+                  ]
+                },
+                "keywordType": {
+                  "type": "string",
+                  "enum": [
+                    "POSITIVE",
+                    "NEGATIVE"
+                  ]
+                },
+                "bid": {
+                  "type": "object",
+                  "description": "Positive keywords only, euro cents.",
+                  "properties": {
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 20
+                    },
+                    "currency": {
+                      "type": "string",
+                      "enum": [
+                        "EUR"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                }
+              },
+              "required": [
+                "keyword",
+                "matchType",
+                "keywordType"
+              ]
+            },
+            "description": "Keywords to add to the target."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "target_id",
+          "keywords"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/sponsored-product-ads/campaigns/{campaign_id}/targets/{target_id}/keywords",
+        "bodyMapping": {
+          "keywords": "$keywords"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_update_keywords",
+      "description": "Change the bid (euro cents) or matchType of existing keywords of one target. Each item: {\"keywordId\": \"...\", \"bid\": {\"amount\": 80, \"currency\": \"EUR\"}, \"matchType\": \"PHRASE\"}, with only the fields that change. Asynchronous: poll otto_ads_get_change_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "target_id": {
+            "type": "string",
+            "description": "targetId (UUID)."
+          },
+          "keywords": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "keywordId": {
+                  "type": "string"
+                },
+                "matchType": {
+                  "type": "string",
+                  "enum": [
+                    "EXACT",
+                    "PHRASE",
+                    "BROAD"
+                  ]
+                },
+                "bid": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 20
+                    },
+                    "currency": {
+                      "type": "string",
+                      "enum": [
+                        "EUR"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                }
+              },
+              "required": [
+                "keywordId"
+              ]
+            },
+            "description": "Keywords to change, by keywordId, with only the fields that change."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "target_id",
+          "keywords"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/sponsored-product-ads/campaigns/{campaign_id}/targets/{target_id}/keywords",
+        "headers": {
+          "Content-Type": "application/merge-patch+json"
+        },
+        "bodyMapping": {
+          "keywords": "$keywords"
+        }
+      }
+    },
+    {
+      "name": "otto_ads_delete_keywords",
+      "description": "Delete 1 to 50 keywords of one target by keywordId. Cannot be undone; lowering a bid is often the better choice. Installed switched off. Asynchronous: poll otto_ads_get_change_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "campaignId (UUID)."
+          },
+          "target_id": {
+            "type": "string",
+            "description": "targetId (UUID)."
+          },
+          "keyword_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "string"
+            },
+            "description": "keywordIds from otto_ads_list_keywords."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "target_id",
+          "keyword_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/sponsored-product-ads/campaigns/{campaign_id}/targets/{target_id}/keywords",
+        "queryParams": {
+          "keywordIds": "$keyword_ids"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

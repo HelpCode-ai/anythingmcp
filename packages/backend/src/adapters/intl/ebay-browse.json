@@ -1,0 +1,251 @@
+{
+  "slug": "ebay-browse",
+  "name": "eBay Browse (product search)",
+  "aliases": [
+    "eBay search",
+    "eBay Buy API"
+  ],
+  "description": "Search live eBay listings and read item details with eBay's Browse API: prices, condition, seller, shipping and item specifics, by keyword, category, GTIN or product id. Public marketplace data with an application token, no seller account needed.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "ebay-sell",
+  "docsUrl": "https://developer.ebay.com/api-docs/buy/browse/overview.html",
+  "prerequisites": "A free eBay developer account with a production keyset (App ID and Cert ID).",
+  "instructions": "**Getting credentials**\n1. Sign in at https://developer.ebay.com, open **Application Keys** and create a **production** keyset. Note the **App ID (Client ID)** and **Cert ID (Client Secret)**.\n2. Set `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` and `EBAY_MARKETPLACE_ID` (the eBay site to search, e.g. `EBAY_DE`, `EBAY_US`, `EBAY_GB`).\n3. AnythingMCP gets an **application token** with eBay's client-credentials flow (scope `https://api.ebay.com/oauth/api_scope`) and renews it every two hours. No user sign-in is involved: the Browse API only reads public listings.\n\nThis connector is for **searching and reading listings as a buyer**. Selling (your orders, inventory, offers) is the separate **eBay Sell** connector, which needs a seller's user token.\n\n**Searching**: `ebay_browse_search_items` needs at least one of `q`, `category_ids`, `gtin` or `epid`. Narrow with `filter`, e.g. `price:[10..50],priceCurrency:EUR`, `conditions:{NEW}`, `buyingOptions:{FIXED_PRICE}`, `itemLocationCountry:DE`; several filters are joined with commas. `sort` is `price`, `-price`, `newlyListed` or `endingSoonest` (best match when omitted).\n\n**Paging**: `limit` up to 200 and `offset`; `total` is the number of matches, and offset + limit cannot exceed 10,000.\n\n**Ids**: the search returns `itemId` (`v1|123456789012|0`) for `ebay_browse_get_item`, and `legacyItemId` (the number in the listing URL) for `ebay_browse_get_item_by_legacy_id`. A listing with variations (sizes, colours) has an `itemGroupHref`; `ebay_browse_get_item_group` returns all of its variations.\n\n**Prices** are strings with a currency, in the marketplace's currency unless the seller lists in another. Availability and price change all the time: quote them with the time of the call.\n\n**Limits**: an application keyset starts at 5,000 Browse calls a day.",
+  "requiredEnvVars": [
+    "EBAY_CLIENT_ID",
+    "EBAY_CLIENT_SECRET",
+    "EBAY_MARKETPLACE_ID"
+  ],
+  "envVarMeta": {
+    "EBAY_CLIENT_ID": {
+      "label": "App ID (client ID)",
+      "help": "developer.ebay.com, your production keyset: the App ID.",
+      "link": "https://developer.ebay.com/my/keys"
+    },
+    "EBAY_CLIENT_SECRET": {
+      "label": "Cert ID (client secret)",
+      "help": "The Cert ID of the same keyset.",
+      "link": "https://developer.ebay.com/my/keys"
+    },
+    "EBAY_MARKETPLACE_ID": {
+      "label": "Marketplace",
+      "kind": "setting",
+      "help": "The eBay site to search.",
+      "example": "EBAY_DE",
+      "pattern": "^EBAY_[A-Z_]+$"
+    }
+  },
+  "verifyHints": {
+    "auth_failed": "eBay refused the App ID or Cert ID. Use the keys of a production keyset (not sandbox) from developer.ebay.com."
+  },
+  "connector": {
+    "name": "eBay Browse API",
+    "type": "REST",
+    "baseUrl": "https://api.ebay.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{EBAY_CLIENT_ID}}",
+      "clientSecret": "{{EBAY_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.ebay.com/identity/v1/oauth2/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scope": "https://api.ebay.com/oauth/api_scope"
+    },
+    "headers": {
+      "X-EBAY-C-MARKETPLACE-ID": "{{EBAY_MARKETPLACE_ID}}"
+    },
+    "healthcheckPath": "/buy/browse/v1/item_summary/search?q=book&limit=1"
+  },
+  "probe": {
+    "tool": "ebay_browse_search_items",
+    "params": {
+      "q": "book",
+      "limit": 1
+    }
+  },
+  "tools": [
+    {
+      "name": "ebay_browse_search_items",
+      "description": "Search active eBay listings on the configured marketplace by keyword, category, GTIN or eBay product id. Returns per item: itemId, legacyItemId, title, price, condition, seller (username, feedback), shipping options, buying options (FIXED_PRICE, AUCTION, BEST_OFFER), item location and the listing URL, plus total and paging. Give at least one of q, category_ids, gtin or epid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Keywords, e.g. lego technic 42115. Words are combined with AND; use (a, b) for OR."
+          },
+          "category_ids": {
+            "type": "string",
+            "description": "eBay category id(s), comma-separated."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "EAN, UPC or ISBN of the product."
+          },
+          "epid": {
+            "type": "string",
+            "description": "eBay product id (ePID)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Comma-separated filters, e.g. price:[10..50],priceCurrency:EUR,conditions:{NEW|USED},buyingOptions:{FIXED_PRICE},itemLocationCountry:DE,sellers:{name}."
+          },
+          "aspect_filter": {
+            "type": "string",
+            "description": "Item specifics filter, needs category_ids, e.g. categoryId:15724,Color:{Red}."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "price",
+              "-price",
+              "newlyListed",
+              "endingSoonest"
+            ],
+            "description": "Sort order; best match when omitted."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Items per page, 1 to 200. Default 50."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip, for paging."
+          },
+          "fieldgroups": {
+            "type": "string",
+            "description": "MATCHING_ITEMS (default), EXTENDED (adds a short description), ASPECT_REFINEMENTS or CATEGORY_REFINEMENTS (counts per aspect or category), comma-separated."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buy/browse/v1/item_summary/search",
+        "queryParams": {
+          "q": "$q",
+          "category_ids": "$category_ids",
+          "gtin": "$gtin",
+          "epid": "$epid",
+          "filter": "$filter",
+          "aspect_filter": "$aspect_filter",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset",
+          "fieldgroups": "$fieldgroups"
+        }
+      }
+    },
+    {
+      "name": "ebay_browse_get_item",
+      "description": "Read one listing in full: title, description, price, condition and condition description, item specifics (localizedAspects), brand, MPN and GTIN, images, seller, shipping and return terms, available quantity and estimated delivery.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "itemId from the search, e.g. v1|123456789012|0."
+          },
+          "fieldgroups": {
+            "type": "string",
+            "description": "PRODUCT adds eBay's product data (if the listing is matched to one); COMPACT returns only price, availability and a few fields."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buy/browse/v1/item/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fieldgroups": "$fieldgroups"
+        }
+      }
+    },
+    {
+      "name": "ebay_browse_get_item_by_legacy_id",
+      "description": "Read a listing by its classic eBay item number, the number in the listing URL (ebay.de/itm/123456789012). For a listing with variations also pass the variation id or SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "legacy_item_id": {
+            "type": "string",
+            "description": "The item number, e.g. 123456789012."
+          },
+          "legacy_variation_id": {
+            "type": "string",
+            "description": "Variation id, for a listing with variations."
+          },
+          "legacy_variation_sku": {
+            "type": "string",
+            "description": "Seller's variation SKU, as an alternative to the variation id."
+          }
+        },
+        "required": [
+          "legacy_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buy/browse/v1/item/get_item_by_legacy_id",
+        "queryParams": {
+          "legacy_item_id": "$legacy_item_id",
+          "legacy_variation_id": "$legacy_variation_id",
+          "legacy_variation_sku": "$legacy_variation_sku"
+        }
+      }
+    },
+    {
+      "name": "ebay_browse_get_item_group",
+      "description": "Read all variations (sizes, colours...) of a listing with variations, each with its own price and availability, plus the aspects that tell them apart. The item group id is the number at the end of the item's itemGroupHref. A group can hold hundreds of variations; each comes back with its id, title, price, condition, colour, size, item specifics, availability and URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_group_id": {
+            "type": "string",
+            "description": "Item group id, e.g. 123456789012."
+          }
+        },
+        "required": [
+          "item_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buy/browse/v1/item/get_items_by_item_group",
+        "queryParams": {
+          "item_group_id": "$item_group_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "warnings": "$.warnings",
+            "commonDescriptions": "$.commonDescriptions",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "itemId": "itemId",
+                "title": "title",
+                "price": "price",
+                "condition": "condition",
+                "color": "color",
+                "size": "size",
+                "material": "material",
+                "localizedAspects": "localizedAspects",
+                "estimatedAvailabilities": "estimatedAvailabilities",
+                "itemWebUrl": "itemWebUrl"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
