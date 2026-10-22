@@ -287,10 +287,17 @@ export class AdaptersService {
     let credentials = input;
     // Values the operator provides for everyone (e.g. the cloud's own MOTIS
     // URL) go in here, and override anything the request carried. Only the
-    // adapters that declare the variable get it.
+    // adapters that declare the variable get it. The declared list comes from
+    // the catalog entry as well: the copy getBySlug hands out has the
+    // operator-provided vars removed (they are hidden from the setup form),
+    // and without them the value was never applied, so every Deutsche Bahn
+    // install with MOTIS_INTERNAL_URL set failed with "MOTIS_URL is required".
+    const catalogEntry = getAdapter(adapter.slug);
     credentials = withOperatorProvided(credentials, [
       ...adapter.requiredEnvVars,
       ...(adapter.optionalEnvVars ?? []),
+      ...(catalogEntry?.requiredEnvVars ?? []),
+      ...(catalogEntry?.optionalEnvVars ?? []),
     ]);
 
     // Credentials arrive from the UI verbatim — a stray leading/trailing

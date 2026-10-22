@@ -355,6 +355,93 @@ describe('AdaptersService install — weclapp tenant pasted as an address (#733)
   });
 });
 
+describe('AdaptersService install — a variable the operator provides (Deutsche Bahn)', () => {
+  // 8-22 Oct 2026: every Deutsche Bahn install on Cloud answered 400
+  // "MOTIS_URL is required": the setup form hid MOTIS_URL (the operator
+  // provides it), and the import then no longer counted it as declared, so
+  // the operator's value was never applied.
+  const saved = process.env.MOTIS_INTERNAL_URL;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.MOTIS_INTERNAL_URL;
+    else process.env.MOTIS_INTERNAL_URL = saved;
+  });
+
+  function build(execute = jest.fn()) {
+    const prisma = {
+      connector: {
+        create: jest.fn().mockResolvedValue({ id: 'c1' }),
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      mcpTool: {
+        create: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn(async ({ data }: any) => ({ count: data.length })),
+      },
+    };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, prisma };
+  }
+
+  it('installs with the operator MOTIS and hides the variable from the form', async () => {
+    process.env.MOTIS_INTERNAL_URL = 'http://motis:8080/';
+    const { service, prisma } = build();
+
+    expect(service.describe('deutsche-bahn').requiredEnvVars).toEqual([]);
+    await service.importAdapter('deutsche-bahn', 'u1', 'org1', {});
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.baseUrl).toBe('http://motis:8080');
+    expect(data.envVars).toMatchObject({ MOTIS_URL: 'http://motis:8080' });
+  });
+
+  it('installs with no credentials at all (setup from MCP, one-click)', async () => {
+    process.env.MOTIS_INTERNAL_URL = 'http://motis:8080';
+    const { service, prisma } = build();
+
+    await service.importAdapter('deutsche-bahn', 'u1', 'org1');
+
+    expect(prisma.connector.create.mock.calls[0][0].data.baseUrl).toBe('http://motis:8080');
+  });
+
+  it('ignores a MOTIS_URL posted by the user when the operator provides one', async () => {
+    process.env.MOTIS_INTERNAL_URL = 'http://motis:8080';
+    const { service, prisma } = build();
+
+    await service.importAdapter('deutsche-bahn', 'u1', 'org1', { MOTIS_URL: 'http://169.254.169.254' });
+
+    expect(prisma.connector.create.mock.calls[0][0].data.baseUrl).toBe('http://motis:8080');
+  });
+
+  it('verifies against the operator MOTIS before saving', async () => {
+    process.env.MOTIS_INTERNAL_URL = 'http://motis:8080';
+    const execute = jest.fn().mockResolvedValue([{ name: 'Freiburg Hbf' }]);
+    const { service } = build(execute);
+
+    const out = await service.verifyCredentials('deutsche-bahn', 'org1', {});
+
+    expect(out).toMatchObject({ ok: true });
+    // The adapter's probe (db_search_locations) ran against the operator MOTIS.
+    expect(execute.mock.calls[0][0].baseUrl).toBe('http://motis:8080');
+  });
+
+  it('still asks for MOTIS_URL on a self-host without the bundled MOTIS', async () => {
+    delete process.env.MOTIS_INTERNAL_URL;
+    const { service, prisma } = build();
+
+    expect(service.describe('deutsche-bahn').requiredEnvVars).toEqual(['MOTIS_URL']);
+    await service.importAdapter('deutsche-bahn', 'u1', 'org1', { MOTIS_URL: 'https://motis.example.com' });
+    expect(prisma.connector.create.mock.calls[0][0].data.baseUrl).toBe('https://motis.example.com');
+
+    await expect(service.importAdapter('deutsche-bahn', 'u1', 'org1', {})).rejects.toThrow(
+      /MOTIS_URL is required to install "deutsche-bahn"/,
+    );
+  });
+});
+
 describe('AdaptersService starter pack', () => {
   const { STARTER_PACK } = jest.requireActual('./starter-pack');
   const { getAdapter } = jest.requireActual('./catalog');
