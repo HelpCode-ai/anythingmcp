@@ -17,10 +17,10 @@
   "category": "government",
   "icon": "fr-company-data",
   "docsUrl": "https://recherche-entreprises.api.gouv.fr/docs/",
-  "instructions": "## French Company Data (SIRENE, BODACC, BALO)\nThis connector answers questions about French companies from official open data, with **no account and no API key**:\n- **Company register** from the French government's *API Recherche d'entreprises* (the data behind annuaire-entreprises.data.gouv.fr: INSEE SIRENE plus the national company register RNE): identity, legal form, activity, size, head office and establishments, officers, VAT number, latest revenue, labels.\n- **BODACC** (Bulletin officiel des annonces civiles et commerciales, published by DILA): every legal notice since 2008, including insolvency proceedings, business sales, registrations, changes, deregistrations and filed accounts.\n- **BALO** (Bulletin des annonces légales obligatoires): notices of listed companies and other issuers.\n- **Financial ratios** published by the Ministry of the Economy (DGE) from the accounts filed with INPI.\n\n**Setup**: nothing to configure. Install and run `fr_company_get` with a SIREN to try it.\n\n**Identifiers**: a SIREN has 9 digits and identifies the company; a SIRET has 14 digits (SIREN + 5) and identifies one establishment. The NAF/APE code (e.g. `62.01Z`) is the main activity.\n\n**Workflow**\n- Identify the company: `fr_company_search` by name (plus `code_postal`, `departement` or `activite_principale` to narrow it down) or `fr_company_get` with a SIREN or SIRET. `fr_company_search` also finds the companies of an officer (`nom_personne`, `prenoms_personne`) and lists companies by activity, place, size or revenue for prospecting. `fr_company_near_point` finds companies around coordinates.\n- Check its history and health: `fr_company_bodacc_announcements` with the SIREN; `family` `collective` shows insolvency proceedings (sauvegarde, redressement, liquidation judiciaire), `vente` business sales, `modification` changes of officers, capital or address, `dpc` filed accounts. `fr_company_financial_ratios` gives revenue, margins and ratios per year; `fr_company_balo_announcements` covers listed companies.\n- Watch a market: `fr_company_bodacc_search` with `family`, `department` and dates (e.g. all new liquidations in department 69 since Monday), or `text` for a name.\n\n**Reading the data**\n- Codes in the register: `etat_administratif` A active, C ceased; `categorie_entreprise` PME, ETI or GE; `tranche_effectif_salarie` is an INSEE headcount band (e.g. `11` = 10-19 employees, `NN` = none declared); `nature_juridique` is the INSEE legal form code (5710 SAS, 5499 SARL, 5599 SA, 1000 sole trader). `finances` holds the latest published year only.\n- In BODACC, `registre` holds the SIREN with and without spaces, `familleavis_lib` names the kind of notice, and the details (`jugement`, `acte`, `listepersonnes`, `modificationsgenerales`, `depot`) are JSON text inside the record: read them as JSON. `url_complete` links the notice on bodacc.fr.\n- In the ratios, there can be several rows for one closing date with different `type_bilan` (C full, S simplified, K consolidated); compare like with like. Amounts are euros.\n- Personal data: officers' names and birth month are public register data. Use them for business purposes only, as French data protection law requires.\n\n**Limits**: the company register allows 7 requests per second; over that it answers 429 (wait a second). `fr_company_search` returns at most 25 results per page and 10,000 in total; BODACC, BALO and the ratios return at most 100 per page and 10,000 in total (`offset` + `limit`). A query of fewer than 3 characters without a filter answers 400.",
+  "instructions": "## French Company Data (SIRENE, BODACC, BALO)\nThis connector answers questions about French companies from official open data, with **no account and no API key**:\n- **Company register** from the French government's *API Recherche d'entreprises* (the data behind annuaire-entreprises.data.gouv.fr: INSEE SIRENE plus the national company register RNE): identity, legal form, activity, size, head office and establishments, officers, VAT number, latest revenue, labels.\n- **BODACC** (Bulletin officiel des annonces civiles et commerciales, published by DILA): every legal notice since 2008, including insolvency proceedings, business sales, registrations, changes, deregistrations and filed accounts.\n- **BALO** (Bulletin des annonces légales obligatoires): notices of listed companies and other issuers.\n- **Financial ratios** published by the Ministry of the Economy (DGE) from the accounts filed with INPI.\n\n**Setup**: nothing to configure. Install and run `fr_company_data_get` with a SIREN to try it.\n\n**Identifiers**: a SIREN has 9 digits and identifies the company; a SIRET has 14 digits (SIREN + 5) and identifies one establishment. The NAF/APE code (e.g. `62.01Z`) is the main activity.\n\n**Workflow**\n- Identify the company: `fr_company_data_search` by name (plus `code_postal`, `departement` or `activite_principale` to narrow it down) or `fr_company_data_get` with a SIREN or SIRET. `fr_company_data_search` also finds the companies of an officer (`nom_personne`, `prenoms_personne`) and lists companies by activity, place, size or revenue for prospecting. `fr_company_data_near_point` finds companies around coordinates.\n- Check its history and health: `fr_company_data_bodacc_announcements` with the SIREN; `family` `collective` shows insolvency proceedings (sauvegarde, redressement, liquidation judiciaire), `vente` business sales, `modification` changes of officers, capital or address, `dpc` filed accounts. `fr_company_data_financial_ratios` gives revenue, margins and ratios per year; `fr_company_data_balo_announcements` covers listed companies.\n- Watch a market: `fr_company_data_bodacc_search` with `family`, `department` and dates (e.g. all new liquidations in department 69 since Monday), or `text` for a name.\n\n**Reading the data**\n- Codes in the register: `etat_administratif` A active, C ceased; `categorie_entreprise` PME, ETI or GE; `tranche_effectif_salarie` is an INSEE headcount band (e.g. `11` = 10-19 employees, `NN` = none declared); `nature_juridique` is the INSEE legal form code (5710 SAS, 5499 SARL, 5599 SA, 1000 sole trader). `finances` holds the latest published year only.\n- In BODACC, `registre` holds the SIREN with and without spaces, `familleavis_lib` names the kind of notice, and the details (`jugement`, `acte`, `listepersonnes`, `modificationsgenerales`, `depot`) are JSON text inside the record: read them as JSON. `url_complete` links the notice on bodacc.fr.\n- In the ratios, there can be several rows for one closing date with different `type_bilan` (C full, S simplified, K consolidated); compare like with like. Amounts are euros.\n- Personal data: officers' names and birth month are public register data. Use them for business purposes only, as French data protection law requires.\n\n**Limits**: the company register allows 7 requests per second; over that it answers 429 (wait a second). `fr_company_data_search` returns at most 25 results per page and 10,000 in total; BODACC, BALO and the ratios return at most 100 per page and 10,000 in total (`offset` + `limit`). A query of fewer than 3 characters without a filter answers 400.",
   "requiredEnvVars": [],
   "probe": {
-    "tool": "fr_company_get",
+    "tool": "fr_company_data_get",
     "params": {
       "siren_or_siret": "552032534"
     }
@@ -37,7 +37,7 @@
   },
   "tools": [
     {
-      "name": "fr_company_search",
+      "name": "fr_company_data_search",
       "description": "Search the French company register (SIRENE, the official Annuaire des Entreprises data): by name, address, officer or SIREN/SIRET in q, and by activity (NAF), place, size, legal form, revenue or officer name. Each result: SIREN, name, legal form, NAF code, size, creation date, active or ceased, head office (SIRET, address, coordinates), officers, latest revenue and net income, labels (RGE, ESS, Qualiopi...) and the matching establishments. 1 to 25 per page; total_results is capped at 10,000.",
       "parameters": {
         "type": "object",
@@ -186,7 +186,7 @@
       }
     },
     {
-      "name": "fr_company_get",
+      "name": "fr_company_data_get",
       "description": "Get one French company by its SIREN (9 digits) or one establishment by its SIRET (14 digits): legal name, legal form, NAF activity, size band, creation and closure dates, status, head office address, officers (name, role, birth month), VAT number, latest revenue and net income, collective agreements and labels. With a SIRET, matching_etablissements holds that establishment.",
       "parameters": {
         "type": "object",
@@ -210,8 +210,8 @@
       }
     },
     {
-      "name": "fr_company_near_point",
-      "description": "Find companies with an establishment within a radius of a point (latitude, longitude), optionally of a given activity: e.g. bakeries within 1 km of an address. Returns the same company records as fr_company_search, with the establishments inside the radius under matching_etablissements.",
+      "name": "fr_company_data_near_point",
+      "description": "Find companies with an establishment within a radius of a point (latitude, longitude), optionally of a given activity: e.g. bakeries within 1 km of an address. Returns the same company records as fr_company_data_search, with the establishments inside the radius under matching_etablissements.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -271,7 +271,7 @@
       }
     },
     {
-      "name": "fr_company_bodacc_announcements",
+      "name": "fr_company_data_bodacc_announcements",
       "description": "List the BODACC legal notices of one company by SIREN, newest first: insolvency proceedings and court judgments, sales and transfers of the business, registrations, changes (officers, capital, address), deregistration and annual accounts filed. Filter by kind of notice and publication date. Nested details (jugement, acte, listepersonnes, modificationsgenerales, depot) are JSON text; url_complete links the notice on bodacc.fr.",
       "parameters": {
         "type": "object",
@@ -341,7 +341,7 @@
       }
     },
     {
-      "name": "fr_company_bodacc_search",
+      "name": "fr_company_data_bodacc_search",
       "description": "Search all BODACC legal notices (about 51 million since 2008, updated daily), newest first: e.g. new insolvency proceedings in a department this week, business sales in a city, or notices mentioning a name. Filter by kind of notice, department and publication date, and search the text. total_count gives the number of matches.",
       "parameters": {
         "type": "object",
@@ -412,7 +412,7 @@
       }
     },
     {
-      "name": "fr_company_balo_announcements",
+      "name": "fr_company_data_balo_announcements",
       "description": "List the BALO notices (Bulletin des annonces légales obligatoires, for listed companies and other issuers) of a company by SIREN, newest first: notices of general meetings, annual and quarterly accounts, revenue figures, securities issues, mergers. The PDF is usually at https://www.journal-officiel.gouv.fr/telechargements/BALO/pdf/YYYY/MMDD/<file> using dateparution and the file name.",
       "parameters": {
         "type": "object",
@@ -459,7 +459,7 @@
       }
     },
     {
-      "name": "fr_company_financial_ratios",
+      "name": "fr_company_data_financial_ratios",
       "description": "Get the financial figures and ratios computed by the French Ministry of the Economy from the annual accounts filed with INPI, one row per closing date and type of accounts: revenue, gross margin, EBITDA (EBE), EBIT, net income, debt ratio, liquidity, financial autonomy, working capital in days of revenue, stock rotation, customer and supplier credit days. type_bilan C = full accounts, S = simplified, K = consolidated. Companies that chose confidentiality have no figures.",
       "parameters": {
         "type": "object",

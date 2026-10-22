@@ -51,7 +51,7 @@ const used = (t: Tool) => {
   walk(m.headers ?? {});
   return out;
 };
-const PREFIX = 'fr_company_';
+const PREFIX = 'fr_company_data_';
 const WRITES: string[] = [];
 // Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
 const HAND_BUILT: string[] = ["bodacc_par_siren"];
@@ -65,11 +65,11 @@ describe('fr-company-data adapter: static spec conformance', () => {
     expect(a.region).toBe('fr');
     const hosts = new Set(a.tools.map((t) => (t.endpointMapping.path.startsWith('http') ? new URL(t.endpointMapping.path).host : new URL(a.connector.baseUrl).host)));
     expect([...hosts].sort()).toEqual(['bodacc-datadila.opendatasoft.com', 'data.economie.gouv.fr', 'journal-officiel-datadila.opendatasoft.com', 'recherche-entreprises.api.gouv.fr']);
-    expect(a.probe).toEqual({ tool: 'fr_company_get', params: { siren_or_siret: '552032534' } });
+    expect(a.probe).toEqual({ tool: 'fr_company_data_get', params: { siren_or_siret: '552032534' } });
   });
 
   it('filters BODACC by the exact SIREN and drops the optional filters that are not given', () => {
-    const m = tool('fr_company_bodacc_announcements').endpointMapping;
+    const m = tool('fr_company_data_bodacc_announcements').endpointMapping;
     expect(m.queryParams).toMatchObject({
       where: ['registre="${siren}"', "dateparution >= date'${date_from}'", "dateparution <= date'${date_to}'"],
       refine: ['familleavis:${family}'],
@@ -77,9 +77,9 @@ describe('fr-company-data adapter: static spec conformance', () => {
     });
     // Each entry is its own repeated query parameter; an entry whose placeholder is empty is dropped.
     expect(Array.isArray(m.queryParams?.where)).toBe(true);
-    expect((tool('fr_company_bodacc_announcements').parameters?.properties?.siren as { pattern: string }).pattern).toBe('^[0-9]{9}$');
-    expect((tool('fr_company_search').parameters?.properties?.per_page as { maximum: number }).maximum).toBe(25);
-    expect(tool('fr_company_get').endpointMapping).toMatchObject({ path: '/search', queryParams: { q: '$siren_or_siret', per_page: 1 } });
+    expect((tool('fr_company_data_bodacc_announcements').parameters?.properties?.siren as { pattern: string }).pattern).toBe('^[0-9]{9}$');
+    expect((tool('fr_company_data_search').parameters?.properties?.per_page as { maximum: number }).maximum).toBe(25);
+    expect(tool('fr_company_data_get').endpointMapping).toMatchObject({ path: '/search', queryParams: { q: '$siren_or_siret', per_page: 1 } });
   });
 
   it('is read-only', () => {
@@ -126,9 +126,9 @@ live('fr-company-data adapter: live (keyless)', () => {
   it('finds Danone by SIREN, its BODACC notices and its ratios', async () => {
     const reg = (await (await fetch(`${a.connector.baseUrl}/search?q=552032534&per_page=1`)).json()) as { results: Array<{ siren: string }> };
     expect(reg.results[0].siren).toBe('552032534');
-    const bodacc = (await (await fetch(`${tool('fr_company_bodacc_announcements').endpointMapping.path}?where=${encodeURIComponent('registre="552032534"')}&limit=1`)).json()) as { total_count: number };
+    const bodacc = (await (await fetch(`${tool('fr_company_data_bodacc_announcements').endpointMapping.path}?where=${encodeURIComponent('registre="552032534"')}&limit=1`)).json()) as { total_count: number };
     expect(bodacc.total_count).toBeGreaterThan(10);
-    const ratios = (await (await fetch(`${tool('fr_company_financial_ratios').endpointMapping.path}?where=${encodeURIComponent('siren="552032534"')}&limit=1`)).json()) as { total_count: number };
+    const ratios = (await (await fetch(`${tool('fr_company_data_financial_ratios').endpointMapping.path}?where=${encodeURIComponent('siren="552032534"')}&limit=1`)).json()) as { total_count: number };
     expect(ratios.total_count).toBeGreaterThan(0);
   }, 60_000);
 });

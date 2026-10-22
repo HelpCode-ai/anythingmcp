@@ -222,7 +222,7 @@
     },
     {
       "name": "aurora_inbox_list_chat_tags",
-      "description": "List the tags on one chat.",
+      "description": "List the tags on one chat (id and name), to see how the team classified the conversation.",
       "parameters": {
         "type": "object",
         "properties": {
