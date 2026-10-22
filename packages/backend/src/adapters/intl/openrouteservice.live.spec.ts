@@ -75,7 +75,7 @@ describe('openrouteservice adapter: static spec conformance', () => {
     expect(tool('openrouteservice_isochrones').endpointMapping.headers).toEqual({ Accept: 'application/geo+json, application/json' });
     expect(tool('openrouteservice_optimize_routes').endpointMapping.path).toBe('/vroom/v0');
     expect(tool('openrouteservice_find_pois').endpointMapping).toMatchObject({ path: '/openpoiservice/v0/pois', bodyMapping: { request: 'pois' } });
-    for (const t of a.tools) expect(t.endpointMapping.path).not.toMatch(/openrouteservice\.org/);
+    for (const t of a.tools) expect(t.endpointMapping.path).not.toContain('openrouteservice.org');
   });
 
   it('computes only: every POST is marked read-only', () => {
