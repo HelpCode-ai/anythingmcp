@@ -1,8 +1,8 @@
 {
   "slug": "magento",
   "name": "Magento (Adobe Commerce)",
-  "description": "Drive Magento 2 / Adobe Commerce from any AI agent: products, categories, orders, customers, stock. 12 tools, Bearer admin-token auth, per-store base URL.",
-  "instructions": "This connector uses the Magento 2 REST API (devdocs.magento.com).\n\n**Setup**:\n1. As Magento admin → **System → Integrations → Add New Integration**.\n2. Name + email, then on the API tab pick scopes: at minimum Catalog (Products + Categories + Stock), Customers, Sales (Orders + Invoices + Shipments).\n3. **Activate** the integration → grant access. Magento generates an **Access Token** (this is the long-lived bearer token).\n4. Set:\n   - `MAGENTO_BASE_URL` = your storefront base URL (e.g. `https://shop.example.com`)\n   - `MAGENTO_ACCESS_TOKEN` = the integration access token\n   - Optionally `MAGENTO_STORE_VIEW` if you want a specific store view (default 'default' or use 'all')\n\n**Authentication**: `Authorization: Bearer ${MAGENTO_ACCESS_TOKEN}`.\n\n**Path prefix**: `/rest/{store_view}/V1/...`. The adapter uses `/rest/default/V1/` as default — if you need to target a different store view, replace baseUrl accordingly or pass `?storeCode=` (Magento accepts both).\n\n**Search criteria DSL**: Magento has a unique multi-key search syntax for list endpoints:\n```\n?searchCriteria[filter_groups][0][filters][0][field]=status\n&searchCriteria[filter_groups][0][filters][0][value]=1\n&searchCriteria[filter_groups][0][filters][0][condition_type]=eq\n&searchCriteria[pageSize]=20\n&searchCriteria[currentPage]=1\n```\nIt's verbose but powerful. The adapter exposes the most common filters as flat params and lets you pass arbitrary criteria via `searchCriteria_raw` for advanced cases.\n\n**SKU as primary key**: most product endpoints use SKU (not ID) in the URL: `/V1/products/{sku}`.\n\n**Rate limits**: not enforced by Magento core — depends on hosting. On 429 back off.\n\n**Out of scope here**: GraphQL endpoint (separate), Inventory MSI deep features, B2B/Commerce-only features (shared catalogs, company hierarchies), CMS pages/blocks, sales rules editing.",
+  "description": "Drive Magento 2 / Adobe Commerce from any AI agent: products, categories, orders, customers, stock and CMS pages and blocks. 21 tools, Bearer admin-token auth, per-store base URL.",
+  "instructions": "This connector uses the Magento 2 REST API (devdocs.magento.com).\n\n**Setup**:\n1. As Magento admin → **System → Integrations → Add New Integration**.\n2. Name + email, then on the API tab pick scopes: at minimum Catalog (Products + Categories + Stock), Customers, Sales (Orders + Invoices + Shipments).\n3. **Activate** the integration → grant access. Magento generates an **Access Token** (this is the long-lived bearer token).\n4. Set:\n   - `MAGENTO_BASE_URL` = your storefront base URL (e.g. `https://shop.example.com`)\n   - `MAGENTO_ACCESS_TOKEN` = the integration access token\n   - Optionally `MAGENTO_STORE_VIEW` if you want a specific store view (default 'default' or use 'all')\n\n**Authentication**: `Authorization: Bearer ${MAGENTO_ACCESS_TOKEN}`.\n\n**Path prefix**: `/rest/{store_view}/V1/...`. The adapter uses `/rest/default/V1/` as default — if you need to target a different store view, replace baseUrl accordingly or pass `?storeCode=` (Magento accepts both).\n\n**Search criteria DSL**: Magento has a unique multi-key search syntax for list endpoints:\n```\n?searchCriteria[filter_groups][0][filters][0][field]=status\n&searchCriteria[filter_groups][0][filters][0][value]=1\n&searchCriteria[filter_groups][0][filters][0][condition_type]=eq\n&searchCriteria[pageSize]=20\n&searchCriteria[currentPage]=1\n```\nIt's verbose but powerful. The adapter exposes the most common filters as flat params and lets you pass arbitrary criteria via `searchCriteria_raw` for advanced cases.\n\n**SKU as primary key**: most product endpoints use SKU (not ID) in the URL: `/V1/products/{sku}`.\n\n**Rate limits**: not enforced by Magento core — depends on hosting. On 429 back off.\n\n**Out of scope here**: GraphQL endpoint (separate), Inventory MSI deep features, B2B/Commerce-only features (shared catalogs, company hierarchies), sales rules editing.\n\n**CMS pages and blocks** always go through the `all` store code (`/rest/all/V1/cmsPage`, `/rest/all/V1/cmsBlock`), Magento's admin scope, so a page written there is not silently moved to one store view. The create and update tools change the live storefront and are installed switched off; there is no delete tool.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "magento",
@@ -281,6 +281,256 @@
         "required": ["customerId"]
       },
       "endpointMapping": { "method": "GET", "path": "/customers/{customerId}" }
+    },
+    {
+      "name": "magento_search_cms_pages",
+      "description": "Search CMS pages (content pages such as about-us, shipping, terms) with id, identifier (URL key), title, active flag, meta data and the HTML content. Without a filter it pages through all pages. Example filter: field identifier, value %shipping%, condition_type like.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Field to filter on, e.g. identifier, title, is_active, page_id."
+          },
+          "value": {
+            "type": "string",
+            "description": "Filter value; with condition_type like wrap it in %, e.g. %shipping%."
+          },
+          "condition_type": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq"
+            ],
+            "description": "Comparison. Default eq."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, e.g. 20."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "1-based page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsPage/search",
+        "queryParams": {
+          "searchCriteria[filterGroups][0][filters][0][field]": "$field",
+          "searchCriteria[filterGroups][0][filters][0][value]": "$value",
+          "searchCriteria[filterGroups][0][filters][0][conditionType]": "$condition_type",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_get_cms_page",
+      "description": "Read one CMS page by its numeric id, including the full HTML content, layout and meta data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageId": {
+            "type": "integer",
+            "description": "Numeric page id from magento_search_cms_pages."
+          }
+        },
+        "required": [
+          "pageId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsPage/{pageId}"
+      }
+    },
+    {
+      "name": "magento_search_cms_blocks",
+      "description": "Search CMS blocks (reusable content such as header, footer and homepage banners) with id, identifier, title, active flag and the HTML content. Example filter: field identifier, value %footer%, condition_type like.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Field to filter on, e.g. identifier, title, is_active, block_id."
+          },
+          "value": {
+            "type": "string",
+            "description": "Filter value; with condition_type like wrap it in %."
+          },
+          "condition_type": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq"
+            ],
+            "description": "Comparison. Default eq."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, e.g. 20."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "1-based page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsBlock/search",
+        "queryParams": {
+          "searchCriteria[filterGroups][0][filters][0][field]": "$field",
+          "searchCriteria[filterGroups][0][filters][0][value]": "$value",
+          "searchCriteria[filterGroups][0][filters][0][conditionType]": "$condition_type",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_get_cms_block",
+      "description": "Read one CMS block by its numeric id, including the full HTML content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blockId": {
+            "type": "integer",
+            "description": "Numeric block id from magento_search_cms_blocks."
+          }
+        },
+        "required": [
+          "blockId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsBlock/{blockId}"
+      }
+    },
+    {
+      "name": "magento_create_cms_page",
+      "description": "Create a CMS page. page is {\"identifier\": \"url-key\", \"title\": \"...\", \"content\": \"<p>HTML</p>\", \"active\": true, \"page_layout\": \"1column\", \"meta_title\": \"...\", \"meta_description\": \"...\"}. The page goes live on the storefront when active is true. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "description": "The page fields, as described above. identifier and title are required."
+          }
+        },
+        "required": [
+          "page"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsPage",
+        "bodyMapping": {
+          "page": "$page"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "magento_update_cms_page",
+      "description": "Change a CMS page. Read it first with magento_get_cms_page and send page with its id, identifier and title plus the fields to change, e.g. {\"id\": 5, \"identifier\": \"shipping\", \"title\": \"Shipping\", \"content\": \"<p>...</p>\"}. Changes are live on the storefront at once (after the page cache refreshes). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageId": {
+            "type": "integer",
+            "description": "Numeric page id."
+          },
+          "page": {
+            "type": "object",
+            "description": "The page fields: id, identifier and title always, then what changes."
+          }
+        },
+        "required": [
+          "pageId",
+          "page"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsPage/{pageId}",
+        "bodyMapping": {
+          "page": "$page"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "magento_create_cms_block",
+      "description": "Create a CMS block. block is {\"identifier\": \"...\", \"title\": \"...\", \"content\": \"<div>HTML</div>\", \"active\": true}. A block only shows where a layout or widget references its identifier. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "block": {
+            "type": "object",
+            "description": "The block fields. identifier and title are required."
+          }
+        },
+        "required": [
+          "block"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsBlock",
+        "bodyMapping": {
+          "block": "$block"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "magento_update_cms_block",
+      "description": "Change a CMS block. Read it first with magento_get_cms_block and send block with its id, identifier and title plus the fields to change. Header, footer and homepage blocks change on every page that uses them. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blockId": {
+            "type": "integer",
+            "description": "Numeric block id."
+          },
+          "block": {
+            "type": "object",
+            "description": "The block fields: id, identifier and title always, then what changes."
+          }
+        },
+        "required": [
+          "blockId",
+          "block"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsBlock/{blockId}",
+        "bodyMapping": {
+          "block": "$block"
+        }
+      },
+      "enabled": false
     }
   ]
 }

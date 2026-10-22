@@ -2,12 +2,12 @@
   "slug": "lexware-office",
   "name": "Lexware Office",
   "aliases": ["lexoffice"],
-  "description": "Lexware Office (formerly lexoffice) — Germany's most-used SMB bookkeeping app. Read and create contacts, invoices, quotations, credit notes, vouchers and articles, and pull the voucher list that drives the Buchhaltung. Public REST API v1, bearer token.",
+  "description": "Lexware Office (formerly lexoffice) — Germany's most-used SMB bookkeeping app. Read and create contacts, invoices, quotations, delivery notes and articles, read credit notes, vouchers and document PDFs, and pull the voucher list that drives the Buchhaltung. Public REST API v1, bearer token.",
   "region": "de",
   "category": "accounting",
   "icon": "lexware-office",
   "docsUrl": "https://developers.lexware.io/docs/",
-  "instructions": "**Getting a token**\n1. Sign in to Lexware Office (lexoffice) with an account on a paid plan — the API is not available on the free tier.\n2. Open **Einstellungen → Erweiterungen → Öffentliche API** and create a new access token. The token is shown once; store it immediately.\n3. Set `LEXWARE_API_KEY` to that value. It is a personal token scoped to the one company (Mandant) it was created in; a tax adviser handling several clients needs one connector per client.\n\n**API version**: this adapter targets the public REST API **v1** at `https://api.lexware.io/v1`. Lexware still serves the historical `api.lexoffice.io` host; both answer the same tokens, but new integrations should use `api.lexware.io`.\n\n**Rate limit**: 2 requests per second per token. The API answers a burst with `429`; the agent should pace bulk work rather than retry in a tight loop.\n\n**Vouchers vs invoices**: `lexware_office_list_vouchers` reads the *voucher list* — the bookkeeping view that contains sales invoices, purchase invoices, credit notes and receipts alike, and is what you want for \"what is unpaid\". `lexware_office_get_invoice` reads a single sales invoice document with its line items.\n\n**Writes**: `lexware_office_create_contact` and `lexware_office_create_invoice` create real records in the live company. An invoice created with `finalize: false` stays a draft (Entwurf) and can still be deleted in the UI; finalized invoices are legally immutable under GoBD and can only be corrected with a credit note.\n\n**Cloud reachability**: api.lexware.io is public with a valid certificate, so AnythingMCP Cloud reaches it with no extra setup.",
+  "instructions": "**Getting a token**\n1. Sign in to Lexware Office (lexoffice) with an account on a paid plan — the API is not available on the free tier.\n2. Open **Einstellungen → Erweiterungen → Öffentliche API** and create a new access token. The token is shown once; store it immediately.\n3. Set `LEXWARE_API_KEY` to that value. It is a personal token scoped to the one company (Mandant) it was created in; a tax adviser handling several clients needs one connector per client.\n\n**API version**: this adapter targets the public REST API **v1** at `https://api.lexware.io/v1`. Lexware still serves the historical `api.lexoffice.io` host; both answer the same tokens, but new integrations should use `api.lexware.io`.\n\n**Rate limit**: 2 requests per second per token. The API answers a burst with `429`; the agent should pace bulk work rather than retry in a tight loop.\n\n**Vouchers vs invoices**: `lexware_office_list_vouchers` reads the *voucher list* — the bookkeeping view that contains sales invoices, purchase invoices, credit notes and receipts alike, and is what you want for \"what is unpaid\". `lexware_office_get_invoice` reads a single sales invoice document with its line items.\n\n**Writes**: `lexware_office_create_contact` and `lexware_office_create_invoice` create real records in the live company. `lexware_office_create_delivery_note` and `lexware_office_create_quotation_draft` create drafts only (nothing is sent or booked). `lexware_office_create_article` and `lexware_office_update_article` change the product catalogue; an update replaces the whole article, so read it first and send its current `version`. An invoice created with `finalize: false` stays a draft (Entwurf) and can still be deleted in the UI; finalized invoices are legally immutable under GoBD and can only be corrected with a credit note.\n\n**PDFs**: `lexware_office_get_invoice_pdf` and `lexware_office_get_delivery_note_pdf` return the document as a file, for finalized documents only (a draft answers 409).\n\n**Cloud reachability**: api.lexware.io is public with a valid certificate, so AnythingMCP Cloud reaches it with no extra setup.",
   "requiredEnvVars": [
     "LEXWARE_API_KEY"
   ],
@@ -482,6 +482,378 @@
           },
           "introduction": "$introduction",
           "remark": "$remark"
+        }
+      }
+    },
+    {
+      "name": "lexware_office_get_delivery_note",
+      "description": "Read one delivery note (Lieferschein) in full: line items, status (draft or open), voucher date (= delivery date), address, shipping conditions and related vouchers. Find ids with lexware_office_list_vouchers and voucherType=deliverynote.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Delivery note UUID."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/delivery-notes/{id}"
+      }
+    },
+    {
+      "name": "lexware_office_get_delivery_note_pdf",
+      "description": "Download the PDF of a delivery note, returned as a file. Only for issued delivery notes (status open); a draft answers 409.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Delivery note UUID."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/delivery-notes/{id}/file"
+      }
+    },
+    {
+      "name": "lexware_office_get_invoice_pdf",
+      "description": "Download the PDF of a sales invoice, returned as a file. Only for finalized invoices (open, paid, voided); a draft answers 409.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Invoice UUID."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{id}/file"
+      }
+    },
+    {
+      "name": "lexware_office_create_delivery_note",
+      "description": "Create a delivery note (Lieferschein) as a draft. It is not finalized: it can still be checked, edited or deleted in Lexware Office, and an invoice can be created from it there. Confirm the line items with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "voucherDate": {
+            "type": "string",
+            "description": "Delivery date in ISO 8601 with time and offset, e.g. 2026-10-13T00:00:00.000+02:00."
+          },
+          "address": {
+            "type": "object",
+            "description": "Recipient. Either {\"contactId\": \"<uuid>\"} for an existing contact, or {\"name\", \"street\", \"zip\", \"city\", \"countryCode\"} for a one-off address."
+          },
+          "lineItems": {
+            "type": "array",
+            "description": "Up to 300 items. Article: {\"type\": \"material\", \"id\": \"<article uuid>\", \"name\", \"quantity\", \"unitName\", \"unitPrice\": {\"currency\": \"EUR\", \"netAmount\", \"taxRatePercentage\"}}. Free item: type \"custom\" without id. Text line: {\"type\": \"text\", \"name\", \"description\"}.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "taxConditions": {
+            "type": "object",
+            "description": "{\"taxType\": \"net\"} (or gross, vatfree, intraCommunitySupply, ...)."
+          },
+          "shippingConditions": {
+            "type": "object",
+            "description": "{\"shippingType\": \"delivery\", \"shippingDate\": \"<ISO 8601>\"}."
+          },
+          "title": {
+            "type": "string",
+            "description": "Document title, default Lieferschein."
+          },
+          "introduction": {
+            "type": "string",
+            "description": "Text above the line items, e.g. the order reference."
+          },
+          "remark": {
+            "type": "string",
+            "description": "Text below the line items."
+          },
+          "deliveryTerms": {
+            "type": "string",
+            "description": "Delivery terms, e.g. Lieferung frei Haus."
+          }
+        },
+        "required": [
+          "voucherDate",
+          "address",
+          "lineItems",
+          "taxConditions",
+          "shippingConditions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/delivery-notes",
+        "bodyMapping": {
+          "voucherDate": "$voucherDate",
+          "address": "$address",
+          "lineItems": "$lineItems",
+          "taxConditions": "$taxConditions",
+          "shippingConditions": "$shippingConditions",
+          "title": "$title",
+          "introduction": "$introduction",
+          "remark": "$remark",
+          "deliveryTerms": "$deliveryTerms"
+        }
+      }
+    },
+    {
+      "name": "lexware_office_create_quotation_draft",
+      "description": "Create a quotation (Angebot) as a draft. It is not finalized or sent: it can still be edited or deleted in Lexware Office. Confirm the line items and validity date with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "voucherDate": {
+            "type": "string",
+            "description": "Quotation date in ISO 8601 with time and offset, e.g. 2026-10-22T00:00:00.000+02:00."
+          },
+          "expirationDate": {
+            "type": "string",
+            "description": "Valid until, ISO 8601 like voucherDate."
+          },
+          "address": {
+            "type": "object",
+            "description": "Recipient: {\"contactId\": \"<uuid>\"} or a one-off address {\"name\", \"street\", \"zip\", \"city\", \"countryCode\"}."
+          },
+          "lineItems": {
+            "type": "array",
+            "description": "Items like on an invoice: {\"type\": \"custom\" | \"material\" | \"service\" | \"text\", \"name\", \"quantity\", \"unitName\", \"unitPrice\": {\"currency\": \"EUR\", \"netAmount\", \"taxRatePercentage\"}, \"discountPercentage\"}.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "totalPrice": {
+            "type": "object",
+            "description": "{\"currency\": \"EUR\"}; Lexware computes the totals. Optionally totalDiscountPercentage."
+          },
+          "taxConditions": {
+            "type": "object",
+            "description": "{\"taxType\": \"net\"} (or gross, vatfree, ...)."
+          },
+          "paymentConditions": {
+            "type": "object",
+            "description": "Optional, e.g. {\"paymentTermLabel\": \"Zahlbar in 14 Tagen\", \"paymentTermDuration\": 14}."
+          },
+          "title": {
+            "type": "string",
+            "description": "Document title, default Angebot."
+          },
+          "introduction": {
+            "type": "string",
+            "description": "Text above the line items."
+          },
+          "remark": {
+            "type": "string",
+            "description": "Text below the line items."
+          },
+          "printLayoutId": {
+            "type": "string",
+            "description": "Optional print layout UUID."
+          }
+        },
+        "required": [
+          "voucherDate",
+          "expirationDate",
+          "address",
+          "lineItems",
+          "totalPrice",
+          "taxConditions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/quotations",
+        "bodyMapping": {
+          "voucherDate": "$voucherDate",
+          "expirationDate": "$expirationDate",
+          "address": "$address",
+          "lineItems": "$lineItems",
+          "totalPrice": "$totalPrice",
+          "taxConditions": "$taxConditions",
+          "paymentConditions": "$paymentConditions",
+          "title": "$title",
+          "introduction": "$introduction",
+          "remark": "$remark",
+          "printLayoutId": "$printLayoutId"
+        }
+      }
+    },
+    {
+      "name": "lexware_office_get_article",
+      "description": "Read one article with its price and version. The version is required to update the article.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Article UUID from lexware_office_list_articles."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles/{id}"
+      }
+    },
+    {
+      "name": "lexware_office_create_article",
+      "description": "Create an article in the product catalogue. Check with lexware_office_list_articles (articleNumber) that it does not exist yet, and confirm the data with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Article name."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "PRODUCT",
+              "SERVICE"
+            ],
+            "description": "PRODUCT for goods, SERVICE for work and fees."
+          },
+          "unitName": {
+            "type": "string",
+            "description": "Unit, e.g. Stück, kg, Stunde."
+          },
+          "price": {
+            "type": "object",
+            "description": "{\"netPrice\": 10.0, \"grossPrice\": 11.9, \"leadingPrice\": \"NET\", \"taxRate\": 19}. leadingPrice NET or GROSS says which of the two prices is authoritative."
+          },
+          "articleNumber": {
+            "type": "string",
+            "description": "Your own article number."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "EAN/GTIN, 8 to 14 digits."
+          },
+          "description": {
+            "type": "string",
+            "description": "Additional text."
+          },
+          "note": {
+            "type": "string",
+            "description": "Internal note."
+          }
+        },
+        "required": [
+          "title",
+          "type",
+          "unitName",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/articles",
+        "bodyMapping": {
+          "title": "$title",
+          "type": "$type",
+          "unitName": "$unitName",
+          "price": "$price",
+          "articleNumber": "$articleNumber",
+          "gtin": "$gtin",
+          "description": "$description",
+          "note": "$note"
+        }
+      }
+    },
+    {
+      "name": "lexware_office_update_article",
+      "description": "Replace an article completely (PUT): read it with lexware_office_get_article, keep every field, change only what the user asked for and send the current version. Fields left out are cleared. A stale version answers 409.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Article UUID."
+          },
+          "version": {
+            "type": "integer",
+            "description": "Current version from lexware_office_get_article."
+          },
+          "title": {
+            "type": "string",
+            "description": "Article name."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "PRODUCT",
+              "SERVICE"
+            ],
+            "description": "PRODUCT for goods, SERVICE for work and fees."
+          },
+          "unitName": {
+            "type": "string",
+            "description": "Unit, e.g. Stück."
+          },
+          "price": {
+            "type": "object",
+            "description": "{\"netPrice\", \"grossPrice\", \"leadingPrice\": \"NET\" | \"GROSS\", \"taxRate\"}."
+          },
+          "articleNumber": {
+            "type": "string",
+            "description": "Your own article number."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "EAN/GTIN, 8 to 14 digits."
+          },
+          "description": {
+            "type": "string",
+            "description": "Additional text."
+          },
+          "note": {
+            "type": "string",
+            "description": "Internal note."
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "type",
+          "unitName",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/articles/{id}",
+        "bodyMapping": {
+          "version": "$version",
+          "title": "$title",
+          "type": "$type",
+          "unitName": "$unitName",
+          "price": "$price",
+          "articleNumber": "$articleNumber",
+          "gtin": "$gtin",
+          "description": "$description",
+          "note": "$note"
         }
       }
     }

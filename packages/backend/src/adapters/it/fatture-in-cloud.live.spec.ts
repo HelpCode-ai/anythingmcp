@@ -67,3 +67,26 @@ const live = process.env.RUN_FATTURE_IN_CLOUD_LIVE === '1';
     expect(a.probe?.tool ?? toolNames[0]).toBeTruthy();
   });
 });
+
+const byName = (name: string) => {
+  const found = (adapter as unknown as { tools: Array<{ name: string; parameters: { required?: string[] }; endpointMapping: Record<string, unknown> }> }).tools.find((x) => x.name === name);
+  if (!found) throw new Error(`no tool ${name}`);
+  return found;
+};
+
+describe('fatture-in-cloud adapter: e-invoice XML and received documents', () => {
+  const t = (name: string) => byName(name);
+  it('downloads the FatturaPA XML of an issued document', () => {
+    expect(t('fatture_in_cloud_get_e_invoice_xml').endpointMapping).toMatchObject({
+      method: 'GET',
+      path: '/c/{FIC_COMPANY_ID}/issued_documents/{documentId}/e_invoice/xml',
+    });
+  });
+  it('reads one received document in detail', () => {
+    expect(t('fatture_in_cloud_get_received_document').endpointMapping).toMatchObject({
+      method: 'GET',
+      path: '/c/{FIC_COMPANY_ID}/received_documents/{documentId}',
+      queryParams: { fieldset: 'detailed' },
+    });
+  });
+});
