@@ -1,5 +1,7 @@
 import { DynamicMcpTools } from './dynamic-mcp-tools';
 import type { RegisteredTool } from './tool-registry';
+import { Logger } from '@nestjs/common';
+import * as metrics from '../common/metrics';
 
 /**
  * Runtime behaviour of response shaping, the response cache and the workflow
@@ -39,7 +41,7 @@ function makeTool(responseMapping?: Record<string, unknown>): RegisteredTool {
   };
 }
 
-function build(tool: RegisteredTool, opts: { engineResult?: unknown; cached?: string | null } = {}) {
+function build(tool: RegisteredTool, opts: { engineResult?: unknown; cached?: string | null; cloud?: boolean } = {}) {
   const redis = {
     get: jest.fn().mockResolvedValue(opts.cached ?? null),
     set: jest.fn().mockResolvedValue(undefined),
@@ -51,41 +53,52 @@ function build(tool: RegisteredTool, opts: { engineResult?: unknown; cached?: st
   const restEngine = {
     execute: jest.fn().mockResolvedValue(opts.engineResult ?? RAW),
   };
+  const mcpClientEngine = { execute: jest.fn().mockResolvedValue(opts.engineResult ?? RAW) };
+  const kg = { scheduleObservationalIngest: jest.fn() };
+  const license = { checkLicenseActive: jest.fn().mockResolvedValue(undefined) };
   const executor = new DynamicMcpTools(
     { getTool: () => tool, getToolForOrg: () => tool } as any,
     audit as any,
     redis as any,
-    { checkLicenseActive: jest.fn().mockResolvedValue(undefined) } as any,
-    { isCloud: () => false } as any,
+    license as any,
+    { isCloud: () => opts.cloud ?? false } as any,
     {} as any,
     restEngine as any,
     {} as any,
     {} as any,
+    mcpClientEngine as any,
     {} as any,
-    {} as any,
-    { scheduleObservationalIngest: jest.fn() } as any,
+    kg as any,
   );
-  return { executor, redis, audit, restEngine };
+  return { executor, redis, audit, restEngine, mcpClientEngine, kg, license };
+}
+
+function firstText(result: Awaited<ReturnType<DynamicMcpTools['executeTool']>>): string {
+  const first = result.content[0];
+  if (first?.type !== 'text' || typeof first.text !== 'string') {
+    throw new Error('Expected the first result block to be text');
+  }
+  return first.text;
 }
 
 describe('DynamicMcpTools — response shaping', () => {
   it('leaves the output byte-identical when no transform is configured', async () => {
     const { executor } = build(makeTool());
     const res = await executor.executeTool('list_devices', {});
-    expect(res.content[0].text).toBe(JSON.stringify(RAW, null, 2));
+    expect(firstText(res)).toBe(JSON.stringify(RAW, null, 2));
     expect(res.isError).toBeUndefined();
   });
 
   it('is a no-op when responseMapping only carries cacheTtl / followUp', async () => {
     const { executor } = build(makeTool({ cacheTtl: 0, followUp: undefined }));
     const res = await executor.executeTool('list_devices', {});
-    expect(res.content[0].text).toBe(JSON.stringify(RAW, null, 2));
+    expect(firstText(res)).toBe(JSON.stringify(RAW, null, 2));
   });
 
   it('applies a configured transform to the text and to structuredContent', async () => {
     const { executor } = build(makeTool(SELECT_TRANSFORM));
     const res = await executor.executeTool('list_devices', {});
-    expect(JSON.parse(res.content[0].text)).toEqual(MAPPED);
+    expect(JSON.parse(firstText(res))).toEqual(MAPPED);
     expect(res.structured).toEqual(MAPPED);
   });
 
@@ -108,17 +121,17 @@ describe('DynamicMcpTools — response shaping', () => {
     );
     const res = await executor.executeTool('list_devices', {});
     expect(soapEngine.execute).toHaveBeenCalled();
-    expect(JSON.parse(res.content[0].text)).toEqual(MAPPED);
+    expect(JSON.parse(firstText(res))).toEqual(MAPPED);
   });
 
   it('appends the workflow hint after the mapped payload, and keeps structuredContent parseable', async () => {
     const { executor } = build(makeTool({ ...SELECT_TRANSFORM, followUp: 'now call get_device' }));
     const res = await executor.executeTool('list_devices', {});
-    expect(res.content[0].text).toContain('WORKFLOW HINT');
-    expect(res.content[0].text.startsWith(JSON.stringify(MAPPED, null, 2))).toBe(true);
+    expect(firstText(res)).toContain('WORKFLOW HINT');
+    expect(firstText(res).startsWith(JSON.stringify(MAPPED, null, 2))).toBe(true);
     // The whole text is no longer valid JSON — this is exactly why the
     // executor hands back `structured` instead of making callers re-parse it.
-    expect(() => JSON.parse(res.content[0].text)).toThrow();
+    expect(() => JSON.parse(firstText(res))).toThrow();
     expect(res.structured).toEqual(MAPPED);
   });
 
@@ -134,7 +147,7 @@ describe('DynamicMcpTools — response shaping', () => {
     const { executor } = build(makeTool({ transform: { select: { bad: 'a[' } } }));
     const res = await executor.executeTool('list_devices', {});
     expect(res.isError).toBeUndefined();
-    expect(JSON.parse(res.content[0].text)).toEqual(RAW);
+    expect(JSON.parse(firstText(res))).toEqual(RAW);
   });
 
   it('surfaces the error instead when fallbackToRaw is false', async () => {
@@ -143,7 +156,7 @@ describe('DynamicMcpTools — response shaping', () => {
     );
     const res = await executor.executeTool('list_devices', {});
     expect(res.isError).toBe(true);
-    expect(JSON.parse(res.content[0].text).error).toMatch(/Response mapping failed/);
+    expect(JSON.parse(firstText(res)).error).toMatch(/Response mapping failed/);
   });
 });
 
@@ -165,7 +178,7 @@ describe('DynamicMcpTools — actionable hint on upstream errors', () => {
     const res = await executor.executeTool('list_devices', {});
 
     expect(res.isError).toBe(true);
-    const detail = JSON.parse(res.content[0].text);
+    const detail = JSON.parse(firstText(res));
     // The vendor's own message is still there, unmodified…
     expect(detail.responseBody.detail).toBe('unknown property: orderItems.articleNumber');
     // …and the hint sits beside it.
@@ -187,7 +200,7 @@ describe('DynamicMcpTools — actionable hint on upstream errors', () => {
     );
     const res = await executor.executeTool('list_devices', {});
     expect(res.isError).toBe(true);
-    expect(JSON.parse(res.content[0].text).hint).toBe(hint);
+    expect(JSON.parse(firstText(res)).hint).toBe(hint);
   });
 
   it('adds no hint for an ordinary failure on an unknown host', async () => {
@@ -195,7 +208,7 @@ describe('DynamicMcpTools — actionable hint on upstream errors', () => {
     restEngine.execute.mockRejectedValueOnce(new Error('boom'));
     const res = await executor.executeTool('list_devices', {});
     expect(res.isError).toBe(true);
-    expect(JSON.parse(res.content[0].text).hint).toBeUndefined();
+    expect(JSON.parse(firstText(res)).hint).toBeUndefined();
   });
 });
 
@@ -216,7 +229,7 @@ describe('DynamicMcpTools — response cache', () => {
     });
     const res = await executor.executeTool('list_devices', {});
     expect(restEngine.execute).not.toHaveBeenCalled(); // served from cache
-    expect(JSON.parse(res.content[0].text)).toEqual(MAPPED);
+    expect(JSON.parse(firstText(res))).toEqual(MAPPED);
     expect(res.structured).toEqual(MAPPED);
   });
 
@@ -226,7 +239,7 @@ describe('DynamicMcpTools — response cache', () => {
     });
     const res = await executor.executeTool('list_devices', {});
     expect(restEngine.execute).toHaveBeenCalled();
-    expect(JSON.parse(res.content[0].text)).toEqual(RAW);
+    expect(JSON.parse(firstText(res))).toEqual(RAW);
   });
 
   it('does not touch the cache when cacheTtl is absent', async () => {
@@ -331,7 +344,7 @@ describe('DynamicMcpTools — tool resolution is scoped to the caller', () => {
     });
 
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain('not found');
+    expect(firstText(res)).toContain('not found');
     expect(restEngine.execute).not.toHaveBeenCalled();
     expect(reg.calls).not.toContain('getTool(unscoped)');
   });
@@ -415,7 +428,7 @@ describe('DynamicMcpTools — exposed response headers (pagination)', () => {
         prevUrl: 'https://api.example.com/devices?cursor=000',
       },
     });
-    expect(JSON.parse(res.content[0].text)._pagination.nextCursor).toBe('abc');
+    expect(JSON.parse(firstText(res))._pagination.nextCursor).toBe('abc');
   });
 
   it('omits _pagination on the last page, so its absence is the signal', async () => {
@@ -563,7 +576,7 @@ describe('DynamicMcpTools — connector not authorized yet', () => {
       const { executor, restEngine } = build(tool);
       const res = await executor.executeTool('list_devices', {});
       expect(res.isError).toBe(true);
-      const text = res.content[0].text;
+      const text = firstText(res);
       expect(text).toContain('has not been authorized yet');
       expect(text).toContain('https://cloud.example.com/connectors/conn-1');
       expect(text).not.toContain('ETSY_REFRESH_TOKEN');
@@ -585,8 +598,8 @@ describe('DynamicMcpTools: images in the response', () => {
     expect(res.isError).toBeUndefined();
     expect(res.content).toHaveLength(2);
     expect(res.content[0].type).toBe('text');
-    expect(res.content[0].text).not.toContain(PNG);
-    expect(JSON.parse(res.content[0].text).data[0].b64_json).toMatch(/^\[image 1: image\/png/);
+    expect(firstText(res)).not.toContain(PNG);
+    expect(JSON.parse(firstText(res)).data[0].b64_json).toMatch(/^\[image 1: image\/png/);
     expect(res.content[1]).toEqual({ type: 'image', data: PNG, mimeType: 'image/png' });
     expect(JSON.stringify(res.structured)).not.toContain(PNG);
     expect(audit.logInvocation).toHaveBeenCalledWith(expect.objectContaining({ status: 'SUCCESS' }));
@@ -596,7 +609,7 @@ describe('DynamicMcpTools: images in the response', () => {
     const { executor } = build(makeTool(), { engineResult: GENERATED });
     const res = await executor.executeTool('list_devices', {});
     expect(res.content).toHaveLength(1);
-    expect(res.content[0].text).toBe(JSON.stringify(GENERATED, null, 2));
+    expect(firstText(res)).toBe(JSON.stringify(GENERATED, null, 2));
   });
 });
 
@@ -616,8 +629,8 @@ describe('DynamicMcpTools: binary responses', () => {
     const res = await executor.executeTool('list_devices', {});
     expect(res.isError).toBeUndefined();
     expect(res.content[0].type).toBe('text');
-    expect(res.content[0].text).not.toContain(JPEG.toString('base64'));
-    expect(JSON.parse(res.content[0].text).file).toMatchObject({ contentType: 'application/octet-stream', bytes: JPEG.length });
+    expect(firstText(res)).not.toContain(JPEG.toString('base64'));
+    expect(JSON.parse(firstText(res)).file).toMatchObject({ contentType: 'application/octet-stream', bytes: JPEG.length });
     expect(res.content[1]).toEqual({ type: 'image', data: JPEG.toString('base64'), mimeType: 'image/jpeg' });
     const logged = JSON.stringify(audit.logInvocation.mock.calls[0][0].output);
     expect(logged).not.toContain(JPEG.toString('base64'));
@@ -632,7 +645,7 @@ describe('DynamicMcpTools: binary responses', () => {
       type: 'resource',
       resource: { uri: 'file:///invoice.pdf', mimeType: 'application/pdf', blob: PDF.toString('base64') },
     });
-    expect(JSON.parse(res.content[0].text).file.filename).toBe('invoice.pdf');
+    expect(JSON.parse(firstText(res)).file.filename).toBe('invoice.pdf');
   });
 
   it('renders a cached binary body the same way', async () => {
@@ -702,5 +715,204 @@ describe('DynamicMcpTools: the connector id reaches the engine', () => {
     );
     await executor.executeTool('cloudinary_list_images', {});
     expect(mcpClientEngine.execute.mock.calls[0][0].connectorId).toBeUndefined();
+  });
+});
+
+
+describe('DynamicMcpTools — MCP tool error envelopes', () => {
+  const FAILURE = {
+    isError: true,
+    content: [
+      { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png', annotations: { audience: ['user'], priority: 0.5 } },
+      { type: 'text', text: 'The remote tool refused the request.', annotations: { audience: ['assistant'] } },
+      { type: 'resource', resource: { uri: 'https://api.example.com/problem', mimeType: 'text/plain', text: 'details' } },
+    ],
+    _meta: { requestId: 'request-1' },
+    structuredContent: { reason: 'invalid_input' },
+    vendor: { retryable: false },
+  };
+  const CONTEXT = {
+    organizationId: 'org-1', userId: 'user-1', userEmail: 'caller@example.com',
+    mcpServerId: 'server-1', mcpServerName: 'Example', authMethod: 'api_key',
+    apiKeyName: 'desktop', intent: 'inspect devices', learnable: true,
+  };
+
+  function mcpTool(responseMapping?: Record<string, unknown>): RegisteredTool {
+    return {
+      ...makeTool(responseMapping),
+      connectorType: 'MCP',
+      useProxy: false,
+      endpointMapping: { method: 'remote_list_devices', path: '/mcp' },
+    };
+  }
+
+  function statefulCache(built: ReturnType<typeof build>) {
+    const entries = new Map<string, string>();
+    built.redis.get.mockImplementation(async (key: string) => entries.get(key) ?? null);
+    built.redis.set.mockImplementation(async (key: string, value: string) => { entries.set(key, value); });
+    return entries;
+  }
+
+  function failedObservations(built: ReturnType<typeof build>, results: unknown[]) {
+    return {
+      results,
+      remoteCalls: built.mcpClientEngine.execute.mock.calls.length,
+      audits: built.audit.logInvocation.mock.calls,
+      cacheWrites: built.redis.set.mock.calls,
+      kgCalls: built.kg.scheduleObservationalIngest.mock.calls,
+      metrics: jest.mocked(metrics.recordToolCall).mock.calls,
+    };
+  }
+
+  beforeEach(() => {
+    jest.spyOn(metrics, 'recordToolCall');
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each([
+    { cloud: false, cacheTtl: undefined },
+    { cloud: false, cacheTtl: 300 },
+    { cloud: true, cacheTtl: undefined },
+    { cloud: true, cacheTtl: 300 },
+  ])('keeps remote failures out of success paths (cloud=$cloud, ttl=$cacheTtl)', async ({ cloud, cacheTtl }) => {
+    const built = build(mcpTool({ cacheTtl }), { engineResult: FAILURE, cloud });
+    statefulCache(built);
+    const results = [
+      await built.executor.executeTool('list_devices', { page: 1 }, CONTEXT),
+      await built.executor.executeTool('list_devices', { page: 1 }, CONTEXT),
+    ];
+    const audit = expect.objectContaining({
+      toolId: 'tool-1', connectorId: 'conn-1', userId: CONTEXT.userId,
+      userEmail: CONTEXT.userEmail, organizationId: CONTEXT.organizationId,
+      mcpServerId: CONTEXT.mcpServerId, usedProxy: false, intent: CONTEXT.intent,
+      learnable: true, input: { page: 1 }, status: 'ERROR',
+      output: FAILURE, durationMs: expect.any(Number), error: expect.stringContaining('invalid_input'),
+      clientInfo: JSON.stringify({ authMethod: 'api_key', apiKeyName: 'desktop', userEmail: CONTEXT.userEmail, mcpServerName: 'Example' }),
+    });
+    const metric = expect.objectContaining({
+      connectorType: 'MCP', connectorId: 'conn-1', tool: 'list_devices',
+      status: 'error', durationMs: expect.any(Number), upstreamStatus: undefined,
+    });
+    expect(failedObservations(built, results)).toEqual({
+      results: [FAILURE, FAILURE], remoteCalls: 2, audits: [[audit], [audit]],
+      cacheWrites: [], kgCalls: [], metrics: [[metric], [metric]],
+    });
+    expect(built.redis.get).toHaveBeenCalledTimes(cacheTtl ? 2 : 0);
+    expect(built.license.checkLicenseActive).toHaveBeenNthCalledWith(1, 'org-1');
+    expect(built.mcpClientEngine.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ connectorId: 'conn-1' }),
+      expect.objectContaining({ method: 'remote_list_devices' }), { page: 1 },
+    );
+    expect(built.restEngine.execute).not.toHaveBeenCalled();
+    expect(Logger.prototype.log).toHaveBeenCalledTimes(2);
+    expect(Logger.prototype.log).toHaveBeenCalledWith(expect.objectContaining({
+      msg: 'tool_call', status: 'ERROR', upstreamStatus: undefined,
+      organizationId: 'org-1', mcpServerId: 'server-1', authMethod: 'api_key',
+    }));
+  });
+
+  it.each([{ content: [] }, { content: FAILURE.content }])('preserves empty or non-text-first content despite transform/followUp (%j)', async ({ content }) => {
+    const envelope = { ...FAILURE, content };
+    const built = build(mcpTool({
+      ...SELECT_TRANSFORM, followUp: 'now call get_device', cacheTtl: 300,
+    }), { engineResult: envelope });
+    const original = structuredClone(envelope);
+    const result = await built.executor.executeTool('list_devices', {}, CONTEXT);
+    expect(result).toEqual(envelope);
+    expect(envelope).toEqual(original);
+    expect(built.redis.set).not.toHaveBeenCalled();
+    expect(built.kg.scheduleObservationalIngest).not.toHaveBeenCalled();
+  });
+
+  it('redacts explicit and numeric secrets and secret patterns without mutating the engine fixture', async () => {
+    const secrets = ['opaque-value-1122', '87654321', 'sk_live_1234567890AbCdEf'];
+    const envelope = {
+      ...FAILURE, content: [{ type: 'text', text: secrets.join(' ') }],
+      structuredContent: { explicit: secrets[0], numeric: secrets[1], pattern: secrets[2] },
+      _meta: { detail: secrets.join(' ') },
+    };
+    const original = structuredClone(envelope);
+    const tool = mcpTool();
+    tool.connectorConfig.envVars = { API_KEY: secrets[0], PIN_SECRET: secrets[1] };
+    const built = build(tool, { engineResult: envelope });
+    const result = await built.executor.executeTool('list_devices', {}, CONTEXT);
+    expect(result).toEqual({
+      ...FAILURE, content: [{ type: 'text', text: '[REDACTED] [REDACTED] [REDACTED]' }],
+      structuredContent: { explicit: '[REDACTED]', numeric: '[REDACTED]', pattern: '[REDACTED]' },
+      _meta: { detail: '[REDACTED] [REDACTED] [REDACTED]' },
+    });
+    const row = built.audit.logInvocation.mock.calls[0][0];
+    expect(row.output).toEqual(result);
+    expect(row.error).toContain('[REDACTED]');
+    for (const secret of secrets) expect(JSON.stringify(row)).not.toContain(secret);
+    expect(envelope).toEqual(original);
+  });
+
+  it('lets a later success reach the remote tool and cache normally', async () => {
+    const success = { content: [{ type: 'text', text: 'ok' }] };
+    const built = build(mcpTool({ cacheTtl: 300 }), { engineResult: FAILURE });
+    const entries = statefulCache(built);
+    built.mcpClientEngine.execute.mockResolvedValueOnce(FAILURE).mockResolvedValueOnce(success);
+    expect(await built.executor.executeTool('list_devices', {}, CONTEXT)).toEqual(FAILURE);
+    expect(entries.size).toBe(0);
+    expect(built.redis.set).not.toHaveBeenCalled();
+    const second = await built.executor.executeTool('list_devices', {}, CONTEXT);
+    const third = await built.executor.executeTool('list_devices', {}, CONTEXT);
+    expect(second.isError).toBeUndefined();
+    expect(second.structured).toEqual(success);
+    expect(third).toEqual(second);
+    expect(built.mcpClientEngine.execute).toHaveBeenCalledTimes(2);
+    expect(built.redis.set).toHaveBeenCalledTimes(1);
+    expect(built.audit.logInvocation.mock.calls.map(([row]) => row.status)).toEqual(['ERROR', 'SUCCESS']);
+    expect(jest.mocked(metrics.recordToolCall).mock.calls.map(([row]) => row.status)).toEqual(['error', 'success']);
+    expect(built.kg.scheduleObservationalIngest).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps envelope-shaped REST business data successful and cacheable', async () => {
+    const built = build(makeTool({ cacheTtl: 300 }), { engineResult: FAILURE });
+    statefulCache(built);
+    const first = await built.executor.executeTool('list_devices', {}, CONTEXT);
+    const second = await built.executor.executeTool('list_devices', {}, CONTEXT);
+    expect(first.isError).toBeUndefined();
+    expect(first.structured).toEqual(FAILURE);
+    expect(second).toEqual(first);
+    expect(built.restEngine.execute).toHaveBeenCalledTimes(1);
+    expect(built.mcpClientEngine.execute).not.toHaveBeenCalled();
+    expect(built.redis.set).toHaveBeenCalledTimes(1);
+    expect(built.audit.logInvocation).toHaveBeenCalledWith(expect.objectContaining({ status: 'SUCCESS', output: FAILURE }));
+    expect(metrics.recordToolCall).toHaveBeenCalledTimes(1);
+    expect(metrics.recordToolCall).toHaveBeenCalledWith(expect.objectContaining({ status: 'success' }));
+    expect(built.kg.scheduleObservationalIngest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([undefined, false, 'true', 1])('only treats a strict top-level true flag as failure (%j)', async (isError) => {
+    const envelope = { isError, content: [{ type: 'text', text: '{"isError":true}' }], nested: { isError: true } };
+    const built = build(mcpTool({ cacheTtl: 300 }), { engineResult: envelope });
+    statefulCache(built);
+    const first = await built.executor.executeTool('list_devices', {}, CONTEXT);
+    expect(first.isError).toBeUndefined();
+    expect(first.structured).toEqual(envelope);
+    expect(await built.executor.executeTool('list_devices', {}, CONTEXT)).toEqual(first);
+    expect(built.mcpClientEngine.execute).toHaveBeenCalledTimes(1);
+    expect(built.redis.set).toHaveBeenCalledTimes(1);
+    expect(built.audit.logInvocation).toHaveBeenCalledWith(expect.objectContaining({ status: 'SUCCESS' }));
+    expect(metrics.recordToolCall).toHaveBeenCalledWith(expect.objectContaining({ status: 'success' }));
+    expect(built.kg.scheduleObservationalIngest).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves thrown MCP errors and their audit and metric behavior', async () => {
+    const built = build(mcpTool({ cacheTtl: 300 }));
+    statefulCache(built);
+    built.mcpClientEngine.execute.mockRejectedValue(new Error('remote unavailable'));
+    const result = await built.executor.executeTool('list_devices', {}, CONTEXT);
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(firstText(result))).toEqual({ error: 'remote unavailable' });
+    expect(built.audit.logInvocation).toHaveBeenCalledTimes(1);
+    expect(built.audit.logInvocation).toHaveBeenCalledWith(expect.objectContaining({ status: 'ERROR', error: 'remote unavailable' }));
+    expect(metrics.recordToolCall).toHaveBeenCalledTimes(1);
+    expect(metrics.recordToolCall).toHaveBeenCalledWith(expect.objectContaining({ status: 'error', upstreamStatus: undefined }));
+    expect(built.redis.set).not.toHaveBeenCalled();
+    expect(built.kg.scheduleObservationalIngest).not.toHaveBeenCalled();
   });
 });
