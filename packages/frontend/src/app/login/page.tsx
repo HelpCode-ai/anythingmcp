@@ -121,12 +121,16 @@ function LoginForm() {
   const modeParam = searchParams.get('mode'); // 'register' or 'login'
   const ssoCode = searchParams.get('sso');
   const socialCode = searchParams.get('social');
+  // `?continueWith=google`: the AI client's consent page links here after a
+  // sign-in there with that provider, which left this browser without a
+  // dashboard session. Signing in again with it is one redirect, not a form.
+  const continueWith = searchParams.get('continueWith');
   const errorParam = searchParams.get('error');
   const planParam = searchParams.get('plan');
   const periodParam = searchParams.get('period');
   const promoParam = searchParams.get('promo');
   const [ssoProviders, setSsoProviders] = useState<SsoProviderButton[]>([]);
-  const [ssoExchanging, setSsoExchanging] = useState(Boolean(ssoCode || socialCode));
+  const [ssoExchanging, setSsoExchanging] = useState(Boolean(ssoCode || socialCode || continueWith));
   const [socialProviders, setSocialProviders] = useState<SocialProviderButton[]>([]);
   const [socialStarting, setSocialStarting] = useState<string | null>(null);
   // Sign-up with social providers on offer: the email form stays folded
@@ -385,8 +389,11 @@ function LoginForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socialCode, infoLoaded, sessionLoading]);
 
-  /** "Continue with <provider>": off to the provider, as a full navigation. */
-  const startSocial = async (provider: string) => {
+  /**
+   * "Continue with <provider>": off to the provider, as a full navigation.
+   * False when it could not start (the error is shown).
+   */
+  const startSocial = async (provider: string): Promise<boolean> => {
     setError('');
     setSocialStarting(provider);
     try {
@@ -394,11 +401,35 @@ function LoginForm() {
       const attribution = isCloudMode ? getSignupAttribution() : undefined;
       const { authorizationUrl } = await social.start(provider, redirectTo, attribution);
       window.location.assign(authorizationUrl);
+      return true;
     } catch (err: any) {
       setError(err.message || 'This sign-in option is not available right now.');
       setSocialStarting(null);
+      return false;
     }
   };
+
+  // Arrived with `?continueWith=<provider>`: already signed in here, go on;
+  // otherwise start that provider's sign-in. Looked at once, after the
+  // session and the server info are known; an unknown provider shows the form.
+  const continueChecked = useRef(false);
+  useEffect(() => {
+    if (!continueWith || socialCode || ssoCode || !infoLoaded || sessionLoading || continueChecked.current) return;
+    continueChecked.current = true;
+    if (sessionToken) {
+      goTo(redirectTo);
+      return;
+    }
+    if (socialProviders.some((p) => p.id === continueWith)) {
+      // Stays on "Signing you in…" while the browser leaves for the provider.
+      void startSocial(continueWith).then((started) => {
+        if (!started) setSsoExchanging(false);
+      });
+      return;
+    }
+    setSsoExchanging(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [continueWith, infoLoaded, sessionLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

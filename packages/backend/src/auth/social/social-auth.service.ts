@@ -49,7 +49,7 @@ export class SocialAuthError extends Error {
 export type SocialCompletion =
   | { kind: 'LOGIN'; handoffCode: string; returnTo: string }
   | { kind: 'LINK'; returnTo: string; provider: SocialProviderId }
-  | { kind: 'MCP'; user: { id: string; email: string; name: string | null } };
+  | { kind: 'MCP'; provider: SocialProviderId; user: { id: string; email: string; name: string | null } };
 
 interface RequestContext {
   ip?: string;
@@ -278,7 +278,7 @@ export class SocialAuthService {
     });
 
     if (surface === 'MCP') {
-      return { kind: 'MCP', user: { id: user.id, email: user.email, name: user.name } };
+      return { kind: 'MCP', provider: adapter.id, user: { id: user.id, email: user.email, name: user.name } };
     }
 
     const handoffCode = randomBytes(32).toString('base64url');

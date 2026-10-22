@@ -1,8 +1,9 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { AuthService } from './auth.service';
 import { resolveUserIdFromTokenPayload } from './resolve-user-id.util';
+import { SocialProviderRegistry } from './social/social-providers';
 import {
   emailVerificationNotice,
   McpEmailVerificationRequiredException,
@@ -52,6 +53,7 @@ export class EmailVerifiedGuard implements CanActivate {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
+    @Optional() private readonly socialProviders?: SocialProviderRegistry,
   ) {}
 
   /** The session's user id: from req.user when set, else from the bearer JWT. */
@@ -100,7 +102,11 @@ export class EmailVerifiedGuard implements CanActivate {
         // this into an MCP answer the client shows and the model can read.
         const dashboard = this.configService.get<string>('FRONTEND_URL') || 'https://cloud.anythingmcp.com';
         throw new McpEmailVerificationRequiredException(
-          emailVerificationNotice(dashboard, dbUser.email),
+          emailVerificationNotice(
+            dashboard,
+            dbUser.email,
+            this.socialProviders?.enabled().map((p) => p.name) ?? [],
+          ),
         );
       }
       throw new ForbiddenException('Email verification required');

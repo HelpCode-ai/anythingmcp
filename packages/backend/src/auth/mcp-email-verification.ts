@@ -40,18 +40,36 @@ export function maskEmail(email: string | null | undefined): string | undefined 
   return `${local.slice(0, keep)}***${email.slice(at)}`;
 }
 
-/** The text shown to the person and the model. */
-export function emailVerificationNotice(dashboardUrl: string, email?: string | null): string {
+/**
+ * The text shown to the person and the model. `socialProviders` are the
+ * sign-in providers this deployment offers (Cloud: Google, Microsoft,
+ * GitHub): signing in with one of them for the same address verifies it at
+ * once, which most of these addresses (gmail, outlook) allow.
+ */
+export function emailVerificationNotice(
+  dashboardUrl: string,
+  email?: string | null,
+  socialProviders: string[] = [],
+): string {
   const base = dashboardUrl.replace(/\/+$/, '');
   const masked = maskEmail(email);
+  const social = socialProviders.length
+    ? ` If the address is a ${listOr(socialProviders)} account, signing in there with ` +
+      '"Continue with" verifies it at once, no code needed.'
+    : '';
   return (
     'Your AnythingMCP account cannot be used yet: its email address has not been verified, ' +
     'so no tools are available. ' +
     `We sent a verification email${masked ? ` to ${masked}` : ''} when you signed up: open the link ` +
     'in it (or enter its code), then try again. ' +
     `No email, or the code expired? Sign in at ${base}/login and a new code is sent; check the spam ` +
-    'folder too. Nothing needs to change in your AI client.'
+    `folder too.${social} Nothing needs to change in your AI client.`
   );
+}
+
+/** "Google", "Google or GitHub", "Google, Microsoft or GitHub". */
+function listOr(names: string[]): string {
+  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`;
 }
 
 /** Thrown by EmailVerifiedGuard on /mcp; a 403 with the notice wherever this filter does not apply. */

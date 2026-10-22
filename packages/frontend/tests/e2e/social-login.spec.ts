@@ -148,6 +148,37 @@ test.describe('social sign-in on /login', () => {
     expect(page.url()).not.toContain('social=');
   });
 
+  // The AI client's consent page links to the dashboard after a sign-in there
+  // with a provider, which left no dashboard session behind.
+  test('continueWith signs in with that provider on its own, keeping the redirect', async ({ page }) => {
+    let started: any = null;
+    await mockApi(page, { onStart: (b) => (started = b) });
+    await page.goto('/login?continueWith=google&redirect=%2Fstart-trial%3Fsource%3Dpost_approve');
+    await page.waitForURL((url) => url.host === 'accounts.google.com', { timeout: 15_000 });
+    expect(started).toMatchObject({ provider: 'google', redirect: '/start-trial?source=post_approve' });
+  });
+
+  test('continueWith in an already signed-in browser goes straight on', async ({ page, context, baseURL }) => {
+    let started = false;
+    await context.addCookies([{ name: 'amcp_token', value: 't', url: baseURL! }]);
+    await page.addInitScript((user) => {
+      localStorage.setItem('amcp_token', 't');
+      localStorage.setItem('amcp_user', JSON.stringify(user));
+    }, USER);
+    await mockApi(page, { onStart: () => (started = true), extra: (p) => (p === '/api/users/me' ? USER : null) });
+    await page.goto('/login?continueWith=google&redirect=%2Fconnectors');
+    await page.waitForURL(/\/connectors$/, { timeout: 15_000 });
+    expect(started).toBe(false);
+  });
+
+  test('continueWith with a provider this deployment lacks shows the form', async ({ page }) => {
+    let started = false;
+    await mockApi(page, { onStart: () => (started = true) });
+    await page.goto('/login?continueWith=facebook&redirect=%2Fwelcome');
+    await expect(page.locator('#auth-email')).toBeVisible({ timeout: 15_000 });
+    expect(started).toBe(false);
+  });
+
   test('a refused sign-in shows the message from the callback', async ({ page }) => {
     await mockApi(page);
     await page.goto(`/login?error=${encodeURIComponent('Sign-in was cancelled.')}`);

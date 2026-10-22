@@ -249,7 +249,7 @@ export class LoginController {
       clearBinding();
       if (result.kind === 'MCP') {
         this.logger.log(`Authorization signed in with ${provider}: ${result.user.email}`);
-        return this.completeSignIn(req, res, result.user);
+        return this.completeSignIn(req, res, result.user, result.provider);
       }
       if (result.kind === 'LINK') {
         return res.redirect(
@@ -434,6 +434,8 @@ export class LoginController {
     req: Request,
     res: Response,
     user: SessionUser,
+    /** Set when the user signed in on this page with Google, Microsoft or GitHub. */
+    socialProvider?: string,
   ): Promise<void> {
     // Set a short-lived cookie with the user profile for the callback to read
     const profile = {
@@ -464,7 +466,7 @@ export class LoginController {
 
     // Derive callback URL from the request origin (works behind proxy/tunnel)
     const baseUrl = this.getBaseUrl(req);
-    if (await this.maybeOfferFirstConnector(req, res, user.id, encoded, `${baseUrl}/callback`)) return;
+    if (await this.maybeOfferFirstConnector(req, res, user.id, encoded, `${baseUrl}/callback`, socialProvider)) return;
     res.redirect(`${baseUrl}/callback`);
   }
 
@@ -485,6 +487,7 @@ export class LoginController {
     userId: string,
     encodedProfile: string,
     callbackUrl: string,
+    socialProvider?: string,
   ): Promise<boolean> {
     if (!this.deployment.isCloud()) return false;
     const consent = await this.loadConsentContext(req);
@@ -547,14 +550,24 @@ export class LoginController {
       .catch(() => undefined);
 
     const dashboard = (this.configService.get<string>('FRONTEND_URL') || '').replace(/\/+$/, '');
+    // Someone who signed in here with Google, Microsoft or GitHub has no
+    // dashboard session: this page is the only place they signed in. A plain
+    // link would land them on the sign-in form in the new tab, where most
+    // stopped (card-trial page reached by 11.6% of them in their first 16
+    // hours, against 20% of email sign-ups, 21-22 Oct 2026). The dashboard
+    // signs them in with the same provider on its own and goes on to the page.
+    const dashboardLink = (path: string) =>
+      socialProvider
+        ? `${dashboard}/login?continueWith=${encodeURIComponent(socialProvider)}&redirect=${encodeURIComponent(path)}`
+        : `${dashboard}${path}`;
     res.setHeader('Content-Type', 'text/html');
     res.send(
       this.renderFirstConnectorOffer({
         clientName: consent.clientName,
         redirectHost: consent.redirectHost,
         callbackUrl,
-        welcomeUrl: `${dashboard}/welcome`,
-        ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: `${dashboard}/start-trial?source=${POST_APPROVE_SOURCE}` } } : {}),
+        welcomeUrl: dashboardLink('/welcome'),
+        ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: dashboardLink(`/start-trial?source=${POST_APPROVE_SOURCE}`) } } : {}),
       }),
     );
     return true;

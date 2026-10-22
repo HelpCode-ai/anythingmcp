@@ -32,6 +32,15 @@ describe('emailVerificationNotice', () => {
     expect(text).toContain('ja***@example.com');
     expect(text).toContain('https://cloud.anythingmcp.com/login');
     expect(text).not.toContain('jane.doe');
+    // No sign-in providers configured (self-hosted, or Cloud without them).
+    expect(text).not.toMatch(/Continue with/);
+  });
+
+  it('points to the social sign-in when the deployment offers it', () => {
+    const text = emailVerificationNotice('https://cloud.anythingmcp.com', 'jane@gmail.com', ['Google', 'Microsoft', 'GitHub']);
+    expect(text).toContain('If the address is a Google, Microsoft or GitHub account');
+    expect(text).toContain('verifies it at once');
+    expect(emailVerificationNotice('https://x.test', 'a@b.c', ['Google'])).toContain('a Google account');
   });
 });
 

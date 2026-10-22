@@ -175,11 +175,12 @@ describe('LoginController — social sign-in on the MCP consent page', () => {
     it('finishes an MCP authorization like a password sign-in', async () => {
       const { controller, social } = makeController();
       const user = { id: 'u1', email: 'ann@example.com', name: 'Ann' };
-      social.complete.mockResolvedValue({ kind: 'MCP', user });
+      social.complete.mockResolvedValue({ kind: 'MCP', provider: 'google', user });
       const completeSignIn = jest.spyOn(controller as any, 'completeSignIn').mockResolvedValue(undefined);
       const res = makeRes();
       await controller.socialCallback('google', makeReq(), res);
-      expect(completeSignIn).toHaveBeenCalledWith(expect.anything(), res, user);
+      // The provider goes along: the next page's dashboard links sign in with it.
+      expect(completeSignIn).toHaveBeenCalledWith(expect.anything(), res, user, 'google');
       expect(res._cleared).toContain('amcp_social_bind');
     });
 
@@ -217,5 +218,48 @@ describe('LoginController — social sign-in on the MCP consent page', () => {
         `https://cloud.example/login?error=${encodeURIComponent('Sign-in failed. Please try again.')}`,
       );
     });
+  });
+});
+
+/**
+ * The page after Approve for an empty workspace links to the dashboard ("add
+ * an app", "add a card"). Someone who signed in on the consent page with a
+ * social provider has no dashboard session, so those links sign them in with
+ * the same provider first instead of showing the sign-in form.
+ */
+describe('LoginController — dashboard links after a social sign-in on the consent page', () => {
+  function offerController() {
+    const { controller } = makeController();
+    (controller as any).prisma = {
+      user: { findUnique: jest.fn(async () => ({ organizationId: 'o1', email: 'ann@example.com' })) },
+      organizationMember: { findFirst: jest.fn(async () => ({ role: 'ADMIN' })) },
+      connector: { count: jest.fn(async () => 0) },
+    };
+    (controller as any).licenseGuard = {
+      getTrialState: jest.fn(async () => ({ active: true, cardTrialAvailable: true, endsAt: new Date('2026-10-29T12:00:00Z') })),
+    };
+    return controller;
+  }
+  const offer = (controller: any, provider?: string) => {
+    const res = makeRes();
+    return controller
+      .maybeOfferFirstConnector(makeReq({ cookies: { oauth_session: 's1' } }), res, 'u1', 'enc', 'https://cloud.example/callback', provider)
+      .then((shown: boolean) => ({ shown, html: String(res._sent ?? '') }));
+  };
+
+  it('signs in with the same provider on the way to the dashboard', async () => {
+    const { shown, html } = await offer(offerController(), 'google');
+    expect(shown).toBe(true);
+    expect(html).toContain('https://cloud.example/login?continueWith=google&amp;redirect=%2Fwelcome');
+    expect(html).toContain(
+      'https://cloud.example/login?continueWith=google&amp;redirect=%2Fstart-trial%3Fsource%3Dpost_approve',
+    );
+  });
+
+  it('links straight to the dashboard after a password sign-in', async () => {
+    const { html } = await offer(offerController());
+    expect(html).toContain('href="https://cloud.example/welcome"');
+    expect(html).toContain('https://cloud.example/start-trial?source=post_approve');
+    expect(html).not.toContain('continueWith');
   });
 });

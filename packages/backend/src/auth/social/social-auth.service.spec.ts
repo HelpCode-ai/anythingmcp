@@ -236,7 +236,7 @@ describe('SocialAuthService.complete — the round trip', () => {
     });
     await expect(
       service.complete('google', new URL(CALLBACK), { bindingToken: 'bind-token', oauthSessionId: 'sess' }),
-    ).resolves.toEqual({ kind: 'MCP', user: { id: 'u1', email: 'ann@example.com', name: 'Ann' } });
+    ).resolves.toEqual({ kind: 'MCP', provider: 'google', user: { id: 'u1', email: 'ann@example.com', name: 'Ann' } });
   });
 });
 
