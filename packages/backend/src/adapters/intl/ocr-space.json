@@ -1,0 +1,260 @@
+{
+  "slug": "ocr-space",
+  "name": "OCR.space",
+  "aliases": [
+    "OCR space",
+    "ocrspace",
+    "OCR API",
+    "a9t9 OCR"
+  ],
+  "description": "OCR.space OCR API: read the text of images and PDFs (receipts, invoices, scans, screenshots, photos of documents) from a public URL, with automatic language detection, table mode for receipts and a searchable-PDF export. Free API key.",
+  "region": "intl",
+  "category": "data",
+  "icon": "ocr-space",
+  "docsUrl": "https://ocr.space/ocrapi",
+  "instructions": "## OCR.space\nThis connector reads text from images and PDFs with the **OCR.space** OCR API (by a9t9): receipts, invoices, delivery notes, scanned letters, screenshots and photos of documents, from a public URL. It can also turn a scan into a searchable PDF.\n\n**Setup (about 1 minute)**\n1. Request a free API key at https://ocr.space/ocrapi/freekey (it arrives by e-mail), or use the key of a PRO plan.\n2. Paste it into `OCR_SPACE_API_KEY`. It is sent in the `apikey` header.\n3. Install: the check reads a small sample image, which counts as one request.\n\n**Tools**\n- `ocr_space_read_url`: the text of every page of an image or PDF. Use `is_table` true for receipts and tables (keeps lines in reading order), `scale` true for small or blurry images, `detect_orientation` true for rotated photos.\n- `ocr_space_make_searchable_pdf`: a searchable PDF of a scan, as a download link (`SearchablePDFURL`) that expires after about an hour, plus the text.\n\n**Engines**: engine 2 (default) is fast, detects the language itself and handles numbers and special characters well. Engine 3 is the most accurate (200+ languages, handwriting, complex layouts) but slower and limited to 1,000 pages a month on the free plan. `language` `auto` works with both; set a code (`ger`, `fre`, `ita`, `spa`, `chs`, `jpn`...) when auto-detection picks the wrong one.\n\n**Files**: the URL must be reachable from the internet without a login; a link to a private drive or e-mail attachment fails with E217 (could not download). Free plan: 1 MB per file, 3 PDF pages, 25,000 requests a month, 500 a day per IP. PRO: 5 MB and more pages.\n\n**Reading the answer**: `pages[].text` is the text, with line breaks. `OCRExitCode` 1 means all pages were read, 2 some, 3 or 4 none; `ErrorMessage` says why. OCR.space reports processing errors with HTTP 200 and `IsErroredOnProcessing` true; the connector turns those into a failed call carrying that message.\n\n**Errors**: 403 E555 means a wrong API key; 400 E400 no file given or E204 a wrong parameter; E217 a URL that cannot be downloaded; 429 or E500 the monthly or daily limit.",
+  "prerequisites": "A free OCR.space API key (requested at https://ocr.space/ocrapi/freekey) or a PRO key.",
+  "requiredEnvVars": [
+    "OCR_SPACE_API_KEY"
+  ],
+  "envVarMeta": {
+    "OCR_SPACE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Request a free key at https://ocr.space/ocrapi/freekey; it arrives by e-mail. PRO keys work too.",
+      "link": "https://ocr.space/ocrapi/freekey",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the API key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "403": "OCR.space refused the API key (E555). Check OCR_SPACE_API_KEY or request a new free key at https://ocr.space/ocrapi/freekey.",
+    "rate_limited": "The OCR.space request limit was reached (500 a day per IP, 25,000 a month on the free plan). Try again later or use a PRO key."
+  },
+  "probe": {
+    "tool": "ocr_space_read_url",
+    "params": {
+      "url": "https://dl.a9t9.com/ocr/solarcell.jpg"
+    }
+  },
+  "connector": {
+    "name": "OCR.space API",
+    "type": "REST",
+    "baseUrl": "https://api.ocr.space",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "apikey",
+      "apiKey": "{{OCR_SPACE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "IsErroredOnProcessing",
+          "equals": true,
+          "messagePath": "ErrorMessage",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "ocr_space_read_url",
+      "description": "Read the text in an image or PDF at a public URL with OCR (receipts, invoices, scans, screenshots, photos of documents): one text per page, plus exit codes. On the free plan files may be up to 1 MB and PDFs up to 3 pages. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public http(s) URL of the image (JPG, PNG, GIF, TIF, BMP, WEBP) or PDF.",
+            "format": "uri"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the text. auto (default, engines 2 and 3) detects it; or a code such as eng, ger, fre, ita, spa, por, rus, ara, chs, jpn, kor.",
+            "default": "auto"
+          },
+          "engine": {
+            "type": "integer",
+            "description": "OCR engine: 2 (default, fast, auto language detection, good on numbers and special characters) or 3 (most accurate, 200+ languages and handwriting, slower; 1,000 pages a month on the free plan).",
+            "enum": [
+              2,
+              3
+            ],
+            "default": 2
+          },
+          "is_table": {
+            "type": "boolean",
+            "description": "true for receipts and tables: keeps the text line by line in reading order."
+          },
+          "scale": {
+            "type": "boolean",
+            "description": "true to upscale small or low-resolution images first; improves results on scans and screenshots."
+          },
+          "detect_orientation": {
+            "type": "boolean",
+            "description": "true to rotate the image to the right orientation first."
+          },
+          "filetype": {
+            "type": "string",
+            "description": "File type when the URL has no file extension.",
+            "enum": [
+              "PDF",
+              "JPG",
+              "PNG",
+              "GIF",
+              "TIF",
+              "BMP",
+              "WEBP"
+            ]
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/parse/image",
+        "bodyMapping": {
+          "url": "$url",
+          "language": "$language",
+          "OCREngine": "$engine",
+          "isTable": "$is_table",
+          "scale": "$scale",
+          "detectOrientation": "$detect_orientation",
+          "filetype": "$filetype"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "OCRExitCode": "$.OCRExitCode",
+            "IsErroredOnProcessing": "$.IsErroredOnProcessing",
+            "ErrorMessage": "$.ErrorMessage",
+            "SearchablePDFURL": "$.SearchablePDFURL",
+            "ProcessingTimeInMilliseconds": "$.ProcessingTimeInMilliseconds",
+            "pages": {
+              "$from": "$.ParsedResults[*]",
+              "$select": {
+                "text": "ParsedText",
+                "exitCode": "FileParseExitCode",
+                "error": "ErrorMessage",
+                "orientation": "TextOrientation"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ocr_space_make_searchable_pdf",
+      "description": "Turn a scanned PDF or an image at a public URL into a searchable PDF (an invisible text layer over the original), and return its download link (SearchablePDFURL, valid for about an hour) together with the recognised text. On the free plan the PDF carries a watermark. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public http(s) URL of the scanned PDF or image.",
+            "format": "uri"
+          },
+          "hide_text_layer": {
+            "type": "boolean",
+            "description": "true to keep the text layer invisible in viewers (default false shows it highlighted)."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the text. auto (default, engines 2 and 3) detects it; or a code such as eng, ger, fre, ita, spa, por, rus, ara, chs, jpn, kor.",
+            "default": "auto"
+          },
+          "engine": {
+            "type": "integer",
+            "description": "OCR engine: 2 (default, fast, auto language detection, good on numbers and special characters) or 3 (most accurate, 200+ languages and handwriting, slower; 1,000 pages a month on the free plan).",
+            "enum": [
+              2,
+              3
+            ],
+            "default": 2
+          },
+          "is_table": {
+            "type": "boolean",
+            "description": "true for receipts and tables: keeps the text line by line in reading order."
+          },
+          "scale": {
+            "type": "boolean",
+            "description": "true to upscale small or low-resolution images first; improves results on scans and screenshots."
+          },
+          "detect_orientation": {
+            "type": "boolean",
+            "description": "true to rotate the image to the right orientation first."
+          },
+          "filetype": {
+            "type": "string",
+            "description": "File type when the URL has no file extension.",
+            "enum": [
+              "PDF",
+              "JPG",
+              "PNG",
+              "GIF",
+              "TIF",
+              "BMP",
+              "WEBP"
+            ]
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/parse/image",
+        "bodyMapping": {
+          "url": "$url",
+          "isCreateSearchablePdf": true,
+          "isSearchablePdfHideTextLayer": "$hide_text_layer",
+          "language": "$language",
+          "OCREngine": "$engine",
+          "isTable": "$is_table",
+          "scale": "$scale",
+          "detectOrientation": "$detect_orientation",
+          "filetype": "$filetype"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "OCRExitCode": "$.OCRExitCode",
+            "IsErroredOnProcessing": "$.IsErroredOnProcessing",
+            "ErrorMessage": "$.ErrorMessage",
+            "SearchablePDFURL": "$.SearchablePDFURL",
+            "ProcessingTimeInMilliseconds": "$.ProcessingTimeInMilliseconds",
+            "pages": {
+              "$from": "$.ParsedResults[*]",
+              "$select": {
+                "text": "ParsedText",
+                "exitCode": "FileParseExitCode",
+                "error": "ErrorMessage",
+                "orientation": "TextOrientation"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

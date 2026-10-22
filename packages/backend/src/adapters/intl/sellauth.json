@@ -1,0 +1,642 @@
+{
+  "slug": "sellauth",
+  "name": "SellAuth",
+  "aliases": [
+    "Sell Auth",
+    "SellAuth shop"
+  ],
+  "description": "SellAuth digital goods storefront, read-only: revenue and profit analytics, top products and customers, invoices (orders), products and variants, customers, feedback, support tickets and coupons. Delivered product keys are never returned.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "sellauth",
+  "docsUrl": "https://docs.sellauth.com/api-reference/introduction",
+  "instructions": "## SellAuth\nThis connector reads a **SellAuth** storefront (digital goods: software licences, game keys, accounts, subscriptions) through the SellAuth API v1: sales analytics, top products and customers, invoices (orders), products and variants, customers, feedback, support tickets and coupons. It is read-only, and it never returns the product keys or files a shop delivers to buyers.\n\n**Setup (about 2 minutes)**\n1. In the SellAuth dashboard open **Account, Developers** (https://dash.sellauth.com/api) and create an API key. Paste it into `SELLAUTH_API_KEY`.\n2. `SELLAUTH_SHOP_ID` is the numeric id of the shop. Run `sellauth_list_shops` after installing: it lists every shop of the key with its id.\n3. Install and run `sellauth_list_shops` to check the key.\n\n**Workflow**\n- Performance: `sellauth_get_analytics` (revenue, orders, customers, profit and change), `sellauth_get_revenue_graph`, `sellauth_get_top_products`, `sellauth_get_top_customers`. Money is in USD unless the field says otherwise.\n- Orders: `sellauth_list_invoices` by status (`completed` for paid orders), e-mail or date range, sorted as needed; `sellauth_get_invoice` for one in full.\n- Catalogue and people: `sellauth_list_products`, `sellauth_get_product`, `sellauth_list_customers`, `sellauth_list_feedbacks`, `sellauth_list_tickets`, `sellauth_list_coupons`.\n\n**Paging**: lists return `current_page`, `last_page` and `total`; ask for the next `page` until `current_page` equals `last_page`. At most 100 rows per page.\n\n**Privacy**: invoices carry customer e-mails and countries. The serial keys, files and links delivered to buyers, payment proofs, IP addresses and the shop's own integration secrets are left out by this connector.\n\n**Errors**: 401 means a wrong or deleted API key. 403 means the key has no access to that shop: check `SELLAUTH_SHOP_ID` with `sellauth_list_shops`. 404 means no invoice or product with that id in this shop. 429 means too many calls: wait a minute.",
+  "prerequisites": "A SellAuth shop and an API key from Account, Developers in the SellAuth dashboard.",
+  "requiredEnvVars": [
+    "SELLAUTH_API_KEY",
+    "SELLAUTH_SHOP_ID"
+  ],
+  "envVarMeta": {
+    "SELLAUTH_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "SellAuth dashboard, Account, Developers: create an API key.",
+      "link": "https://dash.sellauth.com/api",
+      "pattern": "^(?![Bb]earer )\\S{20,}$",
+      "patternMessage": "Paste only the API key, without Bearer, spaces or quotes."
+    },
+    "SELLAUTH_SHOP_ID": {
+      "label": "Shop id",
+      "kind": "setting",
+      "help": "The numeric id of your shop; sellauth_list_shops lists the shops of the key with their ids.",
+      "example": "123456",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "Only the number, e.g. 123456."
+    }
+  },
+  "verifyHints": {
+    "401": "SellAuth refused the API key. Create a new one under Account, Developers.",
+    "403": "The key works, but not for this shop. Check SELLAUTH_SHOP_ID with sellauth_list_shops.",
+    "404": "No such shop. Check SELLAUTH_SHOP_ID: it is the numeric id that sellauth_list_shops returns."
+  },
+  "probe": {
+    "tool": "sellauth_list_shops"
+  },
+  "connector": {
+    "name": "SellAuth API",
+    "type": "REST",
+    "baseUrl": "https://api.sellauth.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SELLAUTH_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "sellauth_list_shops",
+      "description": "List the shops the API key can reach with id, name, subdomain, URL, currency and totals (customers, completed invoices, products sold, average rating). The id is SELLAUTH_SHOP_ID. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{id: id, name: name, subdomain: subdomain, url: url, currency: currency, total_customers: total_customers, total_completed_invoices: total_completed_invoices, products_sold: products_sold, total_feedbacks: total_feedbacks, average_rating: average_rating, subscription_plan: subscription_plan.name}"
+        }
+      }
+    },
+    {
+      "name": "sellauth_get_analytics",
+      "description": "Get the shop's headline figures with the change against the previous period: revenue, orders, customers, cost of goods, profit and cost coverage (USD).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/analytics"
+      }
+    },
+    {
+      "name": "sellauth_get_revenue_graph",
+      "description": "Get the revenue, orders and profit series over time for the shop dashboard chart (dateData with matching revenueData, ordersData and profitData).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/analytics/graph"
+      }
+    },
+    {
+      "name": "sellauth_get_top_products",
+      "description": "Get the 10 best-selling products and variants with revenue, profit and number of orders (USD).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/analytics/top-products"
+      }
+    },
+    {
+      "name": "sellauth_get_top_customers",
+      "description": "Get the 10 customers who spent the most: e-mail, Discord name, total spent (USD), completed orders and last purchase.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/analytics/top-customers"
+      }
+    },
+    {
+      "name": "sellauth_list_invoices",
+      "description": "List invoices (orders), newest first by default: id, status, price, amount paid, gateway and payment method, customer e-mail, country, items and dates. Filter by status, e-mail, creation date range; sort by id, price, paid amount or dates. Delivered product keys are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "description": "Only these statuses, e.g. [\"completed\"]; others are pending, expired, cancelled, refunded, partial.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "email": {
+            "type": "string",
+            "description": "Customer e-mail."
+          },
+          "created_at_start": {
+            "type": "string",
+            "description": "Created on or after, YYYY-MM-DD or ISO 8601."
+          },
+          "created_at_end": {
+            "type": "string",
+            "description": "Created on or before, YYYY-MM-DD or ISO 8601."
+          },
+          "orderColumn": {
+            "type": "string",
+            "description": "Sort column.",
+            "enum": [
+              "id",
+              "price_usd",
+              "paid_usd",
+              "created_at",
+              "completed_at"
+            ]
+          },
+          "orderDirection": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "desc",
+              "asc"
+            ],
+            "default": "desc"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/invoices",
+        "queryParams": {
+          "statuses[]": "$statuses",
+          "email": "$email",
+          "created_at_start": "$created_at_start",
+          "created_at_end": "$created_at_end",
+          "orderColumn": "$orderColumn",
+          "orderDirection": "$orderDirection",
+          "page": "$page",
+          "perPage": "$perPage"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "current_page": "$.current_page",
+            "last_page": "$.last_page",
+            "total": "$.total",
+            "per_page": "$.per_page",
+            "invoices": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "unique_id": "unique_id",
+                "status": "status",
+                "price": "price",
+                "currency": "currency",
+                "paid": "paid",
+                "paid_usd": "paid_usd",
+                "gateway": "gateway",
+                "payment_method": "payment_method.name",
+                "email": "email",
+                "country_code": "country_code",
+                "manual": "manual",
+                "has_open_dispute": "has_open_dispute",
+                "created_at": "created_at",
+                "completed_at": "completed_at",
+                "shop_customer_id": "shop_customer_id",
+                "utm_source": "utm_source",
+                "referrer_host": "referrer_host",
+                "items": {
+                  "$from": "items[*]",
+                  "$select": {
+                    "product_id": "product_id",
+                    "variant_id": "variant_id",
+                    "quantity": "quantity",
+                    "product": "product.name",
+                    "variant": "variant.name"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sellauth_get_invoice",
+      "description": "Get one invoice in full: items with prices, fees, discounts and taxes, payments, coupon, customer, billing and shipping details, fulfilment and dispute status. Delivered product keys and payment proofs are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id (number) or unique id."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/invoices/{invoice_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "salt",
+            "delivered",
+            "items[*].delivered",
+            "items[*].deliverables",
+            "items[*].product.deliverables",
+            "items[*].variant.deliverables",
+            "proof_of_payment",
+            "proof_of_payment_image",
+            "proof_of_payment_image_url",
+            "crypto_address",
+            "redirect_url",
+            "external_url",
+            "ip",
+            "user_agent"
+          ]
+        }
+      }
+    },
+    {
+      "name": "sellauth_list_products",
+      "description": "List products with id, name, type, price, currency, stock count, units sold, visibility, group, category and variants (name, SKU, price, cost, stock). The product keys or files being sold are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/products",
+        "queryParams": {
+          "page": "$page",
+          "perPage": "$perPage"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "current_page": "$.current_page",
+            "last_page": "$.last_page",
+            "total": "$.total",
+            "per_page": "$.per_page",
+            "products": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "path": "path",
+                "type": "type",
+                "price": "price",
+                "price_slash": "price_slash",
+                "currency": "currency",
+                "stock_count": "stock_count",
+                "products_sold": "products_sold",
+                "visibility": "visibility",
+                "deliverables_type": "deliverables_type",
+                "group": "group.name",
+                "category": "category.name",
+                "payment_methods": "payment_methods",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "variants": {
+                  "$from": "variants[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "name",
+                    "sku": "sku",
+                    "price": "price",
+                    "cost": "cost",
+                    "stock": "stock",
+                    "visibility": "visibility",
+                    "subscription_mode": "subscription_mode"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sellauth_get_product",
+      "description": "Get one product with its variants, description, instructions, prices, volume discounts and stock. The product keys or files being sold are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/products/{product_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "id",
+            "name": "name",
+            "path": "path",
+            "type": "type",
+            "price": "price",
+            "price_slash": "price_slash",
+            "currency": "currency",
+            "stock_count": "stock_count",
+            "products_sold": "products_sold",
+            "visibility": "visibility",
+            "deliverables_type": "deliverables_type",
+            "group": "group.name",
+            "category": "category.name",
+            "payment_methods": "payment_methods",
+            "created_at": "created_at",
+            "updated_at": "updated_at",
+            "variants": {
+              "$from": "variants[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "sku": "sku",
+                "price": "price",
+                "cost": "cost",
+                "stock": "stock",
+                "visibility": "visibility",
+                "subscription_mode": "subscription_mode"
+              }
+            },
+            "description": "description",
+            "instructions": "instructions",
+            "volume_discounts": "volume_discounts",
+            "quantity_min": "quantity_min",
+            "quantity_max": "quantity_max"
+          }
+        }
+      }
+    },
+    {
+      "name": "sellauth_list_customers",
+      "description": "List the shop's customers with id, e-mail, Discord name, store balance, completed orders, total spent (USD) and last purchase.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/customers",
+        "queryParams": {
+          "page": "$page",
+          "perPage": "$perPage"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "current_page": "$.current_page",
+            "last_page": "$.last_page",
+            "total": "$.total",
+            "per_page": "$.per_page",
+            "customers": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "email": "email",
+                "username": "username",
+                "discord_username": "discord_username",
+                "balance": "balance",
+                "total_completed": "total_completed",
+                "total_spent_usd": "total_spent_usd",
+                "last_completed_at": "last_completed_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sellauth_list_feedbacks",
+      "description": "List customer feedback (reviews) with rating, message, reply, dispute and invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/feedbacks",
+        "queryParams": {
+          "page": "$page",
+          "perPage": "$perPage"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "current_page": "$.current_page",
+            "last_page": "$.last_page",
+            "total": "$.total",
+            "per_page": "$.per_page",
+            "feedbacks": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "invoice_id": "invoice_id",
+                "rating": "rating",
+                "message": "message",
+                "reply": "reply",
+                "status": "status",
+                "is_automatic": "is_automatic",
+                "dispute_reason": "dispute_reason",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sellauth_list_tickets",
+      "description": "List support tickets with subject, status, customer, related invoice, last message and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/tickets",
+        "queryParams": {
+          "page": "$page",
+          "perPage": "$perPage"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "current_page": "$.current_page",
+            "last_page": "$.last_page",
+            "total": "$.total",
+            "per_page": "$.per_page",
+            "tickets": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "subject": "subject",
+                "status": "status",
+                "invoice_id": "invoice_id",
+                "customer_email": "customer.email",
+                "last_message": "last_message.content",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "closed_at": "closed_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sellauth_list_coupons",
+      "description": "List coupons with code, discount and type, uses and limits, validity dates, revenue attributed and amount saved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{{SELLAUTH_SHOP_ID}}/coupons",
+        "queryParams": {
+          "page": "$page",
+          "perPage": "$perPage"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "current_page": "$.current_page",
+            "last_page": "$.last_page",
+            "total": "$.total",
+            "per_page": "$.per_page",
+            "coupons": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "code": "code",
+                "discount": "discount",
+                "type": "type",
+                "global": "global",
+                "uses": "uses",
+                "max_uses": "max_uses",
+                "start_date": "start_date",
+                "expiration_date": "expiration_date",
+                "revenue_attributed": "revenue_attributed",
+                "total_saved": "total_saved"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

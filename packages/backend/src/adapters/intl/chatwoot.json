@@ -1,0 +1,1261 @@
+{
+  "slug": "chatwoot",
+  "name": "Chatwoot",
+  "aliases": [
+    "Chatwoot CRM",
+    "Chatwoot WhatsApp",
+    "Chatwoot inbox"
+  ],
+  "description": "Chatwoot omnichannel support inbox, Cloud or self-hosted: conversations and messages across WhatsApp, e-mail, web chat and social channels, contacts, labels, agents, teams, canned responses and support reports (first response, resolution and reply times). Replies, private notes and new conversations are included, installed switched off.",
+  "region": "intl",
+  "category": "support",
+  "icon": "chatwoot",
+  "docsUrl": "https://developers.chatwoot.com/api-reference/introduction",
+  "instructions": "## Chatwoot\nThis connector uses the **Chatwoot Application API** (`/api/v1` and the `/api/v2` reports) of Chatwoot Cloud or your own self-hosted Chatwoot: inboxes, conversations and their messages, contacts, labels, agents, teams, canned responses and the support reports. Replies, private notes and new conversations are included but installed switched off.\n\n**Setup (about 2 minutes)**\n1. Sign in to Chatwoot with the user the AI should act as. Agents only see conversations of the inboxes they belong to and cannot read reports, so use an **administrator** for the full picture.\n2. Click your avatar, **Profile Settings**, and copy the **Access Token** at the bottom of the page into `CHATWOOT_API_TOKEN`. It does not expire; reset it on the same page.\n3. `CHATWOOT_URL` is the address you open Chatwoot at: `https://app.chatwoot.com` on Chatwoot Cloud, or your own domain (e.g. `https://chat.example.com`) when self-hosted. No path, no `/api`.\n4. `CHATWOOT_ACCOUNT_ID` is the number after `/app/accounts/` in the browser address bar (e.g. `https://app.chatwoot.com/app/accounts/3/dashboard` means 3). `chatwoot_get_profile` also lists every account of the token under `accounts`.\n5. Install and run `chatwoot_get_profile` to check the token.\n\nThe account token is not the Platform App token of a self-hosted super admin (`/platform/api`); this connector does not use the Platform API.\n\n**Self-hosted behind nginx**: the token travels in the `api_access_token` header. nginx drops headers with an underscore unless `underscores_in_headers on;` is set, which shows up as 401 on every call although the token is right.\n\n**Workflow**\n- Find things first: `chatwoot_list_inboxes`, `chatwoot_list_agents`, `chatwoot_list_teams`, `chatwoot_list_labels`, `chatwoot_list_inbox_agents`, `chatwoot_list_team_members`, `chatwoot_list_canned_responses`, `chatwoot_list_custom_attributes`, `chatwoot_get_account`.\n- Conversations: `chatwoot_list_conversations` (status open by default, 25 per page; page until the list is empty), `chatwoot_count_conversations` for counts only, `chatwoot_filter_conversations` for conditions such as \"created after a date and assigned to agent 4\", `chatwoot_get_conversation`, then `chatwoot_list_messages` for the thread. Message types: 0 incoming from the contact, 1 outgoing, 2 activity, 3 template; private notes have `private: true`.\n- Contacts: `chatwoot_search_contacts` (name, e-mail, phone, identifier), `chatwoot_list_contacts`, `chatwoot_get_contact`, `chatwoot_list_contact_conversations`.\n- Reports (administrator token): `chatwoot_get_report_summary` for a period with the previous period alongside, `chatwoot_get_report_timeseries` for a metric over time, `chatwoot_get_summary_by` to compare agents, inboxes or teams, `chatwoot_get_live_conversation_stats` for what is open and unattended now.\n\n**Dates**: conversation and message times, and the `since` / `until` of the reports, are Unix timestamps in seconds (UTC). Convert before quoting a time to the user. Report times (`avg_first_response_time`, `avg_resolution_time`, `reply_time`) are seconds.\n\n**Labels**: `chatwoot_set_conversation_labels` replaces the whole label list of a conversation. To add one, send the current labels plus the new title; to remove one, send the list without it.\n\n**Writes switched off**: `chatwoot_send_message` (reply or private note) and `chatwoot_create_conversation` reach the customer at once on WhatsApp, e-mail or chat, so an admin turns them on deliberately. Before each call show the user the text and the recipient and wait for a yes. A private note (`private: true`) is internal. WhatsApp Cloud API inboxes only deliver free text within 24 hours of the contact's last message; outside that window Chatwoot needs an approved template, which this connector does not send.\n\n**Errors**: 401 means a wrong or reset token (or nginx dropping the header). 404 on every call usually means a wrong `CHATWOOT_URL` or `CHATWOOT_ACCOUNT_ID`; 404 on one conversation means an id the user cannot see. Reports answer 401 or 403 for agents who are not administrators.",
+  "prerequisites": "A Chatwoot account (Cloud or self-hosted) and the access token of a user from Profile Settings; an administrator token is needed for the reports.",
+  "requiredEnvVars": [
+    "CHATWOOT_URL",
+    "CHATWOOT_API_TOKEN",
+    "CHATWOOT_ACCOUNT_ID"
+  ],
+  "envVarMeta": {
+    "CHATWOOT_URL": {
+      "label": "Chatwoot address",
+      "kind": "address",
+      "help": "https://app.chatwoot.com on Chatwoot Cloud, or the address of your self-hosted Chatwoot, without a path.",
+      "example": "https://app.chatwoot.com",
+      "pattern": "^https?://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{2,5})?/?$",
+      "patternMessage": "Only the address, e.g. https://app.chatwoot.com or https://chat.example.com, without /app or /api."
+    },
+    "CHATWOOT_API_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Chatwoot, avatar, Profile Settings: the Access Token at the bottom of the page. It acts with that user's role; use an administrator for reports.",
+      "link": "https://developers.chatwoot.com/api-reference/introduction",
+      "pattern": "^[A-Za-z0-9_-]{16,}$",
+      "patternMessage": "Paste only the access token, without spaces or quotes."
+    },
+    "CHATWOOT_ACCOUNT_ID": {
+      "label": "Account id",
+      "kind": "setting",
+      "help": "The number after /app/accounts/ in the Chatwoot address bar, e.g. 3.",
+      "example": "1",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "Only the number, e.g. 1."
+    }
+  },
+  "verifyHints": {
+    "401": "Chatwoot refused the access token. Copy it again from Profile Settings. Self-hosted behind nginx: set underscores_in_headers on; or the api_access_token header is dropped.",
+    "403": "The token works, but this user may not read this. Reports need an administrator.",
+    "404": "Nothing found at this address. Check CHATWOOT_URL (only the address, no /app or /api) and CHATWOOT_ACCOUNT_ID (the number after /app/accounts/)."
+  },
+  "probe": {
+    "tool": "chatwoot_get_profile"
+  },
+  "connector": {
+    "name": "Chatwoot Application API",
+    "type": "REST",
+    "baseUrl": "{{CHATWOOT_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "api_access_token",
+      "apiKey": "{{CHATWOOT_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/v1/profile"
+  },
+  "tools": [
+    {
+      "name": "chatwoot_get_profile",
+      "description": "Get the user behind the access token: id, name, email, role, availability and every account the token can reach (accounts[].id and name). Use it to check the connection and to find the account id for CHATWOOT_ACCOUNT_ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/profile"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "access_token",
+            "pubsub_token",
+            "ui_settings"
+          ]
+        }
+      }
+    },
+    {
+      "name": "chatwoot_get_account",
+      "description": "Get the Chatwoot account configured in CHATWOOT_ACCOUNT_ID: name, locale, domain, support e-mail, status, enabled features and custom attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}"
+      }
+    },
+    {
+      "name": "chatwoot_list_inboxes",
+      "description": "List the inboxes (channels) of the account: id, name, channel type (WhatsApp, API, web widget, e-mail, Instagram, Telegram...), phone number, auto-assignment, working hours and CSAT settings. The id is what other tools take as inbox_id. Channel secrets are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/inboxes"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "inboxes": {
+              "$from": "$.payload[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "channel_type": "channel_type",
+                "channel_id": "channel_id",
+                "phone_number": "phone_number",
+                "provider": "provider",
+                "website_url": "website_url",
+                "business_name": "business_name",
+                "enable_auto_assignment": "enable_auto_assignment",
+                "working_hours_enabled": "working_hours_enabled",
+                "timezone": "timezone",
+                "greeting_enabled": "greeting_enabled",
+                "csat_survey_enabled": "csat_survey_enabled",
+                "allow_messages_after_resolved": "allow_messages_after_resolved",
+                "lock_to_single_conversation": "lock_to_single_conversation"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "chatwoot_list_inbox_agents",
+      "description": "List the agents who are members of one inbox (id, name, email, role, availability). Agents only see conversations of inboxes they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbox_id": {
+            "type": "integer",
+            "description": "Inbox id from chatwoot_list_inboxes."
+          }
+        },
+        "required": [
+          "inbox_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/inbox_members/{inbox_id}"
+      }
+    },
+    {
+      "name": "chatwoot_list_agents",
+      "description": "List the agents and administrators of the account: id, name, email, role (agent or administrator), availability (online, busy, offline) and whether they confirmed their invitation. The id is what assignee_id takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/agents"
+      }
+    },
+    {
+      "name": "chatwoot_list_teams",
+      "description": "List the teams of the account (id, name, description, whether auto-assignment is on). The id is what team_id takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/teams"
+      }
+    },
+    {
+      "name": "chatwoot_list_team_members",
+      "description": "List the agents in one team (id, name, email, role, availability).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from chatwoot_list_teams."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/teams/{team_id}/team_members"
+      }
+    },
+    {
+      "name": "chatwoot_list_labels",
+      "description": "List the labels defined in the account: id, title, description and color. Conversations and contacts are tagged with the title.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/labels"
+      }
+    },
+    {
+      "name": "chatwoot_list_canned_responses",
+      "description": "List the canned responses (saved replies) of the account: id, short code and content. Optional search narrows by short code or content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the short code or content."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/canned_responses",
+        "queryParams": {
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "chatwoot_list_custom_attributes",
+      "description": "List the custom attribute definitions of the account for conversations (attribute_model 0) or contacts (1): key, display name, type and allowed values. The key is what appears in custom_attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attribute_model": {
+            "type": "integer",
+            "description": "0 for conversation attributes, 1 for contact attributes.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          }
+        },
+        "required": [
+          "attribute_model"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/custom_attribute_definitions",
+        "queryParams": {
+          "attribute_model": "$attribute_model"
+        }
+      }
+    },
+    {
+      "name": "chatwoot_list_conversations",
+      "description": "List conversations, 25 per page, newest activity first, with counts (mine, assigned, unassigned, all). Each row has id, status, priority, inbox, labels, unread count, contact, assignee, team and the last message. Page with page until conversations is empty. Times are Unix seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Conversation status. Default open. Ignored by Chatwoot when q is set.",
+            "enum": [
+              "open",
+              "resolved",
+              "pending",
+              "snoozed",
+              "all"
+            ]
+          },
+          "assignee_type": {
+            "type": "string",
+            "description": "Whose conversations: me (assigned to the token's user), assigned, unassigned or all (default).",
+            "enum": [
+              "me",
+              "assigned",
+              "unassigned",
+              "all"
+            ]
+          },
+          "inbox_id": {
+            "type": "integer",
+            "description": "Only this inbox (id from chatwoot_list_inboxes)."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Only this team (id from chatwoot_list_teams)."
+          },
+          "labels": {
+            "type": "array",
+            "description": "Only conversations carrying any of these label titles, e.g. [\"vip\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "q": {
+            "type": "string",
+            "description": "Text to search for in the messages of the conversations."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/conversations",
+        "queryParams": {
+          "status": "$status",
+          "assignee_type": "$assignee_type",
+          "inbox_id": "$inbox_id",
+          "team_id": "$team_id",
+          "labels": "$labels",
+          "q": "$q",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "counts": "$.data.meta",
+            "conversations": {
+              "$from": "$.data.payload[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "priority": "priority",
+                "inbox_id": "inbox_id",
+                "channel": "meta.channel",
+                "labels": "labels",
+                "unread_count": "unread_count",
+                "created_at": "created_at",
+                "last_activity_at": "last_activity_at",
+                "waiting_since": "waiting_since",
+                "snoozed_until": "snoozed_until",
+                "first_reply_created_at": "first_reply_created_at",
+                "custom_attributes": "custom_attributes",
+                "contact": {
+                  "id": "meta.sender.id",
+                  "name": "meta.sender.name",
+                  "phone_number": "meta.sender.phone_number",
+                  "email": "meta.sender.email",
+                  "identifier": "meta.sender.identifier"
+                },
+                "assignee": {
+                  "id": "meta.assignee.id",
+                  "name": "meta.assignee.name"
+                },
+                "team": {
+                  "id": "meta.team.id",
+                  "name": "meta.team.name"
+                },
+                "last_message": {
+                  "content": "last_non_activity_message.content",
+                  "message_type": "last_non_activity_message.message_type",
+                  "created_at": "last_non_activity_message.created_at"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "chatwoot_count_conversations",
+      "description": "Count conversations without listing them: mine_count, assigned_count, unassigned_count and all_count for a status, inbox, team or label. Cheaper than chatwoot_list_conversations for a dashboard question such as \"how many open chats are unassigned?\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Conversation status. Default open. Ignored by Chatwoot when q is set.",
+            "enum": [
+              "open",
+              "resolved",
+              "pending",
+              "snoozed",
+              "all"
+            ]
+          },
+          "inbox_id": {
+            "type": "integer",
+            "description": "Only this inbox (id from chatwoot_list_inboxes)."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Only this team (id from chatwoot_list_teams)."
+          },
+          "labels": {
+            "type": "array",
+            "description": "Only conversations carrying any of these label titles, e.g. [\"vip\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "q": {
+            "type": "string",
+            "description": "Text to search for in the messages of the conversations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/conversations/meta",
+        "queryParams": {
+          "status": "$status",
+          "inbox_id": "$inbox_id",
+          "team_id": "$team_id",
+          "labels": "$labels",
+          "q": "$q"
+        }
+      }
+    },
+    {
+      "name": "chatwoot_filter_conversations",
+      "description": "Filter conversations with Chatwoot's advanced filter, 25 per page: a list of conditions on status, assignee_id, inbox_id, team_id, contact_id, priority, display_id, labels, created_at or last_activity_at, joined with AND or OR. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conditions": {
+            "type": "array",
+            "description": "Conditions, e.g. [{\"attribute_key\":\"status\",\"filter_operator\":\"equal_to\",\"values\":[\"open\"],\"query_operator\":\"AND\"},{\"attribute_key\":\"created_at\",\"filter_operator\":\"is_greater_than\",\"values\":[\"2026-10-01\"],\"query_operator\":null}]. Operators: equal_to, not_equal_to, contains, does_not_contain, is_present, is_not_present, is_greater_than, is_less_than, days_before. query_operator joins a condition with the next one; the last one is ignored.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "last_activity_at_desc",
+              "last_activity_at_asc",
+              "created_at_desc",
+              "created_at_asc",
+              "priority_desc",
+              "priority_asc",
+              "waiting_since_asc",
+              "waiting_since_desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        "required": [
+          "conditions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/conversations/filter",
+        "queryParams": {
+          "page": "$page",
+          "sort_by": "$sort_by"
+        },
+        "bodyMapping": {
+          "payload": "$conditions"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "counts": "$.meta",
+            "conversations": {
+              "$from": "$.payload[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "priority": "priority",
+                "inbox_id": "inbox_id",
+                "channel": "meta.channel",
+                "labels": "labels",
+                "unread_count": "unread_count",
+                "created_at": "created_at",
+                "last_activity_at": "last_activity_at",
+                "waiting_since": "waiting_since",
+                "snoozed_until": "snoozed_until",
+                "first_reply_created_at": "first_reply_created_at",
+                "custom_attributes": "custom_attributes",
+                "contact": {
+                  "id": "meta.sender.id",
+                  "name": "meta.sender.name",
+                  "phone_number": "meta.sender.phone_number",
+                  "email": "meta.sender.email",
+                  "identifier": "meta.sender.identifier"
+                },
+                "assignee": {
+                  "id": "meta.assignee.id",
+                  "name": "meta.assignee.name"
+                },
+                "team": {
+                  "id": "meta.team.id",
+                  "name": "meta.team.name"
+                },
+                "last_message": {
+                  "content": "last_non_activity_message.content",
+                  "message_type": "last_non_activity_message.message_type",
+                  "created_at": "last_non_activity_message.created_at"
+                }
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "chatwoot_get_conversation",
+      "description": "Get one conversation by its id (the number shown in the Chatwoot URL): status, priority, inbox, labels, contact, assignee, team, custom and additional attributes and the last message. Read the messages with chatwoot_list_messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "description": "Conversation id (display id)."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/conversations/{conversation_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "id",
+            "status": "status",
+            "priority": "priority",
+            "inbox_id": "inbox_id",
+            "channel": "meta.channel",
+            "labels": "labels",
+            "unread_count": "unread_count",
+            "created_at": "created_at",
+            "last_activity_at": "last_activity_at",
+            "waiting_since": "waiting_since",
+            "snoozed_until": "snoozed_until",
+            "first_reply_created_at": "first_reply_created_at",
+            "custom_attributes": "custom_attributes",
+            "contact": {
+              "id": "meta.sender.id",
+              "name": "meta.sender.name",
+              "phone_number": "meta.sender.phone_number",
+              "email": "meta.sender.email",
+              "identifier": "meta.sender.identifier"
+            },
+            "assignee": {
+              "id": "meta.assignee.id",
+              "name": "meta.assignee.name"
+            },
+            "team": {
+              "id": "meta.team.id",
+              "name": "meta.team.name"
+            },
+            "last_message": {
+              "content": "last_non_activity_message.content",
+              "message_type": "last_non_activity_message.message_type",
+              "created_at": "last_non_activity_message.created_at"
+            },
+            "additional_attributes": "additional_attributes",
+            "agent_last_seen_at": "agent_last_seen_at",
+            "contact_last_seen_at": "contact_last_seen_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "chatwoot_list_messages",
+      "description": "List the messages of a conversation, oldest first: the latest 20 by default, or 20 older than before. message_type 0 = incoming (from the contact), 1 = outgoing (agent or bot), 2 = activity (system note), 3 = template; private true = internal note. Attachments come with their URL and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "description": "Conversation id."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Return the 20 messages before this message id, to read further back."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Return up to 100 messages after this message id."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/conversations/{conversation_id}/messages",
+        "queryParams": {
+          "before": "$before",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "contact": {
+              "id": "$.meta.contact.id",
+              "name": "$.meta.contact.name",
+              "phone_number": "$.meta.contact.phone_number",
+              "email": "$.meta.contact.email"
+            },
+            "labels": "$.meta.labels",
+            "messages": {
+              "$from": "$.payload[*]",
+              "$select": {
+                "id": "id",
+                "content": "content",
+                "message_type": "message_type",
+                "private": "private",
+                "content_type": "content_type",
+                "status": "status",
+                "created_at": "created_at",
+                "sender_type": "sender_type",
+                "sender_id": "sender.id",
+                "sender_name": "sender.name",
+                "attachments": {
+                  "$from": "attachments[*]",
+                  "$select": {
+                    "file_type": "file_type",
+                    "data_url": "data_url",
+                    "file_size": "file_size"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "chatwoot_list_contacts",
+      "description": "List contacts with an e-mail, phone number or identifier, 15 per page: id, name, e-mail, phone, identifier, custom and additional attributes, last activity. meta.count is the total. Sort with sort, e.g. -last_activity_at for the most recent first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort": {
+            "type": "string",
+            "description": "Sort field; prefix with - for descending.",
+            "enum": [
+              "name",
+              "-name",
+              "email",
+              "-email",
+              "phone_number",
+              "-phone_number",
+              "last_activity_at",
+              "-last_activity_at",
+              "created_at",
+              "-created_at"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/contacts",
+        "queryParams": {
+          "sort": "$sort",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "meta": "$.meta",
+            "contacts": {
+              "$from": "$.payload[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "email": "email",
+                "phone_number": "phone_number",
+                "identifier": "identifier",
+                "blocked": "blocked",
+                "availability_status": "availability_status",
+                "custom_attributes": "custom_attributes",
+                "additional_attributes": "additional_attributes",
+                "created_at": "created_at",
+                "last_activity_at": "last_activity_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "chatwoot_search_contacts",
+      "description": "Search contacts by name, e-mail, phone number or identifier (case-insensitive, partial), 15 per page. meta.has_more tells whether another page exists. Use it to find the contact id before reading their conversations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Name, e-mail, phone number (e.g. +5511987654321) or identifier to look for."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; prefix with - for descending.",
+            "enum": [
+              "name",
+              "-name",
+              "email",
+              "-email",
+              "last_activity_at",
+              "-last_activity_at"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/contacts/search",
+        "queryParams": {
+          "q": "$q",
+          "sort": "$sort",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "meta": "$.meta",
+            "contacts": {
+              "$from": "$.payload[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "email": "email",
+                "phone_number": "phone_number",
+                "identifier": "identifier",
+                "blocked": "blocked",
+                "availability_status": "availability_status",
+                "custom_attributes": "custom_attributes",
+                "additional_attributes": "additional_attributes",
+                "created_at": "created_at",
+                "last_activity_at": "last_activity_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "chatwoot_get_contact",
+      "description": "Get one contact: name, e-mail, phone, identifier, custom and additional attributes, last activity and the inboxes the contact is reachable on (with the source_id each inbox knows them by).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact id."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/contacts/{contact_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "contact": {
+              "id": "payload.id",
+              "name": "payload.name",
+              "email": "payload.email",
+              "phone_number": "payload.phone_number",
+              "identifier": "payload.identifier",
+              "blocked": "payload.blocked",
+              "availability_status": "payload.availability_status",
+              "custom_attributes": "payload.custom_attributes",
+              "additional_attributes": "payload.additional_attributes",
+              "created_at": "payload.created_at",
+              "last_activity_at": "payload.last_activity_at",
+              "contact_inboxes": {
+                "$from": "payload.contact_inboxes[*]",
+                "$select": {
+                  "source_id": "source_id",
+                  "inbox_id": "inbox.id",
+                  "inbox_name": "inbox.name",
+                  "channel_type": "inbox.channel_type"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "chatwoot_list_contact_conversations",
+      "description": "List the conversations of one contact across all inboxes, with status, labels, assignee and last message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact id."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/contacts/{contact_id}/conversations"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "conversations": {
+              "$from": "$.payload[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "priority": "priority",
+                "inbox_id": "inbox_id",
+                "channel": "meta.channel",
+                "labels": "labels",
+                "unread_count": "unread_count",
+                "created_at": "created_at",
+                "last_activity_at": "last_activity_at",
+                "waiting_since": "waiting_since",
+                "snoozed_until": "snoozed_until",
+                "first_reply_created_at": "first_reply_created_at",
+                "custom_attributes": "custom_attributes",
+                "contact": {
+                  "id": "meta.sender.id",
+                  "name": "meta.sender.name",
+                  "phone_number": "meta.sender.phone_number",
+                  "email": "meta.sender.email",
+                  "identifier": "meta.sender.identifier"
+                },
+                "assignee": {
+                  "id": "meta.assignee.id",
+                  "name": "meta.assignee.name"
+                },
+                "team": {
+                  "id": "meta.team.id",
+                  "name": "meta.team.name"
+                },
+                "last_message": {
+                  "content": "last_non_activity_message.content",
+                  "message_type": "last_non_activity_message.message_type",
+                  "created_at": "last_non_activity_message.created_at"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "chatwoot_get_report_summary",
+      "description": "Get the totals of a period for the account, an agent, an inbox, a label or a team: conversations, incoming and outgoing messages, resolutions, handled conversations, average first response time, resolution time and reply time (seconds), plus the same figures for the previous period of equal length under previous. Needs an administrator token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "What to summarise.",
+            "enum": [
+              "account",
+              "agent",
+              "inbox",
+              "label",
+              "team"
+            ],
+            "default": "account"
+          },
+          "id": {
+            "type": "integer",
+            "description": "Id of the agent, inbox, label or team; not needed for account."
+          },
+          "since": {
+            "type": "string",
+            "description": "Start, Unix timestamp in seconds, e.g. 1759276800 for 2025-10-01 00:00 UTC."
+          },
+          "until": {
+            "type": "string",
+            "description": "End, Unix timestamp in seconds."
+          },
+          "business_hours": {
+            "type": "boolean",
+            "description": "true to count times within business hours only."
+          }
+        },
+        "required": [
+          "type",
+          "since",
+          "until"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/accounts/{{CHATWOOT_ACCOUNT_ID}}/reports/summary",
+        "queryParams": {
+          "type": "$type",
+          "id": "$id",
+          "since": "$since",
+          "until": "$until",
+          "business_hours": "$business_hours"
+        }
+      }
+    },
+    {
+      "name": "chatwoot_get_report_timeseries",
+      "description": "Get one metric over time as [{value, timestamp}] buckets, for the account, an agent, an inbox, a label or a team, grouped by hour, day, week, month or year. Times are seconds for the *_time metrics. Needs an administrator token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string",
+            "description": "The metric.",
+            "enum": [
+              "conversations_count",
+              "incoming_messages_count",
+              "outgoing_messages_count",
+              "avg_first_response_time",
+              "avg_resolution_time",
+              "resolutions_count",
+              "reply_time"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "What to report on.",
+            "enum": [
+              "account",
+              "agent",
+              "inbox",
+              "label",
+              "team"
+            ],
+            "default": "account"
+          },
+          "id": {
+            "type": "integer",
+            "description": "Id of the agent, inbox, label or team; not needed for account."
+          },
+          "since": {
+            "type": "string",
+            "description": "Start, Unix timestamp in seconds."
+          },
+          "until": {
+            "type": "string",
+            "description": "End, Unix timestamp in seconds."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Bucket size. Default day.",
+            "enum": [
+              "hour",
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "timezone_offset": {
+            "type": "number",
+            "description": "Hours from UTC for the buckets, e.g. -3 for Brasília, 1 for CET."
+          },
+          "business_hours": {
+            "type": "boolean",
+            "description": "true to count times within business hours only."
+          }
+        },
+        "required": [
+          "metric",
+          "type",
+          "since",
+          "until"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/accounts/{{CHATWOOT_ACCOUNT_ID}}/reports",
+        "queryParams": {
+          "metric": "$metric",
+          "type": "$type",
+          "id": "$id",
+          "since": "$since",
+          "until": "$until",
+          "group_by": "$group_by",
+          "timezone_offset": "$timezone_offset",
+          "business_hours": "$business_hours"
+        }
+      }
+    },
+    {
+      "name": "chatwoot_get_summary_by",
+      "description": "Compare agents, inboxes or teams over a period, one row each: conversations, resolved and handled conversations, average resolution, first response and reply time (seconds, null when nothing happened). Match the ids with chatwoot_list_agents, chatwoot_list_inboxes or chatwoot_list_teams. Needs an administrator token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "string",
+            "description": "What each row is.",
+            "enum": [
+              "agent",
+              "inbox",
+              "team"
+            ]
+          },
+          "since": {
+            "type": "string",
+            "description": "Start, Unix timestamp in seconds."
+          },
+          "until": {
+            "type": "string",
+            "description": "End, Unix timestamp in seconds."
+          },
+          "business_hours": {
+            "type": "boolean",
+            "description": "true to count times within business hours only."
+          }
+        },
+        "required": [
+          "group",
+          "since",
+          "until"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/accounts/{{CHATWOOT_ACCOUNT_ID}}/summary_reports/{group}",
+        "queryParams": {
+          "since": "$since",
+          "until": "$until",
+          "business_hours": "$business_hours"
+        }
+      }
+    },
+    {
+      "name": "chatwoot_get_live_conversation_stats",
+      "description": "Right now: how many conversations are open, unattended (no reply yet) and unassigned for the whole account (type account), or open and unattended per agent (type agent). Needs an administrator token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "account for totals, agent for one row per agent.",
+            "enum": [
+              "account",
+              "agent"
+            ],
+            "default": "account"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/accounts/{{CHATWOOT_ACCOUNT_ID}}/reports/conversations",
+        "queryParams": {
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "chatwoot_send_message",
+      "description": "Send a reply in an existing conversation, or add a private note that only agents see (private true). A reply goes out to the contact at once on the conversation's channel. On WhatsApp Cloud API inboxes free text only reaches the contact within 24 hours of their last message. Installed switched off. Show the text and the conversation to the user and wait for a yes before sending.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "description": "Conversation id."
+          },
+          "content": {
+            "type": "string",
+            "description": "Message text."
+          },
+          "private": {
+            "type": "boolean",
+            "description": "true for an internal note visible to agents only; false (default) sends it to the contact.",
+            "default": false
+          }
+        },
+        "required": [
+          "conversation_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/conversations/{conversation_id}/messages",
+        "bodyMapping": {
+          "content": "$content",
+          "message_type": "outgoing",
+          "private": "$private"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "chatwoot_set_conversation_labels",
+      "description": "Set the labels of a conversation. Chatwoot REPLACES the whole list: to add a label, read the current ones (chatwoot_get_conversation) and send them together with the new one; to remove one, send the list without it. Labels must exist in the account (chatwoot_list_labels).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "description": "Conversation id."
+          },
+          "labels": {
+            "type": "array",
+            "description": "The complete list of label titles the conversation should carry afterwards, e.g. [\"vip\",\"billing\"]. An empty list removes all labels.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "conversation_id",
+          "labels"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/conversations/{conversation_id}/labels",
+        "bodyMapping": {
+          "labels": "$labels"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "chatwoot_create_conversation",
+      "description": "Start a new conversation with an existing contact in an inbox, optionally with a first message, status, assignee and team. With a first message this contacts the customer at once; on WhatsApp Cloud API inboxes a free-text first message only goes out within 24 hours of the contact's last message. Installed switched off. Confirm the contact, inbox and text with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbox_id": {
+            "type": "integer",
+            "description": "Inbox id from chatwoot_list_inboxes."
+          },
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact id from chatwoot_search_contacts."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "The contact's source_id in that inbox (from chatwoot_get_contact, contact_inboxes). Needed when the contact has more than one identity in the inbox."
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional first message, sent to the contact."
+          },
+          "status": {
+            "type": "string",
+            "description": "Initial status.",
+            "enum": [
+              "open",
+              "pending",
+              "snoozed"
+            ]
+          },
+          "assignee_id": {
+            "type": "integer",
+            "description": "Agent id to assign the conversation to."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Team id to assign the conversation to."
+          }
+        },
+        "required": [
+          "inbox_id",
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/conversations",
+        "bodyMapping": {
+          "inbox_id": "$inbox_id",
+          "contact_id": "$contact_id",
+          "source_id": "$source_id",
+          "message": {
+            "content": "$message"
+          },
+          "status": "$status",
+          "assignee_id": "$assignee_id",
+          "team_id": "$team_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

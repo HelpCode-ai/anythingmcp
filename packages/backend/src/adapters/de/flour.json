@@ -1,0 +1,878 @@
+{
+  "slug": "flour",
+  "name": "Flour",
+  "aliases": [
+    "Flour POS",
+    "Flour Kassensystem",
+    "flour.io",
+    "Flour Warenwirtschaft"
+  ],
+  "description": "Flour cloud POS and merchandise management (Germany), read-only: articles with prices and stock per warehouse, stock movements, receipts, invoices and other documents, sold articles per period and till, business partners, cash register journals, stocktakes, branches and points of sale.",
+  "region": "de",
+  "category": "erp",
+  "icon": "flour",
+  "docsUrl": "https://backend.flour.cloud/api/",
+  "instructions": "## Flour\nThis connector reads **Flour** (flour.io), the German cloud POS and merchandise management system (Kasse, Warenwirtschaft, Rechnungen), through its REST API v3: articles with prices and stock, stocks and stock movements, sales documents and receipts, sold articles per period, business partners, cash register journals, stocktakes, branches and points of sale. It is read-only.\n\n**Setup**\n1. Flour issues API tokens on request: write to developer@flour.io from the account owner's address and ask for a REST API v3 token for your Flour account.\n2. Paste the token into `FLOUR_API_TOKEN`. It is sent as `Authorization: Bearer`.\n3. Install and run `flour_list_stocks` to check the token.\n\n**Workflow**\n- Master data first: `flour_list_stocks` (stock ids), `flour_list_points_of_sale` (till ids for the sales filters), `flour_list_branches`.\n- Sales: `flour_get_sold_articles` for quantity and revenue per article in a period (e.g. yesterday, last week, per till); `flour_list_documents` for the receipts and invoices themselves (type `R`), quotes `N`, orders `A`, delivery notes `L`, credit notes `G`, purchase invoices `r`, purchase orders `b`; `flour_get_document` for one document in full; `flour_list_pos_journals` for till openings and closings with cash amounts.\n- Articles and stock: `flour_find_article` by article number or EAN, `flour_search_articles` with filters (e.g. `stock` + `stockOperator` `lte` + `stockAmount` 5 for low stock), `flour_get_article`, `flour_get_article_stock`, `flour_get_article_stock_availability`, `flour_list_article_stock_movements`. In an article, `stockAvailability` is keyed by stock id with `physical` (counted) and `calculated` (after open orders) amounts, plus the totals.\n- Customers and suppliers: `flour_list_business_partners`. Stocktakes: `flour_list_inventories`, `flour_get_inventory`. Saved statistics: `flour_list_statistics`.\n\n**Dates**: filters take ISO 8601 in UTC, e.g. `2026-10-21T22:00:00.000Z` for midnight on 22 October in Germany (UTC+2 in summer, UTC+1 in winter). For one German business day use the previous day at 22:00 or 23:00 UTC as `dateAfter`. Amounts are in the document currency (usually EUR); `totalExVat` is net, `totalIncVat` gross.\n\n**Paging**: lists are plain arrays without a total; ask for the next `skip` while a page comes back full. Keep document ranges short on busy tills: a year of receipts is tens of thousands of documents. Answers over 400 KB are cut: narrow the range.\n\n**Limits and errors**: Flour allows about 60 requests per minute per token (`429` above that; wait a minute). 401 means a wrong or revoked token: ask developer@flour.io. Credentials stored in Flour (payment terminals, fiscal TSE, bank accounts) are never passed on by this connector.",
+  "prerequisites": "A Flour account and a REST API v3 token, which Flour issues on request at developer@flour.io.",
+  "requiredEnvVars": [
+    "FLOUR_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "FLOUR_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The REST API v3 token Flour issues on request: write to developer@flour.io from the account owner's address.",
+      "link": "https://backend.flour.cloud/api/",
+      "pattern": "^(?![Bb]earer )\\S{20,}$",
+      "patternMessage": "Paste only the token, without Bearer, spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Flour refused the token: it is wrong or was revoked. Ask developer@flour.io for a new REST API v3 token.",
+    "403": "The token works, but it may not read this area. Ask developer@flour.io to extend it.",
+    "rate_limited": "Flour allows about 60 requests per minute per token. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "flour_list_stocks",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Flour REST API v3",
+    "type": "REST",
+    "baseUrl": "https://flour.host",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FLOUR_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "flour_list_stocks",
+      "description": "List the stocks (warehouses, shop floors, online stock) with id, name and address. The id is what the stock filters take, and the key of each stock in an article's stock availability. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Stock name."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/stocks",
+        "queryParams": {
+          "name": "$name",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{_id: _id, name: name, displayName: displayName, address: address, status: status}"
+        }
+      }
+    },
+    {
+      "name": "flour_list_branches",
+      "description": "List the branches (shops or locations) with id, name, address and opening hours for pickup. Fiscal and payment credentials of the branch are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Branch name."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/branches",
+        "queryParams": {
+          "name": "$name",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{_id: _id, name: name, displayName: displayName, location: location, pickupHours: pickupHours, status: status}"
+        }
+      }
+    },
+    {
+      "name": "flour_list_points_of_sale",
+      "description": "List the points of sale (cash registers) with id, name, branch, default stock and mode. The id is what pointofsale takes in the document and sales tools. Payment terminal and fiscal settings are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Point of sale name."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/pointofsales",
+        "queryParams": {
+          "name": "$name",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{_id: _id, name: name, displayName: displayName, branch: branch, defaultstock: defaultstock, edition: edition, mode: mode, inUse: inUse, status: status}"
+        }
+      }
+    },
+    {
+      "name": "flour_search_articles",
+      "description": "Search articles (products): id, article number, title, EAN, manufacturer, sales prices per price list, purchase prices, stock per stock (physical and calculated) and reorder levels. Filter by number, EAN, code, tag, stock level or creation and update time. Results are a plain list without a total; page with skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Article number."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN / barcode."
+          },
+          "code": {
+            "type": "string",
+            "description": "Additional article code."
+          },
+          "inStock": {
+            "type": "boolean",
+            "description": "true for articles with stock only."
+          },
+          "outOfStock": {
+            "type": "boolean",
+            "description": "true for articles without stock only."
+          },
+          "stock": {
+            "type": "string",
+            "description": "Stock id (flour_list_stocks) the stock filters apply to."
+          },
+          "stockOperator": {
+            "type": "string",
+            "description": "Comparison for stockAmount.",
+            "enum": [
+              "lt",
+              "lte",
+              "gt",
+              "gte"
+            ]
+          },
+          "stockAmount": {
+            "type": "number",
+            "description": "Stock level to compare with, e.g. 5 with stockOperator lte for low stock."
+          },
+          "updatedAfter": {
+            "type": "string",
+            "description": "Changed at or after. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "createdAfter": {
+            "type": "string",
+            "description": "Created at or after. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/articles",
+        "queryParams": {
+          "number": "$number",
+          "ean": "$ean",
+          "code": "$code",
+          "inStock": "$inStock",
+          "outOfStock": "$outOfStock",
+          "stock": "$stock",
+          "stockOperator": "$stockOperator",
+          "stockAmount": "$stockAmount",
+          "updatedAfter": "$updatedAfter",
+          "createdAfter": "$createdAfter",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "articles": {
+              "$from": "$[*]",
+              "$select": {
+                "_id": "_id",
+                "number": "number",
+                "title": "title",
+                "ean": "ean",
+                "manufacturer": "manufacturer",
+                "manufacturerNumber": "manufacturerNumber",
+                "service": "service",
+                "tags": "tags",
+                "status": "status",
+                "sale": {
+                  "$from": "sale[*]",
+                  "$select": {
+                    "pricelist": "pricelist",
+                    "price": "price",
+                    "unit": "unit",
+                    "amount": "amount",
+                    "costPrice": "costPrice"
+                  }
+                },
+                "purchase": "purchase",
+                "stockAvailability": "stock.availability.total",
+                "reorder": "stock.reorder",
+                "deliverytime": "deliverytime",
+                "updatedAt": "updatedAt",
+                "createdAt": "createdAt"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "flour_find_article",
+      "description": "Find articles by article number or EAN in one call (the barcode scanned at the till or printed on a label).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Article number or EAN, e.g. 0843820155747."
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/articles/find-by-number-or-ean",
+        "queryParams": {
+          "number": "$number"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "articles": {
+              "$from": "$[*]",
+              "$select": {
+                "_id": "_id",
+                "number": "number",
+                "title": "title",
+                "ean": "ean",
+                "manufacturer": "manufacturer",
+                "manufacturerNumber": "manufacturerNumber",
+                "service": "service",
+                "tags": "tags",
+                "status": "status",
+                "sale": {
+                  "$from": "sale[*]",
+                  "$select": {
+                    "pricelist": "pricelist",
+                    "price": "price",
+                    "unit": "unit",
+                    "amount": "amount",
+                    "costPrice": "costPrice"
+                  }
+                },
+                "purchase": "purchase",
+                "stockAvailability": "stock.availability.total",
+                "reorder": "stock.reorder",
+                "deliverytime": "deliverytime",
+                "updatedAt": "updatedAt",
+                "createdAt": "createdAt"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "flour_get_article",
+      "description": "Get one article with every field: prices per price list, purchase data, stock settings and availability, variants, bundle parts, allergens, custom attributes, tags and images.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Article id (_id)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/articles/{id}"
+      }
+    },
+    {
+      "name": "flour_get_article_stock",
+      "description": "Get the total stock of one article, physical (counted) and calculated (after open orders), across all stocks or in one stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Article id (_id)."
+          },
+          "stock": {
+            "type": "string",
+            "description": "Only this stock id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/articles/{id}/stock/total",
+        "queryParams": {
+          "stock": "$stock"
+        }
+      }
+    },
+    {
+      "name": "flour_get_article_stock_availability",
+      "description": "Get the stock availability of one article per stock, physical and calculated, optionally for a period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Article id (_id)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "stocks": {
+            "type": "string",
+            "description": "Comma-separated stock ids."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/articles/{id}/stockavailability",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "stocks": "$stocks"
+        }
+      }
+    },
+    {
+      "name": "flour_list_article_stock_movements",
+      "description": "List the stock movements (stock item entries) of one article in a period: goods received, sales, corrections, transfers, with amount and stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Article id (_id)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "stocks": {
+            "type": "string",
+            "description": "Comma-separated stock ids."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/articles/{id}/stockitementries",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "stocks": "$stocks"
+        }
+      }
+    },
+    {
+      "name": "flour_list_documents",
+      "description": "List sales and purchase documents (receipts and invoices, quotes, orders, delivery notes, credit notes, purchase orders) in a date range: number, type, date, customer, point of sale, totals with and without VAT, VAT breakdown, payment status and the items (number, title, amount, price). Filter by type, point of sale, business partner or article. Keep the range short (a day or a week) on busy tills; page with skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Document type: N quote (Angebot), A order (Auftrag), L delivery note (Lieferschein), R invoice or receipt (Rechnung), r purchase invoice (Einkaufsrechnung), G credit note (Gutschrift), b purchase order (Bestellung).",
+            "enum": [
+              "N",
+              "A",
+              "L",
+              "R",
+              "r",
+              "G",
+              "b"
+            ]
+          },
+          "dateAfter": {
+            "type": "string",
+            "description": "Document date at or after. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "dateBefore": {
+            "type": "string",
+            "description": "Document date at or before. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "pointofsale": {
+            "type": "string",
+            "description": "Point of sale id (flour_list_points_of_sale)."
+          },
+          "businesspartner": {
+            "type": "string",
+            "description": "Business partner id (flour_list_business_partners)."
+          },
+          "article": {
+            "type": "string",
+            "description": "Only documents containing this article id."
+          },
+          "visible": {
+            "type": "boolean",
+            "description": "false to include hidden documents."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/documents",
+        "queryParams": {
+          "type": "$type",
+          "dateAfter": "$dateAfter",
+          "dateBefore": "$dateBefore",
+          "pointofsale": "$pointofsale",
+          "businesspartner": "$businesspartner",
+          "article": "$article",
+          "visible": "$visible",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "documents": {
+              "$from": "$[*]",
+              "$select": {
+                "_id": "_id",
+                "number": "number",
+                "type": "type",
+                "date": "date",
+                "displayName": "displayName",
+                "businesspartner": "businesspartner",
+                "customer": {
+                  "company": "billingAddress.company1",
+                  "firstName": "billingAddress.firstName",
+                  "lastName": "billingAddress.lastName",
+                  "city": "billingAddress.city"
+                },
+                "pointofsale": "pos.pointofsale",
+                "posjournal": "pos.posjournal",
+                "currency": "currency.iso",
+                "totalExVat": "totalExVat",
+                "totalIncVat": "totalIncVat",
+                "totalDue": "totalDue",
+                "tax": "tax",
+                "paid": "paid",
+                "paymentStatus": "paymentStatus",
+                "paymentMethod": "paymentMethod",
+                "isVoid": "isVoid",
+                "isVoided": "isVoided",
+                "locked": "locked",
+                "completed": "completed",
+                "description": "description",
+                "items": {
+                  "$from": "items[*]",
+                  "$select": {
+                    "number": "number",
+                    "title": "title",
+                    "ean": "ean",
+                    "amount": "amount",
+                    "price": "price",
+                    "discount": "discount",
+                    "totalIncVat": "totalIncVat",
+                    "totalExVat": "totalExVat",
+                    "taxRate": "taxRate",
+                    "type": "type"
+                  }
+                }
+              }
+            }
+          },
+          "maxBytes": 400000
+        }
+      }
+    },
+    {
+      "name": "flour_get_document",
+      "description": "Get one document with every field: items with prices, discounts and VAT, payments, billing and shipping address, point of sale and cash register data, status flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Document id (_id)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/documents/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "at",
+            "tseTx",
+            "terminal",
+            "secucard",
+            "prints",
+            "de"
+          ]
+        }
+      }
+    },
+    {
+      "name": "flour_get_sold_articles",
+      "description": "Get the articles sold in a period (invoices and receipts minus credit notes), one row per article with quantity sold and revenue without VAT, plus article number, title, EAN and manufacturer. Optional per point of sale. The best tool for \"what sold best this week\"; sort the rows by amount or totalExVat yourself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dateAfter": {
+            "type": "string",
+            "description": "Start. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "dateBefore": {
+            "type": "string",
+            "description": "End. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "pointofsale": {
+            "type": "string",
+            "description": "Only this point of sale id."
+          }
+        },
+        "required": [
+          "dateAfter",
+          "dateBefore"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/documents/sold-articles",
+        "queryParams": {
+          "dateAfter": "$dateAfter",
+          "dateBefore": "$dateBefore",
+          "pointofsale": "$pointofsale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{article: article, type: type, amount: amount, totalExVat: totalExVat, number: articleRef[0].number, title: articleRef[0].title, ean: articleRef[0].ean, manufacturer: articleRef[0].manufacturer}",
+          "maxBytes": 400000
+        }
+      }
+    },
+    {
+      "name": "flour_list_business_partners",
+      "description": "List business partners (customers and suppliers): id, name, debtor and creditor number, addresses, contacts, discount, credit limit and tags. Bank details are never returned. Filter by e-mail, debtor or creditor number, or change time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "debitorNumber": {
+            "type": "string",
+            "description": "Debtor (customer) number."
+          },
+          "creditorNumber": {
+            "type": "string",
+            "description": "Creditor (supplier) number."
+          },
+          "updatedAfter": {
+            "type": "string",
+            "description": "Changed at or after. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/businesspartners",
+        "queryParams": {
+          "email": "$email",
+          "debitorNumber": "$debitorNumber",
+          "creditorNumber": "$creditorNumber",
+          "updatedAfter": "$updatedAfter",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{_id: _id, displayName: displayName, type: type, isDebitor: isDebitor, debitorNumber: debitorNumber, isCreditor: isCreditor, creditorNumber: creditorNumber, billingAddress: billingAddress, shippingAddress: shippingAddress, contacts: contacts, discount: discount, creditLimit: creditLimit, pricelist: pricelist, tags: tags, notes: notes, updatedAt: updatedAt}"
+        }
+      }
+    },
+    {
+      "name": "flour_list_pos_journals",
+      "description": "List the cash register journals (one per opening and closing of a till): number, point of sale, opening and closing cash, withdrawals, when it was closed and by whom. Filter by closing or creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "closedAfter": {
+            "type": "string",
+            "description": "Closed at or after. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "closedBefore": {
+            "type": "string",
+            "description": "Closed at or before. ISO 8601, e.g. 2026-10-01T00:00:00.000Z (UTC; Germany is UTC+1 in winter, UTC+2 in summer)."
+          },
+          "number": {
+            "type": "string",
+            "description": "Journal number."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/posjournals",
+        "queryParams": {
+          "closedAfter": "$closedAfter",
+          "closedBefore": "$closedBefore",
+          "number": "$number",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{_id: _id, number: number, pointofsale: pointofsale, initialValue: initialValue, finalValue: finalValue, startDifference: startDifference, withdrawal: withdrawal, withdrawalTotal: withdrawalTotal, noCash: noCash, inUse: inUse, closed: closed, currency: currency, user: user, createdAt: createdAt, updatedAt: updatedAt}"
+        }
+      }
+    },
+    {
+      "name": "flour_list_inventories",
+      "description": "List the stocktakes (Inventuren) with id, name, creation date and closing date (null while still open). Read one with flour_get_inventory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Stocktake name."
+          },
+          "open": {
+            "type": "boolean",
+            "description": "true for open stocktakes only."
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "Locked or not."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/inventories/simple",
+        "queryParams": {
+          "name": "$name",
+          "open": "$open",
+          "locked": "$locked",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "flour_get_inventory",
+      "description": "Get one stocktake with its counted items (article number, title, EAN, counted amount, purchase price) and the totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stocktake id (_id)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/inventories/{id}"
+      }
+    },
+    {
+      "name": "flour_list_statistics",
+      "description": "List the saved statistics of the account (each a key, e.g. a top-seller list, with its rows of article, amount and revenue).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/statistics",
+        "queryParams": {
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      }
+    }
+  ]
+}
