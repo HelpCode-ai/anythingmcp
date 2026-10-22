@@ -109,6 +109,44 @@ export function isPaymentFailedBilling(billing: LicenseBilling | null | undefine
 /** Stripe subscription states in which Stripe may still collect a payment. */
 const LIVE_SUBSCRIPTION_STATUSES = ['past_due', 'unpaid', 'trialing', 'active'] as const;
 
+/** A period end is re-checked once it is at least this old, so Stripe has acted on it. */
+const BOUNDARY_SETTLE_MS = 15 * 60 * 1000;
+/**
+ * Re-checked until a verification this long after the period end: Stripe
+ * charges the invoice of a trial end or renewal about an hour after it
+ * creates it, so a check at +15 minutes can still see the old state.
+ */
+const BOUNDARY_RECHECK_MS = 2 * 60 * 60 * 1000;
+/** Period ends older than this are left to the daily re-verification. */
+const BOUNDARY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether an active paid licence is due a re-verification because its card
+ * trial or billing period ended (or its subscription was set to end) a little
+ * while ago, and it has not been verified since the outcome is known.
+ *
+ * The daily re-verification alone left a card trial that was cancelled, or
+ * whose first charge was declined, working for 6 to 18 hours after the site
+ * had revoked it (22 Oct 2026). Only the timing changes: whether the licence
+ * stays (a failed renewal keeps its 7-day grace) is still the licence site's
+ * answer.
+ */
+export function periodEndCheckDue(
+  billing: unknown,
+  lastVerifiedAt: Date | null,
+  now: Date = new Date(),
+): boolean {
+  const b = parseLicenseBilling(billing);
+  if (!b) return false;
+  return [b.trialEnd, b.currentPeriodEnd, b.endsAt].some((iso) => {
+    if (!iso) return false;
+    const end = Date.parse(iso);
+    const age = now.getTime() - end;
+    if (age < BOUNDARY_SETTLE_MS || age > BOUNDARY_WINDOW_MS) return false;
+    return !lastVerifiedAt || lastVerifiedAt.getTime() < end + BOUNDARY_RECHECK_MS;
+  });
+}
+
 /**
  * A workspace licence that means the workspace pays, or is about to: a paid
  * licence that is active (a card trial included: it is a 'starter' or 'team'
@@ -529,9 +567,11 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
    *
    * Until now a paid licence was verified once, when it was activated, and
    * never again: a subscription that was cancelled or stopped being paid on
-   * Stripe stayed `active` here for good. Runs from the onboarding cron (every
-   * six hours) and picks the licences not verified in the last 20 hours, so
-   * each one is checked about once a day.
+   * Stripe stayed `active` here for good. Runs from the onboarding cron
+   * (hourly on the Cloud host) and picks the licences not verified in the
+   * last 20 hours, so each one is checked about once a day, plus the active
+   * ones whose trial or billing period ended in the last day
+   * (periodEndCheckDue), so those are checked within about an hour of it.
    *
    * verifyLicense writes the outcome: a revoked or expired licence stops being
    * `active`; one whose renewal is failing stays active with expiresAt set to
@@ -576,7 +616,31 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       take: limit,
     });
 
-    for (const { licenseKey, organizationId, status } of due) {
+    // Active paid licences whose trial or billing period has just ended go
+    // first, whatever their last verification: the cron runs hourly, so a
+    // cancelled or declined card trial stops within about an hour instead of
+    // at the next daily check. Few licences have a period end in any given
+    // day, so the boundary test runs here rather than as a JSON query.
+    const now = new Date();
+    const active = await this.prisma.license.findMany({
+      where: {
+        plan: { not: 'trial' },
+        status: 'active',
+        billing: { not: Prisma.DbNull },
+      },
+      select: { licenseKey: true, organizationId: true, status: true, billing: true, lastVerifiedAt: true },
+    });
+    const atPeriodEnd = (active ?? [])
+      .filter((l) => periodEndCheckDue(l.billing, l.lastVerifiedAt, now))
+      .map(({ licenseKey, organizationId, status }) => ({ licenseKey, organizationId, status }));
+    const queued = new Set<string>();
+    const batch = [...atPeriodEnd, ...due].filter((l) => {
+      if (queued.has(l.licenseKey)) return false;
+      queued.add(l.licenseKey);
+      return true;
+    }).slice(0, limit);
+
+    for (const { licenseKey, organizationId, status } of batch) {
       out.checked++;
       const result = await this.verifyLicense(licenseKey);
       if (status !== 'active') {

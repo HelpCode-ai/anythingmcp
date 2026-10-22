@@ -1,4 +1,4 @@
-import { LicenseService, isLivePaidLicence } from './license.service';
+import { LicenseService, isLivePaidLicence, periodEndCheckDue } from './license.service';
 
 type MockLicense = {
   id: string;
@@ -456,6 +456,137 @@ describe('LicenseService — paid licences are re-verified', () => {
     await run(svc);
     expect(get.mock.calls[0][1].headers).toEqual({ 'x-amcp-service-token': 'test-service-token-0123456789' });
     delete process.env.LICENSE_SERVICE_TOKEN;
+  });
+
+  describe('at the end of a trial or billing period', () => {
+    // 22 Oct 2026: six card trials that were cancelled, or whose first charge
+    // was declined, kept working 6 to 18 hours after the licence site revoked
+    // them, until the daily re-verification reached them.
+    const NOW = new Date('2026-10-22T12:00:00.000Z');
+    const ago = (min: number) => new Date(NOW.getTime() - min * 60_000);
+    const billing = (over: Record<string, unknown>) => ({
+      status: 'trialing',
+      cancelling: false,
+      endsAt: null,
+      currentPeriodEnd: null,
+      trialEnd: null,
+      ...over,
+    });
+
+    it('is due once the period end is 15 minutes old, until a check 2 hours after it', () => {
+      const trialEnded = billing({ trialEnd: ago(30).toISOString(), currentPeriodEnd: ago(30).toISOString() });
+      expect(periodEndCheckDue(trialEnded, ago(60 * 20), NOW)).toBe(true);
+      expect(periodEndCheckDue(trialEnded, null, NOW)).toBe(true);
+      // Checked 10 minutes after the end: Stripe may not have charged yet.
+      expect(periodEndCheckDue(trialEnded, ago(20), NOW)).toBe(true);
+
+      const ended3hAgo = billing({ currentPeriodEnd: ago(180).toISOString() });
+      // Checked 1 h after the end: once more.
+      expect(periodEndCheckDue(ended3hAgo, ago(120), NOW)).toBe(true);
+      // Checked 2.5 h after the end: settled.
+      expect(periodEndCheckDue(ended3hAgo, ago(30), NOW)).toBe(false);
+    });
+
+    it('waits 15 minutes, leaves ends older than a day to the daily check, and ignores missing billing', () => {
+      expect(periodEndCheckDue(billing({ trialEnd: ago(5).toISOString() }), null, NOW)).toBe(false);
+      expect(periodEndCheckDue(billing({ currentPeriodEnd: ago(60 * 25).toISOString() }), null, NOW)).toBe(false);
+      expect(periodEndCheckDue(billing({ currentPeriodEnd: new Date(NOW.getTime() + 86_400_000).toISOString() }), null, NOW)).toBe(false);
+      expect(periodEndCheckDue(null, null, NOW)).toBe(false);
+      expect(periodEndCheckDue({ nonsense: true }, null, NOW)).toBe(false);
+    });
+
+    it('counts a subscription set to end (cancel_at) as a period end', () => {
+      expect(periodEndCheckDue(billing({ status: 'active', cancelling: true, endsAt: ago(40).toISOString() }), ago(600), NOW)).toBe(
+        true,
+      );
+    });
+
+    it('checks an active licence whose card trial just ended first, even if verified today', async () => {
+      jest.setSystemTime(NOW);
+      const updates: any[] = [];
+      const findMany = jest
+        .fn()
+        // The daily query: one licence not verified for a day.
+        .mockResolvedValueOnce([{ licenseKey: 'AMCP-DAIL-Y000-0000-0001', organizationId: 'o1', status: 'active' }])
+        // Every active paid licence with billing.
+        .mockResolvedValueOnce([
+          {
+            licenseKey: 'AMCP-TRIA-L000-0000-0002',
+            organizationId: 'o2',
+            status: 'active',
+            lastVerifiedAt: ago(60 * 6),
+            billing: billing({ trialEnd: ago(45).toISOString(), currentPeriodEnd: ago(45).toISOString() }),
+          },
+          {
+            licenseKey: 'AMCP-RENE-W000-0000-0003',
+            organizationId: 'o3',
+            status: 'active',
+            lastVerifiedAt: ago(60 * 6),
+            billing: billing({ status: 'active', currentPeriodEnd: new Date(NOW.getTime() + 20 * 86_400_000).toISOString() }),
+          },
+        ]);
+      const prisma = {
+        license: {
+          findMany,
+          update: jest.fn(async (args: any) => {
+            updates.push(args);
+            return {};
+          }),
+        },
+      };
+      const svc = new LicenseService(prisma as any, {} as any, { isCloud: () => true } as any);
+      get
+        .mockResolvedValueOnce({ data: { valid: false, error: 'License has been revoked' } })
+        .mockResolvedValueOnce({ data: { valid: true, plan: 'starter' } });
+
+      await expect(run(svc)).resolves.toEqual({ checked: 2, deactivated: 1, inGrace: 0, unreachable: 0 });
+      expect(get.mock.calls.map((c: any[]) => c[1].params.key)).toEqual([
+        'AMCP-TRIA-L000-0000-0002',
+        'AMCP-DAIL-Y000-0000-0001',
+      ]);
+      expect(updates[0]).toMatchObject({ where: { licenseKey: 'AMCP-TRIA-L000-0000-0002' }, data: { status: 'revoked' } });
+      const activeWhere = findMany.mock.calls[1][0].where;
+      expect(activeWhere).toMatchObject({ plan: { not: 'trial' }, status: 'active' });
+    });
+
+    it('keeps a renewal that failed in its grace period: the licence site decides, not the timing', async () => {
+      jest.setSystemTime(NOW);
+      const updates: any[] = [];
+      const prisma = {
+        license: {
+          findMany: jest
+            .fn()
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([
+              {
+                licenseKey: 'AMCP-PAID-0000-0000-0004',
+                organizationId: 'o4',
+                status: 'active',
+                lastVerifiedAt: ago(60 * 3),
+                billing: billing({ status: 'active', currentPeriodEnd: ago(90).toISOString() }),
+              },
+            ]),
+          update: jest.fn(async (args: any) => {
+            updates.push(args);
+            return {};
+          }),
+        },
+      };
+      const svc = new LicenseService(prisma as any, {} as any, { isCloud: () => true } as any);
+      get.mockResolvedValueOnce({
+        data: {
+          valid: true,
+          plan: 'team',
+          expiresAt: '2026-10-29T10:30:00.000Z',
+          paymentIssue: true,
+          graceUntil: '2026-10-29T10:30:00.000Z',
+          billing: { status: 'past_due', cancelling: false },
+        },
+      });
+
+      await expect(run(svc)).resolves.toEqual({ checked: 1, deactivated: 0, inGrace: 1, unreachable: 0 });
+      expect(updates[0].data).toMatchObject({ status: 'active', expiresAt: new Date('2026-10-29T10:30:00.000Z') });
+    });
   });
 
   it('does nothing on a self-hosted instance', async () => {
