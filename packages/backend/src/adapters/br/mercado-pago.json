@@ -7,7 +7,7 @@
     "Mercado Pago Brasil",
     "Mercado Pago México"
   ],
-  "description": "Mercado Pago seller account (Argentina, Brazil, Mexico, Chile, Colombia, Peru, Uruguay), read-only: payments with fees, net amounts and release dates, merchant orders, subscriptions, payment methods, and the released money and account money reports for reconciliation (generate, list, download). Moves no money.",
+  "description": "Mercado Pago seller account (Argentina, Brazil, Mexico, Chile, Colombia, Peru, Uruguay): payments with fees, net amounts and release dates, merchant orders, subscriptions, payment methods, and the released money and account money reports for reconciliation (generate, list, download). Moves no money.",
   "region": "br",
   "category": "payments",
   "icon": "mercado-pago",
