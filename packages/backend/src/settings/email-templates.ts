@@ -38,6 +38,21 @@ export interface MarketingContext extends EmailBrandContext {
 }
 
 const hostOf = (url: string) => url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+
+/**
+ * A dashboard page an email links to. Someone who signs in with Google,
+ * Microsoft or GitHub has no password: a plain link opens the sign-in form
+ * wherever the dashboard has no session (a phone's mail app, a new browser),
+ * and most stop there. With `signInWith`, the link goes through
+ * `/login?continueWith=<provider>`, which goes straight on with a session and
+ * otherwise signs in with that provider on its own (the consent page's links
+ * do the same, login.controller.ts).
+ */
+export function cloudPageUrl(cloudUrl: string, path: string, signInWith?: string | null): string {
+  if (!signInWith) return `${cloudUrl}${path}`;
+  return `${cloudUrl}/login?continueWith=${encodeURIComponent(signInWith)}&redirect=${encodeURIComponent(path)}`;
+}
+
 const greeting = (name: string | null | undefined) => (name && name.trim() ? `Hi ${name.trim()},` : 'Hi there,');
 const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
 
@@ -225,12 +240,19 @@ export function existingAccountEmail(
 // ── Cloud lifecycle ─────────────────────────────────────────────────────────
 
 export function onboardingReminderEmail(
-  input: { name: string; dayNumber: 1 | 2; aiClient?: string; cloudUrl: string },
+  input: {
+    name: string;
+    dayNumber: 1 | 2;
+    aiClient?: string;
+    cloudUrl: string;
+    /** The recipient's sign-in provider, if any (see cloudPageUrl). */
+    signInWith?: string | null;
+  },
   ctx: MarketingContext,
 ): RenderedEmail {
   const { cloudUrl } = input;
-  const welcomeUrl = `${cloudUrl}/welcome`;
-  const storeUrl = `${cloudUrl}/connectors/store`;
+  const welcomeUrl = cloudPageUrl(cloudUrl, '/welcome', input.signInWith);
+  const storeUrl = cloudPageUrl(cloudUrl, '/connectors/store', input.signInWith);
   const mcpUrl = `${cloudUrl}/mcp`;
   const hi = esc(greeting(input.name));
   const examples = '<em>&ldquo;Connect my Shopify store&rdquo;</em> or <em>&ldquo;Add HubSpot&rdquo;</em>';
