@@ -12,7 +12,10 @@
  * METRICS_TOKEN is required whenever METRICS_ENABLED=true, on Cloud and
  * self-hosted alike (mirrors SENTRY_VERIFY_TOKEN): the listener's default
  * bind host is 0.0.0.0, so an unauthenticated self-hosted instance would
- * serve /metrics to anyone who can reach the host.
+ * serve /metrics to anyone who can reach the host. A token shorter than
+ * MIN_SECRET_LENGTH (secrets.util.ts — the same bar as JWT_SECRET and
+ * ENCRYPTION_KEY) only warns once; it never blocks the listener, since
+ * metrics is opt-in and a short token is still better than none.
  *
  * On Cloud (DEPLOYMENT_MODE=cloud), per-tool/per-connector labels are always
  * dropped, even if METRICS_TOOL_LABELS=true — no series may carry a
@@ -31,7 +34,7 @@ import {
   Gauge,
   collectDefaultMetrics,
 } from 'prom-client';
-import { sameSecret } from './secrets.util';
+import { sameSecret, MIN_SECRET_LENGTH } from './secrets.util';
 import { processGauges } from './process-vitals';
 
 // Plain console wrappers, called through at each use (not bound once at
@@ -49,6 +52,7 @@ let toolCallDuration: Histogram<'connector_type' | 'status' | 'connector_id' | '
 let upstreamErrorsTotal: Counter<'connector_type' | 'upstream_status_class' | 'connector_id' | 'tool'> | null = null;
 let toolLabelsEnabled = false;
 let toolLabelsWarned = false;
+let tokenLengthWarned = false;
 
 function isCloud(): boolean {
   return (process.env.DEPLOYMENT_MODE || 'self-hosted') === 'cloud';
@@ -122,6 +126,12 @@ export function startMetricsServer(): http.Server | null {
   if (!token) {
     logger.error('[metrics] METRICS_TOKEN must be set when METRICS_ENABLED=true; metrics stay off.');
     return null;
+  }
+  if (token.length < MIN_SECRET_LENGTH && !tokenLengthWarned) {
+    logger.warn(
+      `[metrics] METRICS_TOKEN is shorter than ${MIN_SECRET_LENGTH} chars, like the other secrets in secrets.util.ts. Metrics still start; regenerate with: openssl rand -base64 48`,
+    );
+    tokenLengthWarned = true;
   }
 
   toolLabelsEnabled = process.env.METRICS_TOOL_LABELS === 'true';
@@ -218,6 +228,7 @@ export function stopMetricsServer(): Promise<void> {
   upstreamErrorsTotal = null;
   toolLabelsEnabled = false;
   toolLabelsWarned = false;
+  tokenLengthWarned = false;
   if (!current) return Promise.resolve();
   return new Promise((resolve) => current.close(() => resolve()));
 }

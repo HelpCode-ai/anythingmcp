@@ -3,7 +3,9 @@ import { recordToolCall, startMetricsServer, stopMetricsServer } from './metrics
 
 const PORT = 19464;
 const BASE = `http://127.0.0.1:${PORT}/metrics`;
-const DEFAULT_TOKEN = 'a-very-long-test-token-value';
+// >= MIN_SECRET_LENGTH (secrets.util.ts) so it never trips the new
+// too-short warning in tests that aren't about that warning.
+const DEFAULT_TOKEN = 'a-very-long-test-token-value-32chars-ok';
 const AUTH = { Authorization: `Bearer ${DEFAULT_TOKEN}` };
 
 /** server.listen() resolves asynchronously; retry past the brief window before it's bound. */
@@ -90,6 +92,34 @@ describe('metrics', () => {
     const server = startMetricsServer();
     expect(server).toBeNull();
     await expect(fetch(BASE)).rejects.toThrow();
+  });
+
+  it('warns once when METRICS_TOKEN is shorter than the minimum, but still starts and serves metrics', async () => {
+    process.env.METRICS_ENABLED = 'true';
+    const shortToken = 'too-short';
+    process.env.METRICS_TOKEN = shortToken;
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const server = startMetricsServer();
+    expect(server).not.toBeNull();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('METRICS_TOKEN');
+
+    const res = await fetchReady(BASE, { headers: { Authorization: `Bearer ${shortToken}` } });
+    expect(res.status).toBe(200);
+
+    warnSpy.mockRestore();
+  });
+
+  it('does not warn when METRICS_TOKEN already meets the minimum length', async () => {
+    process.env.METRICS_ENABLED = 'true';
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    startMetricsServer();
+    await fetchReady(BASE, { headers: AUTH });
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
   });
 
   it('serves Prometheus text on GET /metrics, and the counters/histogram move after a tool call', async () => {
