@@ -4,7 +4,7 @@ import { listAdapters } from '../adapters/catalog';
 import { RegisteredTool, isListable } from './tool-registry';
 import { deriveToolAnnotations } from './tool-annotations';
 import { jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
-import type { CallToolResult } from '@modelcontextprotocol/client';
+import type { ToolResultContent } from './dynamic-mcp-tools';
 import { isMuseHost, knownClientFor } from '../auth/auth-page';
 
 /**
@@ -282,8 +282,8 @@ function setupTools(organizationId: string): RegisteredTool[] {
 }
 
 type TextResult = {
-  // Content includes shaped results and preserved upstream MCP error blocks.
-  content: CallToolResult['content'];
+  // Images only appear in tool results from `responseMapping.images`.
+  content: ToolResultContent[number][];
   isError?: boolean;
 };
 
@@ -865,7 +865,8 @@ type RunArgs = { tool: string; connector?: string; arguments?: Record<string, un
 
 /** Parsed JSON when the text is JSON, the text otherwise. */
 function resultBody(result: TextResult): unknown {
-  // Only text blocks contribute to a JSON summary.
+  // Images have no place in a JSON summary; their placeholders in the text say
+  // they were there.
   const text = result.content
     .flatMap((c) => (c.type === 'text' ? [c.text] : []))
     .join('\n');

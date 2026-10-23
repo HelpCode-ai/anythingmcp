@@ -1,5 +1,4 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import type { CallToolResult } from '@modelcontextprotocol/client';
 import { createHash } from 'crypto';
 import { AxiosError } from 'axios';
 import { ToolRegistry } from './tool-registry';
@@ -65,46 +64,6 @@ import { ResponseBodyError } from '../connectors/engines/response-error.util';
 import { isMaskedEnvVar, secretContext } from '../connectors/connector-secrets.util';
 import { redactSecretsDeep } from '../common/secret-literals.util';
 import { withTokenRenewal } from '../connectors/engines/bearer-token-renewal.service';
-
-type ToolExecutionContext = {
-  userId?: string;
-  userEmail?: string;
-  organizationId?: string;
-  authMethod?: string;
-  apiKeyName?: string;
-  mcpServerId?: string;
-  mcpServerName?: string;
-  connectorIds?: string[];
-  intent?: string;
-  /** The caller contributes to skill learning (stamped on the log row). */
-  learnable?: boolean;
-};
-
-type RenderedToolResult = {
-  content: ToolResultContent;
-  isError?: boolean;
-  /**
-   * The result as an object, before it was serialized into `content[0].text`.
-   * Lets the MCP endpoint build structuredContent without re-parsing the text
-   * — which silently produced `{}` for any tool with a followUp hint.
-   */
-  structured?: unknown;
-};
-
-type McpToolErrorResult = CallToolResult & { isError: true; structured?: unknown };
-type ToolExecutionResult = RenderedToolResult | McpToolErrorResult;
-
-type ToolInvocation = {
-  tool: RegisteredTool;
-  toolName: string;
-  params: Record<string, unknown>;
-  context?: ToolExecutionContext;
-  responseMapping?: ResponseMapping;
-  cacheTtl?: number;
-  startTime: number;
-  usedProxy: boolean;
-  secretValues: string[];
-};
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -273,52 +232,29 @@ export class DynamicMcpTools {
   async executeTool(
     toolName: string,
     params: Record<string, unknown>,
-    context?: ToolExecutionContext,
-  ): Promise<ToolExecutionResult> {
-    const licenseError = await this.checkLicense(context);
-    if (licenseError) return licenseError;
-    const tool = this.findTool(toolName, context);
-    if (!tool) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({
-              error: `Tool '${toolName}' not found.`,
-            }),
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    const responseMapping = tool.responseMapping as ResponseMapping | undefined;
-    const cacheTtl = responseMapping?.cacheTtl;
-    const cached = await this.readCachedResult(toolName, params, tool, responseMapping, cacheTtl);
-    if (cached) return cached;
-
-    const startTime = Date.now();
-    // The connector's credentials, as filled into the URL, headers and auth.
-    // An error message or an echoing API can quote them back (a URL with the
-    // bot token in its path); they never reach the client or the log.
-    const secretValues = this.connectorSecretValues(tool);
-    const invocation: ToolInvocation = {
-      tool, toolName, params, context, responseMapping, cacheTtl,
-      startTime, usedProxy: false, secretValues,
-    };
-
-    try {
-      const engineOut = await this.invokeTool(invocation);
-      if (this.isMcpToolError(tool, engineOut.body)) {
-        return await this.completeMcpError(invocation, engineOut.body);
-      }
-      return await this.completeSuccess(invocation, engineOut);
-    } catch (error: any) {
-      return this.completeThrownError(invocation, error);
-    }
-  }
-
-  private async checkLicense(context?: ToolExecutionContext): Promise<RenderedToolResult | undefined> {
+    context?: {
+      userId?: string;
+      userEmail?: string;
+      organizationId?: string;
+      authMethod?: string;
+      apiKeyName?: string;
+      mcpServerId?: string;
+      mcpServerName?: string;
+      connectorIds?: string[];
+      intent?: string;
+      /** The caller contributes to skill learning (stamped on the log row). */
+      learnable?: boolean;
+    },
+  ): Promise<{
+    content: ToolResultContent;
+    isError?: boolean;
+    /**
+     * The result as an object, before it was serialized into `content[0].text`.
+     * Lets the MCP endpoint build structuredContent without re-parsing the text
+     * — which silently produced `{}` for any tool with a followUp hint.
+     */
+    structured?: unknown;
+  }> {
     // Check license before executing tool (cloud mode only)
     try {
       await this.licenseGuard.checkLicenseActive(context?.organizationId);
@@ -335,9 +271,7 @@ export class DynamicMcpTools {
         isError: true,
       };
     }
-  }
 
-  private findTool(toolName: string, context?: ToolExecutionContext): RegisteredTool | undefined {
     // Resolve the tool in the ONE scope this caller is entitled to, and never
     // widen when that scope has no match.
     //
@@ -357,25 +291,33 @@ export class DynamicMcpTools {
     //   - organizationId — any JWT on the global /mcp. Only the caller's org.
     //   - neither — an instance-level static credential on a single-tenant
     //     self-hosted box, where "any tool" is the correct answer.
+    let tool: RegisteredTool | undefined;
     if (context?.connectorIds) {
-      return this.toolRegistry.getTool(toolName, context.connectorIds);
+      tool = this.toolRegistry.getTool(toolName, context.connectorIds);
     } else if (context?.organizationId) {
-      return this.toolRegistry.getToolForOrg(toolName, context.organizationId);
+      tool = this.toolRegistry.getToolForOrg(toolName, context.organizationId);
     } else {
-      return this.toolRegistry.getTool(toolName);
+      tool = this.toolRegistry.getTool(toolName);
     }
-  }
+    if (!tool) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: `Tool '${toolName}' not found.`,
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
 
-  private async readCachedResult(
-    toolName: string,
-    params: Record<string, unknown>,
-    tool: RegisteredTool,
-    responseMapping: ResponseMapping | undefined,
-    cacheTtl: number | undefined,
-  ): Promise<RenderedToolResult | undefined> {
     // Check response cache. The cache holds the *raw* upstream response, so
     // editing a tool's response mapping takes effect immediately instead of
     // after up to cacheTtl seconds.
+    const responseMapping = tool.responseMapping as ResponseMapping | undefined;
+    const cacheTtl = responseMapping?.cacheTtl;
     if (cacheTtl && cacheTtl > 0) {
       const cacheKey = this.buildCacheKey(toolName, params);
       const cached = await this.redisService.get(cacheKey);
@@ -383,360 +325,347 @@ export class DynamicMcpTools {
         try {
           const raw = JSON.parse(cached);
           this.logger.debug(`Cache hit for tool ${toolName}`);
-          return this.renderCachedResult(raw, tool, responseMapping, toolName);
+          // Entries written with response meta are wrapped; older ones are
+          // the bare body. Both must keep rendering.
+          if (raw && typeof raw === 'object' && raw.__amcpEnvelope === 1) {
+            return this.renderResult(
+              raw.body,
+              responseMapping,
+              toolName,
+              raw.meta,
+              tool.endpointMapping?.queryParams,
+            );
+          }
+          return this.renderResult(raw, responseMapping, toolName);
         } catch {
           // Unreadable entry — fall through and re-execute.
           this.logger.warn(`Discarding unparsable cache entry for tool ${toolName}`);
         }
       }
     }
-  }
 
-  private renderCachedResult(
-    raw: any,
-    tool: RegisteredTool,
-    responseMapping: ResponseMapping | undefined,
-    toolName: string,
-  ): RenderedToolResult {
-    // Entries written with response meta are wrapped; older ones are
-    // the bare body. Both must keep rendering.
-    if (raw && typeof raw === 'object' && raw.__amcpEnvelope === 1) {
-      return this.renderResult(
-        raw.body,
-        responseMapping,
-        toolName,
-        raw.meta,
-        tool.endpointMapping?.queryParams,
-      );
-    }
-    return this.renderResult(raw, responseMapping, toolName);
-  }
+    const startTime = Date.now();
+    let usedProxy = false;
+    // The connector's credentials, as filled into the URL, headers and auth.
+    // An error message or an echoing API can quote them back (a URL with the
+    // bot token in its path); they never reach the client or the log.
+    const secretValues = this.connectorSecretValues(tool);
 
-  private async prepareInvocation(invocation: ToolInvocation) {
-    const { tool, context } = invocation;
-    const envVars = tool.connectorConfig.envVars || {};
-
-    // Reserved {{amcp.*}} caller-context vars are merged AFTER the
-    // workspace's own env vars, so a connector variable can never shadow
-    // (i.e. spoof) the authenticated identity.
-    const interpolationVars = {
-      ...envVars,
-      ...buildCallerContextVars(context),
-    };
-
-    // Interpolate {{VAR}} patterns in config and endpoint mapping
-    const {
-      config: interpolatedConfig,
-      endpointMapping: interpolatedMapping,
-    } = interpolateConnectorConfig(
-      {
-        baseUrl: tool.connectorConfig.baseUrl,
-        headers: tool.connectorConfig.headers,
-      },
-      tool.endpointMapping,
-      interpolationVars,
-      { reservedPrefix: CALLER_CONTEXT_PREFIX },
-    );
-
-    // Decide proxy routing (env present + tool opted in + cloud rate-limit).
-    // Throws on over-quota (choice B). Returns null → direct request.
-    const proxyUrl = await this.resolveProxy(tool, context?.organizationId);
-    invocation.usedProxy = proxyUrl != null;
-
-    // authConfig carries {{VAR}} placeholders too, and until now nothing
-    // resolved them at call time: they were substituted once, at import, from
-    // whatever the install form was given. A workspace that installed the
-    // connector first and filled its credentials afterwards therefore kept
-    // sending the placeholder text forever. Interpolating here makes the two
-    // paths agree.
-    const authConfig = withTokenRenewal(
-      tool.connectorConfig.authType,
-      tool.connectorConfig.authConfig
-        ? interpolateDeep(
-            JSON.parse(tool.connectorConfig.authConfig),
-            interpolationVars,
-            { reservedPrefix: CALLER_CONTEXT_PREFIX },
-          )
-        : undefined,
-      tool.connectorConfig.config,
-      envVars,
-    );
-
-    const engineConfig = {
-      baseUrl: interpolatedConfig.baseUrl,
-      authType: tool.connectorConfig.authType,
-      authConfig,
-      headers: interpolatedConfig.headers,
-      specUrl: (tool.connectorConfig as any).specUrl,
-      // The engines key the OAuth2 token cache, the refresh lock and the
-      // saving of a renewed token on the connector id. Without it every
-      // call parsed a fresh authConfig, so nothing was cached, a renewed
-      // token was never saved, and the next renewal sent the refresh token
-      // the provider had already rotated: Cloudinary (5-minute tokens)
-      // answered invalid_grant a few minutes after each authorization.
-      // Credentials that depend on the caller ({{amcp.*}}) differ per call,
-      // so they stay unkeyed.
-      connectorId: usesCallerContext(tool.connectorConfig.authConfig)
-        ? undefined
-        : tool.connectorId,
-      errorWhen: connectorErrorWhen(tool.connectorConfig.config),
-      ...(proxyUrl ? { proxyUrl } : {}),
-    };
-
-    this.validatePreparedTool(tool, engineConfig, interpolatedMapping, authConfig, envVars);
-    return { engineConfig, interpolatedMapping, envVars };
-  }
-
-  private validatePreparedTool(
-    tool: RegisteredTool,
-    engineConfig: { baseUrl: string; headers?: Record<string, string> },
-    interpolatedMapping: ReturnType<typeof interpolateConnectorConfig>['endpointMapping'],
-    authConfig: unknown,
-    envVars: Record<string, string>,
-  ): void {
-    // An OAuth connector nobody has authorized carries a placeholder where
-    // the refresh token goes. Say what to do about it, rather than naming
-    // a variable the user is not supposed to fill in by hand.
-    if (tool.setupStatus === 'needs_authorization') {
-      const page = connectorPageUrl(tool.connectorId);
-      throw new Error(
-        'OAuth2: this connector has not been authorized yet. No request was sent to the API. ' +
-          `Open the connector in AnythingMCP${page ? ` (${page})` : ''} and click Authorize with Provider.`,
-      );
-    }
-
-    // Nothing left to substitute it with: fail here, with the variable names,
-    // rather than let the vendor answer something that reads like our bug.
-    assertNoUnresolvedPlaceholders(
-      {
-        baseUrl: engineConfig.baseUrl,
-        path: interpolatedMapping.path,
-        queryParams: interpolatedMapping.queryParams,
-        headers: engineConfig.headers,
-        authConfig,
-        body: {
-          template: interpolatedMapping.bodyTemplate,
-          mapping: interpolatedMapping.bodyMapping,
-          headers: interpolatedMapping.headers,
-        },
-      },
-      `the connector behind ${tool.name}`,
-      connectorPageUrl(tool.connectorId),
-    );
-    // A base URL without https:// (a variable typed as `shop.example.com`
-    // on an older install) would otherwise fail in the SSRF guard as
-    // "invalid URL", naming neither the variable nor the fix.
-    assertAbsoluteBaseUrl(
-      {
-        baseUrl: engineConfig.baseUrl,
-        connectorType: tool.connectorType,
-        template: tool.connectorConfig.baseUrl,
-        envVars,
-      },
-      `the connector behind ${tool.name}`,
-    );
-  }
-
-  private async invokeTool(invocation: ToolInvocation) {
-    const { tool, params } = invocation;
-    const { engineConfig, interpolatedMapping, envVars } = await this.prepareInvocation(invocation);
-    // Inject env vars as parameter defaults (env var values fill in params
-    // that match by name, so they don't need to be provided by the caller)
-    const paramsWithEnv = this.injectEnvVars(params, envVars);
-
-    // Apply JSON Schema defaults for missing params
-    const mergedParams = this.applyDefaults(tool.parameters, paramsWithEnv);
-
-    processGauges.inc('toolCallsInFlight');
-    let engineOut: Awaited<ReturnType<DynamicMcpTools['executeWithEngine']>>;
     try {
-      engineOut = await this.executeWithEngine(
-        tool.connectorType,
-        engineConfig,
-        interpolatedMapping,
-        mergedParams,
+      const envVars = tool.connectorConfig.envVars || {};
+
+      // Reserved {{amcp.*}} caller-context vars are merged AFTER the
+      // workspace's own env vars, so a connector variable can never shadow
+      // (i.e. spoof) the authenticated identity.
+      const interpolationVars = {
+        ...envVars,
+        ...buildCallerContextVars(context),
+      };
+
+      // Interpolate {{VAR}} patterns in config and endpoint mapping
+      const {
+        config: interpolatedConfig,
+        endpointMapping: interpolatedMapping,
+      } = interpolateConnectorConfig(
         {
-          connectorConfig: tool.connectorConfig.config,
-          // OData settings may carry {{VAR}} (an adapter's SAP client).
-          odataSettings: interpolateDeep(
-            (tool.connectorConfig.config as { odata?: unknown } | undefined)?.odata,
-            envVars,
-          ),
+          baseUrl: tool.connectorConfig.baseUrl,
+          headers: tool.connectorConfig.headers,
         },
+        tool.endpointMapping,
+        interpolationVars,
+        { reservedPrefix: CALLER_CONTEXT_PREFIX },
       );
-    } finally {
-      processGauges.dec('toolCallsInFlight');
-    }
-    return engineOut;
-  }
 
-  private isMcpToolError(tool: RegisteredTool, result: unknown): result is McpToolErrorResult {
-    return tool.connectorType === 'MCP' && result !== null && typeof result === 'object' &&
-      'isError' in result && result.isError === true && 'content' in result && Array.isArray(result.content);
-  }
+      // Decide proxy routing (env present + tool opted in + cloud rate-limit).
+      // Throws on over-quota (choice B). Returns null → direct request.
+      const proxyUrl = await this.resolveProxy(tool, context?.organizationId);
+      usedProxy = proxyUrl != null;
 
-  private async completeMcpError(
-    invocation: ToolInvocation,
-    upstreamResult: McpToolErrorResult,
-  ): Promise<McpToolErrorResult> {
-    const result = redactSecretsDeep(upstreamResult, invocation.secretValues);
-    const durationMs = Date.now() - invocation.startTime;
-    await this.auditService.logInvocation({
-      ...this.auditFields(invocation, durationMs),
-      output: withoutBinaryData(result) as Record<string, unknown>,
-      status: 'ERROR',
-      error: this.formatStoredError({ error: 'MCP tool returned isError: true', responseBody: result }),
-    });
-    this.logToolCall(invocation.tool, invocation.context, durationMs, 'ERROR');
-    return result;
-  }
-
-  private auditFields(invocation: ToolInvocation, durationMs: number) {
-    const { tool, context, params, usedProxy } = invocation;
-    return {
-      toolId: tool.id,
-      userId: context?.userId,
-      userEmail: context?.userEmail,
-      mcpServerId: context?.mcpServerId,
-      organizationId: context?.organizationId,
-      connectorId: tool.connectorId,
-      usedProxy,
-      intent: context?.intent,
-      learnable: context?.learnable ?? false,
-      input: params,
-      durationMs,
-      clientInfo: this.clientInfo(context),
-    };
-  }
-
-  private clientInfo(context?: ToolExecutionContext): string | undefined {
-    return context ? JSON.stringify({
-      authMethod: context.authMethod,
-      apiKeyName: context.apiKeyName,
-      userEmail: context.userEmail,
-      mcpServerName: context.mcpServerName,
-    }) : undefined;
-  }
-
-  private async completeSuccess(
-    invocation: ToolInvocation,
-    engineOut: Awaited<ReturnType<DynamicMcpTools['executeWithEngine']>>,
-  ): Promise<RenderedToolResult> {
-    const { tool, toolName, context, responseMapping, startTime, secretValues } = invocation;
-    const { body: upstreamResult, meta } = engineOut;
-    // An API that echoes the request (a URL with the bot token in it) must
-    // not hand the connector's own credentials to the client, the cache or
-    // the log. Only those values are replaced, and the response is copied
-    // only when it mentions one. An all-digit value (a PIN, a numeric key)
-    // is left alone here: it would also match inside the response's own
-    // ids and amounts and corrupt them. Errors still redact it.
-    const result = redactSecretsDeep(
-      upstreamResult,
-      secretValues.filter((value) => !/^\d+$/.test(value)),
-      { patterns: false },
-    );
-
-    const durationMs = Date.now() - startTime;
-
-    await this.auditService.logInvocation({
-      ...this.auditFields(invocation, durationMs),
-      // A file's bytes stay out of the call log: only what it was.
-      output: withoutBinaryData(result) as Record<string, unknown>,
-      status: 'SUCCESS',
-    });
-
-    // Grow the knowledge graph from this real call (debounced, fire-and-forget).
-    void this.kgService.scheduleObservationalIngest(context?.organizationId);
-
-    await this.cacheResult(invocation, result, meta);
-
-    const rendered = this.renderResult(
-      result,
-      responseMapping,
-      toolName,
-      meta,
-      tool.endpointMapping?.queryParams,
-    );
-    this.logToolCall(tool, context, durationMs, 'SUCCESS', textOf(rendered.content));
-    return rendered;
-  }
-
-  private async cacheResult(invocation: ToolInvocation, result: unknown, meta?: ResponseMeta): Promise<void> {
-    const { toolName, params, cacheTtl } = invocation;
-    // Cache the raw response if cacheTtl is set (shaping happens on read).
-    if (cacheTtl && cacheTtl > 0) {
-      const cacheKey = this.buildCacheKey(toolName, params);
-      // The audit log above got the bare body; the cache needs the headers
-      // too, or a cached page would come back without its next cursor.
-      const serialized = JSON.stringify(
-        meta ? { __amcpEnvelope: 1, body: result, meta } : result,
+      // authConfig carries {{VAR}} placeholders too, and until now nothing
+      // resolved them at call time: they were substituted once, at import, from
+      // whatever the install form was given. A workspace that installed the
+      // connector first and filled its credentials afterwards therefore kept
+      // sending the placeholder text forever. Interpolating here makes the two
+      // paths agree.
+      const authConfig = withTokenRenewal(
+        tool.connectorConfig.authType,
+        tool.connectorConfig.authConfig
+          ? interpolateDeep(
+              JSON.parse(tool.connectorConfig.authConfig),
+              interpolationVars,
+              { reservedPrefix: CALLER_CONTEXT_PREFIX },
+            )
+          : undefined,
+        tool.connectorConfig.config,
+        envVars,
       );
-      if (serialized !== undefined) {
-        await this.redisService.set(cacheKey, serialized, cacheTtl);
-        this.logger.debug(
-          `Cached response for tool ${toolName} (TTL: ${cacheTtl}s)`,
+
+      const engineConfig = {
+        baseUrl: interpolatedConfig.baseUrl,
+        authType: tool.connectorConfig.authType,
+        authConfig,
+        headers: interpolatedConfig.headers,
+        specUrl: (tool.connectorConfig as any).specUrl,
+        // The engines key the OAuth2 token cache, the refresh lock and the
+        // saving of a renewed token on the connector id. Without it every
+        // call parsed a fresh authConfig, so nothing was cached, a renewed
+        // token was never saved, and the next renewal sent the refresh token
+        // the provider had already rotated: Cloudinary (5-minute tokens)
+        // answered invalid_grant a few minutes after each authorization.
+        // Credentials that depend on the caller ({{amcp.*}}) differ per call,
+        // so they stay unkeyed.
+        connectorId: usesCallerContext(tool.connectorConfig.authConfig)
+          ? undefined
+          : tool.connectorId,
+        errorWhen: connectorErrorWhen(tool.connectorConfig.config),
+        ...(proxyUrl ? { proxyUrl } : {}),
+      };
+
+      // An OAuth connector nobody has authorized carries a placeholder where
+      // the refresh token goes. Say what to do about it, rather than naming
+      // a variable the user is not supposed to fill in by hand.
+      if (tool.setupStatus === 'needs_authorization') {
+        const page = connectorPageUrl(tool.connectorId);
+        throw new Error(
+          'OAuth2: this connector has not been authorized yet. No request was sent to the API. ' +
+            `Open the connector in AnythingMCP${page ? ` (${page})` : ''} and click Authorize with Provider.`,
         );
       }
-    }
-  }
 
-  private async completeThrownError(invocation: ToolInvocation, error: any): Promise<RenderedToolResult> {
-    const { tool, context, startTime, secretValues } = invocation;
-    const durationMs = Date.now() - startTime;
-    const errorDetail = redactSecretsDeep(this.extractErrorDetail(error), secretValues);
-    this.logToolCall(
-      tool,
-      context,
-      durationMs,
-      'ERROR',
-      undefined,
-      typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
-    );
-
-    const hint = this.errorHint(error, tool, errorDetail);
-    if (hint) errorDetail.hint = hint;
-
-    await this.auditService.logInvocation({
-      ...this.auditFields(invocation, durationMs),
-      status: 'ERROR',
-      error: this.formatStoredError(errorDetail),
-    });
-
-    return {
-      content: [
+      // Nothing left to substitute it with: fail here, with the variable names,
+      // rather than let the vendor answer something that reads like our bug.
+      assertNoUnresolvedPlaceholders(
         {
-          type: 'text' as const,
-          text: JSON.stringify(errorDetail, null, 2),
+          baseUrl: engineConfig.baseUrl,
+          path: interpolatedMapping.path,
+          queryParams: interpolatedMapping.queryParams,
+          headers: engineConfig.headers,
+          authConfig,
+          body: {
+            template: interpolatedMapping.bodyTemplate,
+            mapping: interpolatedMapping.bodyMapping,
+            headers: interpolatedMapping.headers,
+          },
         },
-      ],
-      isError: true,
-    };
-  }
+        `the connector behind ${tool.name}`,
+        connectorPageUrl(tool.connectorId),
+      );
+      // A base URL without https:// (a variable typed as `shop.example.com`
+      // on an older install) would otherwise fail in the SSRF guard as
+      // "invalid URL", naming neither the variable nor the fix.
+      assertAbsoluteBaseUrl(
+        {
+          baseUrl: engineConfig.baseUrl,
+          connectorType: tool.connectorType,
+          template: tool.connectorConfig.baseUrl,
+          envVars,
+        },
+        `the connector behind ${tool.name}`,
+      );
 
-  private errorHint(error: any, tool: RegisteredTool, errorDetail: Record<string, unknown>): string | undefined {
-    // One actionable line for the client, on top of the vendor's own body.
-    // Keyed on the upstream host so hand-built tools get the same help as
-    // catalog ones; see error-hints.ts for why this exists.
-    // The engines attach their own hint when they know more than the
-    // response says (a refresh token refused 7 days after a Google
-    // authorization, a Meta session that was logged out).
-    const engineHint = typeof error?.hint === 'string' && error.hint ? error.hint : undefined;
-    return engineHint ?? this.inferErrorHint(error, tool, errorDetail);
-  }
+      // Inject env vars as parameter defaults (env var values fill in params
+      // that match by name, so they don't need to be provided by the caller)
+      const paramsWithEnv = this.injectEnvVars(params, envVars);
 
-  private inferErrorHint(
-    error: any,
-    tool: RegisteredTool,
-    errorDetail: Record<string, unknown>,
-  ): string | undefined {
-    return deriveErrorHint({
-      host:
-        hostFromAxiosConfig(error?.config) ??
-        hostFromUrl(tool.connectorConfig?.baseUrl),
-      status: typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
-      message: typeof error?.message === 'string' ? error.message : undefined,
-      body: errorDetail.responseBody,
-    });
+      // Apply JSON Schema defaults for missing params
+      const mergedParams = this.applyDefaults(tool.parameters, paramsWithEnv);
+
+      processGauges.inc('toolCallsInFlight');
+      let engineOut: Awaited<ReturnType<DynamicMcpTools['executeWithEngine']>>;
+      try {
+        engineOut = await this.executeWithEngine(
+          tool.connectorType,
+          engineConfig,
+          interpolatedMapping,
+          mergedParams,
+          {
+            connectorConfig: tool.connectorConfig.config,
+            // OData settings may carry {{VAR}} (an adapter's SAP client).
+            odataSettings: interpolateDeep(
+              (tool.connectorConfig.config as { odata?: unknown } | undefined)?.odata,
+              envVars,
+            ),
+          },
+        );
+      } finally {
+        processGauges.dec('toolCallsInFlight');
+      }
+      const { body: upstreamResult, meta } = engineOut;
+      if (
+        tool.connectorType === 'MCP' &&
+        typeof upstreamResult === 'object' &&
+        upstreamResult !== null &&
+        'isError' in upstreamResult &&
+        upstreamResult.isError === true &&
+        'content' in upstreamResult &&
+        Array.isArray(upstreamResult.content)
+      ) {
+        const safeText = redactSecretsDeep(
+          upstreamResult.content
+            .filter((item) => item?.type === 'text' && typeof item.text === 'string')
+            .map((item) => item.text)
+            .join('\n'),
+          secretValues,
+        );
+        const errorResult: { content: ToolResultContent; isError: true } = {
+          content: [{ type: 'text', text: safeText }],
+          isError: true,
+        };
+        const durationMs = Date.now() - startTime;
+        await this.auditService.logInvocation({
+          toolId: tool.id,
+          userId: context?.userId,
+          userEmail: context?.userEmail,
+          mcpServerId: context?.mcpServerId,
+          organizationId: context?.organizationId,
+          connectorId: tool.connectorId,
+          usedProxy,
+          intent: context?.intent,
+          learnable: context?.learnable ?? false,
+          input: params,
+          output: errorResult,
+          status: 'ERROR',
+          durationMs,
+          error: this.formatStoredError({
+            error: 'MCP tool returned isError: true',
+            responseBody: safeText,
+          }),
+          clientInfo: context ? JSON.stringify({
+            authMethod: context.authMethod,
+            apiKeyName: context.apiKeyName,
+            userEmail: context.userEmail,
+            mcpServerName: context.mcpServerName,
+          }) : undefined,
+        });
+        this.logToolCall(tool, context, durationMs, 'ERROR');
+        return errorResult;
+      }
+      // An API that echoes the request (a URL with the bot token in it) must
+      // not hand the connector's own credentials to the client, the cache or
+      // the log. Only those values are replaced, and the response is copied
+      // only when it mentions one. An all-digit value (a PIN, a numeric key)
+      // is left alone here: it would also match inside the response's own
+      // ids and amounts and corrupt them. Errors still redact it.
+      const result = redactSecretsDeep(
+        upstreamResult,
+        secretValues.filter((value) => !/^\d+$/.test(value)),
+        { patterns: false },
+      );
+
+      const durationMs = Date.now() - startTime;
+
+      await this.auditService.logInvocation({
+        toolId: tool.id,
+        userId: context?.userId,
+        userEmail: context?.userEmail,
+        mcpServerId: context?.mcpServerId,
+        organizationId: context?.organizationId,
+        connectorId: tool.connectorId,
+        usedProxy,
+        intent: context?.intent,
+        learnable: context?.learnable ?? false,
+        input: params,
+        // A file's bytes stay out of the call log: only what it was.
+        output: withoutBinaryData(result) as Record<string, unknown>,
+        status: 'SUCCESS',
+        durationMs,
+        clientInfo: context ? JSON.stringify({
+          authMethod: context.authMethod,
+          apiKeyName: context.apiKeyName,
+          userEmail: context.userEmail,
+          mcpServerName: context.mcpServerName,
+        }) : undefined,
+      });
+
+      // Grow the knowledge graph from this real call (debounced, fire-and-forget).
+      void this.kgService.scheduleObservationalIngest(context?.organizationId);
+
+      // Cache the raw response if cacheTtl is set (shaping happens on read).
+      if (cacheTtl && cacheTtl > 0) {
+        const cacheKey = this.buildCacheKey(toolName, params);
+        // The audit log above got the bare body; the cache needs the headers
+        // too, or a cached page would come back without its next cursor.
+        const serialized = JSON.stringify(
+          meta ? { __amcpEnvelope: 1, body: result, meta } : result,
+        );
+        if (serialized !== undefined) {
+          await this.redisService.set(cacheKey, serialized, cacheTtl);
+          this.logger.debug(
+            `Cached response for tool ${toolName} (TTL: ${cacheTtl}s)`,
+          );
+        }
+      }
+
+      const rendered = this.renderResult(
+        result,
+        responseMapping,
+        toolName,
+        meta,
+        tool.endpointMapping?.queryParams,
+      );
+      this.logToolCall(tool, context, durationMs, 'SUCCESS', textOf(rendered.content));
+      return rendered;
+    } catch (error: any) {
+      const durationMs = Date.now() - startTime;
+      const errorDetail = redactSecretsDeep(this.extractErrorDetail(error), secretValues);
+      this.logToolCall(
+        tool,
+        context,
+        durationMs,
+        'ERROR',
+        undefined,
+        typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
+      );
+
+      // One actionable line for the client, on top of the vendor's own body.
+      // Keyed on the upstream host so hand-built tools get the same help as
+      // catalog ones; see error-hints.ts for why this exists.
+      // The engines attach their own hint when they know more than the
+      // response says (a refresh token refused 7 days after a Google
+      // authorization, a Meta session that was logged out).
+      const engineHint = typeof error?.hint === 'string' && error.hint ? error.hint : undefined;
+      const hint = engineHint ?? deriveErrorHint({
+        host:
+          hostFromAxiosConfig(error?.config) ??
+          hostFromUrl(tool.connectorConfig?.baseUrl),
+        status: typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
+        message: typeof error?.message === 'string' ? error.message : undefined,
+        body: errorDetail.responseBody,
+      });
+      if (hint) errorDetail.hint = hint;
+
+      await this.auditService.logInvocation({
+        toolId: tool.id,
+        userId: context?.userId,
+        userEmail: context?.userEmail,
+        mcpServerId: context?.mcpServerId,
+        organizationId: context?.organizationId,
+        connectorId: tool.connectorId,
+        usedProxy,
+        intent: context?.intent,
+        learnable: context?.learnable ?? false,
+        input: params,
+        status: 'ERROR',
+        durationMs,
+        error: this.formatStoredError(errorDetail),
+        clientInfo: context ? JSON.stringify({
+          authMethod: context.authMethod,
+          apiKeyName: context.apiKeyName,
+          userEmail: context.userEmail,
+          mcpServerName: context.mcpServerName,
+        }) : undefined,
+      });
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(errorDetail, null, 2),
+          },
+        ],
+        isError: true,
+      };
+    }
   }
 
   /**
