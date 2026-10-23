@@ -35,6 +35,7 @@ export interface AdapterSummary {
   priority?: number;
   selfHostOnly?: boolean;
   setupKind?: AdapterMeta['setupKind'];
+  setupEffort?: AdapterMeta['setupEffort'];
   /** Only `kind` and `secret` of each variable: enough to tell a credential
    *  from an address or a setting. Labels, help, links and patterns stay in
    *  the full list. */
@@ -64,6 +65,7 @@ export function toAdapterSummary(a: AdapterMeta): AdapterSummary {
   if (a.priority) summary.priority = a.priority;
   if (a.selfHostOnly) summary.selfHostOnly = true;
   if (a.setupKind) summary.setupKind = a.setupKind;
+  if (a.setupEffort) summary.setupEffort = a.setupEffort;
   if (a.envVarMeta) {
     const meta: NonNullable<AdapterSummary['envVarMeta']> = {};
     for (const [name, m] of Object.entries(a.envVarMeta)) {

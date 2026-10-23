@@ -338,3 +338,44 @@ test('connector.config.errorWhen rules are checked', () => {
   ]);
   assert.ok(bad.errors.every((e) => e.rule === 'error-when' && e.docs === 'errors-inside-a-200-response'));
 });
+
+test('setupGuide asks for every required variable once, with https links and real screenshots', () => {
+  const rules = (overrides) => validateAdapter(adapter(overrides), 'good.json', 'de').errors.map((e) => e.rule);
+  const ok = {
+    effort: 'api_key', minutes: 2, examples: ['List my orders'],
+    steps: [{ id: 'key', title: 'Copy the key', action: { label: 'Open', url: 'https://example.test/keys' }, fields: ['GOOD_KEY'] }],
+  };
+  assert.deepEqual(rules({ setupGuide: ok }), []);
+
+  assert.ok(rules({ setupGuide: { ...ok, steps: [{ id: 'intro', title: 'Intro' }] } }).includes('setup-guide-missing-field'));
+  assert.ok(rules({ setupGuide: { ...ok, effort: 'easy' } }).includes('setup-guide-effort'));
+  assert.ok(rules({ setupGuide: { ...ok, extra: 1 } }).includes('setup-guide-field'));
+  assert.ok(rules({ setupGuide: { ...ok, steps: [{ ...ok.steps[0], action: { label: 'Open', url: 'http://example.test' } }] } }).includes('setup-guide-action'));
+  assert.ok(rules({ setupGuide: { ...ok, steps: [{ ...ok.steps[0], fields: ['OTHER'] }] } }).includes('setup-guide-fields'));
+  assert.ok(rules({ setupGuide: { ...ok, steps: [ok.steps[0], { id: 'again', title: 'Again', fields: ['GOOD_KEY'] }] } }).includes('setup-guide-fields'));
+  assert.ok(rules({ setupGuide: { ...ok, steps: [ok.steps[0], { ...ok.steps[0], id: 'other' }] } }).includes('setup-guide-step-title'));
+  assert.ok(rules({ setupGuide: { ...ok, steps: [{ ...ok.steps[0], values: [{ label: 'Key', value: '{{GOOD_KEY}}' }] }] } }).includes('setup-guide-values'));
+  assert.deepEqual(rules({ setupGuide: { ...ok, steps: [{ ...ok.steps[0], values: [{ label: 'Callback', value: '{{redirectUri}}' }] }] } }), []);
+  assert.ok(rules({ setupGuide: { ...ok, steps: [{ ...ok.steps[0], image: { src: '/no-such-shot.png', alt: 'x', capturedAt: '2026-10-22' } }] } }).includes('setup-guide-image'));
+
+  // An advanced required variable (a token the sign-in fills in) is not asked for.
+  assert.deepEqual(rules({ requiredEnvVars: ['GOOD_KEY', 'GOOD_TOKEN'], envVarMeta: { GOOD_TOKEN: { advanced: true } }, setupGuide: ok }), []);
+});
+
+test('setupGuide links into the user instance only through an https address asked for earlier', () => {
+  const base = {
+    requiredEnvVars: ['SHOP_URL', 'GOOD_KEY'],
+    envVarMeta: { SHOP_URL: { kind: 'address', pattern: '^https://[^\\s]+$' } },
+  };
+  const guide = (stepOrder) => ({ effort: 'api_key', minutes: 3, steps: stepOrder });
+  const shop = { id: 'shop', title: 'Shop', fields: ['SHOP_URL'] };
+  const key = { id: 'key', title: 'Key', action: { label: 'Open', url: '{{SHOP_URL}}/admin/keys' }, fields: ['GOOD_KEY'] };
+  const rules = (o) => validateAdapter(adapter(o), 'good.json', 'de').errors.map((e) => e.rule);
+  assert.deepEqual(rules({ ...base, setupGuide: guide([shop, key]) }), []);
+  assert.ok(rules({ ...base, setupGuide: guide([{ ...key, fields: ['GOOD_KEY', 'SHOP_URL'] }]) }).includes('setup-guide-action'));
+  assert.ok(rules({ ...base, envVarMeta: {}, setupGuide: guide([shop, key]) }).includes('setup-guide-action'));
+});
+
+test('docs explain the setup guide the validator links to', () => {
+  assert.match(docs, /^### Setup guide$/m);
+});

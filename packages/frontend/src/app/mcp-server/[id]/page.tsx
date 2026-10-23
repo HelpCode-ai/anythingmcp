@@ -14,7 +14,7 @@ import { ConnectionCheck } from '@/components/connection-check';
 import { FirstSuccessOffer } from '@/components/first-success-offer';
 import { copyText } from '@/lib/clipboard';
 import { getApiOrigin } from '@/lib/origin';
-import { CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
+import { CLAUDE_ADD_CONNECTOR_URL, CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
 import { INSPECTOR_URL, inspectorCommand } from '@/lib/inspector-url';
 import {
   cursorDeepLink as buildCursorDeepLink,
@@ -25,12 +25,6 @@ import {
   installBadgesMarkdown,
   isLocalOnlyUrl,
 } from '@/lib/mcp-install-links';
-
-// Opens claude.ai straight on its "Add custom connector" dialog. Connectors
-// moved from Settings to Customize → Connectors; the old settings URL now only
-// says so. Connectors added on claude.ai also appear in Claude Desktop.
-const CLAUDE_ADD_CONNECTOR_URL =
-  'https://claude.ai/new?modal=add-custom-connector#customize/connectors';
 
 export default function McpServerDetailPage() {
   const { id } = useParams<{ id: string }>();

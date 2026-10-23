@@ -12,6 +12,7 @@ import {
   productEvents,
   type AdapterSetupInfo,
   type EnvVarDescriptor,
+  type SetupGuideStep,
   type VerifyResult,
 } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
@@ -22,6 +23,8 @@ import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { cn } from '@/lib/utils';
 import { copyText } from '@/lib/clipboard';
 import { returnAssistant } from '@/lib/return-assistant';
+import { GuideIntro, GuideStepper, GuideStepView, StuckLink } from '@/components/connector-setup/setup-guide';
+import { SetupSuccess } from '@/components/connector-setup/setup-success';
 
 /**
  * Guided setup of a catalog connector, in one place: what to enter (grouped,
@@ -36,6 +39,12 @@ import { returnAssistant } from '@/lib/return-assistant';
  *   step=done       back from the provider's sign-in
  *   from=<client>   set up from a chat: at the end, the way back to that
  *                   assistant (see lib/return-assistant.ts for the list)
+ *
+ * An adapter with a `setupGuide` is set up one step at a time instead (an
+ * intro, the steps, then the success screen); "Enter everything on one page"
+ * switches to the form. The step reached is kept in localStorage so a setup
+ * interrupted at the provider (an Etsy app still Pending) reopens there;
+ * values never are.
  */
 
 type Phase = 'form' | 'working' | 'done';
@@ -63,18 +72,50 @@ function SetupContent() {
   const [phase, setPhase] = useState<Phase>(backFromProvider ? 'working' : 'form');
   const [error, setError] = useState('');
   const [verifyFailed, setVerifyFailed] = useState<VerifyResult | null>(null);
-  const [result, setResult] = useState<{ connectorId: string; sample?: string; status?: string } | null>(null);
+  const [result, setResult] = useState<{ connectorId: string; sample?: string; verified: boolean } | null>(null);
   const [redirectUri, setRedirectUri] = useState<string | null>(null);
   /** Secrets the existing connector already holds: shown as set, may stay empty. */
   const [storedSecrets, setStoredSecrets] = useState<string[]>([]);
   const started = useRef(false);
+  /** Guide mode: -1 is the intro, then the index of the step shown. */
+  const [mode, setMode] = useState<'guide' | 'form'>('guide');
+  const [stepIndex, setStepIndex] = useState(-1);
+  const [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
+  const [resume, setResume] = useState<{ index: number; title: string } | null>(null);
+  const viewedSteps = useRef(new Set<number>());
+  const progressKey = `amcp:setup_guide:${slug}`;
+
+  /** In a guide, a refused value may belong to an earlier step: go there. */
+  const showStepOf = (names: string[]) => {
+    if (mode !== 'guide' || stepIndex < 0 || !info?.setupGuide) return;
+    const steps = info.setupGuide.steps;
+    if (steps[stepIndex]?.fields?.some((f) => names.includes(f))) return;
+    const at = steps.findIndex((st) => st.fields?.some((f) => names.includes(f)));
+    if (at >= 0) setStepIndex(at);
+  };
 
   useEffect(() => {
     if (!token || !slug) return;
+    // A setup left halfway reopens at its step; one back from the provider
+    // with a refusal opens at the last step, where the keys are.
+    const restoreProgress = (steps: SetupGuideStep[]) => {
+      let saved: { step?: string; confirmed?: string[] } | null = null;
+      try {
+        saved = JSON.parse(localStorage.getItem(progressKey) ?? 'null');
+      } catch {}
+      if (Array.isArray(saved?.confirmed)) setConfirmed(Object.fromEntries(saved.confirmed.map((id) => [id, true])));
+      if (backFromProvider) {
+        setStepIndex(steps.length - 1);
+        return;
+      }
+      const at = saved?.step ? steps.findIndex((st) => st.id === saved.step) : -1;
+      if (at > 0) setResume({ index: at, title: steps[at].title });
+    };
     adapters
       .describe(slug, token)
       .then((d) => {
         setInfo(d);
+        if (d.setupGuide) restoreProgress(d.setupGuide.steps);
         // Once per tab session: a reload or a return from the provider is the
         // same setup, and counting each visit inflated "started".
         const onceKey = `amcp:setup_started:${slug}`;
@@ -100,7 +141,7 @@ function SetupContent() {
         })
         .catch(() => {});
     }
-  }, [token, slug, existingId]);
+  }, [token, slug, existingId, progressKey, backFromProvider]);
 
   useEffect(() => {
     if (!token || info?.setupKind !== 'oauth_browser') return;
@@ -125,7 +166,7 @@ function SetupContent() {
             setPhase('form');
             return;
           }
-          setResult({ connectorId: existingId, status: test?.message });
+          setResult({ connectorId: existingId, verified: test?.ok === true });
           setPhase('done');
           productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser', verified: test?.ok === true });
         } else {
@@ -143,6 +184,38 @@ function SetupContent() {
   const visibleFields = fields.filter((f) => !f.advanced);
   const advancedFields = fields.filter((f) => f.advanced);
 
+  const guide = mode === 'guide' ? info?.setupGuide : undefined;
+  const guideSteps = useMemo(() => info?.setupGuide?.steps ?? [], [info]);
+
+  useEffect(() => {
+    if (!guide || stepIndex < 0 || !token) return;
+    const step = guide.steps[stepIndex];
+    if (!step) return;
+    try {
+      localStorage.setItem(
+        progressKey,
+        JSON.stringify({ step: step.id, confirmed: Object.keys(confirmed).filter((k) => confirmed[k]) }),
+      );
+    } catch {}
+    if (!viewedSteps.current.has(stepIndex)) {
+      viewedSteps.current.add(stepIndex);
+      productEvents.track('setup_step_viewed', token, { adapterSlug: slug, step: step.id, index: stepIndex + 1 });
+    }
+  }, [guide, stepIndex, confirmed, token, slug, progressKey]);
+
+  useEffect(() => {
+    if (phase !== 'done') return;
+    try {
+      localStorage.removeItem(progressKey);
+    } catch {}
+  }, [phase, progressKey]);
+
+  /** Fields no step asks for (a token the sign-in fills in): on the last step. */
+  const unguidedFields = useMemo(
+    () => fields.filter((f) => !guideSteps.some((st) => st.fields?.includes(f.name))),
+    [fields, guideSteps],
+  );
+
   /**
    * What to send. A new install leaves out required fields that are empty (an
    * optional one goes as '' so its placeholder resolves). An existing
@@ -156,10 +229,10 @@ function SetupContent() {
         .filter(([name, v]) => existingId || v !== '' || !fields.find((f) => f.name === name)?.required),
     ) as Record<string, string>;
 
-  /** Client-side checks: required fields and patterns. */
-  const validate = (): boolean => {
+  /** Client-side checks: required fields and patterns (of `only`, in a guide step). */
+  const validate = (only?: string[]): boolean => {
     const errs: Record<string, string> = {};
-    for (const f of fields) {
+    for (const f of only ? fields.filter((x) => only.includes(x.name)) : fields) {
       const v = (values[f.name] ?? '').trim();
       if (f.required && !f.advanced && !v && !storedSecrets.includes(f.name)) errs[f.name] = 'Required';
       else if (v && f.pattern) {
@@ -171,6 +244,7 @@ function SetupContent() {
       }
     }
     setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) showStepOf(Object.keys(errs));
     return Object.keys(errs).length === 0;
   };
 
@@ -206,6 +280,7 @@ function SetupContent() {
         // setup_verify_failed is recorded by the server, with the provider's message.
         if (check.missing?.length) {
           setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, 'Required'])));
+          showStepOf(check.missing);
         }
         setVerifyFailed(check);
         setPhase('form');
@@ -232,7 +307,7 @@ function SetupContent() {
         return;
       }
       const id = await save();
-      setResult({ connectorId: id, sample: check && check.ok ? check.sample : undefined });
+      setResult({ connectorId: id, sample: check && check.ok ? check.sample : undefined, verified: check?.ok === true });
       setPhase('done');
       productEvents.track('setup_completed', token, { adapterSlug: slug, kind: info.setupKind, verified: check?.ok === true });
     } catch (e) {
@@ -268,36 +343,21 @@ function SetupContent() {
 
   if (phase === 'done' && result) {
     return (
-      <Card className="space-y-4 p-6">
-        <div className="flex items-center gap-3">
-          <ConnectorLogo icon={info.icon} name={info.name} />
-          <div>
-            <h1 className="text-lg font-semibold text-[var(--text)]">{info.name} is ready</h1>
-            <p className="text-sm text-[var(--text-2)]">Your AI client can use it now. Ask it something about {info.name}.</p>
-          </div>
-        </div>
-        {result.sample && (
-          <div>
-            <p className="mb-1 text-xs font-medium text-[var(--text-3)]">What the API answered</p>
-            <pre className="max-h-48 overflow-auto rounded-[9px] bg-[var(--surface-2)] p-3 text-xs text-[var(--text)]">{result.sample}</pre>
+      <Card className="p-6">
+        {info.setupGuide && mode === 'guide' && (
+          <div className="mb-6">
+            <GuideStepper steps={info.setupGuide.steps} current={info.setupGuide.steps.length + 1} />
           </div>
         )}
-        {back && !back.href && (
-          <p className="text-sm text-[var(--text-2)]">You can close this tab and return to {back.name}.</p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          {back?.href && (
-            <a href={back.href} className={cn(buttonVariants({ size: 'sm' }))}>
-              Back to {back.name}
-            </a>
-          )}
-          <Link href={`/connectors/${result.connectorId}`} className={cn(buttonVariants({ variant: back?.href ? 'secondary' : 'primary', size: 'sm' }))}>
-            Open the connector
-          </Link>
-          <Link href="/connectors/store" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
-            Add another
-          </Link>
-        </div>
+        <SetupSuccess
+          name={info.name}
+          icon={info.icon}
+          connectorId={result.connectorId}
+          verified={result.verified}
+          sample={result.sample}
+          examples={info.setupGuide?.examples ?? []}
+          back={back}
+        />
       </Card>
     );
   }
@@ -316,6 +376,46 @@ function SetupContent() {
         : existingId
           ? 'Check and save'
           : 'Check and install';
+
+  /** What the check or the save said, under the fields. */
+  const checkOutcome = (
+    <>
+      {verifyFailed && verifyFailed.ok === false && (
+        <div role="alert" className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">
+          <p className="font-medium">
+            {verifyFailed.kind === 'auth_failed'
+              ? `${info.name} did not accept these credentials.`
+              : verifyFailed.kind === 'invalid_input'
+                ? 'Some values are missing or not valid.'
+                : `${info.name} answered with an error.`}
+          </p>
+          <p className="mt-1 break-words text-xs">{verifyFailed.message}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+            {verifyFailed.suggest && (
+              <Link
+                href={`/connectors/setup/${encodeURIComponent(verifyFailed.suggest)}`}
+                className="text-xs font-medium underline"
+              >
+                Set up {verifyFailed.suggestName ?? 'the other connector'} instead
+              </Link>
+            )}
+            {verifyFailed.kind !== 'invalid_input' && (
+              <button type="button" onClick={() => saveAnyway(false)} className="text-xs underline">
+                Save anyway
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {error && (
+        isTrialLimitMessage(error) ? (
+          <TrialLimitNotice message={error} />
+        ) : (
+          <p role="alert" className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">{error}</p>
+        )
+      )}
+    </>
+  );
 
   const renderField = (f: EnvVarDescriptor) => {
     const id = `field-${f.name}`;
@@ -378,6 +478,115 @@ function SetupContent() {
     );
   };
 
+  if (guide) {
+    if (stepIndex < 0) {
+      return (
+        <Card className="p-6">
+          <GuideIntro
+            info={info}
+            guide={guide}
+            resume={resume}
+            onStart={() => setStepIndex(resume?.index ?? 0)}
+            onRestart={() => {
+              try {
+                localStorage.removeItem(progressKey);
+              } catch {}
+              setConfirmed({});
+              setResume(null);
+              setStepIndex(0);
+            }}
+            onShowForm={() => setMode('form')}
+          />
+        </Card>
+      );
+    }
+    const step = guide.steps[Math.min(stepIndex, guide.steps.length - 1)];
+    const at = guide.steps.indexOf(step);
+    const isLast = at === guide.steps.length - 1;
+    const stepFields = (step.fields ?? [])
+      .map((name) => fields.find((f) => f.name === name))
+      .filter((f): f is EnvVarDescriptor => !!f);
+    const extraFields = isLast ? unguidedFields.filter((f) => !f.advanced) : [];
+    const extraAdvanced = isLast ? unguidedFields.filter((f) => f.advanced) : [];
+    const needsTick = !!step.confirm && !confirmed[step.id];
+    // A link into the user's own instance starts with a value from an earlier
+    // step (the WooCommerce shop address); until it is a usable https address
+    // there is nothing to open.
+    const actionUrl = step.action
+      ? step.action.url.replace(/^\{\{([A-Z0-9_]+)\}\}/, (_, name: string) => (values[name] ?? '').trim().replace(/\/+$/, ''))
+      : null;
+    const goTo = (i: number) => {
+      setError('');
+      setStepIndex(i);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    const next = () => {
+      if (!validate(step.fields ?? [])) return;
+      if (token) productEvents.track('setup_step_completed', token, { adapterSlug: slug, step: step.id, index: at + 1 });
+      if (isLast) {
+        void verifyAndSave();
+        return;
+      }
+      setVerifyFailed(null);
+      goTo(at + 1);
+    };
+    const short = info.name.split(' ')[0];
+    const finishLabel =
+      info.setupKind === 'none'
+        ? `Install ${info.name}`
+        : isOAuth
+          ? `Check and sign in to ${short}`
+          : existingId
+            ? 'Check and save'
+            : 'Check and connect';
+
+    return (
+      <Card className="space-y-6 p-6">
+        <GuideStepper steps={guide.steps} current={at} />
+        <GuideStepView
+          step={step}
+          index={at}
+          total={guide.steps.length}
+          redirectUri={redirectUri}
+          actionUrl={actionUrl && /^https:\/\/[^/\s]+/.test(actionUrl) ? actionUrl : null}
+          confirmed={!!confirmed[step.id]}
+          onConfirm={(v) => setConfirmed((c) => ({ ...c, [step.id]: v }))}
+        >
+          {(stepFields.length > 0 || extraFields.length > 0) && (
+            <div className="space-y-3">{[...stepFields, ...extraFields].map(renderField)}</div>
+          )}
+          {extraAdvanced.length > 0 && (
+            <details className="rounded-[9px] border border-[var(--border)] p-3">
+              <summary className="cursor-pointer text-sm text-[var(--text-2)]">Advanced</summary>
+              <div className="mt-3 space-y-3">{extraAdvanced.map(renderField)}</div>
+            </details>
+          )}
+          {isLast && isOAuth && (
+            <p className="text-xs text-[var(--text-3)]">
+              Next, {short} asks you to approve access. You come back here on your own.
+            </p>
+          )}
+          {checkOutcome}
+        </GuideStepView>
+
+        <div className="space-y-2 border-t border-[var(--border)] pt-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="secondary" onClick={() => goTo(at - 1)} disabled={working}>
+              Back
+            </Button>
+            <Button onClick={next} disabled={working || needsTick}>
+              {working ? 'Checking…' : isLast ? finishLabel : 'Continue'}
+            </Button>
+            <span className="ml-auto">
+              <StuckLink name={info.name} />
+            </span>
+          </div>
+          {needsTick && <p className="text-xs text-[var(--text-3)]">Tick the box above once it is done.</p>}
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <Card className="space-y-5 p-6">
@@ -388,6 +597,11 @@ function SetupContent() {
               {existingId ? `Finish setting up ${info.name}` : `Set up ${info.name}`}
             </h1>
             <p className="text-sm text-[var(--text-2)]">{info.description}</p>
+            {info.setupGuide && (
+              <button type="button" onClick={() => setMode('guide')} className="mt-1 text-xs text-[var(--text-3)] underline hover:text-[var(--text)]">
+                Prefer step by step? Use the guided setup
+              </button>
+            )}
           </div>
         </div>
 
@@ -412,8 +626,8 @@ function SetupContent() {
         {isOAuth && !selfRegisteringBridge && (
           <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
             <p>
-              You need an app of your own at {info.name.split(' ')[0]}, then you sign in once. In the app&apos;s settings, register this
-              redirect URI exactly as shown:
+              You need an app of your own at {info.name.split(' ')[0]}, then you sign in once. In the app&apos;s settings, add this
+              callback URL (also called redirect URI) exactly as shown:
             </p>
             <div className="mt-2 flex items-center gap-2">
               <code className="flex-1 overflow-x-auto rounded bg-[var(--surface)] px-2 py-1 font-mono text-xs text-[var(--text)]">{redirectUri ?? '…'}</code>
@@ -448,40 +662,7 @@ function SetupContent() {
           </details>
         )}
 
-        {verifyFailed && verifyFailed.ok === false && (
-          <div role="alert" className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">
-            <p className="font-medium">
-              {verifyFailed.kind === 'auth_failed'
-                ? `${info.name} did not accept these credentials.`
-                : verifyFailed.kind === 'invalid_input'
-                  ? 'Some values are missing or not valid.'
-                  : `${info.name} answered with an error.`}
-            </p>
-            <p className="mt-1 break-words text-xs">{verifyFailed.message}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-              {verifyFailed.suggest && (
-                <Link
-                  href={`/connectors/setup/${encodeURIComponent(verifyFailed.suggest)}`}
-                  className="text-xs font-medium underline"
-                >
-                  Set up {verifyFailed.suggestName ?? 'the other connector'} instead
-                </Link>
-              )}
-              {verifyFailed.kind !== 'invalid_input' && (
-                <button type="button" onClick={() => saveAnyway(false)} className="text-xs underline">
-                  Save anyway
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-        {error && (
-          isTrialLimitMessage(error) ? (
-            <TrialLimitNotice message={error} />
-          ) : (
-            <p role="alert" className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">{error}</p>
-          )
-        )}
+        {checkOutcome}
 
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={verifyAndSave} disabled={working}>

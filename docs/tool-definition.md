@@ -237,6 +237,55 @@ of the REST rules simply do not apply to it:
 }
 ```
 
+### Setup guide
+
+`setupGuide` turns the setup page into a step-by-step guide: an intro (what
+the AI can do with the app, what to have ready, why the setup works the way it
+does), then one step at a time, then the connector link and the steps to use
+it in Claude, ChatGPT or Copilot. Add one where the plain form is not enough:
+an app of the user's own (Etsy), a bot to create (Telegram), keys found three
+menus deep. Adapters without one keep the form.
+
+```json
+"setupGuide": {
+  "effort": "own_app",
+  "minutes": 10,
+  "examples": ["Which orders have not shipped yet?"],
+  "needs": ["Your Etsy seller account"],
+  "why": "Etsy lets other tools reach a shop only through an app its owner registers.",
+  "steps": [
+    {
+      "id": "callback",
+      "title": "Add the callback URL",
+      "body": "Open your app and add this address under **Callback URLs**.",
+      "action": { "label": "Open your Etsy apps", "url": "https://www.etsy.com/developers/your-apps" },
+      "values": [{ "label": "Callback URL", "value": "{{redirectUri}}" }],
+      "confirm": "I added the callback URL and saved",
+      "problems": [{ "q": "Etsy says the redirect URI is wrong", "a": "Paste it again, exactly." }]
+    },
+    { "id": "keys", "title": "Copy your keys", "fields": ["ETSY_CLIENT_ID", "ETSY_CLIENT_SECRET"] }
+  ]
+}
+```
+
+- `effort`: `none`, `one_click`, `api_key`, `own_app` or `admin_needed`; with
+  `minutes` it is the badge on the marketplace card. Without a guide the
+  badge is derived from how the adapter signs in.
+- `values`: what to type or pick on the provider's page, each with a copy
+  button (`"pick": true` for an option to select, without one). Only
+  `{{redirectUri}}` is filled in: the OAuth callback URL of the instance.
+- `fields`: the variables entered in that step. Every required variable that
+  is not `advanced` is asked for in exactly one step; the last step with
+  fields checks them against the API and installs (or sends the user to the
+  provider's sign-in).
+- `image`: a real screenshot under `packages/frontend/public`, with `alt` and
+  `capturedAt`. Leave it out rather than add a mock-up.
+- `confirm`: a checkbox the user ticks before continuing, for a step that
+  happens at the provider.
+
+The guide is not part of the catalog fingerprint: rewording it does not mark
+installed connectors as out of date. Progress is kept in the browser only.
+
 ### Adapter file errors
 
 If an adapter file cannot be read, check that its path exists and that the

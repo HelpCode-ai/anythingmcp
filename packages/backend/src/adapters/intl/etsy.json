@@ -46,6 +46,129 @@
     "path": "/openapi-ping",
     "headers": { "x-api-key": "{{ETSY_CLIENT_ID}}:{{ETSY_CLIENT_SECRET}}" }
   },
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 10,
+    "examples": [
+      "Which orders haven't shipped yet?",
+      "Draft a listing for a hand-thrown mug: 28 EUR, 5 in stock, with my usual shipping profile",
+      "Add this tracking number to my last order",
+      "Show the reviews I got this month"
+    ],
+    "needs": [
+      "Your Etsy seller account, the one that owns the shop",
+      "About 10 minutes",
+      "Etsy can take a while to activate a new app. You can stop and come back: this page reopens at the step you were on."
+    ],
+    "why": "Etsy lets other tools reach a shop only through an app registered in the shop owner's account. Creating one is free: you fill in a short form at Etsy, and AnythingMCP uses the app's two keys to ask Etsy for access to your shop.\n\nYou approve that access on Etsy's own page. AnythingMCP never sees your Etsy password, and deleting the connector removes the keys and the access it holds.",
+    "steps": [
+      {
+        "id": "create-app",
+        "title": "Create your Etsy app",
+        "body": "Etsy opens its **Create a New App** form. Sign in with the account that owns your shop if Etsy asks, fill in the form as below, then click **Read Terms and Create App**.",
+        "action": {
+          "label": "Open Etsy's app form",
+          "url": "https://www.etsy.com/developers/register"
+        },
+        "values": [
+          {
+            "label": "Name",
+            "value": "AnythingMCP",
+            "note": "Any name works. Etsy shows it when you approve access."
+          },
+          {
+            "label": "Describe your application",
+            "value": "Connects my own Etsy shop to my AI assistant through AnythingMCP, so I can manage my listings and orders from a chat. Only I use it."
+          },
+          {
+            "label": "Website URL",
+            "value": "https://anythingmcp.com"
+          },
+          {
+            "label": "Application type",
+            "value": "Seller Tools",
+            "pick": true
+          },
+          {
+            "label": "Who will be the users",
+            "value": "Just myself or colleagues",
+            "pick": true
+          },
+          {
+            "label": "Is your application commercial",
+            "value": "No",
+            "pick": true,
+            "note": "You do not charge anyone for this app."
+          },
+          {
+            "label": "Features",
+            "value": "Upload or edit listings, Read sales data",
+            "pick": true
+          }
+        ],
+        "confirm": "I created the app",
+        "problems": [
+          {
+            "q": "Etsy shows a sign-in page instead of the form",
+            "a": "Sign in with the Etsy account that owns your shop, then click **Open Etsy's app form** again."
+          },
+          {
+            "q": "Does it matter what I write in the description?",
+            "a": "Etsy reads it when it reviews the app. Describe what you will really do with it; the text above fits a shop owner connecting their own shop."
+          }
+        ]
+      },
+      {
+        "id": "callback",
+        "title": "Add the callback URL",
+        "body": "On Etsy's **Your apps** page, open the app you just created and add this address under **Callback URLs**, then save.\n\nPaste it exactly as shown: Etsy compares it character for character, and without it Etsy refuses the sign-in.",
+        "action": {
+          "label": "Open your Etsy apps",
+          "url": "https://www.etsy.com/developers/your-apps"
+        },
+        "values": [
+          {
+            "label": "Callback URL",
+            "value": "{{redirectUri}}"
+          }
+        ],
+        "confirm": "I added the callback URL and saved",
+        "problems": [
+          {
+            "q": "I can't find Callback URLs",
+            "a": "On **Your apps**, click the name of your app to open its details. Callback URLs can only be added once the app exists, so finish the previous step first."
+          },
+          {
+            "q": "Later Etsy says the redirect URI does not match",
+            "a": "The address at Etsy differs from the one above: often a space, a missing **s** in https, or a slash at the end. Copy it again with the button and replace the one at Etsy."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Copy your keys and sign in",
+        "body": "On the same app page Etsy shows the **Keystring** and the **Shared secret**. Copy each one into its field below.\n\nAnythingMCP checks them with Etsy, then opens Etsy so you can approve access to your shop. You come back here on your own.",
+        "action": {
+          "label": "Open your Etsy apps",
+          "url": "https://www.etsy.com/developers/your-apps"
+        },
+        "fields": [
+          "ETSY_CLIENT_ID",
+          "ETSY_CLIENT_SECRET"
+        ],
+        "problems": [
+          {
+            "q": "My app says Pending",
+            "a": "Etsy activates new apps after a review and emails you when it is done. You can enter the keys now: if the app is not active yet, AnythingMCP tells you before sending you to Etsy. You can close this page; it reopens at this step."
+          },
+          {
+            "q": "Where is the Shared secret?",
+            "a": "Next to the Keystring on your app's page. Paste it on its own: not the Keystring, and not `keystring:secret`."
+          }
+        ]
+      }
+    ]
+  },
   "connector": {
     "name": "Etsy Open API v3",
     "type": "REST",

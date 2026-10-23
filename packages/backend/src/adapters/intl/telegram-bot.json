@@ -24,6 +24,73 @@
       "link": "https://t.me/BotFather"
     }
   },
+  "setupGuide": {
+    "effort": "api_key",
+    "minutes": 2,
+    "examples": [
+      "Send \"Your order has shipped\" to my Telegram",
+      "What were the last messages my bot received?",
+      "Post this photo to our team group"
+    ],
+    "needs": [
+      "Telegram, on your phone or computer"
+    ],
+    "steps": [
+      {
+        "id": "create-bot",
+        "title": "Create a bot with BotFather",
+        "body": "BotFather is Telegram's official bot for making bots; it has a blue check mark. Open it and send these, one at a time:",
+        "action": {
+          "label": "Open @BotFather",
+          "url": "https://t.me/BotFather"
+        },
+        "values": [
+          {
+            "label": "Send",
+            "value": "/newbot"
+          },
+          {
+            "label": "Name",
+            "value": "My AnythingMCP bot",
+            "note": "The name people see. Anything works."
+          },
+          {
+            "label": "Username",
+            "value": "my_anythingmcp_bot",
+            "note": "Must be unique and end in bot. If Telegram says it is taken, add a word or a number."
+          }
+        ],
+        "problems": [
+          {
+            "q": "The button does not open Telegram",
+            "a": "Search for **BotFather** in Telegram and open the one with the blue check mark."
+          },
+          {
+            "q": "Telegram says the username is invalid",
+            "a": "Use 5 to 32 letters, digits or underscores, ending in **bot**, e.g. `myshop_orders_bot`."
+          }
+        ]
+      },
+      {
+        "id": "token",
+        "title": "Paste the bot token",
+        "body": "BotFather answers with a token like `123456789:AAH...`. Copy all of it, the digits, the colon and the part after it, into the field below.\n\nThen send **/start** to your new bot once: Telegram lets a bot write to you only after that.",
+        "fields": [
+          "TELEGRAM_BOT_TOKEN"
+        ],
+        "problems": [
+          {
+            "q": "I lost the token",
+            "a": "Send **/mybots** to BotFather, pick your bot, then **API Token**."
+          },
+          {
+            "q": "Telegram refused the token",
+            "a": "Copy it again from BotFather. If you used **/revoke**, only the new token works."
+          }
+        ]
+      }
+    ]
+  },
   "connector": {
     "name": "Telegram Bot API",
     "type": "REST",

@@ -17,6 +17,42 @@
       "help": "In Lexware Office (paid plan): Einstellungen → Erweiterungen → Öffentliche API → create a new access token. It is shown once."
     }
   },
+  "setupGuide": {
+    "effort": "api_key",
+    "minutes": 2,
+    "examples": [
+      "Which invoices are still unpaid?",
+      "Create an invoice for Müller GmbH: 3 hours of consulting at 95 EUR",
+      "Find the contact details of my customer Schmidt"
+    ],
+    "needs": [
+      "Lexware Office on a paid plan: the free plan has no API"
+    ],
+    "steps": [
+      {
+        "id": "api-key",
+        "title": "Create an API key",
+        "body": "Lexware Office opens its **Öffentliche API** page (Einstellungen → Erweiterungen). Create a new key and copy it into the field below: Lexware shows it only once.",
+        "action": {
+          "label": "Open Lexware Office",
+          "url": "https://app.lexware.de/addons/public-api"
+        },
+        "fields": [
+          "LEXWARE_API_KEY"
+        ],
+        "problems": [
+          {
+            "q": "I don't see Öffentliche API",
+            "a": "The API comes with the paid plans. On a free plan Lexware Office does not offer it."
+          },
+          {
+            "q": "I manage several companies",
+            "a": "A key belongs to the company (Mandant) it was created in. Set up one connector per company."
+          }
+        ]
+      }
+    ]
+  },
   "connector": {
     "name": "Lexware Office API v1",
     "type": "REST",

@@ -47,6 +47,79 @@
     "401": "WooCommerce refused the key. Check that key and secret belong to the same REST API key, that it is not revoked, and that its user is an administrator or shop manager.",
     "404": "No WooCommerce REST API at this address. Check the site address, and that permalinks are not set to Plain (Settings → Permalinks)."
   },
+  "setupGuide": {
+    "effort": "api_key",
+    "minutes": 4,
+    "examples": [
+      "Which orders came in today?",
+      "Which products are out of stock?",
+      "Set the price of the blue T-shirt to 24.90"
+    ],
+    "needs": [
+      "An administrator or shop manager login for your WordPress site",
+      "A site on https://"
+    ],
+    "steps": [
+      {
+        "id": "shop",
+        "title": "Your shop's address",
+        "body": "The address of your WordPress site as you open it in the browser: `https://` and the domain, nothing after it.",
+        "fields": [
+          "WOOCOMMERCE_URL"
+        ],
+        "problems": [
+          {
+            "q": "My shop is in a subfolder",
+            "a": "Include the folder, e.g. `https://example.com/shop`, but nothing after it: no `/wp-admin`, no `/wp-json`."
+          }
+        ]
+      },
+      {
+        "id": "api-key",
+        "title": "Create a REST API key",
+        "body": "In your WordPress admin, open **WooCommerce → Settings → Advanced → REST API** and click **Add key**. Fill it in as below and click **Generate API key**.\n\nWooCommerce then shows the **Consumer key** (`ck_...`) and the **Consumer secret** (`cs_...`) once. Copy both into the fields below before you leave that page.",
+        "action": {
+          "label": "Open the REST API keys",
+          "url": "{{WOOCOMMERCE_URL}}/wp-admin/admin.php?page=wc-settings&tab=advanced&section=keys&create-key=1"
+        },
+        "values": [
+          {
+            "label": "Description",
+            "value": "AnythingMCP"
+          },
+          {
+            "label": "User",
+            "value": "Your administrator or shop manager account",
+            "pick": true
+          },
+          {
+            "label": "Permissions",
+            "value": "Read/Write",
+            "pick": true,
+            "note": "Read is enough if the AI should only look, not change anything."
+          }
+        ],
+        "fields": [
+          "WOOCOMMERCE_CONSUMER_KEY",
+          "WOOCOMMERCE_CONSUMER_SECRET"
+        ],
+        "problems": [
+          {
+            "q": "I left the page before copying the secret",
+            "a": "WooCommerce shows it only once. Create a new key the same way, and revoke the old one in the same list."
+          },
+          {
+            "q": "WooCommerce answers 404 or \"No route\"",
+            "a": "Check the address in the previous step. In WordPress, under **Settings → Permalinks**, choose anything except **Plain**."
+          },
+          {
+            "q": "WooCommerce refused the key",
+            "a": "The key and the secret must come from the same key, and its user must be an administrator or shop manager."
+          }
+        ]
+      }
+    ]
+  },
   "connector": {
     "name": "WooCommerce",
     "type": "REST",

@@ -551,6 +551,7 @@ import {
 } from '../connectors/odata/odata-builtins';
 import { computeAdapterVersion } from './catalog-fingerprint';
 import type { EnvVarMeta, SetupKind } from './env-var-meta';
+import type { SetupEffort, SetupGuide } from './setup-guide';
 
 export type VerifyHint = string | { hint: string; suggest?: string };
 
@@ -641,6 +642,11 @@ export interface AdapterMeta {
   checkBeforeAuthorization?: { path: string; headers?: Record<string, string> };
   /** What setting it up involves; filled in by the adapters API. */
   setupKind?: SetupKind;
+  /** What it takes, for the marketplace badge; filled in by the adapters API. */
+  setupEffort?: SetupEffort;
+  /** A step-by-step setup shown instead of the plain form (setup-guide.ts).
+   *  Served by GET /api/adapters/:slug only, not in the catalog listing. */
+  setupGuide?: SetupGuide;
 }
 
 export interface AdapterDefinition extends AdapterMeta {

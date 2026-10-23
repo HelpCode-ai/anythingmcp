@@ -627,6 +627,36 @@ export interface AdapterSetupInfo {
   setupKind: SetupKind;
   /** What is needed before starting (Markdown), shown above the form. */
   prerequisites?: string;
+  /** A step-by-step setup, shown instead of the form (see backend setup-guide.ts). */
+  setupGuide?: SetupGuide;
+}
+
+export type SetupEffortKind = 'none' | 'one_click' | 'api_key' | 'own_app' | 'admin_needed';
+
+export interface SetupEffort {
+  effort: SetupEffortKind;
+  minutes: number;
+}
+
+export interface SetupGuideStep {
+  id: string;
+  title: string;
+  body?: string;
+  /** Opened in a new tab. May start with {{VAR}}, a value entered in an earlier step. */
+  action?: { label: string; url: string };
+  /** What to type or pick on the provider's page; `value` may hold {{redirectUri}}. */
+  values?: Array<{ label: string; value: string; note?: string; pick?: boolean }>;
+  image?: { src: string; alt: string; capturedAt: string };
+  fields?: string[];
+  problems?: Array<{ q: string; a: string }>;
+  confirm?: string;
+}
+
+export interface SetupGuide extends SetupEffort {
+  examples?: string[];
+  needs?: string[];
+  why?: string;
+  steps: SetupGuideStep[];
 }
 
 export type VerifyResult =

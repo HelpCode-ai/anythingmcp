@@ -42,6 +42,7 @@ import {
 } from './env-var-meta';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { storableBaseUrl } from '../connectors/catalog-env-rebuild.util';
+import { setupEffort } from './setup-guide';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
@@ -76,6 +77,7 @@ export class AdaptersService {
           ...a,
           requiredEnvVars,
           setupKind: full ? setupKind({ ...full, requiredEnvVars }) : undefined,
+          setupEffort: full ? setupEffort({ ...full, requiredEnvVars }) : undefined,
         };
       });
   }
