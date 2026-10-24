@@ -865,10 +865,11 @@ describe('AdaptersService install ranking', () => {
     expect(await slugsOf(svc)).toEqual(['telegram-bot', 'etsy', 'odoo']);
   });
 
-  it('sends only slugs, never a count, and asks for at least three workspaces', async () => {
+  it('sends only slugs, never a count, and asks for three workspaces that used it', async () => {
     const { svc, queryRaw } = service({ rows: [{ slug: 'etsy' }] });
     expect(JSON.parse((await svc.installRanking()).body)).toEqual({ slugs: ['etsy'] });
     const [sql, ...values] = queryRaw.mock.calls[0];
+    expect(sql.join('?')).toMatch(/ti\.connector_id = c\.id AND ti\.status = 'SUCCESS'/);
     expect(sql.join('?')).toMatch(/HAVING COUNT\(DISTINCT c\.organization_id\) >= \?/);
     expect(values).toEqual([3]);
   });

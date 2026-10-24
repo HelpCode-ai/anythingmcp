@@ -4,8 +4,10 @@
  * the newest guide or the longest tool list.
  *
  * Ranked from this deployment's own data: how many workspaces have a
- * connector installed from the adapter today (one workspace with five Odoo
- * connectors counts once). Only the order leaves the server, never a count,
+ * connector installed from the adapter today that has answered at least one
+ * call (one workspace with five Odoo connectors counts once). A connector
+ * installed and never used, as in the free starter pack many sign-ups add in
+ * one click, does not count. Only the order leaves the server, never a count,
  * and an adapter needs MIN_WORKSPACES workspaces before it is ranked, so one
  * tenant's choice never shows through. Adapters below that, and every adapter
  * on a fresh self-host with no data, are left to the caller's own order.

@@ -262,10 +262,16 @@ export class AdaptersService {
     const cached = this.installRankingCache;
     if (cached && now - cached.at < INSTALL_RANKING_CACHE_MS) return cached.ranking;
     try {
+      // The EXISTS goes through tool_invocations' (connector_id, created_at)
+      // index and stops at the first successful call of each connector.
       const rows = await this.prisma.$queryRaw<Array<{ slug: string | null }>>`
         SELECT c.config->>'adapterSlug' AS slug
         FROM connectors c
         WHERE c.config ? 'adapterSlug'
+          AND EXISTS (
+            SELECT 1 FROM tool_invocations ti
+            WHERE ti.connector_id = c.id AND ti.status = 'SUCCESS'
+          )
         GROUP BY 1
         HAVING COUNT(DISTINCT c.organization_id) >= ${INSTALL_RANKING_MIN_WORKSPACES}
         ORDER BY COUNT(DISTINCT c.organization_id) DESC, 1`;
