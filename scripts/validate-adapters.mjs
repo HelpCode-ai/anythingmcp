@@ -307,7 +307,9 @@ export function validateSetupGuide(adapter, publicDir = FRONTEND_PUBLIC) {
     }
     if (step.image !== undefined) {
       const img = step.image;
-      if (!img || typeof img.src !== 'string' || !img.src.startsWith('/') || img.src.includes('..') || !nonEmpty(img.alt) || !/^\d{4}-\d{2}-\d{2}$/.test(String(img.capturedAt))) {
+      // Only a file under packages/frontend/public: `//host/x.png` would load
+      // from another site.
+      if (!img || typeof img.src !== 'string' || !/^\/(?!\/)[\w./-]+$/.test(img.src) || img.src.includes('..') || !nonEmpty(img.alt) || !/^\d{4}-\d{2}-\d{2}$/.test(String(img.capturedAt))) {
         bad('setup-guide-image', `${at}.image`, 'image needs a src under /, an alt text and capturedAt (YYYY-MM-DD)', 'Use { "src": "/setup-guides/etsy/app-form.png", "alt": "…", "capturedAt": "2026-10-22" }.');
       } else if (!existsSync(join(publicDir, img.src))) {
         bad('setup-guide-image', `${at}.image.src`, `${img.src} is not in packages/frontend/public`, 'Add the screenshot, or remove the image.');

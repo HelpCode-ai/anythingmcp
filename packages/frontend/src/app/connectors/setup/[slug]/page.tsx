@@ -496,6 +496,14 @@ function SetupContent() {
               setStepIndex(0);
             }}
             onShowForm={() => setMode('form')}
+            skipTo={
+              // Finishing a connector that exists (re-entering keys): the
+              // steps at the provider may well be done already.
+              existingId && !resume && guide.steps.length > 1
+                ? { index: guide.steps.length - 1, title: guide.steps[guide.steps.length - 1].title }
+                : null
+            }
+            onSkip={() => setStepIndex(guide.steps.length - 1)}
           />
         </Card>
       );
@@ -516,7 +524,9 @@ function SetupContent() {
       ? step.action.url.replace(/^\{\{([A-Z0-9_]+)\}\}/, (_, name: string) => (values[name] ?? '').trim().replace(/\/+$/, ''))
       : null;
     const goTo = (i: number) => {
+      // A refusal belongs to the step that ran the check.
       setError('');
+      setVerifyFailed(null);
       setStepIndex(i);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };

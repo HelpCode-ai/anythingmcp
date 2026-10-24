@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { connectors, mcpServers, productEvents } from '@/lib/api';
+import { connectors, mcpServers, productEvents, server as serverApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { copyText } from '@/lib/clipboard';
 import { getApiOrigin } from '@/lib/origin';
 import { CLAUDE_ADD_CONNECTOR_URL, CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
-import { vscodeDeepLink } from '@/lib/mcp-install-links';
+import { isLocalOnlyUrl, vscodeDeepLink } from '@/lib/mcp-install-links';
 import type { ReturnAssistant } from '@/lib/return-assistant';
 import { cn } from '@/lib/utils';
 
@@ -75,8 +75,14 @@ export function SetupSuccess({
   const { token, deploymentMode } = useAuth();
   const isCloud = deploymentMode === 'cloud';
   const [server, setServer] = useState<ServerInfo | null | undefined>(undefined);
+  /** How this instance's MCP endpoint signs clients in (MCP_AUTH_MODE). */
+  const [authMode, setAuthMode] = useState('');
   const [tab, setTab] = useState<ClientTab>('claude');
   const [showClients, setShowClients] = useState(false);
+
+  useEffect(() => {
+    serverApi.info().then((i) => setAuthMode(i?.mcpAuthMode || '')).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -282,7 +288,32 @@ export function SetupSuccess({
               </button>
             </div>
           )}
-          {server && (!server.inUse || showClients) && clientSteps}
+          {server && (!server.inUse || showClients) && (
+            // Claude and ChatGPT add a server by URL and sign in with OAuth,
+            // from their own servers. A self-hosted instance on API keys
+            // only, or one reachable on localhost, gets the server page with
+            // the set-ups that do work there.
+            authMode && authMode !== 'oauth2' && authMode !== 'both' ? (
+              <p className="rounded-[9px] bg-[var(--t-warn-bg)] px-3 py-2 text-sm text-[var(--t-warn-fg)]" data-testid="setup-no-oauth">
+                This instance signs AI clients in with API keys (<code className="font-mono">MCP_AUTH_MODE={authMode}</code>), so
+                adding it by URL in Claude or ChatGPT will not work. Open{' '}
+                <Link href={`/mcp-server/${server.id}`} className="underline">
+                  {server.name}
+                </Link>{' '}
+                for the client configs with an API key.
+              </p>
+            ) : (
+              <>
+                {isLocalOnlyUrl(endpoint) && (
+                  <p className="rounded-[9px] bg-[var(--t-warn-bg)] px-3 py-2 text-sm text-[var(--t-warn-fg)]" data-testid="setup-localhost">
+                    This URL points to localhost: Claude and ChatGPT on the web cannot reach it. Use a client on this machine (Claude
+                    Code, Cursor, VS Code), or give AnythingMCP a public https address.
+                  </p>
+                )}
+                {clientSteps}
+              </>
+            )
+          )}
         </section>
       )}
 
