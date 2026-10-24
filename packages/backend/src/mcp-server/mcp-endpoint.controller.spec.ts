@@ -810,6 +810,40 @@ describe('McpEndpointController — tools/list event stream', () => {
     expect(parsed.id).toBe(id);
     expect(parsed.result.tools[0].description).toBe('Get a <customer> & more');
   });
+
+  it('lists a tool declared under a top-level oneOf with flat properties', () => {
+    process.env.MCP_STREAMABLE_JSON_RESPONSE = 'true';
+    const controller = new McpEndpointController(
+      {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
+    ) as any;
+    const req: any = {
+      body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      visibleTools: [
+        {
+          id: 't1',
+          name: 'vendor_provision',
+          description: 'Provision a resource',
+          parameters: {
+            type: 'object',
+            oneOf: [
+              { properties: { tenant_id: { type: 'string' }, resource: { type: 'string' } }, required: ['tenant_id', 'resource'] },
+              { properties: { tenant_id: { type: 'string' }, resources: { type: 'array' } }, required: ['tenant_id', 'resources'] },
+            ],
+          },
+          connectorConfig: { envVars: {} },
+        },
+      ],
+    };
+    const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn(), setHeader: jest.fn(), end: jest.fn() };
+
+    expect(controller.answerToolsList(req, res, new Set(['t1']))).toBe(true);
+
+    const schema = res.json.mock.calls[0][0].result.tools[0].inputSchema;
+    expect(schema.oneOf).toBeUndefined();
+    expect(schema.type).toBe('object');
+    expect(Object.keys(schema.properties).sort()).toEqual(['resource', 'resources', 'tenant_id']);
+    expect(schema.required).toEqual(['tenant_id']);
+  });
 });
 
 /**

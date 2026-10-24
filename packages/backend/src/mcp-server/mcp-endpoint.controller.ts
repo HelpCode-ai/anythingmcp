@@ -96,7 +96,7 @@ import {
   callerConnectorIds,
   planServerResources,
 } from './mcp-resources';
-import { jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
+import { flattenToolSchema, jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
 
 function trimSlash(url: string | undefined): string {
   return (url || '').trim().replace(/\/+$/, '');
@@ -716,9 +716,13 @@ export class McpEndpointController {
       if (seen.has(tool.name)) continue;
       seen.add(tool.name);
 
-      const schema = this.stripEnvVarParams(
-        (tool.parameters as Record<string, unknown>) ?? {},
-        tool.connectorConfig?.envVars,
+      // Flattened, like the zod shape of the per-server endpoint: some clients
+      // reject a top-level oneOf/anyOf/allOf with empty `properties`.
+      const schema = flattenToolSchema(
+        this.stripEnvVarParams(
+          (tool.parameters as Record<string, unknown>) ?? {},
+          tool.connectorConfig?.envVars,
+        ),
       );
       listed.push({
         name: tool.name,

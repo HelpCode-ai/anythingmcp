@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { listAdapters } from '../adapters/catalog';
 import { RegisteredTool, isListable } from './tool-registry';
 import { deriveToolAnnotations } from './tool-annotations';
-import { jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
+import { flattenToolSchema, jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
 import type { ToolResultContent } from './dynamic-mcp-tools';
 import { isMuseHost, knownClientFor } from '../auth/auth-page';
 
@@ -342,9 +342,12 @@ function runWith(tool: RegisteredTool): string {
 }
 
 function inputSchemaOf(tool: RegisteredTool): Record<string, unknown> {
-  const schema = stripEnvVarParams(
-    (tool.parameters as Record<string, unknown>) ?? {},
-    tool.connectorConfig?.envVars,
+  // Flattened: some clients reject a top-level oneOf/anyOf/allOf.
+  const schema = flattenToolSchema(
+    stripEnvVarParams(
+      (tool.parameters as Record<string, unknown>) ?? {},
+      tool.connectorConfig?.envVars,
+    ),
   );
   return {
     type: 'object',

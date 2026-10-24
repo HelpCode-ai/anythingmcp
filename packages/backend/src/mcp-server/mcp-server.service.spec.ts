@@ -112,6 +112,18 @@ describe('McpServerService.jsonSchemaToZod', () => {
     });
     expect(schema.parse({ q: 'Domoferm' })).toEqual({ q: 'Domoferm' });
   });
+
+  it('keeps the arguments of a tool declared under a top-level oneOf', () => {
+    const schema = makeSchema({
+      type: 'object',
+      oneOf: [
+        { properties: { tenant_id: { type: 'string' }, size: { type: 'integer', default: 1 } }, required: ['tenant_id'] },
+        { properties: { tenant_id: { type: 'string' }, ids: { type: 'array' } }, required: ['tenant_id', 'ids'] },
+      ],
+    });
+    expect(schema.parse({ tenant_id: 't', ids: ['a'] })).toEqual({ tenant_id: 't', ids: ['a'] });
+    expect(() => schema.parse({ ids: ['a'] })).toThrow();
+  });
 });
 
 /**
