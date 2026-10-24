@@ -154,6 +154,24 @@ An adapter is one JSON file; the rest is generated and checked.
 6. Drop the brand logo at
    `packages/frontend/public/logos/connectors/<icon>.svg`.
 
+### Translating the UI
+
+UI text lives in `packages/frontend/messages/<locale>.json` (English, German
+and Italian today), nested by area: `nav.*` for the sidebar, and so on.
+
+1. English is the source. Add a new key to `en.json` first and use it with
+   `useTranslations('<area>')` in client components or `getTranslations` in
+   server components.
+2. Add the same key to `de.json` and `it.json`. A key missing there falls back
+   to English, never to the raw key, but the key-parity test in
+   `tests/e2e/i18n.spec.ts` fails until every file has the same keys.
+3. Match the tone of the guides in `content/guides/de` and `content/guides/it`
+   (German uses *Sie*, Italian uses *tu*). If it isn't your native language,
+   say so in the PR so a maintainer can review those strings.
+
+The language comes from the `amcp_locale` cookie, then the browser's
+`Accept-Language`, then English (`src/i18n/request.ts`). URLs carry no locale.
+
 ### What Needs Discussion First
 
 Open an issue before starting work on:

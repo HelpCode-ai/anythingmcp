@@ -1,10 +1,15 @@
 export interface NavItem {
+  /** Message key under `nav.items` (messages/*.json). */
+  id: string;
   href: string;
+  /** English label; the sidebar shows the translated `nav.items.<id>`. */
   label: string;
   keywords?: string[];
 }
 
 export interface NavGroup {
+  /** Message key under `nav.groups` (messages/*.json). */
+  id: string;
   group: string;
   items: NavItem[];
 }
@@ -28,33 +33,37 @@ export interface SettingsSection {
 
 export const NAV: NavGroup[] = [
   {
+    id: 'overview',
     group: 'Overview',
     items: [
-      { href: '/', label: 'Dashboard', keywords: ['home', 'overview', 'dashboard', 'main'] },
-      { href: '/analytics', label: 'Analytics', keywords: ['analytics', 'metrics', 'stats', 'charts'] },
-      { href: '/logs', label: 'Audit Log', keywords: ['audit', 'logs', 'audit log', 'history', 'activity'] },
+      { id: 'dashboard', href: '/', label: 'Dashboard', keywords: ['home', 'overview', 'dashboard', 'main'] },
+      { id: 'analytics', href: '/analytics', label: 'Analytics', keywords: ['analytics', 'metrics', 'stats', 'charts'] },
+      { id: 'auditLog', href: '/logs', label: 'Audit Log', keywords: ['audit', 'logs', 'audit log', 'history', 'activity'] },
     ],
   },
   {
+    id: 'build',
     group: 'Build',
     items: [
-      { href: '/connectors', label: 'Connectors', keywords: ['connectors', 'apis', 'integrations', 'rest', 'soap'] },
-      { href: '/connectors/store', label: 'Marketplace', keywords: ['marketplace', 'store', 'catalog', 'adapters'] },
-      { href: '/mcp-server', label: 'MCP Servers', keywords: ['mcp servers', 'servers', 'mcp', 'tools', 'endpoints'] },
+      { id: 'connectors', href: '/connectors', label: 'Connectors', keywords: ['connectors', 'apis', 'integrations', 'rest', 'soap'] },
+      { id: 'marketplace', href: '/connectors/store', label: 'Marketplace', keywords: ['marketplace', 'store', 'catalog', 'adapters'] },
+      { id: 'mcpServers', href: '/mcp-server', label: 'MCP Servers', keywords: ['mcp servers', 'servers', 'mcp', 'tools', 'endpoints'] },
     ],
   },
   {
+    id: 'intelligence',
     group: 'Intelligence',
     items: [
-      { href: '/knowledge-graph', label: 'Knowledge Graph', keywords: ['knowledge graph', 'kg', 'graph', 'entities'] },
-      { href: '/knowledge-graph/skills', label: 'AI Skills', keywords: ['ai skills', 'skills', 'prompts'] },
-      { href: '/memory', label: 'Memory', keywords: ['memory', 'remember', 'facts', 'preferences', 'knowledge'] },
+      { id: 'knowledgeGraph', href: '/knowledge-graph', label: 'Knowledge Graph', keywords: ['knowledge graph', 'kg', 'graph', 'entities'] },
+      { id: 'aiSkills', href: '/knowledge-graph/skills', label: 'AI Skills', keywords: ['ai skills', 'skills', 'prompts'] },
+      { id: 'memory', href: '/memory', label: 'Memory', keywords: ['memory', 'remember', 'facts', 'preferences', 'knowledge'] },
     ],
   },
   {
+    id: 'getStarted',
     group: 'Get started',
     items: [
-      { href: '/welcome', label: 'Setup & onboarding', keywords: ['setup', 'onboarding', 'welcome', 'getting started', 'guide'] },
+      { id: 'setup', href: '/welcome', label: 'Setup & onboarding', keywords: ['setup', 'onboarding', 'welcome', 'getting started', 'guide'] },
     ],
   },
 ];

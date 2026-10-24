@@ -1,0 +1,31 @@
+{
+  "nav": {
+    "groups": {
+      "overview": "Übersicht",
+      "build": "Erstellen",
+      "intelligence": "Intelligenz",
+      "getStarted": "Erste Schritte"
+    },
+    "items": {
+      "dashboard": "Dashboard",
+      "analytics": "Analysen",
+      "auditLog": "Audit-Log",
+      "connectors": "Connectors",
+      "marketplace": "Marktplatz",
+      "mcpServers": "MCP-Server",
+      "knowledgeGraph": "Knowledge Graph",
+      "aiSkills": "KI-Skills",
+      "memory": "Gedächtnis",
+      "setup": "Einrichtung & Onboarding"
+    },
+    "settings": "Einstellungen",
+    "switchWorkspace": "Workspace wechseln",
+    "logOut": "Abmelden",
+    "workspaceFallback": "Workspace",
+    "githubStar": {
+      "label": "Stern auf GitHub",
+      "hide": "Schaltfläche ausblenden",
+      "hideAriaLabel": "Schaltfläche „Stern auf GitHub“ ausblenden"
+    }
+  }
+}

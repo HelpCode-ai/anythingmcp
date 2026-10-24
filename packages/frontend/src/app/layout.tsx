@@ -44,6 +44,8 @@ import { GoogleTagManager, GoogleTagManagerNoscript } from '@/components/google-
 import { CookieConsentBanner } from '@/components/cookie-consent';
 import { SentryConfig } from '@/components/sentry-config';
 import { TRANSLATION_SAFE_DOM_SCRIPT } from '@/lib/translation-safe-dom';
+import { NextIntlClientProvider } from 'next-intl';
+import { getLocale } from 'next-intl/server';
 
 export const metadata: Metadata = {
   title: 'AnythingMCP — Custom connectors for Claude, ChatGPT, Copilot & any AI agent',
@@ -84,16 +86,18 @@ export const dynamic = 'force-dynamic';
 // Inline script to prevent FOUC — runs before React hydrates
 const themeScript = `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches);if(d)document.documentElement.classList.add('dark')}catch(e){}})()`;
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const gtmEnabled = Boolean(process.env.GTM_ID);
   const cookieDomain = process.env.COOKIE_DOMAIN;
+  // amcp_locale cookie, then Accept-Language, then English (src/i18n/request.ts).
+  const locale = await getLocale();
 
   return (
-    <html lang="en" className={`${Geist.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+    <html lang={locale} className={`${Geist.variable} ${GeistMono.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: TRANSLATION_SAFE_DOM_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
@@ -102,10 +106,13 @@ export default function RootLayout({
       </head>
       <body>
         <GoogleTagManagerNoscript />
-        <Providers>
-          <LicenseWall />
-          {children}
-        </Providers>
+        {/* Almost every page is a client component, so the messages are passed once here. */}
+        <NextIntlClientProvider>
+          <Providers>
+            <LicenseWall />
+            {children}
+          </Providers>
+        </NextIntlClientProvider>
         {gtmEnabled && <CookieConsentBanner cookieDomain={cookieDomain} />}
       </body>
     </html>
