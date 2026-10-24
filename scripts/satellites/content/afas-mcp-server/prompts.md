@@ -1,0 +1,14 @@
+- Which GetConnectors are published on this AFAS app connector?
+- Which outstanding debtor invoices are past their due date, and what is the open balance per debtor?
+- Show debtor 10024 with their address, VAT number, CoC number, payment condition and credit limit.
+- Find the debtor record for "Bakker Bouwgroep" and list their open invoices.
+- Which debtors have an open invoice balance above 10,000 EUR?
+- List the employees who started this year with their employee number and employer ID.
+- Look up employee 00412 and show their contact details and employment start date.
+- What fields and field types does the `Profit_Debtor_Invoices` GetConnector expose?
+- Show the field definitions of our custom GetConnector before querying it.
+- Read the first 50 rows from our custom project GetConnector, sorted by project number.
+- Which open debtor invoices fall due in the next 7 days?
+- Summarise the total open debtor balance grouped by debtor.
+- Which debtors have a credit limit set, and what are their payment conditions?
+- How many employees are listed under each employer ID?
