@@ -1,12 +1,12 @@
 {
   "slug": "fortnox",
   "name": "Fortnox",
-  "description": "Fortnox — the Swedish SMB accounting standard: customers, invoices, supplier invoices, articles, orders, vouchers and the account chart. REST API v3, OAuth 2.0.",
+  "description": "Fortnox, the Swedish SMB accounting standard: customers, invoices, supplier invoices, articles, orders, vouchers and the account chart. REST API v3, OAuth 2.0.",
   "region": "se",
   "category": "accounting",
   "icon": "fortnox",
   "docsUrl": "https://www.fortnox.se/developer/",
-  "instructions": "**Setup**\n1. Register at the **Fortnox Developer Portal** and create an integration. Add the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself, and enable the scopes `settings`, `customer`, `invoice`, `supplierinvoice`, `order`, `article` and `bookkeeping`. You receive a **client id** and **client secret**.\n2. Set `FORTNOX_CLIENT_ID` and `FORTNOX_CLIENT_SECRET`, leave `FORTNOX_REFRESH_TOKEN` empty, and install.\n3. Open the connector and click **Authorize with Provider**. Sign in with a user of the customer's Fortnox account, approve, and you land back on the connector page. AnythingMCP refreshes the access token on its own.\n\n**Scopes**: `settings customer invoice supplierinvoice order article bookkeeping`, one per tool area. Fortnox scopes always grant read and write. The authorization URL carries `access_type=offline`, without which Fortnox issues no refresh token.\n\n**Already have a refresh token?** You can paste it into `FORTNOX_REFRESH_TOKEN` instead of step 3, if you obtained it yourself for the same integration and have not used it since (see below).\n\n**The legacy Access-Token header is gone.** Fortnox retired the old `Access-Token` + `Client-Secret` header pair; if you find an example using those, it is pre-2022 and will not work. OAuth 2.0 is the only path now.\n\n**Refresh tokens rotate.** Fortnox issues a new refresh token on every refresh and invalidates the old one. AnythingMCP persists the rotated value back into the connector, but a refresh token you tested by hand, or share with another script, is spent and the connector fails with `invalid_grant`. Authorize again from the connector page to get a fresh one.\n\n**Rate limit** is roughly 25 requests per 5 seconds per token, answered with 429. Pace bulk work.\n\n**Responses wrap the rows** in the resource name: `{\"Customers\": [...], \"MetaInformation\": {...}}`. The paging totals live in `MetaInformation` (`@TotalPages`, `@TotalResources`).\n\n**`financialyear` matters for vouchers.** Fortnox scopes bookkeeping to a financial year id; without one it uses the current year, which is a surprise in January.\n\n**Cloud reachability**: api.fortnox.se is public with a valid certificate.",
+  "instructions": "**Setup**\n1. Register at the **Fortnox Developer Portal** and create an integration. Add the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself, and enable the scopes `settings`, `customer`, `invoice`, `supplierinvoice`, `order`, `article` and `bookkeeping` (add `inbox` too if you want `fortnox_list_inbox`, see Scopes). You receive a **client id** and **client secret**.\n2. Set `FORTNOX_CLIENT_ID` and `FORTNOX_CLIENT_SECRET`, leave `FORTNOX_REFRESH_TOKEN` empty, and install.\n3. Open the connector and click **Authorize with Provider**. Sign in with a user of the customer's Fortnox account, approve, and you land back on the connector page. AnythingMCP refreshes the access token on its own.\n\n**Scopes**: `settings customer invoice supplierinvoice order article bookkeeping`, one per tool area. `fortnox_list_inbox` also needs `inbox`: enable it on the integration in the Fortnox Developer Portal, add it to the connector's OAuth scopes, and authorize again; until then it answers 403. Fortnox refuses an authorization that asks for a scope the integration does not have, so it is not requested by default. Fortnox scopes always grant read and write. The authorization URL carries `access_type=offline`, without which Fortnox issues no refresh token.\n\n**Already have a refresh token?** You can paste it into `FORTNOX_REFRESH_TOKEN` instead of step 3, if you obtained it yourself for the same integration and have not used it since (see below).\n\n**The legacy Access-Token header is gone.** Fortnox retired the old `Access-Token` + `Client-Secret` header pair; if you find an example using those, it is pre-2022 and will not work. OAuth 2.0 is the only path now.\n\n**Refresh tokens rotate.** Fortnox issues a new refresh token on every refresh and invalidates the old one. AnythingMCP persists the rotated value back into the connector, but a refresh token you tested by hand, or share with another script, is spent and the connector fails with `invalid_grant`. Authorize again from the connector page to get a fresh one.\n\n**Invoices and attachments.** `fortnox_create_invoice` saves an unbooked draft (installed switched off); booking and sending stay in Fortnox. To attach a PDF, the file must already be in the inbox (upload it in Fortnox): `fortnox_list_inbox` with path `Inbox_kf` gives its `ArchiveFileId`, `fortnox_attach_files` links it to the invoice (entityType `F`, entityId = the invoice DocumentNumber), `fortnox_list_attachments` shows what is attached, and `fortnox_detach_file` (installed switched off) removes a link without deleting the file. The attachment tools call `api.fortnox.se/api/fileattachments` with the same token.\n\n**Rate limit** is roughly 25 requests per 5 seconds per token, answered with 429. Pace bulk work.\n\n**Responses wrap the rows** in the resource name: `{\"Customers\": [...], \"MetaInformation\": {...}}`. The paging totals live in `MetaInformation` (`@TotalPages`, `@TotalResources`).\n\n**`financialyear` matters for vouchers.** Fortnox scopes bookkeeping to a financial year id; without one it uses the current year, which is a surprise in January.\n\n**Cloud reachability**: api.fortnox.se is public with a valid certificate.",
   "requiredEnvVars": [
     "FORTNOX_CLIENT_ID",
     "FORTNOX_CLIENT_SECRET"
@@ -184,8 +184,160 @@
       }
     },
     {
+      "name": "fortnox_create_invoice",
+      "enabled": false,
+      "description": "Create a customer invoice as an unbooked draft: customer, dates and rows. Fields left out take the predefined values from the Fortnox settings (terms of payment, accounts). The draft is neither booked nor sent; booking and sending happen in Fortnox. Installed switched off. Show the user the customer, rows and totals and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Invoice": {
+            "type": "object",
+            "description": "The invoice. CustomerNumber is required; usual fields: InvoiceDate and DueDate (YYYY-MM-DD), YourReference, OurReference, YourOrderNumber, Currency, Comments, Remarks and InvoiceRows, e.g. [{\"ArticleNumber\": \"100\", \"DeliveredQuantity\": 2, \"Price\": 450}] or a free-text row [{\"Description\": \"Consulting May\", \"DeliveredQuantity\": 8, \"Price\": 950, \"AccountNumber\": 3041}].",
+            "properties": {
+              "CustomerNumber": {
+                "type": "string",
+                "description": "Customer number, from fortnox_list_customers."
+              },
+              "InvoiceRows": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Rows with ArticleNumber or Description, DeliveredQuantity, Price, optionally AccountNumber, VAT, Discount, Unit."
+              }
+            },
+            "required": [
+              "CustomerNumber"
+            ]
+          }
+        },
+        "required": [
+          "Invoice"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices",
+        "bodyMapping": {
+          "Invoice": "$Invoice"
+        }
+      }
+    },
+    {
+      "name": "fortnox_list_attachments",
+      "description": "List the files attached to one invoice, order or offer: attachment id, fileId and whether the file goes out with the document (includeOnSend). Uses the Fortnox File Attachments API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "integer",
+            "description": "Internal id of the document (the invoice DocumentNumber for type F)."
+          },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "F",
+              "O",
+              "OF",
+              "C",
+              "LGR_IO",
+              "LGR_IG"
+            ],
+            "description": "Document type: F customer invoice, O order, OF offer, C contract, LGR_IO / LGR_IG warehouse documents."
+          }
+        },
+        "required": [
+          "entity_id",
+          "entity_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.fortnox.se/api/fileattachments/attachments-v1",
+        "queryParams": {
+          "entityid": "$entity_id",
+          "entitytype": "$entity_type"
+        }
+      }
+    },
+    {
+      "name": "fortnox_attach_files",
+      "description": "Attach files that are already in the Fortnox inbox or archive to one or more invoices, orders or offers, optionally to be sent with the document. Detaching later leaves the file in the archive. Changes the customer's documents in Fortnox: tell the user what will be attached where and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "minItems": 1,
+            "description": "One entry per file and document: entityId (document id), entityType (F invoice, O order, OF offer), fileId (the ArchiveFileId from fortnox_list_inbox) and includeOnSend (true to send it with the document).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "entityId": {
+                  "type": "integer"
+                },
+                "entityType": {
+                  "type": "string",
+                  "enum": [
+                    "F",
+                    "O",
+                    "OF",
+                    "C",
+                    "LGR_IO",
+                    "LGR_IG"
+                  ]
+                },
+                "fileId": {
+                  "type": "string"
+                },
+                "includeOnSend": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "entityId",
+                "entityType",
+                "fileId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "attachments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://api.fortnox.se/api/fileattachments/attachments-v1",
+        "bodyMapping": {
+          "__raw": "$attachments"
+        }
+      }
+    },
+    {
+      "name": "fortnox_detach_file",
+      "enabled": false,
+      "description": "Detach one file from its invoice, order or offer by attachment id; the file itself stays in the Fortnox archive. Installed switched off. Confirm the document and file with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attachment_id": {
+            "type": "string",
+            "description": "Attachment id (a UUID) from fortnox_list_attachments, not the fileId."
+          }
+        },
+        "required": [
+          "attachment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "https://api.fortnox.se/api/fileattachments/attachments-v1/{attachment_id}"
+      }
+    },
+    {
       "name": "fortnox_list_supplier_invoices",
-      "description": "List supplier invoices with their supplier, date, due date, total and payment state — the payables side of the ledger.",
+      "description": "List supplier invoices with their supplier, date, due date, total and payment state: the payables side of the ledger.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -295,7 +447,7 @@
     },
     {
       "name": "fortnox_list_vouchers",
-      "description": "List bookkeeping vouchers in a financial year with their series, number, date and description — the ledger underneath the documents.",
+      "description": "List bookkeeping vouchers in a financial year with their series, number, date and description: the ledger underneath the documents.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -309,7 +461,7 @@
           },
           "financialyear": {
             "type": "number",
-            "description": "Financial year id. Omitted, Fortnox uses the current year — a surprise in January."
+            "description": "Financial year id. Omitted, Fortnox uses the current year, a surprise in January."
           },
           "fromdate": {
             "type": "string",
@@ -360,6 +512,26 @@
           "limit": "$limit",
           "page": "$page",
           "financialyear": "$financialyear"
+        }
+      }
+    },
+    {
+      "name": "fortnox_list_inbox",
+      "description": "List the files and sub-folders of the Fortnox inbox (Inkorgen) or of one of its folders, with each file's Id, Name, Size and ArchiveFileId. The ArchiveFileId is what fortnox_attach_files needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Folder path: Inbox_kf customer invoices, Inbox_s supplier invoices, Inbox_v vouchers, Inbox_o orders, Inbox_of offers, Inbox_a asset register, Inbox_d daily takings, Inbox_b bank files, Inbox_l payroll. Left out: the root with its folders."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inbox",
+        "queryParams": {
+          "path": "$path"
         }
       }
     }

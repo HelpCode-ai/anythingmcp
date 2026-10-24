@@ -1,0 +1,457 @@
+{
+  "slug": "tamara",
+  "name": "Tamara",
+  "aliases": [
+    "Tamara BNPL",
+    "Tamara Pay",
+    "تمارا"
+  ],
+  "description": "Tamara buy now, pay later (Saudi Arabia, UAE, Kuwait, Bahrain, Oman): look up orders by your order number or Tamara id with status, captured, refunded and settled amounts, check payment types and customer eligibility. Capture and refund are included, installed switched off.",
+  "instructions": "## Tamara\nThis connector uses the **Tamara merchant API** (buy now, pay later in Saudi Arabia, the UAE, Kuwait, Bahrain and Oman): order lookup by your order number or by Tamara order id, payment types and pre-checkout eligibility, and webhooks. Capture and refund are included but installed switched off.\n\n**Setup (2 minutes)**\n1. Sign in to the Tamara Partners Portal and open **API Token Management**, or use the API token Tamara sent with your merchant account. Sandbox and production have different tokens.\n2. Paste the token into `TAMARA_API_TOKEN`. It is sent as `Authorization: Bearer <token>`. The notification token and the public key are not used here.\n3. `TAMARA_API_URL` is `https://api.tamara.co` for production or `https://api-sandbox.tamara.co` for the sandbox; it must match the token.\n4. Install and run `tamara_list_payment_types` to check the token.\n\n**Identifiers**: `order_reference_id` is your own order number sent at checkout (e.g. the shop order number); `order_id` is the UUID Tamara issued. Most questions start from your order number: `tamara_get_order_by_reference`.\n\n**Workflow**\n- Order status: `tamara_get_order_by_reference` (or `tamara_get_order` with the Tamara id). Status flow: new, approved, authorised, then partially_captured / fully_captured, and partially_refunded / fully_refunded; canceled, declined and expired are final. `paid_amount` is what the customer has paid so far; `settlement_status` and `settlement_date` say whether Tamara has paid you out.\n- Transactions: captures, refunds and cancels are inside `transactions` of the order.\n- Before checkout: `tamara_list_payment_types` (what the store offers), `tamara_check_payment_options` (what this customer can use for this amount), `tamara_check_customer_eligibility` (is the customer blocked).\n- Webhooks: `tamara_get_webhook` with the id from the registration.\n\n**Writes switched off**: `tamara_capture_order` (captures an authorised order when it ships) and `tamara_refund_order` (refunds a captured order). Both move money; an admin turns them on deliberately. Before each call show the user the order, the amount and the currency and wait for a yes.\n\n**Amounts**: objects `{amount, currency}`; SAR and AED with 2 decimals, BHD, KWD and OMR with 3. Times are UTC, ISO 8601.\n\n**Errors**: 401 means a wrong token or a token for the other environment (sandbox vs production). 404 on an order means no order with that reference or id in this environment. 400 or 422 on capture or refund name the field Tamara rejected (e.g. an amount above what can be captured).\n\n**Limitations**: Tamara has no endpoint to list or search orders; look orders up by reference or id. Creating checkout sessions, authorising and cancelling orders, the claims API (sandbox only at Tamara) and settlement reports are not part of this connector.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "tamara",
+  "docsUrl": "https://docs.tamara.co/reference/tamara-api-reference-documentation",
+  "requiredEnvVars": [
+    "TAMARA_API_URL",
+    "TAMARA_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "TAMARA_API_URL": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "https://api.tamara.co for production, https://api-sandbox.tamara.co for the sandbox. It must match the token.",
+      "example": "https://api.tamara.co",
+      "pattern": "^https://api(-sandbox)?\\.tamara\\.co/?$",
+      "patternMessage": "Use https://api.tamara.co (production) or https://api-sandbox.tamara.co (sandbox)."
+    },
+    "TAMARA_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Tamara Partners Portal, API Token Management, or the API token Tamara sent you. Not the notification token or the public key.",
+      "link": "https://docs.tamara.co/docs/api-token-management",
+      "pattern": "^[A-Za-z0-9._-]{20,}$",
+      "patternMessage": "Paste only the API token, without \"Bearer\" or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Tamara refused the API token. Check that it belongs to the chosen environment: a sandbox token only works with https://api-sandbox.tamara.co, a production token with https://api.tamara.co.",
+    "403": "The token works but may not use this API. Ask Tamara to enable it for your merchant account.",
+    "404": "Nothing at this address. Check TAMARA_API_URL: https://api.tamara.co or https://api-sandbox.tamara.co."
+  },
+  "probe": {
+    "tool": "tamara_list_payment_types",
+    "params": {
+      "country": "SA"
+    }
+  },
+  "connector": {
+    "name": "Tamara API",
+    "type": "REST",
+    "baseUrl": "{{TAMARA_API_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TAMARA_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "tamara_list_payment_types",
+      "description": "List the Tamara payment types available to the merchant in a country (PAY_BY_INSTALMENTS, PAY_NOW...) with minimum and maximum order amounts and the supported numbers of instalments. With order_value only the types eligible for that amount are returned. A cheap call that also checks the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "Merchant country, ISO code: SA, AE, KW, BH or OM.",
+            "enum": [
+              "SA",
+              "AE",
+              "KW",
+              "BH",
+              "OM"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency; the country default when omitted.",
+            "enum": [
+              "SAR",
+              "AED",
+              "BHD",
+              "KWD",
+              "OMR"
+            ]
+          },
+          "order_value": {
+            "type": "number",
+            "description": "Order total, to list only the types eligible for it."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Customer phone number with country code, e.g. 966501234567, for customer-specific limits."
+          }
+        },
+        "required": [
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/checkout/payment-types",
+        "queryParams": {
+          "country": "$country",
+          "currency": "$currency",
+          "order_value": "$order_value",
+          "phone": "$phone"
+        }
+      }
+    },
+    {
+      "name": "tamara_get_order_by_reference",
+      "description": "Get a Tamara order by your own order number (the order_reference_id sent at checkout, e.g. the shop order number): Tamara order_id, status, payment type and instalments, consumer, addresses, items, total, captured, refunded, canceled and paid amounts, settlement status and date, and the transactions (captures, refunds, cancels). If several orders share the reference, the newest is returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference_id": {
+            "type": "string",
+            "description": "Your order number as sent to Tamara, e.g. A12345 or 000012345."
+          }
+        },
+        "required": [
+          "order_reference_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchants/orders/reference-id/{order_reference_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "consumer.national_id"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tamara_get_order",
+      "description": "Get a Tamara order by its Tamara order_id with the same details as tamara_get_order_by_reference: status, amounts (total, captured, refunded, canceled, paid), settlement, items and transactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Tamara order_id (UUID) issued at checkout, e.g. 0ac038ef-de4a-491c-828e-b02ec0d4582d. tamara_get_order_by_reference returns it for your own order number."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "consumer.national_id"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tamara_check_payment_options",
+      "description": "Check which Tamara payment options a specific customer can use for an order amount before checkout (has_available_payment_options, available_payment_labels with payment type and instalments, single_checkout_enabled). Reads only; nothing is created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "Merchant country: SA, AE, KW, BH or OM.",
+            "enum": [
+              "SA",
+              "AE",
+              "KW",
+              "BH",
+              "OM"
+            ]
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Customer phone number, e.g. 966501234567."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Order total."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency of the amount.",
+            "enum": [
+              "SAR",
+              "AED",
+              "BHD",
+              "KWD",
+              "OMR"
+            ]
+          },
+          "is_vip": {
+            "type": "boolean",
+            "description": "The customer is a VIP at your store."
+          }
+        },
+        "required": [
+          "country",
+          "phone_number",
+          "amount",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/checkout/payment-options-pre-check",
+        "bodyMapping": {
+          "country": "$country",
+          "phone_number": "$phone_number",
+          "order_value": {
+            "amount": "$amount",
+            "currency": "$currency"
+          },
+          "is_vip": "$is_vip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tamara_check_customer_eligibility",
+      "description": "Check whether Tamara currently treats a customer as eligible (is_eligible), based on active decline records, for an order amount. Give the phone number, the e-mail or both. Reads only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "Order total."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency of the amount.",
+            "enum": [
+              "SAR",
+              "AED",
+              "BHD",
+              "KWD",
+              "OMR"
+            ]
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Customer phone number, e.g. 966501234567."
+          },
+          "email": {
+            "type": "string",
+            "description": "Customer e-mail address."
+          }
+        },
+        "required": [
+          "amount",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pre-checkout/v1/eligibility",
+        "bodyMapping": {
+          "order": {
+            "amount": "$amount",
+            "currency": "$currency"
+          },
+          "customer": {
+            "phone_number": "$phone_number",
+            "email": "$email"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tamara_get_webhook",
+      "description": "Get a registered webhook by its id: url, subscribed events (order_approved, order_authorised, order_captured, order_refunded...) and headers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhook_id": {
+            "type": "string",
+            "description": "Webhook id (UUID) returned when the webhook was registered."
+          }
+        },
+        "required": [
+          "webhook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks/{webhook_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "headers"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tamara_capture_order",
+      "description": "Capture an authorised Tamara order in full or in part when it ships, so Tamara settles it. This moves money: show the order, amount and currency to the user and wait for a yes. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Tamara order_id (UUID) issued at checkout, e.g. 0ac038ef-de4a-491c-828e-b02ec0d4582d. tamara_get_order_by_reference returns it for your own order number."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount to capture out of the order total."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency of the order.",
+            "enum": [
+              "SAR",
+              "AED",
+              "BHD",
+              "KWD",
+              "OMR"
+            ]
+          },
+          "shipped_at": {
+            "type": "string",
+            "description": "Shipping date-time, ISO 8601, e.g. 2026-10-20T10:00:00Z."
+          },
+          "shipping_company": {
+            "type": "string",
+            "description": "Shipping company, e.g. Aramex, SMSA, DHL."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Shipment tracking number."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Tracking URL."
+          },
+          "items": {
+            "type": "array",
+            "description": "Items being captured, in the Tamara item format (reference_id, type, name, sku, quantity, total_amount).",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "amount",
+          "currency",
+          "shipped_at",
+          "shipping_company"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/capture",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "total_amount": {
+            "amount": "$amount",
+            "currency": "$currency"
+          },
+          "shipping_info": {
+            "shipped_at": "$shipped_at",
+            "shipping_company": "$shipping_company",
+            "tracking_number": "$tracking_number",
+            "tracking_url": "$tracking_url"
+          },
+          "items": "$items"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "tamara_refund_order",
+      "description": "Refund a captured Tamara order in full or in part (simplified refund). The money goes back to the customer and cannot be taken back: show the order, amount and comment to the user and wait for a yes. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Tamara order_id (UUID) issued at checkout, e.g. 0ac038ef-de4a-491c-828e-b02ec0d4582d. tamara_get_order_by_reference returns it for your own order number."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount to refund, excluding any discount."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency of the order.",
+            "enum": [
+              "SAR",
+              "AED",
+              "BHD",
+              "KWD",
+              "OMR"
+            ]
+          },
+          "comment": {
+            "type": "string",
+            "description": "Reason, stored in the order history, e.g. Refund for order A123."
+          },
+          "merchant_refund_id": {
+            "type": "string",
+            "description": "Your own refund id, e.g. the credit note number."
+          }
+        },
+        "required": [
+          "order_id",
+          "amount",
+          "currency",
+          "comment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/simplified-refund/{order_id}",
+        "bodyMapping": {
+          "total_amount": {
+            "amount": "$amount",
+            "currency": "$currency"
+          },
+          "comment": "$comment",
+          "merchant_refund_id": "$merchant_refund_id"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    }
+  ]
+}
