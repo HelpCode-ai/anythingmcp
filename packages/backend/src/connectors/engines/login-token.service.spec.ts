@@ -11,7 +11,9 @@ import {
   extractLoginRefusal,
   LoginTokenAuthConfig,
   proactiveRefreshWindowMs,
+  signLoginJwt,
 } from './login-token.service';
+import { generateKeyPairSync, verify } from 'crypto';
 import { injectLoginTokenHeaders } from './rest.engine';
 import signavio from '../../adapters/intl/sap-signavio.json';
 import { encrypt } from '../../common/crypto/encryption.util';
@@ -731,6 +733,104 @@ describe('LoginTokenService — cookieMode=all (SAP Signavio pattern)', () => {
       'conn-s4',
     );
     expect(bundle.token).toBe('sess-1');
+  });
+});
+
+describe('LoginTokenService — signedJwt login (noon Partner API pattern)', () => {
+  let service: LoginTokenService;
+  const encryptionKey = 'test-encryption-key-32-chars!!!!';
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+
+  const decode = (jwt: string) => {
+    const [h, p, sig] = jwt.split('.');
+    const parse = (part: string) => JSON.parse(Buffer.from(part, 'base64url').toString());
+    return {
+      header: parse(h),
+      payload: parse(p),
+      valid: verify('sha256', Buffer.from(`${h}.${p}`), publicKey, Buffer.from(sig, 'base64url')),
+    };
+  };
+
+  const noonAuth = {
+    loginUrl: 'https://noon-api-gateway.noon.partners/identity/public/v1/api/login',
+    loginMethod: 'POST',
+    loginHeaders: { 'User-Agent': 'AnythingMCP/1.0' },
+    loginBody: { token: '${signedJwt}', default_project_code: 'PRJ1' },
+    signedJwt: { privateKey: pem, algorithm: 'RS256', claims: { sub: 'key-abc' } },
+    tokenSource: 'cookie',
+    cookieMode: 'all',
+    headerName: 'Cookie',
+    headerTemplate: '${token}',
+  } as unknown as LoginTokenAuthConfig;
+
+  beforeEach(() => {
+    const mockPrisma = { connector: { findUnique: jest.fn(), update: jest.fn() } } as any;
+    const mockConfigService = { get: jest.fn().mockReturnValue(encryptionKey) } as any;
+    service = new LoginTokenService(mockPrisma, mockConfigService);
+    jest.clearAllMocks();
+  });
+
+  it('logs in with a freshly signed RS256 token instead of a username and password', async () => {
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({
+      data: {},
+      headers: { 'set-cookie': ['session=s1; Path=/; HttpOnly', 'route=r2; Path=/'] },
+    });
+    const before = Math.floor(Date.now() / 1000);
+    const bundle = await service.getToken(noonAuth, 'conn-noon');
+    expect(bundle.token).toBe('session=s1; route=r2');
+
+    const call = (mockedAxios as unknown as jest.Mock).mock.calls[0][0];
+    expect(call.headers['User-Agent']).toBe('AnythingMCP/1.0');
+    expect(call.data.default_project_code).toBe('PRJ1');
+    const jwt = decode(call.data.token);
+    expect(jwt.valid).toBe(true);
+    expect(jwt.header).toEqual({ alg: 'RS256', typ: 'JWT' });
+    expect(jwt.payload.sub).toBe('key-abc');
+    expect(jwt.payload.iat).toBeGreaterThanOrEqual(before);
+    expect(Number.isInteger(jwt.payload.iat)).toBe(true);
+    expect(jwt.payload.jti).toMatch(/^[0-9a-f-]{36}$/);
+    expect(jwt.payload.exp).toBeUndefined();
+  });
+
+  it('signs a new token, with a new jti, for every login', async () => {
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({ data: {}, headers: { 'set-cookie': 'session=s1' } });
+    await service.forceRelogin(noonAuth, 'conn-noon-2');
+    await service.forceRelogin(noonAuth, 'conn-noon-2');
+    const calls = (mockedAxios as unknown as jest.Mock).mock.calls;
+    expect(decode(calls[0][0].data.token).payload.jti).not.toBe(decode(calls[1][0].data.token).payload.jti);
+  });
+
+  it('adds exp only when a lifetime is configured, and a kid when a key id is', () => {
+    const jwt = decode(
+      signLoginJwt({ privateKey: pem, keyId: 'k1', ttlSeconds: 120, claims: { sub: 'key-abc' } }, 1_700_000_000_500),
+    );
+    expect(jwt.header.kid).toBe('k1');
+    expect(jwt.payload.iat).toBe(1_700_000_000);
+    expect(jwt.payload.exp).toBe(1_700_000_120);
+  });
+
+  it('names an empty claim variable instead of signing a token the API will refuse', () => {
+    expect(() => signLoginJwt({ privateKey: pem, claims: { sub: '{{NOON_KEY_ID}}' } })).toThrow(
+      'LOGIN_TOKEN: signedJwt: the "sub" claim is not set ({{NOON_KEY_ID}} has no value)',
+    );
+  });
+
+  it('explains a bad key without quoting it', () => {
+    const notPem = 'MIIEowIBAAKCAQEAsecretmaterial';
+    let message = '';
+    try {
+      signLoginJwt({ privateKey: notPem, claims: { sub: 'k' } });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toMatch(/^LOGIN_TOKEN: signedJwt: the private key is not a PEM key/);
+    expect(message).not.toContain('secretmaterial');
+  });
+
+  it('still asks for username and password when there is no signedJwt', async () => {
+    const { signedJwt: _omit, ...withoutJwt } = noonAuth as LoginTokenAuthConfig & { signedJwt?: unknown };
+    await expect(service.getToken(withoutJwt as LoginTokenAuthConfig, 'conn-noon-3')).rejects.toThrow(/username/);
   });
 });
 
