@@ -1,0 +1,65 @@
+# AnythingMCP
+
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 529 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+
+## Getting started
+
+- [AnythingMCP: self-hosted MCP gateway](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/README.md): Run AnythingMCP locally, connect an AI client, and discover ready-made connectors.
+- [Deployment Guide](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/deployment.md): Deploy AnythingMCP with Docker and configure authentication, networking, and production settings.
+- [AnythingMCP — Client setup, connector types & FAQ](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/guides.md): Guides for connecting AI clients to AnythingMCP, the connector types you can build, and frequently asked questions.
+
+## Connectors
+
+- [SQL database to MCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/database.md): AnythingMCP lets Claude, ChatGPT and Copilot query PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, Oracle, SAP HANA, SQLite and MongoDB through MCP,...
+- [GraphQL to MCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/graphql.md): AnythingMCP turns any GraphQL API into MCP tools for Claude, ChatGPT and Copilot without code.
+- [LOGIN_TOKEN Authentication](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/login-token-auth.md): Build connectors that exchange credentials for cached bearer tokens with automatic refresh and re-login.
+- [MCP Bridge Connector — MCP-to-MCP Gateway](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/mcp-bridge.md): The MCP Bridge connector lets you connect to other MCP servers and re-expose their tools through AnythingMCP.
+- [OData to MCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/odata.md): AnythingMCP connects Claude, ChatGPT and Copilot to OData V2 and V4 services through MCP, with SAP Gateway (S/4HANA, ECC, BW) as a first-class case.
+- [Proxy / Web-Unblocker](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/proxy.md): Some upstream APIs block server-side requests — by IP reputation, geo, rate limits, or full anti-bot systems (Akamai Bot Manager, Cloudflare, DataDome).
+- [REST / OpenAPI to MCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/rest.md): AnythingMCP turns any REST API into MCP tools for Claude, ChatGPT and Copilot without code.
+- [SAP HANA to MCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/sap-hana.md): AnythingMCP connects Claude, ChatGPT and Copilot to SAP HANA through MCP: any HANA database as a Database connector, and SAP S/4HANA's HANA database through...
+- [SOAP / WSDL to MCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/soap.md): AnythingMCP turns a SOAP web service into MCP tools for Claude, ChatGPT and Copilot without code.
+- [Tool Definition Format](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/tool-definition.md): Define MCP tool parameters, endpoint mappings, response transforms, and adapter metadata.
+
+## AI clients
+
+- [Connect AnythingMCP to ChatGPT](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/integrations/chatgpt.md): ChatGPT on the web can add a custom remote MCP server as a plugin, so you can use your AnythingMCP tools directly in ChatGPT conversations.
+- [Connect AnythingMCP to Claude](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/integrations/claude.md): Every MCP server you create in AnythingMCP has its own endpoint.
+- [Connect AnythingMCP to GitHub Copilot](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/integrations/copilot.md): GitHub Copilot supports MCP server connections in VS Code and JetBrains IDEs (agent mode).
+- [Connect AnythingMCP to Google Gemini](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/integrations/gemini.md): Google Gemini supports MCP server connections through Gemini CLI and the Gemini API.
+- [Connect AnythingMCP to Meta Muse](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/integrations/muse.md): Meta Muse can use remote MCP servers as custom connectors.
+
+## Operations and security
+
+- [Operations](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/README.md): Documents that exist for the people running AnythingMCP in production rather than the people building it.
+- [Backup & restore](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/backup-restore.md): AnythingMCP stores all state in PostgreSQL.
+- [Disaster recovery](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/disaster-recovery.md): Targets we hold ourselves to for AnythingMCP-the-managed-product.
+- [Observability](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/observability.md): Configure structured logging, Sentry error reporting, and Prometheus metrics for your deployment.
+- [Row-Level Security (defense-in-depth tenant isolation)](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/row-level-security.md): AnythingMCP isolates tenants at the application layer today: every org-scoped query carries an explicit where: { organizationId }, and the MCP endpoints are...
+- [Service level objectives](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/slo.md): These are the SLOs we commit to for the managed AnythingMCP cloud.
+- [Single Sign-On (Microsoft Entra ID, Google, Okta, Auth0, OIDC)](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/sso.md): Let members sign in with your organization's identity provider instead of a password, and keep their AnythingMCP roles in step with your directory groups.
+- [SCIM provisioning with Microsoft Entra ID — step by step](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/scim-entra-setup.md): Click-by-click setup for automatic user and group provisioning from Entra ID into AnythingMCP.
+- [License FAQ](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/license-faq.md): Understand the AGPL license, the commercial EE boundary, and contributor licensing.
+
+## Reference
+
+- [API Reference](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/api-reference.md): REST API reference for authentication, connectors, tools, MCP servers, and administration.
+- [MCP resources](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/mcp-resources.md): Besides tools, every per-server MCP endpoint (/mcp/<serverId>) serves resources: read-only text a client can attach to the model's context (resources/list,...
+- [Knowledge Graph & AI skills](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/knowledge-graph.md): The Knowledge Graph turns the connectors in a workspace into a queryable map of entities (customers, orders, products, …) and the relationships between them...
+- [Workspace memory](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/memory.md): Workspace memory lets AI clients save facts, preferences and notes and find them again later, in any client connected to an MCP server of the workspace...
+
+## Contributing
+
+- [Contributing to AnythingMCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/.github/CONTRIBUTING.md): Set up development, test changes, and submit a contribution.
+- [Agent instructions](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/AGENTS.md): Repository instructions, setup commands, tests, and contribution boundaries for coding agents.
+
+## Optional
+
+- [Connect Sorare to ChatGPT — fantasy football tools inside GPT](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/guides/connect-sorare-to-chatgpt.md): Connect Sorare fantasy football tools to ChatGPT through AnythingMCP.
+- [Connect Sorare to Claude — NFT fantasy football inside Claude Desktop & Claude Code](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/guides/connect-sorare-to-claude.md): Connect Sorare fantasy football tools to Claude Desktop and Claude Code.
+- [Connect Sorare to AnythingMCP Cloud — managed MCP server for the Sorare GraphQL API](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/guides/connect-sorare-to-cloud.md): Use AnythingMCP Cloud to connect the Sorare GraphQL API without a local server.
+- [Connect Sorare to GitHub Copilot — NFT fantasy football inside Copilot Chat](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/guides/connect-sorare-to-copilot.md): Use Sorare tools in GitHub Copilot Chat through an AnythingMCP MCP endpoint.
+- [Connect Sorare to OpenClaw — self-hosted AI assistant + NFT fantasy football](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/guides/connect-sorare-to-openclaw.md): Connect Sorare tools to the self-hosted OpenClaw AI assistant.
+- [Sorare to MCP — Connect Sorare GraphQL API to any AI agent](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/guides/sorare-to-mcp.md): Expose the Sorare GraphQL API as MCP tools for compatible AI clients.
+- [AnythingMCP Roadmap](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/ROADMAP.md): Review current development priorities, planned features, and contribution opportunities.
+- [Adopters](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/ADOPTERS.md): This page lists projects and organizations using AnythingMCP.

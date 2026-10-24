@@ -284,6 +284,7 @@ REST コネクターを作成し、仕様を URL か貼り付けでインポー�
 - 👥 **導入事例：**[本番環境で AnythingMCP を使っている組織](docs/ADOPTERS.md)と、掲載の方法
 - 🔐 **セキュリティ：**公開の issue は作成せず、[セキュリティポリシー](.github/SECURITY.md)に従ってください
 - 🤖 **AI エージェントとクローラー向け：**[anythingmcp.com/llms.txt](https://anythingmcp.com/llms.txt)
+- 🤖 **AI エージェント向けリポジトリドキュメント：**[llms.txt](llms.txt) · [全文](llms-full.txt)
 - 🏢 ドイツ・フライブルクの [helpcode.ai](https://helpcode.ai) が開発しています。AI 支援で開発し、人がレビューしています。どの部分をどのように、は [AUTHORS.md](docs/AUTHORS.md) に記載しています。
 
 ## 貢献する

@@ -266,6 +266,7 @@ Install the [e-commerce adapter](#e-commerce--marketplace-connectors) for your s
 - 👥 **Adopters:** [who runs AnythingMCP in production](docs/ADOPTERS.md), and how to add yourself
 - 🔐 **Security:** please do not open a public issue; follow the [security policy](.github/SECURITY.md)
 - 🤖 **For AI agents and crawlers:** [anythingmcp.com/llms.txt](https://anythingmcp.com/llms.txt)
+- 🤖 **Repository documentation for AI agents:** [llms.txt](llms.txt) · [Full text](llms-full.txt)
 - 🏢 Built by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany. AI-assisted development, human-reviewed: [AUTHORS.md](docs/AUTHORS.md) says which parts and how.
 
 ## Contributing

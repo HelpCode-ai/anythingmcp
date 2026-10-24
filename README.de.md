@@ -284,6 +284,7 @@ Installiere den [E-Commerce-Adapter](#e-commerce--marketplace-connectors) für d
 - 👥 **Anwender:** [wer AnythingMCP produktiv einsetzt](docs/ADOPTERS.md) und wie du dich einträgst
 - 🔐 **Sicherheit:** bitte kein öffentliches Issue öffnen, sondern der [Sicherheitsrichtlinie](.github/SECURITY.md) folgen
 - 🤖 **Für KI-Agenten und Crawler:** [anythingmcp.com/llms.txt](https://anythingmcp.com/llms.txt)
+- 🤖 **Repository-Dokumentation für KI-Agenten:** [llms.txt](llms.txt) · [Volltext](llms-full.txt)
 - 🏢 Entwickelt von [helpcode.ai](https://helpcode.ai) in Freiburg. KI-gestützt entwickelt, von Menschen geprüft: [AUTHORS.md](docs/AUTHORS.md) erklärt, welche Teile und wie.
 
 ## Mitwirken
