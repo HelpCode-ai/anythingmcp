@@ -725,6 +725,36 @@ describe('AdaptersService.verifyCredentials on an existing connector', () => {
   });
 });
 
+describe('AdaptersService.verifyCredentials with an optional variable left empty', () => {
+  const sqlLogin = { MSSQL_HOST: 'db.example.com', MSSQL_PORT: '1433', MSSQL_DATABASE: 'erp', MSSQL_USER: 'reader', MSSQL_PASSWORD: '' };
+  function build(stored: Record<string, string>) {
+    const execute = jest.fn().mockResolvedValue({ ok: 1 });
+    const service = new AdaptersService(
+      { connector: { findFirst: jest.fn().mockResolvedValue({ envVars: stored }) } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, execute };
+  }
+
+  it('finishing a connector: an empty MSSQL_DOMAIN is a SQL login, not "still empty"', async () => {
+    // Libredesk #123: the connector was installed from a chat without the
+    // optional variable; the form sent it empty and the check dropped it.
+    const { service } = build({ ...sqlLogin, MSSQL_PASSWORD: 'stored-pw' });
+    const out: any = await service.verifyCredentials('mssql', 'org1', { ...sqlLogin, MSSQL_DOMAIN: '' }, 'c1');
+    expect(out.kind).not.toBe('invalid_input');
+    expect(out.missing).toBeUndefined();
+  });
+
+  it('clearing a domain set earlier switches back to a SQL login', async () => {
+    const { service, execute } = build({ ...sqlLogin, MSSQL_PASSWORD: 'stored-pw', MSSQL_DOMAIN: 'CORP' });
+    const out: any = await service.verifyCredentials('mssql', 'org1', { ...sqlLogin, MSSQL_DOMAIN: '' }, 'c1');
+    expect(out.kind).not.toBe('invalid_input');
+    expect(execute.mock.calls[0][0].envVars).toMatchObject({ MSSQL_DOMAIN: '', MSSQL_PASSWORD: 'stored-pw' });
+  });
+});
+
 describe('AdaptersService unlisted adapters', () => {
   const { getAdapter } = jest.requireActual('./catalog');
 

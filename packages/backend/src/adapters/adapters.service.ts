@@ -409,10 +409,19 @@ export class AdaptersService {
       const env = (stored?.envVars ?? {}) as Record<string, unknown>;
       // Only names the adapter declares come from the request.
       const declared = new Set([...adapter.requiredEnvVars, ...(adapter.optionalEnvVars ?? [])]);
+      // An optional variable may be empty on purpose (MSSQL_DOMAIN: a SQL
+      // login). The form shows its stored value unless it is a secret, so an
+      // empty one means "cleared", except for a secret, where it means "keep".
+      const optional = new Set(adapter.optionalEnvVars ?? []);
+      const secret = new Set(describeAdapterEnvVars(adapter).filter((d) => d.secret).map((d) => d.name));
       const merged = new Map<string, string>();
-      for (const [k, v] of Object.entries(env)) if (typeof v === 'string' && v) merged.set(k, v);
+      for (const [k, v] of Object.entries(env)) {
+        if (typeof v === 'string' && (v || optional.has(k))) merged.set(k, v);
+      }
       for (const [k, v] of Object.entries(credentials ?? {})) {
-        if (declared.has(k) && typeof v === 'string' && v.trim()) merged.set(k, v);
+        if (!declared.has(k) || typeof v !== 'string') continue;
+        if (v.trim()) merged.set(k, v);
+        else if (optional.has(k) && !(secret.has(k) && merged.get(k))) merged.set(k, '');
       }
       credentials = Object.fromEntries(merged);
     }
