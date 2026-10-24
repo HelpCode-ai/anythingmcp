@@ -18,6 +18,7 @@ describe('DatabaseEngine — SSRF guard', () => {
     delete process.env.SSRF_GUARD;
     delete process.env.SSRF_ALLOW_PRIVATE;
     delete process.env.SSRF_ALLOWED_HOSTS;
+    delete process.env.DEPLOYMENT_MODE;
   });
 
   const cfg = (baseUrl: string) => ({ baseUrl, authType: 'none' });
@@ -72,5 +73,15 @@ describe('DatabaseEngine — SSRF guard', () => {
     await expect(
       engine.execute(cfg('sqlite:///nonexistent-amcp-test.db'), query, params),
     ).rejects.not.toBeInstanceOf(SsrfBlockedError);
+  });
+
+  it('refuses sqlite on the cloud, where the file system is shared by every workspace', async () => {
+    process.env.DEPLOYMENT_MODE = 'cloud';
+    await expect(
+      engine.execute(cfg('sqlite:///app/backend/data.db'), query, params),
+    ).rejects.toBeInstanceOf(SsrfBlockedError);
+    await expect(engine.testConnection(cfg('sqlite:/tmp/x.db'))).rejects.toBeInstanceOf(
+      SsrfBlockedError,
+    );
   });
 });
