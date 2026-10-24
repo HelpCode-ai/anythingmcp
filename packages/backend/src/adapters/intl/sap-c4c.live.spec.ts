@@ -145,7 +145,7 @@ describe('sap-c4c adapter: static spec conformance', () => {
 
   it('documents every tool in the instructions, marks secrets and has no em dash', () => {
     for (const t of a.tools) expect(`${t.name}:${a.instructions.includes(t.name)}`).toBe(`${t.name}:true`);
-    for (const [name, meta] of Object.entries(a.envVarMeta ?? {})) if (/PASSWORD|SECRET|TOKEN|_KEY$/.test(name)) expect(`${name}:${meta.secret}`).toBe(`${name}:true`);
+    for (const [name, meta] of Object.entries(a.envVarMeta ?? {})) if (/PASSWORD|SECRET|TOKEN/.test(name) || name.endsWith('_KEY')) expect(`${name}:${meta.secret}`).toBe(`${name}:true`);
     expect(JSON.stringify(a)).not.toMatch(/\u2014/);
     if (a.probe) {
       const probe = tool(a.probe.tool);
