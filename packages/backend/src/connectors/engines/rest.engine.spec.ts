@@ -851,6 +851,88 @@ describe('RestEngine', () => {
       expect(result).toEqual({ ok: true });
       expect(mockedAxios).toHaveBeenCalledTimes(4);
     });
+
+    // A POST that timed out may have run: retrying a 30 s timeout used to
+    // create (and bill) a Replicate prediction up to four times.
+    describe('non-idempotent methods', () => {
+      const call = (method: string) =>
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          { method, path: '/' },
+          {},
+        );
+      const timeout = () => err(undefined, 'ECONNABORTED');
+
+      it('sends a POST that timed out exactly once, and says it may have run', async () => {
+        mockedAxios.mockRejectedValue(timeout());
+        await expect(call('POST')).rejects.toThrow(
+          /^Could not reach the API: .* \(ECONNABORTED\)\. The API may still have run this POST/,
+        );
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+      });
+
+      it.each([
+        ['PATCH', err(undefined, 'ECONNRESET')],
+        ['DELETE', err(undefined, 'ETIMEDOUT')],
+        ['POST', err(502)],
+        ['POST', err(504)],
+        ['POST', err(503)],
+      ])('does not resend a %s after a failure it may have survived', async (method, error) => {
+        mockedAxios.mockRejectedValue(error);
+        await expect(call(method)).rejects.toBeDefined();
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+      });
+
+      it.each(['GET', 'PUT'])('still retries a %s that timed out', async (method) => {
+        mockedAxios
+          .mockRejectedValueOnce(timeout())
+          .mockResolvedValueOnce({ data: { ok: true } });
+        await expect(call(method)).resolves.toEqual({ ok: true });
+        expect(mockedAxios).toHaveBeenCalledTimes(2);
+      });
+
+      it.each(['ECONNREFUSED', 'EAI_AGAIN', 'EPROTO'])(
+        'retries a POST that never left (%s)',
+        async (code) => {
+          mockedAxios
+            .mockRejectedValueOnce(err(undefined, code))
+            .mockResolvedValueOnce({ data: { ok: true } });
+          await expect(call('POST')).resolves.toEqual({ ok: true });
+          expect(mockedAxios).toHaveBeenCalledTimes(2);
+        },
+      );
+
+      it('handles a 429 on a POST as before: one more attempt at most', async () => {
+        const limited = (retryAfter?: string) =>
+          new AxiosError('limited', undefined, undefined, {}, {
+            status: 429,
+            data: {},
+            headers: retryAfter === undefined ? {} : { 'retry-after': retryAfter },
+          } as any);
+        mockedAxios.mockRejectedValue(limited());
+        await expect(call('POST')).rejects.toBeInstanceOf(AxiosError);
+        expect(mockedAxios).toHaveBeenCalledTimes(2);
+
+        mockedAxios.mockReset();
+        mockedAxios.mockRejectedValue(limited('60'));
+        await expect(call('POST')).rejects.toBeInstanceOf(AxiosError);
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+      });
+
+      it('retries a POST on a 503 that says when to come back', async () => {
+        mockedAxios
+          .mockRejectedValueOnce(
+            new AxiosError('busy', undefined, undefined, {}, {
+              status: 503,
+              data: {},
+              headers: { 'retry-after': '0' },
+            } as any),
+          )
+          .mockResolvedValueOnce({ data: { ok: true } });
+        await expect(call('POST')).resolves.toEqual({ ok: true });
+        expect(mockedAxios).toHaveBeenCalledTimes(2);
+      });
+    });
   });
 
   /**

@@ -2,6 +2,7 @@ import { promises as dns, LookupAddress } from 'dns';
 import * as http from 'http';
 import * as https from 'https';
 import { isIP, LookupFunction } from 'net';
+import { urlForLog } from './log-safe-url.util';
 
 /**
  * SSRF guard for outbound HTTP/S calls performed on behalf of users.
@@ -211,7 +212,8 @@ export async function assertSafeOutboundUrl(
   try {
     parsed = new URL(url);
   } catch {
-    throw new SsrfBlockedError(`SSRF guard: invalid URL '${url}'`);
+    // Quoted in errors that reach logs: keep query values and keys in the path out.
+    throw new SsrfBlockedError(`SSRF guard: invalid URL '${urlForLog(url)}'`);
   }
 
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {

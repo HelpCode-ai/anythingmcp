@@ -10,6 +10,7 @@ import {
 import { GraphqlSchemaService } from './graphql-schema.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
+import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
 
 /**
  * GraphqlEngine — executes GraphQL queries/mutations.
@@ -33,6 +34,8 @@ export class GraphqlEngine {
       headers?: Record<string, string>;
       connectorId?: string;
       proxyUrl?: string;
+      // Masked in log lines; see RestEngine.
+      logSecrets?: readonly string[];
     },
     endpointMapping: {
       method: string; // "query" | "mutation" | "subscription" | "static"
@@ -67,7 +70,9 @@ export class GraphqlEngine {
       });
     }
 
-    this.logger.debug(`GraphQL ${endpointMapping.method} → ${config.baseUrl}`);
+    this.logger.debug(
+      `GraphQL ${endpointMapping.method} → ${urlForLog(config.baseUrl, { secrets: engineLogSecrets(config) })}`,
+    );
     await assertSafeOutboundUrl(config.baseUrl);
 
     const headers: Record<string, string> = {

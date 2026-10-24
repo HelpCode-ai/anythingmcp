@@ -11,6 +11,7 @@ import {
   type ClientAssertionSettings,
 } from './engines/client-assertion.util';
 import { outboundAxiosOptions } from '../common/outbound-http';
+import { urlForLog } from '../common/log-safe-url.util';
 
 export interface OAuthMetadata {
   issuer: string;
@@ -193,7 +194,7 @@ export class McpOAuthService {
         try {
           const metadata = await this.fetchAuthorizationServerMetadata(issuer);
           this.logger.debug(
-            `OAuth metadata for ${baseUrl} discovered via protected-resource document at ${candidate.url} (issuer ${issuer})`,
+            `OAuth metadata for ${urlForLog(baseUrl)} discovered via protected-resource document at ${urlForLog(candidate.url)} (issuer ${urlForLog(issuer)})`,
           );
           // No rebasing here: the resource explicitly named an external
           // authorization server, so its origin is intentional.
@@ -221,7 +222,7 @@ export class McpOAuthService {
       }
 
       this.logger.debug(
-        `OAuth metadata for ${baseUrl} discovered at ${candidate.url}`,
+        `OAuth metadata for ${urlForLog(baseUrl)} discovered at ${urlForLog(candidate.url)}`,
       );
       return this.rebaseUnreachableEndpoints(document as OAuthMetadata, base);
     }
@@ -342,7 +343,7 @@ export class McpOAuthService {
     opts: { tokenAuthMethod?: string; scope?: string } = {},
   ): Promise<RegisteredClient> {
     this.logger.debug(
-      `Registering OAuth client at ${registrationEndpoint}`,
+      `Registering OAuth client at ${urlForLog(registrationEndpoint)}`,
     );
     const requested = opts.tokenAuthMethod || 'client_secret_post';
 
@@ -496,7 +497,7 @@ export class McpOAuthService {
     }
 
     this.logger.debug(
-      `Exchanging auth code at ${params.tokenUrl} (auth=${privateKeyJwt ? 'private_key_jwt' : useBasic ? 'basic' : params.tokenAuthMethod === 'none' ? 'none' : 'post'})`,
+      `Exchanging auth code at ${urlForLog(params.tokenUrl)} (auth=${privateKeyJwt ? 'private_key_jwt' : useBasic ? 'basic' : params.tokenAuthMethod === 'none' ? 'none' : 'post'})`,
     );
 
     await assertSafeOutboundUrl(params.tokenUrl);

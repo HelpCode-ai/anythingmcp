@@ -14,6 +14,7 @@ import { RestEngine } from './engines/rest.engine';
 import { attachResponseMeta } from './engines/response-headers.util';
 import { SoapEngine, WsdlReadError } from './engines/soap.engine';
 import { wsdlUrlForLog } from './parsers/wsdl.parser';
+import { connectorSecretValues } from './connector-secrets.util';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
@@ -352,6 +353,8 @@ export class ConnectorsService {
         (connector.headers as Record<string, string>) || undefined,
         envVars,
       );
+      // Masked in the engines' log lines.
+      const logSecrets = connectorSecretValues(connector);
 
       // A connector whose credentials were never filled in would otherwise send
       // "{{MY_TOKEN}}" upstream and report the vendor's complaint about it,
@@ -389,6 +392,7 @@ export class ConnectorsService {
               // spent one, and its next refresh was refused as revoked.
               connectorId: connector.id,
               errorWhen: connectorErrorWhen(connector.config),
+              logSecrets,
             },
             { method: 'GET', path },
             {},
@@ -403,6 +407,7 @@ export class ConnectorsService {
               authConfig,
               headers,
               connectorId: connector.id,
+              logSecrets,
             },
             { method: 'query', path: '{ __typename }' },
             {},
@@ -447,6 +452,7 @@ export class ConnectorsService {
             headers,
             connectorId: connector.id,
             mcpPath: mcpPathOf(connector.config),
+            logSecrets,
           });
           return {
             ok: true,
@@ -504,6 +510,7 @@ export class ConnectorsService {
       headers,
       connectorId: connector.id,
       mcpPath,
+      logSecrets: connectorSecretValues(connector),
     });
     return remote.map((rt) => ({
       name: rt.name,
@@ -815,6 +822,7 @@ export class ConnectorsService {
       specUrl: connector.specUrl ?? undefined,
       connectorId: connector.id,
       errorWhen: connectorErrorWhen(connector.config),
+      logSecrets: connectorSecretValues(connector),
       ...(options.useProxy && process.env.CONNECTOR_PROXY_URL
         ? { proxyUrl: process.env.CONNECTOR_PROXY_URL }
         : {}),
