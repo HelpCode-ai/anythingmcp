@@ -366,6 +366,13 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `MCP_API_KEY` | No | API key for legacy MCP auth |
 | `SERVER_URL` | No | Server URL for OAuth2 metadata (default: `http://localhost:4000`) |
 | `MCP_RATE_LIMIT_PER_MINUTE` | No | Rate limit per client (default: 60) |
+| `SMTP_HOST` | No | SMTP server for instance emails; used when no SMTP is configured in the admin Settings page |
+| `SMTP_PORT` | No | SMTP port (default: 587) |
+| `SMTP_SECURE` | No | `true` for implicit TLS (default: `false`; always on for port 465) |
+| `SMTP_USER` | No | SMTP username |
+| `SMTP_PASS` | No | SMTP password |
+| `SMTP_FROM` | No | Sender address (default: `AnythingMCP <SMTP_USER>`) |
+| `SMTP_REPLY_TO` | No | Reply-To address, for when `SMTP_FROM` is a noreply address |
 | `COMPOSE_PROFILES` | No | Set to `proxy` to enable Caddy reverse proxy |
 | `DOMAIN` | No | Domain for Caddy SSL certificate (e.g., `example.com`) |
 | `ACME_EMAIL` | No | Email for Let's Encrypt certificate notifications |
