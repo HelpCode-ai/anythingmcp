@@ -69,6 +69,8 @@ export function GuideIntro({
   onStart,
   onRestart,
   onShowForm,
+  skipTo,
+  onSkip,
 }: {
   info: AdapterSetupInfo;
   guide: SetupGuide;
@@ -77,6 +79,9 @@ export function GuideIntro({
   onStart: () => void;
   onRestart: () => void;
   onShowForm: () => void;
+  /** A connector being finished: the step to jump to when the rest is done. */
+  skipTo?: { index: number; title: string } | null;
+  onSkip?: () => void;
 }) {
   const short = info.name.split(' ')[0];
   return (
@@ -138,7 +143,14 @@ export function GuideIntro({
             </button>
           </>
         ) : (
-          <Button onClick={onStart}>Start</Button>
+          <>
+            <Button onClick={onStart}>Start</Button>
+            {skipTo && onSkip && (
+              <button type="button" onClick={onSkip} className="text-sm text-[var(--text-3)] underline hover:text-[var(--text)]">
+                Done the rest already? Go to step {skipTo.index + 1}: {skipTo.title}
+              </button>
+            )}
+          </>
         )}
       </div>
       <p className="text-xs text-[var(--text-3)]">

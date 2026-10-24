@@ -357,6 +357,8 @@ test('setupGuide asks for every required variable once, with https links and rea
   assert.ok(rules({ setupGuide: { ...ok, steps: [{ ...ok.steps[0], values: [{ label: 'Key', value: '{{GOOD_KEY}}' }] }] } }).includes('setup-guide-values'));
   assert.deepEqual(rules({ setupGuide: { ...ok, steps: [{ ...ok.steps[0], values: [{ label: 'Callback', value: '{{redirectUri}}' }] }] } }), []);
   assert.ok(rules({ setupGuide: { ...ok, steps: [{ ...ok.steps[0], image: { src: '/no-such-shot.png', alt: 'x', capturedAt: '2026-10-22' } }] } }).includes('setup-guide-image'));
+  // Protocol-relative: would load from another host.
+  assert.ok(rules({ setupGuide: { ...ok, steps: [{ ...ok.steps[0], image: { src: '//evil.example/shot.png', alt: 'x', capturedAt: '2026-10-22' } }] } }).includes('setup-guide-image'));
 
   // An advanced required variable (a token the sign-in fills in) is not asked for.
   assert.deepEqual(rules({ requiredEnvVars: ['GOOD_KEY', 'GOOD_TOKEN'], envVarMeta: { GOOD_TOKEN: { advanced: true } }, setupGuide: ok }), []);

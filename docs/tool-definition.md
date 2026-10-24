@@ -275,9 +275,9 @@ menus deep. Adapters without one keep the form.
   button (`"pick": true` for an option to select, without one). Only
   `{{redirectUri}}` is filled in: the OAuth callback URL of the instance.
 - `fields`: the variables entered in that step. Every required variable that
-  is not `advanced` is asked for in exactly one step; the last step with
-  fields checks them against the API and installs (or sends the user to the
-  provider's sign-in).
+  is not `advanced` is asked for in exactly one step; the last step checks
+  them against the API and installs (or sends the user to the provider's
+  sign-in), so put the fields there or before it.
 - `image`: a real screenshot under `packages/frontend/public`, with `alt` and
   `capturedAt`. Leave it out rather than add a mock-up.
 - `confirm`: a checkbox the user ticks before continuing, for a step that

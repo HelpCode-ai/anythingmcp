@@ -92,13 +92,19 @@ interface Calls {
   events: any[];
 }
 
-async function setup(page: Page, opts: { verify?: any; calls30d?: number } = {}): Promise<Calls> {
+async function setup(page: Page, opts: { verify?: any; calls30d?: number; authMode?: string } = {}): Promise<Calls> {
   const calls: Calls = { verify: [], imports: [], authorize: [], events: [] };
   await page.context().addCookies([{ name: 'amcp_token', value: 'test-token', url: 'http://localhost:3100' }]);
   await page.addInitScript((user) => {
     localStorage.setItem('amcp_token', 'test-token');
     localStorage.setItem('amcp_user', JSON.stringify(user));
   }, USER);
+  await page.route(/\/health\/server-info/, (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ mcpAuthMode: opts.authMode ?? 'oauth2', serverUrl: '', mcpEndpoint: '', deploymentMode: 'self-hosted' }),
+    }),
+  );
   await page.route(/\/api\//, async (route) => {
     const req = route.request();
     const url = req.url();
@@ -292,4 +298,26 @@ test('marketplace: each card says what the setup takes, and can be filtered by i
   await page.getByRole('group', { name: 'Setup' }).getByRole('button', { name: /Own app/ }).click();
   await expect(page.getByText('1 of 3 adapters')).toBeVisible();
   await expect(page.getByText('Telegram Bot', { exact: true })).toHaveCount(0);
+});
+
+test('finishing an existing connector can skip to the keys, and a refusal does not follow you back', async ({ page }) => {
+  await setup(page, { verify: { ok: false, kind: 'auth_failed', status: 403, message: 'Etsy does not accept these app keys yet.' } });
+  await page.goto('/connectors/setup/etsy?connector=c9');
+  await page.getByRole('button', { name: 'Done the rest already? Go to step 3: Copy your keys and sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Copy your keys and sign in' })).toBeVisible();
+  await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
+  await page.getByLabel('Shared secret').fill('s3cr3t0abc');
+  await page.getByRole('button', { name: 'Check and sign in to Etsy' }).click();
+  await expect(page.getByText('Etsy does not accept these app keys yet.')).toBeVisible();
+  await page.getByRole('button', { name: 'Back' }).click();
+  await expect(page.getByRole('heading', { name: 'Add the callback URL' })).toBeVisible();
+  await expect(page.getByText('Etsy does not accept these app keys yet.')).toHaveCount(0);
+});
+
+test('success: an instance on API keys does not send people to add the URL in Claude', async ({ page }) => {
+  await setup(page, { authMode: 'legacy' });
+  await page.goto('/connectors/setup/woocommerce?connector=c9&step=done');
+  await expect(page.getByRole('heading', { name: 'WooCommerce is connected' })).toBeVisible();
+  await expect(page.getByTestId('setup-no-oauth')).toBeVisible();
+  await expect(page.getByRole('link', { name: /Add to Claude/ })).toHaveCount(0);
 });
