@@ -39,6 +39,31 @@ import { containsMimeMarker, expandMimeMarkers } from './mime-message.util';
 const MAX_RETRY_AFTER_MS = 3000;
 
 /**
+ * Methods we never send twice unless the API provably did not run the first
+ * one: each send of a POST or PATCH can create or charge again (a Replicate
+ * prediction, a Perplexity agent run). DELETE is idempotent by RFC 9110, but
+ * plenty of APIs attach side effects to it (cancel and refund, pop a queue),
+ * and a resent DELETE that had worked answers 404, which reads as a failure.
+ */
+const NON_IDEMPOTENT_METHODS = new Set(['POST', 'PATCH', 'DELETE']);
+
+/**
+ * Connection-level codes that mean no HTTP request was written: a temporary
+ * DNS failure, a refused TCP connection (an API that is restarting), or a TLS
+ * handshake the other side rejected. Retrying these is safe for every method.
+ * ENOTFOUND is left out: a name that does not exist will not exist in 3 s.
+ */
+const NOT_SENT_CODES = ['EAI_AGAIN', 'ECONNREFUSED', 'EPROTO'];
+
+/**
+ * Codes that can come after the request was sent. axios raises ECONNABORTED
+ * (ETIMEDOUT with clarifyTimeoutError) for a slow connect and a slow response
+ * alike, with nothing in the error to tell them apart, and a reset can cut the
+ * exchange after the API received it. The API may have run the request.
+ */
+const MAYBE_SENT_CODES = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'];
+
+/**
  * Retry-After as milliseconds: delay-seconds or an HTTP date (RFC 9110
  * 10.2.3). Null when absent or unreadable.
  */
@@ -583,10 +608,16 @@ export class RestEngine {
   }
 
   /**
-   * Whether an error is a transient failure worth retrying. We only retry on
-   * signals that strongly imply the origin did NOT process the request:
-   * 421/429/502/503/504/529 responses, or connection-level failures with no
-   * response. This keeps non-idempotent writes safe (a 500 is never retried).
+   * Whether an error is a transient failure worth retrying. A 500 is never
+   * retried. For GET, PUT and the other idempotent methods we also retry
+   * 502/503/504 and every connection-level failure in NOT_SENT_CODES and
+   * MAYBE_SENT_CODES.
+   *
+   * POST, PATCH and DELETE are only retried on signals that the API did NOT
+   * run the request: 421, 429, 529, a 503 with Retry-After, or a code in
+   * NOT_SENT_CODES. A timeout, a reset or a 502/504 from a gateway can come
+   * after the API ran it, and retrying a 30 s timeout used to run (and bill)
+   * a paid image or LLM call up to four times.
    *
    * 529 is not in the HTTP registry, but TypeSafe (and Anthropic) answer it
    * when they are overloaded and turned the request away, and document it as
@@ -599,20 +630,22 @@ export class RestEngine {
    * request.
    *
    * EPROTO is a TLS-level failure while writing (e.g. the origin or an
-   * intermediary aborts the handshake with an alert). Like the other codes
-   * here, the request never reached the application, so a retry is safe.
+   * intermediary aborts the handshake with an alert). The request never
+   * reached the application, so a retry is safe for every method.
    */
-  private isTransientError(error: unknown): boolean {
+  private isTransientError(error: unknown, method: string): boolean {
     if (!(error instanceof AxiosError)) return false;
+    const resendable = !NON_IDEMPOTENT_METHODS.has(method);
     const status = error.response?.status;
-    if (status) return [421, 429, 502, 503, 504, 529].includes(status);
-    return [
-      'ECONNRESET',
-      'ETIMEDOUT',
-      'EAI_AGAIN',
-      'ECONNABORTED',
-      'EPROTO',
-    ].includes(error.code ?? '');
+    if (status) {
+      if ([421, 429, 529].includes(status)) return true;
+      if (status === 503 && parseRetryAfterMs(error.response?.headers?.['retry-after']) !== null) {
+        return true;
+      }
+      return resendable && [502, 503, 504].includes(status);
+    }
+    const code = error.code ?? '';
+    return NOT_SENT_CODES.includes(code) || (resendable && MAYBE_SENT_CODES.includes(code));
   }
 
   /**
@@ -667,16 +700,22 @@ export class RestEngine {
    * the original as `cause` and the code in the text for support. Only touches
    * errors that never reached the application (no HTTP response), so nothing
    * that carries a status — and therefore an API-level meaning — is reworded.
+   * A write that may have arrived says so, so the model checks before it sends
+   * the call again itself.
    */
-  private describeConnectionError(error: unknown, attempts: number): unknown {
+  private describeConnectionError(error: unknown, attempts: number, method: string): unknown {
     if (!(error instanceof AxiosError) || error.response) return error;
     const hint = RestEngine.CONNECTION_ERROR_HINTS[error.code ?? ''];
     if (!hint) return error;
 
     const tried =
       attempts > 1 ? ` after ${attempts} attempts` : '';
+    const mayHaveRun =
+      NON_IDEMPOTENT_METHODS.has(method) && MAYBE_SENT_CODES.includes(error.code ?? '')
+        ? ` The API may still have run this ${method}: check its result before sending it again.`
+        : '';
     const wrapped = new Error(
-      `Could not reach the API${tried}: ${hint} (${error.code}).`,
+      `Could not reach the API${tried}: ${hint} (${error.code}).${mayHaveRun}`,
       { cause: error },
     );
     (wrapped as { code?: string }).code = error.code;
@@ -694,12 +733,13 @@ export class RestEngine {
     const delaysMs = [300, 900, 2500];
     const badHeaders = Object.keys(axiosConfig.headers ?? {}).filter((n) => !isValidHeaderName(n));
     if (badHeaders.length > 0) throw new Error(describeInvalidHeaderNames(badHeaders));
+    const method = String(axiosConfig.method ?? 'GET').toUpperCase();
     for (let attempt = 0; ; attempt++) {
       try {
         if (attempt > 0) rebuildBody(axiosConfig, outbound.data);
         return await outboundRequest(axiosConfig, outbound);
       } catch (error) {
-        const transient = this.isTransientError(error);
+        const transient = this.isTransientError(error, method);
         const delay = transient ? this.retryDelayMs(error, attempt, delaysMs) : null;
         if (delay === null) {
           // Warn, not debug: production runs at info, so a call that burned
@@ -710,10 +750,10 @@ export class RestEngine {
               `Gave up after ${attempt + 1} attempts on a transient upstream failure: ${
                 (error as AxiosError).code ??
                 (error as AxiosError).response?.status
-              } ${axiosConfig.method?.toUpperCase()} ${axiosConfig.url}`,
+              } ${method} ${axiosConfig.url}`,
             );
           }
-          throw this.describeConnectionError(error, attempt + 1);
+          throw this.describeConnectionError(error, attempt + 1, method);
         }
         this.logger.debug(
           `Transient error (attempt ${attempt + 1}), retrying in ${delay}ms`,
