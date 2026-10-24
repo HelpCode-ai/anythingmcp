@@ -7,7 +7,7 @@
     "Falco boekhouding",
     "Falco comptabilite"
   ],
-  "description": "Falco, Belgian accounting and Peppol e-invoicing: purchase and sale documents with their files, invoices received over Peppol, Peppol participant lookups, and the customers, articles and invoices of the Falco invoicing module. Mostly read-only; Peppol invoice responses are installed switched off.",
+  "description": "Falco, Belgian accounting and Peppol e-invoicing: purchase and sale documents with their files, invoices received over Peppol, Peppol participant lookups, and the customers, articles and invoices of the Falco invoicing module. Mostly read-only; setting a purchase's payment status and Peppol invoice responses are installed switched off.",
   "region": "be",
   "category": "accounting",
   "icon": "falco",
