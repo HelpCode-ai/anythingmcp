@@ -1,0 +1,811 @@
+{
+  "slug": "xovi",
+  "name": "XOVI",
+  "aliases": [
+    "XOVI Suite",
+    "XOVI SEO"
+  ],
+  "description": "XOVI Suite SEO data, read-only: API credit balance, visibility index (OVI) history, ranking keywords, ranking value and keyword history of any domain, and the daily keyword monitoring of your projects.",
+  "region": "de",
+  "category": "analytics",
+  "icon": "xovi",
+  "docsUrl": "https://developers.xovi.net/einstieg/",
+  "instructions": "## XOVI\nThis connector reads the **XOVI Suite API** (developers.xovi.net), the German SEO toolbox: API credit balance, the weekly domain analysis (visibility index OVI, ranking keywords, ranking value, keyword history and search results) and the daily keyword monitoring of your projects. It is read-only and calls `https://suite.xovi.net/api` directly.\n\n**Setup**\n1. The API needs a XOVI Pro, Business or Enterprise account.\n2. In the XOVI Suite open **Account > API Dashboard**, create your personal API key and paste it into `XOVI_API_KEY`. It is sent as the `key` parameter on every call.\n3. Install and run `xovi_get_credit_state`, which costs no credits, to check the key.\n\n**Credits**: most calls are paid from the account's API credit budget (per call or per block of rows, see each function in the XOVI reference); calls that only read your own account data are free. Check the balance with `xovi_get_credit_state` and `xovi_get_limits` before large exports, keep `limit` small, and do not loop over many domains without the user's go-ahead. Monitoring keyword slots are counted separately: `xovi_get_monitoring_keyword_limits`.\n\n**Workflow**\n- Domain analysis (weekly crawl): pick the search engine host with `xovi_list_search_engines` (default weekly, e.g. `google.de`), then `xovi_get_ovi_trend` for visibility over time, `xovi_list_ranking_keywords` for what a domain ranks for, `xovi_get_ranking_value`, `xovi_get_ranking_trend`, `xovi_get_keyword_trend` for one keyword, `xovi_get_keyword_serp` for the results page of a keyword. `urlpattern` takes a host (`www.example.com`), all subdomains (`example.com/*`) or a directory (`www.example.com/blog/*`). Data of a week is published on Sunday; `date` is that Sunday.\n- Monitoring (daily crawl): `xovi_list_projects` (project hash), `xovi_list_labels`, `xovi_list_search_engines` with interval `daily` (numeric `sengineid`), then `xovi_list_monitoring_domains`, `xovi_list_monitoring_keywords`, `xovi_get_monitoring_keyword_trend`, `xovi_get_monitoring_serp` and `xovi_get_monitoring_ovi_trend`.\n\n**Paging**: `limit` is at most 1000 rows; `skip` counts pages of `limit` rows (skip 1 with limit 100 returns rows 101 to 200). Results carry `resultCount` for the unfiltered total.\n\n**Errors**: XOVI answers HTTP 200 with `apiErrorCode` and `apiErrorMessage`; this connector turns them into errors. `param invalid` on `key` means a wrong or deleted API key; `no permission` means the key or plan may not use that function; `cost error` means the credit budget is used up until the next refill; `param missing` or `param invalid` on another field names the field to fix. `result empty` is a successful call without data (e.g. a domain without rankings).",
+  "prerequisites": "A XOVI Pro, Business or Enterprise account and a personal API key from Account > API Dashboard in the XOVI Suite.",
+  "requiredEnvVars": [
+    "XOVI_API_KEY"
+  ],
+  "envVarMeta": {
+    "XOVI_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "XOVI Suite, Account, API Dashboard: your personal API key.",
+      "link": "https://suite.xovi.net",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the API key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "XOVI refused the API key (param invalid: key). Copy it again from Account > API Dashboard in the XOVI Suite.",
+    "403": "The key works, but it or the plan has no permission for this function.",
+    "rate_limited": "The XOVI API credits are used up until the next refill. Check xovi_get_credit_state or book more credits with XOVI."
+  },
+  "probe": {
+    "tool": "xovi_get_credit_state"
+  },
+  "connector": {
+    "name": "XOVI Suite API",
+    "type": "REST",
+    "baseUrl": "https://suite.xovi.net/api",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "key": "{{XOVI_API_KEY}}"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "paramname",
+          "equals": "key",
+          "messagePath": "apiErrorMessage",
+          "status": 401
+        },
+        {
+          "path": "apiErrorMessage",
+          "matches": "^no permission",
+          "status": 403
+        },
+        {
+          "path": "apiErrorMessage",
+          "matches": "^cost error",
+          "status": 429
+        },
+        {
+          "path": "apiErrorMessage",
+          "matches": "^internal error",
+          "status": 502
+        },
+        {
+          "path": "apiErrorMessage",
+          "matches": "^(param missing|param invalid|maximum limit|urlpattern not supported)",
+          "messagePath": [
+            "apiErrorMessage",
+            "paramname"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "xovi_get_credit_state",
+      "description": "Get the API credit balance: credits per interval, additionally booked credits, credits used and left, and the last refill date. Costs no credits; use it to check the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/getCreditstate",
+        "queryParams": {
+          "format": "json"
+        }
+      }
+    },
+    {
+      "name": "xovi_get_limits",
+      "description": "Get the usage limits of the XOVI account per tool area (name and value), e.g. API credits and free export credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/getXoviLimits",
+        "queryParams": {
+          "format": "json"
+        }
+      }
+    },
+    {
+      "name": "xovi_list_search_engines",
+      "description": "List the search engines XOVI crawls: id, host (e.g. google.de), country and city. Weekly engines are used by the domain analysis tools (sengine), daily engines by the keyword monitoring tools (sengineid).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "interval": {
+            "type": "string",
+            "description": "weekly (default, for domain analysis) or daily (for keyword monitoring).",
+            "enum": [
+              "weekly",
+              "daily"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords/getSearchEngines",
+        "queryParams": {
+          "format": "json",
+          "interval": "$interval",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "xovi_get_ovi_trend",
+      "description": "Get the weekly visibility index (OVI) history of a domain, subdomain, directory or URL in one search engine: date and staticOvi per week.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "urlpattern": {
+            "type": "string",
+            "description": "Domain or URL pattern, e.g. www.example.com, example.com/* for all subdomains, or www.example.com/blog/* for a directory."
+          },
+          "sengine": {
+            "type": "string",
+            "description": "Weekly crawled search engine host, e.g. google.de, google.at, google.ch; see xovi_list_search_engines."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          },
+          "date": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD. Start from this crawl date; default the latest."
+          }
+        },
+        "required": [
+          "urlpattern",
+          "sengine"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords/getStaticOviTrend",
+        "queryParams": {
+          "format": "json",
+          "urlpattern": "$urlpattern",
+          "sengine": "$sengine",
+          "limit": "$limit",
+          "skip": "$skip",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "xovi_list_ranking_keywords",
+      "description": "List the keywords a domain or URL ranks for in one search engine in a weekly crawl: keyword, best ranking URL, position, change to the previous week (N for new), CPC, search volume (sevo) and competition.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "urlpattern": {
+            "type": "string",
+            "description": "Domain or URL pattern, e.g. www.example.com, example.com/* for all subdomains, or www.example.com/blog/* for a directory."
+          },
+          "sengine": {
+            "type": "string",
+            "description": "Weekly crawled search engine host, e.g. google.de, google.at, google.ch; see xovi_list_search_engines."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          },
+          "date": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD. The Sunday of the crawl week; default the latest week."
+          }
+        },
+        "required": [
+          "urlpattern",
+          "sengine"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords/getKeywords",
+        "queryParams": {
+          "format": "json",
+          "urlpattern": "$urlpattern",
+          "sengine": "$sengine",
+          "limit": "$limit",
+          "skip": "$skip",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "xovi_get_ranking_value",
+      "description": "Get the ranking value of a domain or directory: its traffic value computed from positions, search volume, CPC and click share, for one week.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "urlpattern": {
+            "type": "string",
+            "description": "Domain or URL pattern, e.g. www.example.com, example.com/* for all subdomains, or www.example.com/blog/* for a directory."
+          },
+          "sengine": {
+            "type": "string",
+            "description": "Weekly crawled search engine host, e.g. google.de, google.at, google.ch; see xovi_list_search_engines."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD. Default the previous week."
+          }
+        },
+        "required": [
+          "urlpattern",
+          "sengine"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords/getRankingValue",
+        "queryParams": {
+          "format": "json",
+          "urlpattern": "$urlpattern",
+          "sengine": "$sengine",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "xovi_get_ranking_trend",
+      "description": "Get the weekly history of a domain: number of ranking keywords, rankings and keywords on page one per date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "urlpattern": {
+            "type": "string",
+            "description": "Domain or URL pattern, e.g. www.example.com, example.com/* for all subdomains, or www.example.com/blog/* for a directory."
+          },
+          "sengine": {
+            "type": "string",
+            "description": "Weekly crawled search engine host, e.g. google.de, google.at, google.ch; see xovi_list_search_engines."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD. Start date of the history."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "urlpattern",
+          "sengine"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords/getRankingTrend",
+        "queryParams": {
+          "format": "json",
+          "urlpattern": "$urlpattern",
+          "sengine": "$sengine",
+          "date": "$date",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "xovi_get_keyword_trend",
+      "description": "Get the weekly ranking history of one keyword for a domain: date, position and ranking URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "urlpattern": {
+            "type": "string",
+            "description": "Domain or URL pattern, e.g. www.example.com, example.com/* for all subdomains, or www.example.com/blog/* for a directory."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "The keyword, e.g. seo tool."
+          },
+          "sengine": {
+            "type": "string",
+            "description": "Weekly crawled search engine host, e.g. google.de, google.at, google.ch; see xovi_list_search_engines."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          },
+          "date": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD. Default today."
+          }
+        },
+        "required": [
+          "urlpattern",
+          "keyword",
+          "sengine"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords/getKeywordTrend",
+        "queryParams": {
+          "format": "json",
+          "urlpattern": "$urlpattern",
+          "keyword": "$keyword",
+          "sengine": "$sengine",
+          "limit": "$limit",
+          "skip": "$skip",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "xovi_get_keyword_serp",
+      "description": "Get the ranking URLs and positions for one keyword in a search engine (the search result page of the weekly crawl).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "The keyword."
+          },
+          "sengine": {
+            "type": "string",
+            "description": "Weekly crawled search engine host, e.g. google.de, google.at, google.ch; see xovi_list_search_engines."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 10).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          },
+          "date": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD. Default the previous week."
+          }
+        },
+        "required": [
+          "keyword",
+          "sengine"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords/getKeywordRankings",
+        "queryParams": {
+          "format": "json",
+          "keyword": "$keyword",
+          "sengine": "$sengine",
+          "limit": "$limit",
+          "skip": "$skip",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "xovi_list_projects",
+      "description": "List the XOVI projects: hash (projhash for the monitoring OVI), name, main domain and competitors. Filter by domain.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Only projects of this domain."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 10).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/getProjects",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "xovi_list_labels",
+      "description": "List the labels with hash, name and categories; a hash is the labelid of the monitoring tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Only labels of this category, e.g. projects."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/getLabels",
+        "queryParams": {
+          "format": "json",
+          "category": "$category",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "xovi_list_monitoring_domains",
+      "description": "List the domains in the daily keyword monitoring, optionally for one search engine.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 50).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          },
+          "sengineid": {
+            "type": "string",
+            "description": "Id of a daily crawled search engine, from xovi_list_search_engines with interval daily."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/monitor/getDomains",
+        "queryParams": {
+          "format": "json",
+          "limit": "$limit",
+          "skip": "$skip",
+          "sengineid": "$sengineid"
+        }
+      }
+    },
+    {
+      "name": "xovi_list_monitoring_keywords",
+      "description": "List the keywords in the daily monitoring with their latest position, change to the previous day, ranking URL, universal search type, search volume, CPC, device and labels. Filter by keyword, domain, search engine, label, ranking state, position range, URL, date or device.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Only this keyword."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Only this monitored domain."
+          },
+          "sengineid": {
+            "type": "string",
+            "description": "Id of a daily crawled search engine, from xovi_list_search_engines with interval daily."
+          },
+          "labelid": {
+            "type": "string",
+            "description": "Label hash, from xovi_list_labels."
+          },
+          "isRanking": {
+            "type": "integer",
+            "description": "-1 all (default), 1 only ranking, 2 only not ranking.",
+            "enum": [
+              -1,
+              1,
+              2
+            ]
+          },
+          "posMin": {
+            "type": "integer",
+            "description": "Lowest position (default 0)."
+          },
+          "posMax": {
+            "type": "integer",
+            "description": "Highest position (default 120)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Only keywords whose best ranking URL is this one."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD. Crawl day; default each keyword's latest crawl."
+          },
+          "device": {
+            "type": "integer",
+            "description": "1 desktop, 2 tablet, 3 smartphone.",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/monitor/getKeywords",
+        "queryParams": {
+          "format": "json",
+          "limit": "$limit",
+          "skip": "$skip",
+          "keyword": "$keyword",
+          "domain": "$domain",
+          "sengineid": "$sengineid",
+          "labelid": "$labelid",
+          "isRanking": "$isRanking",
+          "posMin": "$posMin",
+          "posMax": "$posMax",
+          "url": "$url",
+          "date": "$date",
+          "device": "$device"
+        }
+      }
+    },
+    {
+      "name": "xovi_get_monitoring_keyword_trend",
+      "description": "Get the daily ranking history of a monitored keyword for a domain: crawl date and time, position, change, URL and universal search type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sengineid": {
+            "type": "string",
+            "description": "Id of a daily crawled search engine, from xovi_list_search_engines with interval daily."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Monitored domain, e.g. www.example.com."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Monitored keyword."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 1).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          },
+          "ignoreUSearch": {
+            "type": "integer",
+            "description": "-1 all (default), 1 only where universal search is ignored, 2 only where it counts.",
+            "enum": [
+              -1,
+              1,
+              2
+            ]
+          }
+        },
+        "required": [
+          "sengineid",
+          "domain",
+          "keyword"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/monitor/getKeywordTrend",
+        "queryParams": {
+          "format": "json",
+          "sengineid": "$sengineid",
+          "domain": "$domain",
+          "keyword": "$keyword",
+          "limit": "$limit",
+          "skip": "$skip",
+          "ignoreUSearch": "$ignoreUSearch"
+        }
+      }
+    },
+    {
+      "name": "xovi_get_monitoring_serp",
+      "description": "Get the top 100 search results of a monitored keyword on a day: domain, URL, page, position and universal search type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Monitored keyword."
+          },
+          "sengineid": {
+            "type": "string",
+            "description": "Id of a daily crawled search engine, from xovi_list_search_engines with interval daily."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 120).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          },
+          "date": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD. Default yesterday."
+          }
+        },
+        "required": [
+          "keyword",
+          "sengineid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/monitor/getKeywordRankings",
+        "queryParams": {
+          "format": "json",
+          "keyword": "$keyword",
+          "sengineid": "$sengineid",
+          "limit": "$limit",
+          "skip": "$skip",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "xovi_get_monitoring_ovi_trend",
+      "description": "Get the daily monitoring OVI history of a project domain, optionally per device, search engine, label or competitor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projhash": {
+            "type": "string",
+            "description": "Project hash, from xovi_list_projects."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Pages to skip; one page is limit rows (default 0).",
+            "minimum": 0
+          },
+          "device": {
+            "type": "integer",
+            "description": "1 desktop (default), 2 tablet, 3 smartphone.",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          },
+          "sengineid": {
+            "type": "string",
+            "description": "Id of a daily crawled search engine, from xovi_list_search_engines with interval daily."
+          },
+          "labelid": {
+            "type": "string",
+            "description": "Label hash, from xovi_list_labels."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD. Start date; the nearest earlier OVI is used when none exists that day."
+          },
+          "competitor": {
+            "type": "string",
+            "description": "Competitor domain of the project."
+          }
+        },
+        "required": [
+          "projhash"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/monitor/getOviTrend",
+        "queryParams": {
+          "format": "json",
+          "projhash": "$projhash",
+          "limit": "$limit",
+          "skip": "$skip",
+          "device": "$device",
+          "sengineid": "$sengineid",
+          "labelid": "$labelid",
+          "date": "$date",
+          "competitor": "$competitor"
+        }
+      }
+    },
+    {
+      "name": "xovi_get_monitoring_keyword_limits",
+      "description": "Get how many monitoring keyword credits the account has in total and how many are used.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/monitor/getKeywordLimits",
+        "queryParams": {
+          "format": "json"
+        }
+      }
+    }
+  ]
+}

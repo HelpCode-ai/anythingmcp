@@ -45,6 +45,17 @@ describe('sportmonks adapter: static spec conformance', () => {
     }
   });
 
+  it('maps pre-match odds of one fixture by market and by bookmaker', () => {
+    const byMarket = tool('sportmonks_get_prematch_odds_by_market');
+    expect(byMarket.endpointMapping.path).toBe('/football/odds/pre-match/fixtures/{fixture_id}/markets/{market_id}');
+    expect(byMarket.parameters.required).toEqual(['fixture_id', 'market_id']);
+    expect(byMarket.endpointMapping.queryParams).toEqual({ include: '$include', select: '$select', filters: '$filters', locale: '$locale' });
+    const byBookmaker = tool('sportmonks_get_prematch_odds_by_bookmaker');
+    expect(byBookmaker.endpointMapping.path).toBe('/football/odds/pre-match/fixtures/{fixture_id}/bookmakers/{bookmaker_id}');
+    expect(byBookmaker.parameters.required).toEqual(['fixture_id', 'bookmaker_id']);
+    expect(byBookmaker.endpointMapping.queryParams).toEqual(byMarket.endpointMapping.queryParams);
+  });
+
   it('keeps data, paging, rate limit and the plan message, and drops the subscription block', () => {
     const raw = {
       data: [{ id: 9, name: 'Championship' }],

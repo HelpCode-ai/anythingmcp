@@ -42,7 +42,7 @@ describe('fatture-in-cloud adapter — static spec conformance', () => {
 
   it("sends list filters as `q`, the only filter parameter the API reads", () => {
     const lists = a.tools.filter((t) => t.name.startsWith('fatture_in_cloud_list_') && t.endpointMapping.queryParams);
-    expect(lists.length).toBe(6);
+    expect(lists.length).toBe(7);
     for (const t of lists) {
       const q = t.endpointMapping.queryParams as Record<string, unknown>;
       expect(q.q).toBe('$filter');
@@ -81,6 +81,14 @@ describe('fatture-in-cloud adapter: e-invoice XML and received documents', () =>
       method: 'GET',
       path: '/c/{FIC_COMPANY_ID}/issued_documents/{documentId}/e_invoice/xml',
     });
+  });
+  it('lists the F24 tax payments and asks for the taxes:r scope', () => {
+    expect(t('fatture_in_cloud_list_f24').endpointMapping).toEqual({
+      method: 'GET',
+      path: '/c/{FIC_COMPANY_ID}/taxes',
+      queryParams: { q: '$filter', sort: '$sort', page: '$page', per_page: '$per_page' },
+    });
+    expect(String(a.connector.authConfig?.scopes).split(' ')).toContain('taxes:r');
   });
   it('reads one received document in detail', () => {
     expect(t('fatture_in_cloud_get_received_document').endpointMapping).toMatchObject({

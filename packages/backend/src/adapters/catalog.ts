@@ -69,6 +69,7 @@ import * as timetac from './de/timetac.json';
 import * as viesVat from './de/vies-vat.json';
 import * as weclapp from './de/weclapp.json';
 import * as xentral from './de/xentral.json';
+import * as xovi from './de/xovi.json';
 import * as zalandoZds from './de/zalando-zds.json';
 import * as zammad from './de/zammad.json';
 import * as znuny from './de/znuny.json';
@@ -121,6 +122,7 @@ import * as binderp from './intl/binderp.json';
 import * as bingWebmaster from './intl/bing-webmaster.json';
 import * as bitbucket from './intl/bitbucket.json';
 import * as bitrix24 from './intl/bitrix24.json';
+import * as blockcypher from './intl/blockcypher.json';
 import * as bluesky from './intl/bluesky.json';
 import * as botpress from './intl/botpress.json';
 import * as box from './intl/box.json';
@@ -136,6 +138,7 @@ import * as calendly from './intl/calendly.json';
 import * as canva from './intl/canva.json';
 import * as chargebee from './intl/chargebee.json';
 import * as chatwoot from './intl/chatwoot.json';
+import * as checko from './intl/checko.json';
 import * as circleci from './intl/circleci.json';
 import * as claap from './intl/claap.json';
 import * as clearbit from './intl/clearbit.json';
@@ -247,6 +250,7 @@ import * as harvest from './intl/harvest.json';
 import * as heap from './intl/heap.json';
 import * as height from './intl/height.json';
 import * as helium10 from './intl/helium10.json';
+import * as helius from './intl/helius.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
 import * as heygen from './intl/heygen.json';
@@ -261,6 +265,7 @@ import * as instagram from './intl/instagram.json';
 import * as instantly from './intl/instantly.json';
 import * as intercom from './intl/intercom.json';
 import * as invoiceNinja from './intl/invoice-ninja.json';
+import * as invoice123 from './intl/invoice123.json';
 import * as invoiced from './intl/invoiced.json';
 import * as iterable from './intl/iterable.json';
 import * as jev from './intl/jev.json';
@@ -295,6 +300,7 @@ import * as mastodon from './intl/mastodon.json';
 import * as matomo from './intl/matomo.json';
 import * as mautic from './intl/mautic.json';
 import * as medium from './intl/medium.json';
+import * as medmis from './intl/medmis.json';
 import * as mercury from './intl/mercury.json';
 import * as messagebird from './intl/messagebird.json';
 import * as metaAds from './intl/meta-ads.json';
@@ -324,6 +330,7 @@ import * as mssql from './intl/mssql.json';
 import * as mysql from './intl/mysql.json';
 import * as neon from './intl/neon.json';
 import * as netlify from './intl/netlify.json';
+import * as netskope from './intl/netskope.json';
 import * as netsuite from './intl/netsuite.json';
 import * as neverbounce from './intl/neverbounce.json';
 import * as newRelic from './intl/new-relic.json';
@@ -331,6 +338,7 @@ import * as newsapi from './intl/newsapi.json';
 import * as nextcloud from './intl/nextcloud.json';
 import * as nimble from './intl/nimble.json';
 import * as nominatim from './intl/nominatim.json';
+import * as noonPayments from './intl/noon-payments.json';
 import * as notion from './intl/notion.json';
 import * as novaPoshta from './intl/nova-poshta.json';
 import * as nutshellCrm from './intl/nutshell-crm.json';
@@ -399,6 +407,7 @@ import * as salesflare from './intl/salesflare.json';
 import * as salesforce from './intl/salesforce.json';
 import * as salesloft from './intl/salesloft.json';
 import * as sanity from './intl/sanity.json';
+import * as sapC4c from './intl/sap-c4c.json';
 import * as sapConcur from './intl/sap-concur.json';
 import * as sapS4hanaCloud from './intl/sap-s4hana-cloud.json';
 import * as sapS4hanaHana from './intl/sap-s4hana-hana.json';
@@ -442,12 +451,16 @@ import * as substack from './intl/substack.json';
 import * as supabase from './intl/supabase.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as synology from './intl/synology.json';
+import * as tabby from './intl/tabby.json';
 import * as tally from './intl/tally.json';
+import * as tamara from './intl/tamara.json';
 import * as tavily from './intl/tavily.json';
+import * as tbank from './intl/tbank.json';
 import * as teamworkProjects from './intl/teamwork-projects.json';
 import * as ted from './intl/ted.json';
 import * as telegramBot from './intl/telegram-bot.json';
 import * as telnyx from './intl/telnyx.json';
+import * as tezga from './intl/tezga.json';
 import * as theOddsApi from './intl/the-odds-api.json';
 import * as ticktick from './intl/ticktick.json';
 import * as tidio from './intl/tidio.json';
@@ -460,6 +473,7 @@ import * as tradingview from './intl/tradingview.json';
 import * as trello from './intl/trello.json';
 import * as trendyol from './intl/trendyol.json';
 import * as trenitalia from './intl/trenitalia.json';
+import * as trybe from './intl/trybe.json';
 import * as twelveData from './intl/twelve-data.json';
 import * as twilio from './intl/twilio.json';
 import * as twitch from './intl/twitch.json';
@@ -537,6 +551,7 @@ import * as droppery from './nl/droppery.json';
 import * as exactOnline from './nl/exact-online.json';
 import * as moneybird from './nl/moneybird.json';
 import * as topdesk from './nl/topdesk.json';
+import * as falco from './be/falco.json';
 import * as teamleader from './be/teamleader.json';
 import * as bexio from './ch/bexio.json';
 import * as fortnox from './se/fortnox.json';
@@ -838,6 +853,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   viesVat as unknown as AdapterDefinition,
   weclapp as unknown as AdapterDefinition,
   xentral as unknown as AdapterDefinition,
+  xovi as unknown as AdapterDefinition,
   zalandoZds as unknown as AdapterDefinition,
   zammad as unknown as AdapterDefinition,
   znuny as unknown as AdapterDefinition,
@@ -890,6 +906,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   bingWebmaster as unknown as AdapterDefinition,
   bitbucket as unknown as AdapterDefinition,
   bitrix24 as unknown as AdapterDefinition,
+  blockcypher as unknown as AdapterDefinition,
   bluesky as unknown as AdapterDefinition,
   botpress as unknown as AdapterDefinition,
   box as unknown as AdapterDefinition,
@@ -905,6 +922,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   canva as unknown as AdapterDefinition,
   chargebee as unknown as AdapterDefinition,
   chatwoot as unknown as AdapterDefinition,
+  checko as unknown as AdapterDefinition,
   circleci as unknown as AdapterDefinition,
   claap as unknown as AdapterDefinition,
   clearbit as unknown as AdapterDefinition,
@@ -1016,6 +1034,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   heap as unknown as AdapterDefinition,
   height as unknown as AdapterDefinition,
   helium10 as unknown as AdapterDefinition,
+  helius as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hetznerCloud as unknown as AdapterDefinition,
   heygen as unknown as AdapterDefinition,
@@ -1030,6 +1049,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   instantly as unknown as AdapterDefinition,
   intercom as unknown as AdapterDefinition,
   invoiceNinja as unknown as AdapterDefinition,
+  invoice123 as unknown as AdapterDefinition,
   invoiced as unknown as AdapterDefinition,
   iterable as unknown as AdapterDefinition,
   jev as unknown as AdapterDefinition,
@@ -1064,6 +1084,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   matomo as unknown as AdapterDefinition,
   mautic as unknown as AdapterDefinition,
   medium as unknown as AdapterDefinition,
+  medmis as unknown as AdapterDefinition,
   mercury as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
   metaAds as unknown as AdapterDefinition,
@@ -1093,6 +1114,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mysql as unknown as AdapterDefinition,
   neon as unknown as AdapterDefinition,
   netlify as unknown as AdapterDefinition,
+  netskope as unknown as AdapterDefinition,
   netsuite as unknown as AdapterDefinition,
   neverbounce as unknown as AdapterDefinition,
   newRelic as unknown as AdapterDefinition,
@@ -1100,6 +1122,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   nextcloud as unknown as AdapterDefinition,
   nimble as unknown as AdapterDefinition,
   nominatim as unknown as AdapterDefinition,
+  noonPayments as unknown as AdapterDefinition,
   notion as unknown as AdapterDefinition,
   novaPoshta as unknown as AdapterDefinition,
   nutshellCrm as unknown as AdapterDefinition,
@@ -1168,6 +1191,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   salesforce as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
   sanity as unknown as AdapterDefinition,
+  sapC4c as unknown as AdapterDefinition,
   sapConcur as unknown as AdapterDefinition,
   sapS4hanaCloud as unknown as AdapterDefinition,
   sapS4hanaHana as unknown as AdapterDefinition,
@@ -1211,12 +1235,16 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   supabase as unknown as AdapterDefinition,
   surveymonkey as unknown as AdapterDefinition,
   synology as unknown as AdapterDefinition,
+  tabby as unknown as AdapterDefinition,
   tally as unknown as AdapterDefinition,
+  tamara as unknown as AdapterDefinition,
   tavily as unknown as AdapterDefinition,
+  tbank as unknown as AdapterDefinition,
   teamworkProjects as unknown as AdapterDefinition,
   ted as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
   telnyx as unknown as AdapterDefinition,
+  tezga as unknown as AdapterDefinition,
   theOddsApi as unknown as AdapterDefinition,
   ticktick as unknown as AdapterDefinition,
   tidio as unknown as AdapterDefinition,
@@ -1229,6 +1257,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   trello as unknown as AdapterDefinition,
   trendyol as unknown as AdapterDefinition,
   trenitalia as unknown as AdapterDefinition,
+  trybe as unknown as AdapterDefinition,
   twelveData as unknown as AdapterDefinition,
   twilio as unknown as AdapterDefinition,
   twitch as unknown as AdapterDefinition,
@@ -1306,6 +1335,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   exactOnline as unknown as AdapterDefinition,
   moneybird as unknown as AdapterDefinition,
   topdesk as unknown as AdapterDefinition,
+  falco as unknown as AdapterDefinition,
   teamleader as unknown as AdapterDefinition,
   bexio as unknown as AdapterDefinition,
   fortnox as unknown as AdapterDefinition,

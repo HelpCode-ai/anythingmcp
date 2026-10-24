@@ -8,7 +8,7 @@ import { LoginTokenService } from '../../connectors/engines/login-token.service'
  * token and calls read-only tools (scopes, stores, catalog, v2 prices,
  * shipping rates, cost estimate, order list) through the real RestEngine.
  * PRINTFUL_STORE_ID is needed only for an account-level token:
- *   PRINTFUL_API_TOKEN=xxx [PRINTFUL_STORE_ID=123] npx jest src/adapters/intl/printful.live.spec.ts
+ *   RUN_PRINTFUL_LIVE=1 PRINTFUL_API_TOKEN=xxx [PRINTFUL_STORE_ID=123] npx jest src/adapters/intl/printful.live.spec.ts
  */
 
 type Mapping = {
@@ -117,6 +117,21 @@ describe('printful adapter: static spec conformance', () => {
     );
   });
 
+  it('reads print areas and the webhook setup from the documented v1 routes', () => {
+    expect(tool('printful_get_printfiles').endpointMapping).toEqual({
+      method: 'GET',
+      path: '/mockup-generator/printfiles/{product_id}',
+      queryParams: { technique: '$technique', orientation: '$orientation' },
+      headers: { 'X-PF-Store-Id': '$store_id' },
+    });
+    expect(tool('printful_get_printfiles').parameters?.required).toEqual(['product_id']);
+    expect(tool('printful_get_webhooks').endpointMapping).toEqual({ method: 'GET', path: '/webhooks', headers: { 'X-PF-Store-Id': '$store_id' } });
+  });
+
+  it('names every tool in the instructions', () => {
+    for (const t of a.tools) expect(`${t.name}:${(adapter as unknown as { instructions: string }).instructions.includes(t.name)}`).toBe(`${t.name}:true`);
+  });
+
   it('POST quotes are marked read-only', () => {
     for (const n of ['printful_calculate_shipping_rates', 'printful_estimate_order_costs']) {
       expect(tool(n).endpointMapping.method).toBe('POST');
@@ -127,7 +142,7 @@ describe('printful adapter: static spec conformance', () => {
 
 const TOKEN = process.env.PRINTFUL_API_TOKEN;
 const STORE_ID = process.env.PRINTFUL_STORE_ID;
-const live = TOKEN ? describe : describe.skip;
+const live = process.env.RUN_PRINTFUL_LIVE === '1' && TOKEN ? describe : describe.skip;
 
 live('printful adapter: live read-only calls', () => {
   const engine = new RestEngine({} as OAuth2TokenService, {} as LoginTokenService);
@@ -164,6 +179,8 @@ live('printful adapter: live read-only calls', () => {
     variantId = p.result.variants[0].id;
     const v = await run('printful_get_catalog_variant', { variant_id: variantId });
     expect(v.result.variant.id).toBe(variantId);
+    const files = await run('printful_get_printfiles', { product_id: productId, ...store });
+    expect(Array.isArray(files.result.printfiles)).toBe(true);
   }, 30000);
 
   it('gets v2 prices and v1 shipping rates', async () => {

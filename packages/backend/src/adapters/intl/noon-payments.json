@@ -1,0 +1,335 @@
+{
+  "slug": "noon-payments",
+  "name": "noon payments",
+  "aliases": [
+    "noon payment gateway",
+    "noonpayments",
+    "نون للمدفوعات"
+  ],
+  "description": "noon payments gateway (UAE, Saudi Arabia, Egypt): order status by order id or merchant reference with authorized, captured and refunded totals and transactions, scheduled settlement and commission reports, subscriptions and card tokens. Capture and refund are included, installed switched off.",
+  "instructions": "## noon payments\nThis connector uses the **noon payments API** (card and wallet payment gateway in the UAE, Saudi Arabia and Egypt): order status by order id or by your order reference, scheduled settlement and commission reports, subscriptions and saved card tokens. Capture and refund are included but installed switched off.\n\n**Setup (5 minutes)**\n1. In the noon payments Merchant Portal open **Account Settings > Applications**. Create an application (or use an existing one) with only the roles it needs: **Payment Integrator** or **Refund Manager** for order lookups, **Financial Auditor** for reports, **Token Manager** for card tokens.\n2. Build the key: `BusinessIdentifier.ApplicationIdentifier:ApplicationKey` (business identifier from the setup e-mail, a dot, the application identifier, a colon, the application key), then encode it in Base64, e.g. `printf '%s' 'mybusiness.myapp:KEY' | base64`. Paste the Base64 text into `NOON_PAYMENTS_AUTH_KEY`. The connector sends `Authorization: Key <that text>`.\n3. `NOON_PAYMENTS_API_URL`: `https://api.noonpayments.com` (global, live) or `https://api-test.noonpayments.com` (test); regional endpoints are `https://api.sa.noonpayments.com` and `https://api.eg.noonpayments.com` (test: `api-test.sa`, `api-test.eg`). Keys differ per environment.\n\n**Identifiers**: `order_id` is the numeric order id noon returned at INITIATE (stored with the shop order, often as the payment transaction id). `order_reference` is your own reference sent at INITIATE (the shop order number).\n\n**Workflow**\n- Order status: `noon_payments_get_order` or `noon_payments_get_order_by_reference`. Read `result.order.status` with the totals (`totalAuthorizedAmount`, `totalCapturedAmount`, `totalRefundedAmount`, `totalReversedAmount`, `totalRemainingAmount`) and `result.transactions` (each with type, status, amount and id). `resultCode` 0 only means the request worked, not that the payment succeeded; judge by the order status and `nextActions`.\n- Reconciliation: `noon_payments_list_scheduled_reports` with `report_type` ReconciliationSettlement and a day, then download the file from `ReportUrl` (the link expires). Do not loop over orders with get-order for reconciliation; noon throttles that.\n- Subscriptions and saved cards: `noon_payments_get_subscription`, `noon_payments_get_card_token`.\n\n**Writes switched off**: `noon_payments_capture_order` (captures an authorized order) and `noon_payments_refund_order` (refunds a capture; pass the CAPTURE transaction id from the order). Both move money; an admin turns them on deliberately. Before each call show the user the order, the amount and the currency and wait for a yes, and pass a `transaction_reference` so a retry is not executed twice.\n\n**Errors**: failures come back as HTTP 4xx or 5xx with `resultCode`, `message` and `classDescription` (Rejected_Unauthenticated: wrong key or environment; Rejected_AccessDenied: the application lacks the role; Invalid_BadRequest: a parameter). 429 means throttling; wait before retrying and do not repeat the same failing request, noon may lock the order or ban the address.\n\n**Limitations**: there is no endpoint to list or search orders; look them up by id or reference, or use the daily reports. Initiating payments, authorize, reverse, cancel and fraud review are not part of this connector.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "noon-payments",
+  "docsUrl": "https://docs.noonpayments.com/payment-api/reference/get-order",
+  "requiredEnvVars": [
+    "NOON_PAYMENTS_API_URL",
+    "NOON_PAYMENTS_AUTH_KEY"
+  ],
+  "envVarMeta": {
+    "NOON_PAYMENTS_API_URL": {
+      "label": "API endpoint",
+      "kind": "address",
+      "help": "https://api.noonpayments.com (live) or https://api-test.noonpayments.com (test); regional: https://api.sa.noonpayments.com, https://api.eg.noonpayments.com and their api-test variants. No path.",
+      "example": "https://api.noonpayments.com",
+      "pattern": "^https://api(-test)?(\\.(sa|eg))?\\.noonpayments\\.com/?$",
+      "patternMessage": "Only the endpoint, e.g. https://api.noonpayments.com or https://api-test.sa.noonpayments.com, without /payment/v1."
+    },
+    "NOON_PAYMENTS_AUTH_KEY": {
+      "label": "Authorization key (Base64)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Base64 of BusinessIdentifier.ApplicationIdentifier:ApplicationKey from Merchant Portal, Account Settings, Applications. Paste only the Base64 text, without the word Key.",
+      "link": "https://docs.noonpayments.com/",
+      "pattern": "^[A-Za-z0-9+/]{16,}={0,2}$",
+      "patternMessage": "Paste only the Base64 text (no \"Key \" in front, no spaces)."
+    }
+  },
+  "verifyHints": {
+    "401": "noon payments refused the key. Rebuild it as Base64 of BusinessIdentifier.ApplicationIdentifier:ApplicationKey (dot, then colon) and check it belongs to the chosen environment (test or live).",
+    "403": "The key works but the application lacks the role for this call (Payment Integrator for orders, Financial Auditor for reports, Token Manager for card tokens).",
+    "404": "Not found. Check NOON_PAYMENTS_API_URL (no /payment/v1) and that the order exists in this environment.",
+    "429": "noon payments throttled the requests. Wait before retrying and avoid polling the same order."
+  },
+  "connector": {
+    "name": "noon payments API",
+    "type": "REST",
+    "baseUrl": "{{NOON_PAYMENTS_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Key {{NOON_PAYMENTS_AUTH_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "noon_payments_get_order",
+      "description": "Get a noon payments order by its order id: order status (INITIATED, AUTHORIZED, CAPTURED, PARTIALLY_CAPTURED, REFUNDED, REVERSED, CANCELLED, FAILED, MARKED_FOR_REVIEW...), amount and currency, authorized, captured, refunded, reversed and remaining totals, merchant reference, the transactions (AUTHORIZATION, CAPTURE, REFUND... with status, amount, time and id), the masked payment details and nextActions. Not for reconciliation runs: noon throttles repeated polling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "noon payments order id: the numeric order.id returned by INITIATE and stored with the shop order, passed as text so long ids keep every digit, e.g. 123456789012.",
+            "pattern": "^[0-9]{6,20}$"
+          },
+          "verbose": {
+            "type": "boolean",
+            "description": "true adds the verbose details (heavier and slower); leave it out unless the extra fields are needed."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment/v1/order/{order_id}",
+        "queryParams": {
+          "verbose": "$verbose"
+        }
+      }
+    },
+    {
+      "name": "noon_payments_get_order_by_reference",
+      "description": "Get a noon payments order by your own order reference (order.reference sent at INITIATE, e.g. the shop order number) with the same details as noon_payments_get_order. If several orders share the reference (retries), the newest is returned; use noon_payments_get_order with the id for an exact match.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference": {
+            "type": "string",
+            "description": "Your merchant order reference, e.g. NPORDTEST0001."
+          },
+          "verbose": {
+            "type": "boolean",
+            "description": "true adds the verbose details (heavier and slower); leave it out unless the extra fields are needed."
+          }
+        },
+        "required": [
+          "order_reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment/v1/order/getbyreference/{order_reference}",
+        "encodePathParams": true,
+        "queryParams": {
+          "verbose": "$verbose"
+        }
+      }
+    },
+    {
+      "name": "noon_payments_list_scheduled_reports",
+      "description": "List the scheduled reports noon generated for a day or month, each with ReportName, ReportType and a time-limited ReportUrl to download the ZIP (Excel or tab-separated). ReconciliationSettlement is daily (captures and refunds to reconcile with the bank settlement); ActiveSubscriptions, PaymentTokens, MerchantCommissions and MerchantCommissionDetails are monthly. Needs the Financial Auditor role on the application.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "description": "Four-digit year, e.g. 2026."
+          },
+          "month": {
+            "type": "integer",
+            "description": "Month 1 to 12."
+          },
+          "day": {
+            "type": "integer",
+            "description": "Day of the month, for daily reports."
+          },
+          "report_type": {
+            "type": "string",
+            "description": "Report type.",
+            "enum": [
+              "ReconciliationSettlement",
+              "ActiveSubscriptions",
+              "PaymentTokens",
+              "MerchantCommissions",
+              "MerchantCommissionDetails"
+            ]
+          }
+        },
+        "required": [
+          "year",
+          "month",
+          "report_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/v1/data/GetScheduleReports",
+        "queryParams": {
+          "year": "$year",
+          "month": "$month",
+          "day": "$day",
+          "reportType": "$report_type"
+        }
+      }
+    },
+    {
+      "name": "noon_payments_get_subscription",
+      "description": "Get a recurring subscription by its identifier: creation date, status, validity, amount and schedule. Reads only (apiOperation RETRIEVE_SUBSCRIPTION).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription identifier (UUID) returned at INITIATE, e.g. 7852f7e2-cdae-424d-9d41-48179ff75444."
+          }
+        },
+        "required": [
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payment/v1/order",
+        "bodyMapping": {
+          "apiOperation": "RETRIEVE_SUBSCRIPTION",
+          "subscription": {
+            "identifier": "$subscription_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "noon_payments_get_card_token",
+      "description": "Get the masked card behind a saved card token (brand, masked number, expiry, holder name, status). Needs the Token Manager role. Not for bulk runs: noon throttles repeated calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "token_identifier": {
+            "type": "string",
+            "description": "Card token identifier from a tokenized payment."
+          }
+        },
+        "required": [
+          "token_identifier"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment/v1/token/{token_identifier}"
+      }
+    },
+    {
+      "name": "noon_payments_capture_order",
+      "description": "Capture an AUTHORIZED order in full or in part so the funds move to the merchant account. This moves money: show the order, amount and currency to the user and wait for a yes. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "noon payments order id: the numeric order.id returned by INITIATE and stored with the shop order, passed as text so long ids keep every digit, e.g. 123456789012.",
+            "pattern": "^[0-9]{6,20}$"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount to capture."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency of the order, e.g. AED, SAR, EGP."
+          },
+          "final_capture": {
+            "type": "boolean",
+            "description": "true closes the order for further captures."
+          },
+          "transaction_reference": {
+            "type": "string",
+            "description": "Your unique reference for this capture, e.g. the shipment number."
+          },
+          "description": {
+            "type": "string",
+            "description": "Comment for the capture."
+          }
+        },
+        "required": [
+          "order_id",
+          "amount",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payment/v1/order",
+        "bodyMapping": {
+          "apiOperation": "CAPTURE",
+          "order": {
+            "id": "$order_id"
+          },
+          "transaction": {
+            "amount": "$amount",
+            "currency": "$currency",
+            "finalCapture": "$final_capture",
+            "transactionReference": "$transaction_reference",
+            "description": "$description"
+          }
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "noon_payments_refund_order",
+      "description": "Refund a captured order in full or in part back to the customer card. It cannot be undone: show the order, amount and currency to the user and wait for a yes. Needs the Refund Manager role. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "noon payments order id: the numeric order.id returned by INITIATE and stored with the shop order, passed as text so long ids keep every digit, e.g. 123456789012.",
+            "pattern": "^[0-9]{6,20}$"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount to refund."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency of the order, e.g. AED, SAR, EGP."
+          },
+          "capture_transaction_id": {
+            "type": "string",
+            "description": "Identifier of the CAPTURE transaction to refund (from noon_payments_get_order)."
+          },
+          "transaction_reference": {
+            "type": "string",
+            "description": "Your unique reference for this refund, e.g. the credit note number."
+          },
+          "description": {
+            "type": "string",
+            "description": "Comment for the refund."
+          }
+        },
+        "required": [
+          "order_id",
+          "amount",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payment/v1/order",
+        "bodyMapping": {
+          "apiOperation": "REFUND",
+          "order": {
+            "id": "$order_id"
+          },
+          "transaction": {
+            "amount": "$amount",
+            "currency": "$currency",
+            "targetTransactionIdentifier": "$capture_transaction_id",
+            "transactionReference": "$transaction_reference",
+            "description": "$description"
+          }
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

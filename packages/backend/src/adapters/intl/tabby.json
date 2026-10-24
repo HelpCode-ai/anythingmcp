@@ -1,0 +1,458 @@
+{
+  "slug": "tabby",
+  "name": "Tabby",
+  "aliases": [
+    "Tabby BNPL",
+    "Tabby Pay in 4",
+    "تابي"
+  ],
+  "description": "Tabby buy now, pay later (UAE, Saudi Arabia, Kuwait): look up payments with their captures and refunds, checkout sessions, customer disputes and webhooks. Capture, refund and close are included, installed switched off.",
+  "instructions": "## Tabby\nThis connector uses the **Tabby API** (buy now, pay later in the UAE, Saudi Arabia and Kuwait) of your merchant account: payments with their captures and refunds, checkout sessions, disputes and webhooks. Capture, refund and close are included but installed switched off.\n\n**Setup (2 minutes)**\n1. Sign in to the Tabby Merchant Dashboard (`merchant.tabby.ai` for the UAE, `merchant.tabby.sa` for Saudi Arabia) or ask your Tabby partner manager for the API keys.\n2. Copy the **secret key** into `TABBY_SECRET_KEY`: `sk_test_...` for test payments, `sk_...` for live ones. The public key (`pk_...`) does not work here.\n3. `TABBY_API_URL` is the API of your merchant region: `https://api.tabby.ai` for the UAE (and Kuwait), `https://api.tabby.sa` for Saudi Arabia. Tabby asks every call to go to the merchant region; a wrong region answers 403 or 404.\n4. Install and run `tabby_search_payments` to check the key.\n\n**Identifiers**: a payment id is a UUID assigned by Tabby. Your own order number is `order.reference_id` of the payment. To find a payment from an order number, list payments for the order date with `tabby_search_payments` (`created_from` / `created_to`) and match `order.reference_id`.\n\n**Workflow**\n- Recent payments: `tabby_search_payments` (20 per call, page with `offset`; without `status` only AUTHORIZED and CLOSED payments). Then `tabby_get_payment_details` for the full record.\n- Status meaning: AUTHORIZED = customer approved, not yet captured; CLOSED = captured (fully) or closed; REJECTED and EXPIRED = no money moved. Captures and refunds are listed inside the payment.\n- A checkout that did not finish: `tabby_get_checkout_session`.\n- Disputes: `tabby_list_disputes`, then `tabby_get_dispute`; `days_left` is the time before the dispute is approved automatically.\n- Webhooks: `tabby_list_webhooks` with your merchant code.\n\n**Writes switched off**: `tabby_create_capture` (captures money of an AUTHORIZED payment), `tabby_create_refund` (refunds a CLOSED payment, instantly) and `tabby_close_payment` (releases what is not captured). An admin turns them on deliberately. Before each call show the user the payment, the amount and the currency and wait for a yes. Pass a `reference_id` so a retry is not executed twice.\n\n**Amounts**: strings with up to 2 decimals (AED, SAR) or 3 (KWD). Dates and times are UTC, ISO 8601.\n\n**Errors**: 401 means a wrong secret key or a public key; 400 with an empty body can also be a missing key at the edge. 403 or 404 for a payment that exists usually means the wrong region in `TABBY_API_URL`. 409 on a refund means the payment is not refundable yet (not CLOSED) or the amount is too high.\n\n**Limitations**: creating checkout sessions, updating payments, registering webhooks and answering disputes are not part of this connector; do those in the Merchant Dashboard.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "tabby",
+  "docsUrl": "https://docs.tabby.ai/api-reference/overview",
+  "requiredEnvVars": [
+    "TABBY_API_URL",
+    "TABBY_SECRET_KEY"
+  ],
+  "envVarMeta": {
+    "TABBY_API_URL": {
+      "label": "API region",
+      "kind": "address",
+      "help": "https://api.tabby.ai for UAE (and Kuwait) merchants, https://api.tabby.sa for Saudi Arabia merchants. Test and live use the same address; the key decides.",
+      "example": "https://api.tabby.ai",
+      "pattern": "^https://api\\.tabby\\.(ai|sa)/?$",
+      "patternMessage": "Use https://api.tabby.ai (UAE) or https://api.tabby.sa (Saudi Arabia)."
+    },
+    "TABBY_SECRET_KEY": {
+      "label": "Secret key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The secret API key from Tabby: sk_test_... for test payments, sk_... for live payments. Not the public pk_ key.",
+      "link": "https://docs.tabby.ai/testing-guidelines/testing-credentials",
+      "pattern": "^sk_[A-Za-z0-9_-]{16,}$",
+      "patternMessage": "Paste the secret key, it starts with sk_ (or sk_test_)."
+    }
+  },
+  "verifyHints": {
+    "400": "Tabby rejected the request at the edge, usually a missing or malformed key. Paste the secret key (sk_...) again.",
+    "401": "Tabby refused the secret key. Use the sk_ (or sk_test_) key, not the public pk_ key.",
+    "403": "The key works but not for this region. Check TABBY_API_URL: api.tabby.ai for the UAE, api.tabby.sa for Saudi Arabia.",
+    "404": "Nothing at this address. Check TABBY_API_URL: https://api.tabby.ai or https://api.tabby.sa."
+  },
+  "probe": {
+    "tool": "tabby_search_payments",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Tabby API",
+    "type": "REST",
+    "baseUrl": "{{TABBY_API_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TABBY_SECRET_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "tabby_search_payments",
+      "description": "List Tabby payments, newest first: id, created_at, status, amount and currency, buyer (name, email, phone), order reference_id and items, captures and refunds. Without status only AUTHORIZED and CLOSED payments are returned. At most 20 per call; page with offset and read pagination.total_count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Payments per call, at most 20."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of payments to skip (0-based), for paging."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter: authorized, closed or rejected (API statuses), or new, captured, refunded, cancelled (Merchant Dashboard statuses).",
+            "enum": [
+              "authorized",
+              "closed",
+              "rejected",
+              "new",
+              "captured",
+              "refunded",
+              "cancelled"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only payments created on or after this date, YYYY-MM-DD (UTC)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only payments created on or before this date, YYYY-MM-DD (UTC)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/payments",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "status": "$status",
+          "created_at__gte": "$created_from",
+          "created_at__lte": "$created_to"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "payments[*].order_history",
+            "payments[*].buyer_history",
+            "payments[*].attachment",
+            "payments[*].order.items[*].image_url",
+            "payments[*].order.items[*].product_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tabby_get_payment_details",
+      "description": "Get one Tabby payment by its id: status (CREATED, AUTHORIZED, CLOSED, REJECTED, EXPIRED), amount, currency, is_test, buyer, shipping address, order (reference_id = your order number, items, tax, shipping, discount), every capture and refund with amounts and dates, and meta.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Tabby payment id (UUID), from tabby_search_payments or your order record, e.g. 3c3bd0c4-2b6e-4d2b-8a4e-6c1d9f0e5a11."
+          }
+        },
+        "required": [
+          "payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/payments/{payment_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "order_history",
+            "buyer_history",
+            "attachment"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tabby_get_checkout_session",
+      "description": "Get a checkout session by its id: session status (created, approved, rejected, expired), the payment it created (id, status, amount, order reference) and the merchant. Use it when a customer reports a checkout that did not finish.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Checkout session id returned when the session was created."
+          }
+        },
+        "required": [
+          "session_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/checkout/{session_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "token",
+            "payment.order_history",
+            "payment.buyer_history",
+            "payment.attachment",
+            "merchant_urls"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tabby_list_disputes",
+      "description": "List the 100 most recent disputes customers opened on your payments: id, payment_id, order_number, amount, currency, status, reason (unreceived_refund, identity_theft, product_issue, not_delivered), days_left before automatic approval, comment and items. Page with page_token = next_page_token until it is empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "description": "Only these statuses: new, declined, cancelled, refunded, in_progress, evidence_merchant, evidence_customer.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "new",
+                "declined",
+                "cancelled",
+                "refunded",
+                "in_progress",
+                "evidence_merchant",
+                "evidence_customer"
+              ]
+            }
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only disputes created at or after this ISO 8601 date-time."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only disputes created at or before this ISO 8601 date-time."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/disputes",
+        "queryParams": {
+          "statuses": "$statuses",
+          "created_at_gte": "$created_from",
+          "created_at_lte": "$created_to",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "tabby_get_dispute",
+      "description": "Get one dispute by its id with the customer reason, comment, attachments, disputed items, amount, status and the days left before it is approved automatically.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dispute_id": {
+            "type": "string",
+            "description": "Dispute id (UUID) from tabby_list_disputes."
+          }
+        },
+        "required": [
+          "dispute_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/disputes/{dispute_id}"
+      }
+    },
+    {
+      "name": "tabby_list_webhooks",
+      "description": "List the webhooks registered for one merchant code: id, url, is_test and the header Tabby sends with each notification (its value is not returned).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Your Tabby merchant code (store code given by Tabby, e.g. one per country)."
+          }
+        },
+        "required": [
+          "merchant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/webhooks",
+        "headers": {
+          "X-Merchant-Code": "$merchant_code"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].header.value",
+            "header.value"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tabby_create_capture",
+      "description": "Capture an AUTHORIZED payment in full or in part when the order ships. This settles money: show the payment, amount and currency to the user and wait for a yes. A full capture closes the payment. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Tabby payment id (UUID), from tabby_search_payments or your order record, e.g. 3c3bd0c4-2b6e-4d2b-8a4e-6c1d9f0e5a11."
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount to capture including tax and shipping, e.g. \"250.00\" (up to 2 decimals for AED and SAR, 3 for KWD)."
+          },
+          "reference_id": {
+            "type": "string",
+            "description": "Your idempotency key for this capture, e.g. the shipment number. A retry with the same key is not captured twice."
+          },
+          "tax_amount": {
+            "type": "string",
+            "description": "Tax included in the amount."
+          },
+          "shipping_amount": {
+            "type": "string",
+            "description": "Shipping included in the amount."
+          },
+          "discount_amount": {
+            "type": "string",
+            "description": "Discount applied."
+          },
+          "items": {
+            "type": "array",
+            "description": "Items being captured.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "reference_id": {
+                  "type": "string",
+                  "description": "Your product id (SKU)."
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Product name."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity."
+                },
+                "unit_price": {
+                  "type": "string",
+                  "description": "Price per unit, e.g. \"100.00\"."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "payment_id",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/payments/{payment_id}/captures",
+        "bodyMapping": {
+          "amount": "$amount",
+          "reference_id": "$reference_id",
+          "tax_amount": "$tax_amount",
+          "shipping_amount": "$shipping_amount",
+          "discount_amount": "$discount_amount",
+          "items": "$items"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "tabby_create_refund",
+      "description": "Refund a CLOSED (captured) payment in full or in part. The money goes back to the customer at once and cannot be taken back: show the payment, amount and reason to the user and wait for a yes. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Tabby payment id (UUID), from tabby_search_payments or your order record, e.g. 3c3bd0c4-2b6e-4d2b-8a4e-6c1d9f0e5a11."
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount to refund, e.g. \"100.00\"."
+          },
+          "reference_id": {
+            "type": "string",
+            "description": "Your idempotency key for this refund, e.g. the credit note number."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the refund."
+          },
+          "items": {
+            "type": "array",
+            "description": "Items being refunded.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "reference_id": {
+                  "type": "string",
+                  "description": "Your product id (SKU)."
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Product name."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity."
+                },
+                "unit_price": {
+                  "type": "string",
+                  "description": "Price per unit, e.g. \"100.00\"."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "payment_id",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/payments/{payment_id}/refunds",
+        "bodyMapping": {
+          "amount": "$amount",
+          "reference_id": "$reference_id",
+          "reason": "$reason",
+          "items": "$items"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "tabby_close_payment",
+      "description": "Close an AUTHORIZED payment. Any amount not captured yet is released to the customer and can no longer be captured; use it for a cancelled order or after a partial capture. Ask the user before calling. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Tabby payment id (UUID), from tabby_search_payments or your order record, e.g. 3c3bd0c4-2b6e-4d2b-8a4e-6c1d9f0e5a11."
+          }
+        },
+        "required": [
+          "payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/payments/{payment_id}/close"
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}
