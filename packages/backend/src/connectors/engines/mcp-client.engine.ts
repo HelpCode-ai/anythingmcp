@@ -5,6 +5,7 @@ import { OAuth2TokenService } from './oauth2-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { DEFAULT_MCP_PATH, resolveMcpEndpointUrl } from '../../common/url.util';
 import { ssrfGuardedFetch } from '../../common/outbound-http';
+import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
 
 /** Pages of tools/list followed at most (MCP pagination). */
 const MAX_TOOL_LIST_PAGES = 50;
@@ -28,6 +29,8 @@ export class McpClientEngine {
       authConfig?: Record<string, unknown>;
       headers?: Record<string, string>;
       connectorId?: string;
+      // Masked in log lines; see RestEngine.
+      logSecrets?: readonly string[];
     },
     endpointMapping: {
       method: string; // MCP tool name on remote server
@@ -35,12 +38,13 @@ export class McpClientEngine {
     },
     params: Record<string, unknown>,
   ): Promise<unknown> {
+    const logSecrets = engineLogSecrets(config);
     this.logger.debug(
-      `MCP bridge call: ${endpointMapping.method} → ${config.baseUrl}`,
+      `MCP bridge call: ${endpointMapping.method} → ${urlForLog(config.baseUrl, { secrets: logSecrets })}`,
     );
 
     const mcpUrl = resolveMcpEndpointUrl(config.baseUrl, endpointMapping.path);
-    this.warnLegacyUrlChange(config.baseUrl, endpointMapping.path, mcpUrl);
+    this.warnLegacyUrlChange(config.baseUrl, endpointMapping.path, mcpUrl, logSecrets);
     assertNotThisServer(mcpUrl);
     await assertSafeOutboundUrl(mcpUrl.toString());
 
@@ -124,6 +128,7 @@ export class McpClientEngine {
     headers?: Record<string, string>;
     mcpPath?: string;
     connectorId?: string;
+    logSecrets?: readonly string[];
   }): Promise<
     Array<{
       name: string;
@@ -134,9 +139,10 @@ export class McpClientEngine {
     }>
   > {
     const mcpUrl = resolveMcpEndpointUrl(config.baseUrl, config.mcpPath);
-    this.warnLegacyUrlChange(config.baseUrl, config.mcpPath, mcpUrl);
+    const logSecrets = engineLogSecrets(config);
+    this.warnLegacyUrlChange(config.baseUrl, config.mcpPath, mcpUrl, logSecrets);
 
-    this.logger.debug(`MCP listTools: ${mcpUrl.toString()}`);
+    this.logger.debug(`MCP listTools: ${urlForLog(mcpUrl.toString(), { secrets: logSecrets })}`);
 
     // Discovery reaches a user-supplied URL just like execute() does, so it
     // needs the same SSRF guard — it was missing here.
@@ -210,6 +216,7 @@ export class McpClientEngine {
     baseUrl: string,
     pathOverride: string | undefined,
     resolved: URL,
+    logSecrets: readonly string[],
   ): void {
     if (this.legacyUrlWarned.has(baseUrl)) return;
 
@@ -222,9 +229,11 @@ export class McpClientEngine {
     if (legacy === resolved.toString()) return;
 
     this.legacyUrlWarned.add(baseUrl);
+    // An MCP server's URL often carries its key (`?api_key=`, `/<key>/mcp`).
+    const forLog = (url: string) => urlForLog(url, { secrets: logSecrets });
     this.logger.warn(
-      `MCP endpoint for "${baseUrl}" now resolves to ${resolved.toString()} ` +
-        `(previous releases called it at ${legacy}) — the base URL's path is ` +
+      `MCP endpoint for "${forLog(baseUrl)}" now resolves to ${forLog(resolved.toString())} ` +
+        `(previous releases called it at ${forLog(legacy)}) — the base URL's path is ` +
         `no longer discarded.`,
     );
   }

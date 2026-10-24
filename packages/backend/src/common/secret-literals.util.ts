@@ -456,11 +456,14 @@ export interface RedactOptions {
    * it leaves the response's own ids and tokens alone.
    */
   patterns?: boolean;
+  /** What a secret is replaced with (default `[REDACTED]`). */
+  marker?: string;
 }
 
 /**
  * The text with every secret literal, and every one of `extraValues` (a
- * connector's own credentials, 6+ characters), replaced by `[REDACTED]`.
+ * connector's own credentials, 6+ characters), replaced by `[REDACTED]`
+ * (or `opts.marker`).
  */
 export function redactSecretLiterals(
   text: string,
@@ -468,15 +471,16 @@ export function redactSecretLiterals(
   opts: RedactOptions = {},
 ): string {
   if (typeof text !== 'string' || !text) return text;
+  const marker = opts.marker ?? '[REDACTED]';
   let out = text;
   for (const value of [...extraValues].filter((v) => typeof v === 'string' && v.length >= 6)
     .sort((a, b) => b.length - a.length)) {
-    if (out.includes(value)) out = out.split(value).join('[REDACTED]');
+    if (out.includes(value)) out = out.split(value).join(marker);
   }
   if (opts.patterns === false) return out;
   const findings = findSecretLiterals(out);
   for (const f of [...findings].sort((a, b) => b.start - a.start)) {
-    out = `${out.slice(0, f.start)}[REDACTED]${out.slice(f.end)}`;
+    out = `${out.slice(0, f.start)}${marker}${out.slice(f.end)}`;
   }
   return out;
 }

@@ -68,11 +68,13 @@ import { interpolateDeep, interpolateString } from '../common/env-interpolation.
 import { resolveMcpEndpointUrl } from '../common/url.util';
 import type { ClientAssertionSettings } from './engines/client-assertion.util';
 import {
+  connectorSecretValues,
   mergeMaskedEnvVars,
   mergeMaskedHeaders,
   secretContext,
   toPublicConnector,
 } from './connector-secrets.util';
+import { urlForLog } from '../common/log-safe-url.util';
 import {
   describeMissing,
   rebuildCatalogCredentials,
@@ -1390,7 +1392,9 @@ export class ConnectorsController {
         );
         const baseUrl = interpolateString(connector.baseUrl, envVars);
         const metadata = await this.mcpOAuthService.discoverMetadata(baseUrl);
-        this.logger.log(`OAuth metadata discovered from ${baseUrl}: issuer=${metadata.issuer}`);
+        this.logger.log(
+          `OAuth metadata discovered from ${urlForLog(baseUrl, { secrets: connectorSecretValues(connector) })}: issuer=${metadata.issuer}`,
+        );
 
         const plan = planMcpAuthorization({
           metadata,
@@ -1561,6 +1565,7 @@ export class ConnectorsController {
         headers,
         connectorId: connector.id,
         mcpPath,
+        logSecrets: connectorSecretValues(connector),
       });
 
       const discovered = remoteTools.map((rt) => ({
@@ -1892,6 +1897,7 @@ export class ConnectorsController {
             headers,
             mcpPath: dto.url || '/mcp',
             connectorId: connector.id,
+            logSecrets: connectorSecretValues(connector),
           });
           for (const rt of remoteTools) {
             parsedTools.push({

@@ -31,6 +31,7 @@ import { DYNAMIC_CLIENT_KEY } from './mcp-oauth-settings';
 import { mcpPathOf } from './mcp-connector-config.util';
 import { catalogMcpToolsFor } from '../adapters/mcp-adapter.util';
 import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
+import { connectorSecretValues } from './connector-secrets.util';
 
 /**
  * Connector OAuth: where the provider sends the browser back, and where the
@@ -341,6 +342,7 @@ export class McpOAuthCallbackController {
       },
       headers: interpolateDeep(connector.headers as Record<string, string>, envVars),
       mcpPath,
+      logSecrets: connectorSecretValues(connector),
     });
 
     const discovered: DiscoveredMcpTool[] = remoteTools.map((rt) => ({
