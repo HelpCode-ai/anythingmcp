@@ -4,6 +4,7 @@ import axios from 'axios';
 import { XMLParser } from 'fast-xml-parser';
 import { assertSafeOutboundUrl, SsrfBlockedError } from '../../common/ssrf.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
+import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
 import {
   openWsdl,
   resolveWsdlOperation,
@@ -207,6 +208,8 @@ export class SoapEngine {
       authConfig?: Record<string, unknown>;
       headers?: Record<string, string>;
       specUrl?: string;
+      // Masked in log lines; see RestEngine.
+      logSecrets?: readonly string[];
     },
     endpointMapping: SoapEndpointMapping,
     params: Record<string, unknown>,
@@ -253,7 +256,7 @@ export class SoapEngine {
     endpoint = this.overrideEndpointHost(endpoint, config.baseUrl);
 
     this.logger.debug(
-      `SOAP call: ${operationName} → ${endpoint} (SOAPAction: ${soapAction})`,
+      `SOAP call: ${operationName} → ${urlForLog(endpoint, { secrets: engineLogSecrets(config) })} (SOAPAction: ${soapAction})`,
     );
 
     // Map parameters

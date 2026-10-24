@@ -7,6 +7,7 @@ import { encrypt, decrypt } from '../../common/crypto/encryption.util';
 import { getRequiredSecret } from '../../common/secrets.util';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
+import { urlForLog } from '../../common/log-safe-url.util';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 
 const DEFAULT_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
@@ -320,7 +321,7 @@ export class LoginTokenService {
     }
 
     this.logger.debug(
-      `LOGIN_TOKEN: logging in via ${method} ${url}${request.proxyUrl ? ' (via proxy)' : ''}`,
+      `LOGIN_TOKEN: logging in via ${method} ${urlForLog(url, { secrets: [authConfig.password, passwordToSend] })}${request.proxyUrl ? ' (via proxy)' : ''}`,
     );
     const response = await axios({
       method,

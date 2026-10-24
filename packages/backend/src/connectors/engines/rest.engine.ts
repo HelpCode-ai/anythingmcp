@@ -28,6 +28,7 @@ import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-h
 import { assertNoResponseBodyError } from './response-error.util';
 import { escapeXmlValue } from '../../common/xml-escape.util';
 import { containsMimeMarker, expandMimeMarkers } from './mime-message.util';
+import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -129,6 +130,9 @@ export class RestEngine {
       // a 2xx body. Absent for almost every connector, which then behaves as
       // it always has. See response-error.util.ts.
       errorWhen?: unknown;
+      // The connector's secret variable values, as substituted into the URL
+      // and headers. Never sent anywhere: log lines mask them.
+      logSecrets?: readonly string[];
     },
     endpointMapping: {
       method: string;
@@ -187,6 +191,10 @@ export class RestEngine {
           'endpoint mapping — it should be a path like /users/{id}.',
       );
     }
+    // Logs name the endpoint by its template (`/users/{id}`), never by the
+    // values substituted into it: a `{param}` can be filled from a connector
+    // variable, and the caller's arguments are not ours to log either.
+    const pathTemplate = path;
 
     // Callers resolve {{VAR}} and check for leftovers themselves, with the
     // tool's name in the message. This is the backstop for any that do not:
@@ -487,6 +495,13 @@ export class RestEngine {
       credentialHeaders: [...credentialHeaders],
     };
 
+    // Origin, path template and query parameter names only, with the
+    // connector's credentials masked: see log-safe-url.util.ts.
+    const logUrl = urlForLog(
+      /^https?:\/\//i.test(pathTemplate) ? pathTemplate : joinBaseAndPath(config.baseUrl, pathTemplate),
+      { secrets: engineLogSecrets(config), params: axiosConfig.params },
+    );
+
     // Route through the proxy / web-unblocker when the caller asked for it.
     // The unblocker agent disables upstream TLS verification (Zyte and friends
     // MITM the connection) — see createUnblockerProxyAgent. Equivalent to
@@ -497,14 +512,14 @@ export class RestEngine {
       axiosConfig.httpsAgent = agent;
       axiosConfig.httpAgent = agent;
       axiosConfig.proxy = false;
-      this.logger.debug(`REST call via proxy: ${axiosConfig.method} ${url}`);
+      this.logger.debug(`REST call via proxy: ${axiosConfig.method} ${logUrl}`);
     } else {
-      this.logger.debug(`REST call: ${axiosConfig.method} ${url}`);
+      this.logger.debug(`REST call: ${axiosConfig.method} ${logUrl}`);
     }
 
     const sentAt = Date.now();
     try {
-      const response = await this.requestWithRetry(axiosConfig, outbound);
+      const response = await this.requestWithRetry(axiosConfig, outbound, logUrl);
       return withMeta(response);
     } catch (error) {
       // OAuth2 auto-refresh: retry once on 401 (a refresh token, or a grant
@@ -687,6 +702,9 @@ export class RestEngine {
   private async requestWithRetry(
     axiosConfig: AxiosRequestConfig,
     outbound: OutboundRequestOptions,
+    // What the logs call this request: never `axiosConfig.url`, which can
+    // carry a credential (Telegram's `/bot<token>/…`).
+    logUrl: string,
   ): Promise<AxiosResponse> {
     // Three delays rather than two: origins that reject a handshake tend to do
     // so for a few seconds, and the old 1.2 s total often gave up just short of
@@ -710,7 +728,7 @@ export class RestEngine {
               `Gave up after ${attempt + 1} attempts on a transient upstream failure: ${
                 (error as AxiosError).code ??
                 (error as AxiosError).response?.status
-              } ${axiosConfig.method?.toUpperCase()} ${axiosConfig.url}`,
+              } ${axiosConfig.method?.toUpperCase()} ${logUrl}`,
             );
           }
           throw this.describeConnectionError(error, attempt + 1);
