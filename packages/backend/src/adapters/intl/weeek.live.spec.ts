@@ -77,6 +77,16 @@ describe('Weeek adapter — static contract', () => {
     expect(byName.weeek_list_deals.endpointMapping.path).toBe('/crm/statuses/{statusId}/deals');
   });
 
+  it('removes a task from one project with the project id in the DELETE body', () => {
+    expect(byName.weeek_remove_task_from_project.endpointMapping).toEqual({
+      method: 'DELETE',
+      path: '/tm/tasks/{id}/locations',
+      bodyMapping: { projectId: '$projectId' },
+    });
+    expect(byName.weeek_remove_task_from_project.parameters.required).toEqual(['id', 'projectId']);
+    expect(byName.weeek_remove_task_from_project.enabled).not.toBe(false);
+  });
+
   it('sends Weeek flags as 0 or 1, never booleans', () => {
     expect(byName.weeek_create_project.parameters.properties!.isPrivate.enum).toEqual([0, 1]);
     expect(byName.weeek_list_tasks.parameters.properties!.completed.enum).toEqual([0, 1]);

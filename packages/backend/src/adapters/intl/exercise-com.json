@@ -1,12 +1,12 @@
 {
   "slug": "exercise-com",
   "name": "Exercise.com",
-  "description": "Exercise.com gym and coaching software: members and staff, appointments and classes, scheduled occurrences and rosters, visits and check-ins, calendar, services, locations, availability schedules, waitlists, assessments, groups and logged workouts. Tenant API v4 on your own platform host.",
+  "description": "Exercise.com gym and coaching software: members and staff, appointments and classes, scheduled occurrences and rosters, visits and check-ins, calendar, services, locations, availability schedules, waitlists, assessments, groups and group calendars, purchases, appointment packages and logged workouts with per-exercise history. Tenant API v4 on your own platform host.",
   "region": "intl",
   "category": "sports",
   "icon": "exercise-com",
   "docsUrl": "https://www.exercise.com/support/how-to-use-the-exercise-com-api-keys/",
-  "instructions": "**Credentials**: Exercise.com runs each business on its own host (your custom-branded platform, e.g. `train.yourgym.com` or `yourgym.exercise.com`). Put that host, without https://, in `EXERCISE_HOST`; the API is served from it at `/api/v4`.\n\nAPI access is a paid add-on: ask your Exercise.com account representative to enable it. The v4 API takes two credentials on each call, as its reference documents (security `api_key` and `bearer` together):\n1. `EXERCISE_API_KEY`: create it under **Account > Customize Platform > Developers > Add** and copy it at once (it is shown only once). Sent in the `API-TOKEN` header.\n2. `EXERCISE_ACCESS_TOKEN`: the bearer token of the account the API acts as (a Personal API Token issued in the product, or the token provided with API access), sent as `Authorization: Bearer`. Use a token of the owner or an admin to see every member.\nMost member, booking and service reads answer with the access token alone, but schedules, assessment templates and logged workouts answer 401 unless both are sent.\n\n**Where to start**: `exercise_com_list_users` gives member and staff ids (`user_id`). For bookings use `exercise_com_get_calendar` with `affinity=schedule` and a Unix-time window, or `exercise_com_list_appointments` / `exercise_com_list_scheduled_appointments`, then `exercise_com_list_visits` with `appointment_id` for who booked and attended.\n\n**Filtering**: most list tools take `filter`, Ransack predicates written as a query-string fragment: `q[status_eq]=completed&q[created_at_gteq]=2026-09-01`. Keys are `<field>_<predicate>` such as `_eq`, `_in`, `_gteq`, `_lteq`, `_cont`; `q[s]=created_at desc` sorts. Unknown fields are ignored or rejected depending on the resource, so start without a filter and look at the field names in the answer.\n\n**Appointments need a date window**: `exercise_com_list_appointments` over the whole history is slow enough to fail with HTTP 500, so its `filter` is required; pass `q[start_time_gteq]` and `q[start_time_lt]`.\n\n**Paging**: `per` and `page` (from 1). When either is set, the answer includes `meta.total`. Without them some lists return everything. `pluck_columns` returns a plain array of just those stored columns for every match (it can ignore `per`), handy for id lookups; computed fields such as `service_name` are not columns and make the call fail.\n\n**Times**: the calendar takes Unix timestamps in seconds for `start` and `end`; other filters take dates or ISO 8601 times. Visits carry the time zone of the business.\n\n**Errors**: 401 `Access denied` means a wrong host, a wrong or revoked token, or API access not enabled; 403 means the token's account may not see the resource; 404 a wrong id.\n\nThe interactive reference is at https://train.demoexercise.com/api-docs/ (\"API V4 Docs\"); its login is given in Exercise.com's support article on API keys (the docsUrl of this connector).\n\nPackages, user packages, invoices and charges are not part of the documented v4 tenant API; Exercise.com documents them only in its newer API at api.exercise.com.",
+  "instructions": "**Credentials**: Exercise.com runs each business on its own host (your custom-branded platform, e.g. `train.yourgym.com` or `yourgym.exercise.com`). Put that host, without https://, in `EXERCISE_HOST`; the API is served from it at `/api/v4`.\n\nAPI access is a paid add-on: ask your Exercise.com account representative to enable it. The v4 API takes two credentials on each call, as its reference documents (security `api_key` and `bearer` together):\n1. `EXERCISE_API_KEY`: create it under **Account > Customize Platform > Developers > Add** and copy it at once (it is shown only once). Sent in the `API-TOKEN` header.\n2. `EXERCISE_ACCESS_TOKEN`: the bearer token of the account the API acts as (a Personal API Token issued in the product, or the token provided with API access), sent as `Authorization: Bearer`. Use a token of the owner or an admin to see every member.\nMost member, booking and service reads answer with the access token alone, but schedules, assessment templates and logged workouts answer 401 unless both are sent.\n\n**Where to start**: `exercise_com_list_users` gives member and staff ids (`user_id`). For bookings use `exercise_com_get_calendar` with `affinity=schedule` and a Unix-time window, or `exercise_com_list_appointments` / `exercise_com_list_scheduled_appointments`, then `exercise_com_list_visits` with `appointment_id` for who booked and attended.\n\n**Tools by area**:\n- Members and staff: `exercise_com_list_users`, `exercise_com_get_user`, `exercise_com_list_purchased_items` (what a member bought and how they pay).\n- Bookings: `exercise_com_list_appointments`, `exercise_com_get_appointment`, `exercise_com_list_appointment_packages` (packages that pay for an appointment), `exercise_com_list_scheduled_appointments`, `exercise_com_get_scheduled_appointment`, `exercise_com_list_scheduled_appointment_members` (rosters; `for_user` for one member), `exercise_com_list_visits` (`for_user` for one member's bookings), `exercise_com_get_visit`, `exercise_com_list_waitlist_entries`, `exercise_com_get_calendar`.\n- Setup: `exercise_com_list_services`, `exercise_com_get_service`, `exercise_com_list_locations`, `exercise_com_list_schedules`, `exercise_com_list_groups`, `exercise_com_list_group_calendars`.\n- Assessments: `exercise_com_list_assessments`, `exercise_com_get_assessment` (template with its questions), `exercise_com_list_user_assessments`, `exercise_com_get_user_assessment` (a member's answers).\n- Training: `exercise_com_list_workouts`, `exercise_com_list_user_workout_exercises` (a member's logged sets per exercise over time).\n- Writes: `exercise_com_book_visit` books a member into an appointment, `exercise_com_cancel_visit` cancels a booking; confirm with the user first.\n\n**Filtering**: most list tools take `filter`, Ransack predicates written as a query-string fragment: `q[status_eq]=completed&q[created_at_gteq]=2026-09-01`. Keys are `<field>_<predicate>` such as `_eq`, `_in`, `_gteq`, `_lteq`, `_cont`; `q[s]=created_at desc` sorts. Unknown fields are ignored or rejected depending on the resource, so start without a filter and look at the field names in the answer.\n\n**Appointments need a date window**: `exercise_com_list_appointments` over the whole history is slow enough to fail with HTTP 500, so its `filter` is required; pass `q[start_time_gteq]` and `q[start_time_lt]`.\n\n**Paging**: `per` and `page` (from 1). When either is set, the answer includes `meta.total`. Without them some lists return everything. `pluck_columns` returns a plain array of just those stored columns for every match (it can ignore `per`), handy for id lookups; computed fields such as `service_name` are not columns and make the call fail.\n\n**Times**: the calendar takes Unix timestamps in seconds for `start` and `end`; other filters take dates or ISO 8601 times. Visits carry the time zone of the business.\n\n**Errors**: 401 `Access denied` means a wrong host, a wrong or revoked token, or API access not enabled; 403 means the token's account may not see the resource; 404 a wrong id.\n\nThe interactive reference is at https://train.demoexercise.com/api-docs/ (\"API V4 Docs\"); its login is given in Exercise.com's support article on API keys (the docsUrl of this connector).\n\nA member's package balances (credits left), invoices and charges are not part of the documented v4 tenant API, so this connector does not read them; `exercise_com_list_purchased_items` shows what was bought and `exercise_com_list_appointment_packages` which packages fit an appointment.",
   "prerequisites": "API access is a paid add-on of Exercise.com: your account representative enables it. You need an API key from **Account > Customize Platform > Developers** and an access token of the owner or an admin account.",
   "requiredEnvVars": [
     "EXERCISE_HOST",
@@ -131,7 +131,7 @@
     },
     {
       "name": "exercise_com_list_visits",
-      "description": "List visits (bookings and check-ins of a member for an appointment or class) with status, registered, completed, no-show and cancelled times, payment and package used. Filter by appointment or with a Ransack filter.",
+      "description": "List visits (bookings and check-ins of a member for an appointment or class) with status, registered, completed, no-show and cancelled times, payment and package used. Filter by appointment, by member (for_user), by ids or with a Ransack filter.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -142,6 +142,14 @@
           "active_visits": {
             "type": "string",
             "description": "Pass true to return only finished visits for appointments and check-ins."
+          },
+          "for_user": {
+            "type": "string",
+            "description": "A user id: only the visits that user can access (their own bookings and check-ins)."
+          },
+          "with_ids": {
+            "type": "string",
+            "description": "Comma-separated visit ids to fetch; paging is ignored when set."
           },
           "filter": {
             "type": "string",
@@ -167,6 +175,8 @@
         "queryParams": {
           "appointment_id": "$appointment_id",
           "active_visits": "$active_visits",
+          "for_user": "$for_user",
+          "with_ids": "$with_ids",
           "__rawquery": "$filter",
           "pluck_columns": "$pluck_columns",
           "per": "$per",
@@ -253,6 +263,26 @@
       }
     },
     {
+      "name": "exercise_com_list_appointment_packages",
+      "description": "List the packages (class packs, memberships with visit credits) that can be used to book one appointment: id, name, price options, number of visits, expiry and the services they cover. Use it to tell a member which package pays for a class.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Appointment id from exercise_com_list_appointments."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/appointments/{id}/packages"
+      }
+    },
+    {
       "name": "exercise_com_list_scheduled_appointments",
       "description": "List scheduled appointments: the dated occurrences of recurring classes and sessions, with start and end, trainer, location and capacity.",
       "parameters": {
@@ -309,7 +339,7 @@
     },
     {
       "name": "exercise_com_list_scheduled_appointment_members",
-      "description": "List the members booked into scheduled appointments (class rosters). Pass scheduled_appointment_id for one occurrence's roster.",
+      "description": "List the members booked into scheduled appointments (class rosters). Pass scheduled_appointment_id for one occurrence's roster. Pass for_user for the classes one member is booked into.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -320,6 +350,10 @@
           "appointment_id": {
             "type": "integer",
             "description": "Together with scheduled_appointment_id: leave out members whose visit for this appointment was deleted."
+          },
+          "for_user": {
+            "type": "string",
+            "description": "A user id: only the roster entries of this member."
           },
           "filter": {
             "type": "string",
@@ -345,6 +379,7 @@
         "queryParams": {
           "scheduled_appointment_id": "$scheduled_appointment_id",
           "appointment_id": "$appointment_id",
+          "for_user": "$for_user",
           "__rawquery": "$filter",
           "pluck_columns": "$pluck_columns",
           "per": "$per",
@@ -628,6 +663,26 @@
       }
     },
     {
+      "name": "exercise_com_get_assessment",
+      "description": "Return one assessment template by id: name, description, its questions and fields, scoring formula and assignment settings. Members' answers are user assessments (exercise_com_list_user_assessments).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Assessment id from exercise_com_list_assessments."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/assessments/{id}"
+      }
+    },
+    {
       "name": "exercise_com_list_user_assessments",
       "description": "List completed or assigned assessments of members, with answers, scores and dates. Filter by user_id for one member's results.",
       "parameters": {
@@ -718,6 +773,31 @@
       }
     },
     {
+      "name": "exercise_com_list_group_calendars",
+      "description": "List the group calendars: the calendars attached to groups, used for group events and classes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/groups/calendars",
+        "queryParams": {
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
       "name": "exercise_com_list_workouts",
       "description": "List completed (logged) workouts with date, user and summary. Defaults to the API user's own; set for_trainer=true for the whole platform, and start_date with end_date for a period.",
       "parameters": {
@@ -779,6 +859,78 @@
           "pluck_columns": "$pluck_columns",
           "per": "$per",
           "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_list_user_workout_exercises",
+      "description": "Return a member's logged history of workout exercises (sets, reps, weights), oldest first, paginated. Pass exercise_id for one exercise's progress, with_date=true to include the workout date (it lives on the workout, not the exercise), and pluck_columns to keep answers small.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "User id from exercise_com_list_users."
+          },
+          "exercise_id": {
+            "type": "integer",
+            "description": "Only the history of this exercise."
+          },
+          "with_date": {
+            "type": "boolean",
+            "description": "true to include the date of the workout each exercise belongs to."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order sent as q[s]; workout_workout_date desc returns the newest first."
+          },
+          "pluck_columns": {
+            "type": "string",
+            "description": "Comma-separated stored columns to return instead of full records, e.g. id,first_name,last_name,email. The answer is then a plain array of every match (per and page may be ignored); computed fields such as service_name are not columns and fail."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/users/{id}/workout_exercises",
+        "queryParams": {
+          "exercise_id": "$exercise_id",
+          "with_date": "$with_date",
+          "q[s]": "$sort",
+          "pluck_columns": "$pluck_columns",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_list_purchased_items",
+      "description": "List what a member has bought: per item its type and id (package, workout plan, group...) and the payment option used (purchase or subscription, amount, currency, interval).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Member's user id from exercise_com_list_users; without it the API answers for the user the access token belongs to."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/carts/purchased_items",
+        "queryParams": {
+          "user_id": "$user_id"
         }
       }
     },

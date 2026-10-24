@@ -244,6 +244,62 @@ describe('weclapp adapter: write tools', () => {
     expect(sent().url).toBe(`${base}/task/id/1%2F..%2F..%2FsalesOrder%2Fid%2F2`);
   });
 
+  it('sets the fixed-responsible flag of a party only when it is given', async () => {
+    await run('weclapp_set_party_responsible', { partyId: '7992', responsibleUserId: '3555', fixedResponsibleUser: true });
+    expect(sent().url).toBe(`${base}/party/id/7992`);
+    expect(sent().params).toEqual({ ignoreMissingProperties: 'true' });
+    expect(sent().data).toEqual({ responsibleUserId: '3555', fixedResponsibleUser: true });
+    jest.clearAllMocks();
+    await run('weclapp_set_party_responsible', { partyId: '7992', responsibleUserId: '3555' });
+    expect(sent().data).toEqual({ responsibleUserId: '3555' });
+  });
+
+  it('adds a party e-mail entry, then assigns it to invoices, with partial PUTs', async () => {
+    const partyEmailAddresses = [{ id: '901', toAddresses: 'info@example.com' }, { toAddresses: 'rechnung@example.com' }];
+    await run('weclapp_set_party_emails', { partyId: '7992', partyEmailAddresses });
+    expect(sent().method).toBe('PUT');
+    expect(sent().url).toBe(`${base}/party/id/7992`);
+    expect(sent().params).toEqual({ ignoreMissingProperties: 'true' });
+    expect(sent().data).toEqual({ partyEmailAddresses });
+    jest.clearAllMocks();
+    await run('weclapp_set_party_emails', { partyId: '7992', salesInvoiceEmailAddressesId: '902', salesOrderEmailAddressesId: '902', version: '4' });
+    expect(sent().data).toEqual({ salesInvoiceEmailAddressesId: '902', salesOrderEmailAddressesId: '902', version: '4' });
+  });
+
+  it('sets the payment state of a sales open item, installed switched off', async () => {
+    const t = tool('weclapp_set_sales_open_item_payment_state');
+    expect(t.enabled).toBe(false);
+    expect(t.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect(t.parameters.required).toEqual(['salesOpenItemId', 'paymentState']);
+    await run('weclapp_set_sales_open_item_payment_state', { salesOpenItemId: '612', paymentState: 'PAID', datePaid: 1767225600000 });
+    expect(sent().method).toBe('POST');
+    expect(sent().url).toBe(`${base}/salesOpenItem/id/612/updatePaymentState`);
+    expect(sent().data).toEqual({ paymentState: 'PAID', datePaid: 1767225600000 });
+  });
+
+  it('reads open items, stock movements and production orders with weclapp filters', async () => {
+    for (const [name, path] of [
+      ['weclapp_list_sales_open_items', '/salesOpenItem'],
+      ['weclapp_list_warehouse_stock_movements', '/warehouseStockMovement'],
+      ['weclapp_list_production_orders', '/productionOrder'],
+    ]) {
+      jest.clearAllMocks();
+      await run(name, { filter: 'salesInvoiceId-in=[4711,4712]', pageSize: 50 });
+      expect(sent().method).toBe('GET');
+      expect(sent().url).toBe(`${base}${path}`);
+      expect(sent().params).toEqual({ pageSize: 50, 'salesInvoiceId-in': '[4711,4712]' });
+    }
+  });
+
+  it('reads the current user and the translations of a record', async () => {
+    await run('weclapp_get_current_user', {});
+    expect(sent().url).toBe(`${base}/user/currentUser`);
+    jest.clearAllMocks();
+    await run('weclapp_get_property_translations', { entityName: 'article', entityId: '5101', locale: 'en', propertyNames: ['name', 'description'] });
+    expect(sent().url).toBe(`${base}/propertyTranslation/readPropertyTranslations`);
+    expect(sent().params).toEqual({ entityName: 'article', entityId: '5101', locale: 'en', propertyNames: ['name', 'description'] });
+  });
+
   it('installs every delete switched off', () => {
     const deletes = writes.filter((t) => t.endpointMapping.method === 'DELETE');
     expect(deletes.map((t) => t.name).sort()).toEqual([

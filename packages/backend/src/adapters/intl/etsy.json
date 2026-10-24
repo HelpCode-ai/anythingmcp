@@ -2,7 +2,7 @@
   "slug": "etsy",
   "name": "Etsy",
   "description": "Run an Etsy shop from any AI agent: create draft listings, edit and publish them, add photos, set price and stock, add tracking to orders, and read listings, orders, receipts and reviews. OAuth2 with automatic refresh-token rotation + x-api-key dual auth.",
-  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com). You authorize it once, in AnythingMCP; from then on the short-lived access token (1 hour) is renewed automatically, and the refresh token Etsy replaces on every renewal is stored for you.\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/your-apps → **Create New App**.\n2. In the app's settings, add this **callback URL**: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Etsy compares it character for character (https, upper/lower case, no trailing slash).\n3. Note the app's **Keystring** and **Shared secret**. Enter them as `ETSY_CLIENT_ID` and `ETSY_CLIENT_SECRET`, leave `ETSY_REFRESH_TOKEN` empty, and install.\n4. Open the connector and click **Authorize with Provider**. Sign in to Etsy, approve, and you land back on the connector page with the tools ready. AnythingMCP runs Etsy's OAuth2 PKCE flow (S256) for you.\n\n**Scopes**: the connector asks for `email_r shops_r listings_r listings_w transactions_r transactions_w`: read your account, shops, listings and orders, edit listings, and add tracking to orders. It cannot delete listings. **Connectors installed before October 2026** asked only for the read scopes: to use the write tools, open the connector's OAuth settings, set the scopes above and click **Authorize with Provider** again; until then Etsy answers \"Access token lacks scope\".\n\n**Already have a refresh token?** You can paste it into `ETSY_REFRESH_TOKEN` instead of step 4, if you obtained it yourself through Etsy's OAuth2 PKCE flow for the same app. Connectors set up that way keep working as they are; there is nothing to do. Clicking **Authorize with Provider** on one replaces its token with a new one, and needs the callback URL from step 2.\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}:${ETSY_CLIENT_SECRET}`\n\nEtsy requires the API key on **every** request, OAuth or not, and it must carry the\nKeystring AND the Shared secret separated by a colon. The Keystring alone earns a\n`403 {\"error\":\"Invalid API key: should be in the format 'keystring:shared_secret'.\"}`\non every call.\n\nThe access token is kept in memory and written back, together with the rotated refresh token, into this connector's own encrypted configuration, so a restart does not lose it. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP stores the new one from every refresh response and re-uses it automatically.\n\n**If a call says the access token could not be renewed**: an Etsy refresh token works once and expires after 90 days unused. Click **Authorize with Provider** on the connector page to get a new one.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Creating a listing** takes a few steps, in this order: find the category with `etsy_list_seller_taxonomy`; for a physical item get a shipping profile (`etsy_list_shipping_profiles`), a processing profile (`etsy_list_processing_profiles`) and, outside the EU, a return policy (`etsy_list_return_policies`); create the draft with `etsy_create_listing_draft`; add at least one photo with `etsy_add_listing_image`; publish with `etsy_edit_listing` and `state=active`. Change price or stock with `etsy_read_listing_inventory` then `etsy_set_listing_inventory`, which replaces the whole inventory. Etsy rejects titles with more than three words in capitals and tags longer than 20 characters; a shop on vacation cannot change listings.\n\n**Out of scope here**: deleting listings, payment account, billing, taxonomy edits.",
+  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com). You authorize it once, in AnythingMCP; from then on the short-lived access token (1 hour) is renewed automatically, and the refresh token Etsy replaces on every renewal is stored for you.\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/your-apps → **Create New App**.\n2. In the app's settings, add this **callback URL**: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Etsy compares it character for character (https, upper/lower case, no trailing slash).\n3. Note the app's **Keystring** and **Shared secret**. Enter them as `ETSY_CLIENT_ID` and `ETSY_CLIENT_SECRET`, leave `ETSY_REFRESH_TOKEN` empty, and install.\n4. Open the connector and click **Authorize with Provider**. Sign in to Etsy, approve, and you land back on the connector page with the tools ready. AnythingMCP runs Etsy's OAuth2 PKCE flow (S256) for you.\n\n**Scopes**: the connector asks for `email_r shops_r listings_r listings_w transactions_r transactions_w`: read your account, shops, listings and orders, edit listings, and add tracking to orders. It cannot delete listings. **Connectors installed before October 2026** asked only for the read scopes: to use the write tools, open the connector's OAuth settings, set the scopes above and click **Authorize with Provider** again; until then Etsy answers \"Access token lacks scope\".\n\n**Already have a refresh token?** You can paste it into `ETSY_REFRESH_TOKEN` instead of step 4, if you obtained it yourself through Etsy's OAuth2 PKCE flow for the same app. Connectors set up that way keep working as they are; there is nothing to do. Clicking **Authorize with Provider** on one replaces its token with a new one, and needs the callback URL from step 2.\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}:${ETSY_CLIENT_SECRET}`\n\nEtsy requires the API key on **every** request, OAuth or not, and it must carry the\nKeystring AND the Shared secret separated by a colon. The Keystring alone earns a\n`403 {\"error\":\"Invalid API key: should be in the format 'keystring:shared_secret'.\"}`\non every call.\n\nThe access token is kept in memory and written back, together with the rotated refresh token, into this connector's own encrypted configuration, so a restart does not lose it. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP stores the new one from every refresh response and re-uses it automatically.\n\n**If a call says the access token could not be renewed**: an Etsy refresh token works once and expires after 90 days unused. Click **Authorize with Provider** on the connector page to get a new one.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Reading the shop**: `etsy_get_listings_by_shop` lists your own listings in any state (active, draft, inactive, sold out); `etsy_get_shop_listings_active` is the public view any visitor sees; `etsy_list_shop_sections` and `etsy_get_listings_by_shop_section` go by shop section; `etsy_get_shop_reviews` lists the reviews. `etsy_list_taxonomy_properties` gives the properties (size, colour, material) a category allows.\n\n**Orders and sales**: `etsy_get_shop_receipts` lists orders and `etsy_get_shop_receipt` reads one with its line items. `etsy_get_shop_transactions` lists the sold line items of the whole shop (listing, SKU, quantity, price, variations), the view for sales per product. `etsy_get_listings_by_ids` then reads up to 100 of the listings behind them in one call. `etsy_add_order_tracking` marks an order as shipped with its tracking code, and Etsy e-mails the buyer at once.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Creating a listing** takes a few steps, in this order: find the category with `etsy_list_seller_taxonomy`; for a physical item get a shipping profile (`etsy_list_shipping_profiles`), a processing profile (`etsy_list_processing_profiles`) and, outside the EU, a return policy (`etsy_list_return_policies`); create the draft with `etsy_create_listing_draft`; add at least one photo with `etsy_add_listing_image`; publish with `etsy_edit_listing` and `state=active`. Change price or stock with `etsy_read_listing_inventory` then `etsy_set_listing_inventory`, which replaces the whole inventory. Etsy rejects titles with more than three words in capitals and tags longer than 20 characters; a shop on vacation cannot change listings.\n\n**Out of scope here**: deleting listings, payment account, billing, taxonomy edits.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "etsy",
@@ -368,7 +368,7 @@
     },
     {
       "name": "etsy_get_listing",
-      "description": "Fetch one listing by listing_id with full details.",
+      "description": "Fetch one listing by listing_id with full details: title, description, state, price, quantity, tags, URL and the optional includes.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -394,8 +394,46 @@
       }
     },
     {
+      "name": "etsy_get_listings_by_ids",
+      "description": "Fetch up to 100 listings in one call by their listing ids, with the same details as etsy_get_listing (title, description, state, price, quantity, tags, URL). Use it to look up the listings behind a page of orders or transactions instead of one call per listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_ids": {
+            "type": "string",
+            "description": "Comma-separated listing ids, at most 100, e.g. \"1234567890,1234567891\" (listing_id from etsy_get_shop_transactions, etsy_get_shop_receipts or the listing tools)."
+          },
+          "includes": {
+            "type": "string",
+            "description": "Optional extra data, comma-separated, any of: Images, Shop, User, Translations, Videos, Personalization, BuyerPrice."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Optional ISO 4217 currency code (e.g. EUR, USD) to convert the listing prices to."
+          },
+          "buyer_country": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country of the buyer (e.g. DE, GB), for buyer-facing prices with VAT and included shipping. It does not filter the listings."
+          }
+        },
+        "required": [
+          "listing_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/batch",
+        "queryParams": {
+          "listing_ids": "$listing_ids",
+          "includes": "$includes",
+          "currency": "$currency",
+          "buyer_country": "$buyer_country"
+        }
+      }
+    },
+    {
       "name": "etsy_get_shop_receipts",
-      "description": "List orders (receipts) for the shop.",
+      "description": "List the shop's orders (receipts) with buyer, totals, payment and shipping status, filtered by creation or change date and by paid or shipped state. Pages with limit and offset.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -491,8 +529,44 @@
       }
     },
     {
+      "name": "etsy_get_shop_transactions",
+      "description": "List the shop's sold items (transactions, one per listing line of an order): transaction_id, receipt_id, listing_id, title, sku, quantity, price, shipping cost, variations, buyer user id and the paid, shipped and expected ship dates. Use it for sales per product or SKU; etsy_get_shop_receipts is the order-level view. Pages with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Per page, 1 to 100 (default 25)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Pagination offset (0 = first page)."
+          }
+        },
+        "required": [
+          "shop_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/transactions",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
       "name": "etsy_get_shop_reviews",
-      "description": "List reviews (transactions with feedback) for the shop.",
+      "description": "List the shop's reviews (transactions with feedback): rating, review text, listing id and date, optionally since min_created. Pages with limit and offset.",
       "parameters": {
         "type": "object",
         "properties": {

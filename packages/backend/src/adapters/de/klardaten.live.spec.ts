@@ -1,6 +1,7 @@
 import * as adapter from './klardaten.json';
 import axios from 'axios';
 import { RestEngine } from '../../connectors/engines/rest.engine';
+import { applyResponseTransform } from '../../connectors/response-transform.util';
 
 jest.mock('axios', () => {
   const actual = jest.requireActual('axios');
@@ -13,6 +14,7 @@ type Tool = {
   enabled?: boolean;
   parameters: { properties: Record<string, unknown>; required?: string[] };
   endpointMapping: { method: string; path: string; queryParams?: Record<string, string> };
+  responseMapping?: Record<string, unknown>;
 };
 const a = adapter as unknown as {
   requiredEnvVars: string[];
@@ -107,6 +109,45 @@ describe('klardaten adapter: static spec conformance', () => {
     );
   });
 
+  it('reads VAT returns like the other tax returns', () => {
+    expect(tool('klardaten_list_vat_filings').endpointMapping).toMatchObject({
+      method: 'GET',
+      path: '/api/tax/value-added-tax',
+      queryParams: { page: '$page', page_size: '$page_size', order_by: '$order_by', fields: '$fields', filter: '$filter' },
+    });
+    expect(tool('klardaten_get_vat_filing').endpointMapping.path).toBe('/api/tax/value-added-tax/{id}');
+    expect(tool('klardaten_get_vat_data').endpointMapping.path).toBe('/api/tax/value-added-tax/{id}/data');
+    expect(tool('klardaten_list_clients_extended').endpointMapping).toMatchObject({
+      path: '/api/master-data/clients/extended',
+      queryParams: { filter: '$filter', order_by: '$order_by' },
+    });
+  });
+
+  it('instance details, logs, metrics and audit logs read the configured instance', () => {
+    const inst = '{{KLARDATEN_INSTANCE_ID}}';
+    expect(tool('klardaten_get_instance').endpointMapping.path).toBe(`/api/client-instances/${inst}`);
+    expect(tool('klardaten_get_instance_required_services').endpointMapping.path).toBe(
+      `/api/client-instances/${inst}/required-services`,
+    );
+    expect(tool('klardaten_get_instance_metrics').endpointMapping.path).toBe(`/api/monitoring/instance/${inst}/metrics`);
+    expect(tool('klardaten_list_instance_logs').endpointMapping).toMatchObject({
+      path: `/api/monitoring/instance/${inst}/logs`,
+      queryParams: { from_date: '$from_date', to_date: '$to_date', filter_pattern: '$filter_pattern', next_token: '$next_token', oldest_first: '$oldest_first' },
+    });
+    expect(tool('klardaten_list_audit_logs').endpointMapping.path).toBe(`/api/monitoring/instance/${inst}/audit-logs`);
+    expect(tool('klardaten_get_audit_log').endpointMapping.path).toBe(
+      `/api/monitoring/instance/${inst}/audit-logs/{log_name}/download`,
+    );
+  });
+
+  it('removes the signing secret from the webhook lists', () => {
+    const hooks = [{ id: 'w1', endpoint: 'https://example.com/hook', instance_id: 'i1', secret: 's3cr3t' }];
+    for (const name of ['klardaten_list_data_change_webhooks', 'klardaten_list_monitoring_webhooks']) {
+      const out = applyResponseTransform(hooks, tool(name).responseMapping as any).value as any[];
+      expect(out).toEqual([{ id: 'w1', endpoint: 'https://example.com/hook', instance_id: 'i1' }]);
+    }
+  });
+
   it('the DATEVconnect passthrough forwards its query string verbatim', () => {
     const t = tool('klardaten_datevconnect_get');
     expect(t.endpointMapping.path).toBe('/datevconnect/{path}');
@@ -149,6 +190,13 @@ describe('klardaten adapter: requests', () => {
     expect(sent().params).toEqual({ top: 5 });
     expect(sent().headers).not.toHaveProperty('x-profile-id');
     expect(sent().headers['x-client-instance-id']).toBe('48fa2446-c731-4a74-9ea7-b4bd6d66fe5f');
+  });
+
+  it('fetches one audit log file with its name encoded into the path', async () => {
+    const m = { ...(tool('klardaten_get_audit_log').endpointMapping as any) };
+    m.path = m.path.replace('{{KLARDATEN_INSTANCE_ID}}', 'inst-1');
+    await engine.execute(config, m, { log_name: 'audit 2026-10-20.log' });
+    expect(sent().url).toBe('https://api.klardaten.com/api/monitoring/instance/inst-1/audit-logs/audit%202026-10-20.log/download');
   });
 
   it('sends the configured profile as x-profile-id', async () => {

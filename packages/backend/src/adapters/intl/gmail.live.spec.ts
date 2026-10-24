@@ -129,6 +129,20 @@ describe('gmail adapter: static spec conformance', () => {
     expect(tool('gmail_send_draft').endpointMapping.bodyMapping).toEqual({ id: '$draft_id' });
     expect(tool('gmail_list_messages').endpointMapping.queryParams?.labelIds).toBe('$label_ids');
   });
+
+  it('downloads an attachment by message id and attachmentId (users.messages.attachments.get)', () => {
+    const t = tool('gmail_get_attachment');
+    expect(t.endpointMapping).toEqual({
+      method: 'GET',
+      path: '/messages/{message_id}/attachments/{attachment_id}',
+      encodePathParams: true,
+    });
+    expect(t.parameters?.required).toEqual(['message_id', 'attachment_id']);
+    expect(Object.keys(t.parameters?.properties ?? {}).sort()).toEqual(['attachment_id', 'message_id']);
+    expect(t.enabled).toBeUndefined();
+    expect(a.instructions).toContain('gmail_get_attachment');
+    expect(a.instructions).not.toMatch(/does not download/);
+  });
 });
 
 const TOKEN = process.env.GMAIL_ACCESS_TOKEN;
@@ -187,6 +201,17 @@ live('gmail adapter: live read-only calls', () => {
     if (!res.threads?.length) return;
     const thread = await run('gmail_get_thread', { thread_id: res.threads[0].id, format: 'minimal' });
     expect(Array.isArray(thread.messages)).toBe(true);
+  }, 30000);
+
+  it('downloads a small attachment when the mailbox has one', async () => {
+    const res = await run('gmail_list_messages', { q: 'has:attachment larger:1k smaller:500k', max_results: 1 });
+    if (!res.messages?.length) return;
+    const msg = decode('gmail_get_message', await run('gmail_get_message', { message_id: res.messages[0].id }));
+    const att = (msg.attachments ?? [])[0];
+    if (!att?.attachmentId) return;
+    const file = await run('gmail_get_attachment', { message_id: msg.id, attachment_id: att.attachmentId });
+    expect(typeof file.size).toBe('number');
+    expect(file.data).toMatch(/^[A-Za-z0-9_-]+=*$/);
   }, 30000);
 
   it('lists drafts', async () => {

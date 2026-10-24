@@ -1,4 +1,5 @@
 import * as adapter from './zenhub.json';
+import { getAdapter } from '../catalog';
 
 type Tool = {
   name: string;
@@ -9,7 +10,14 @@ type Tool = {
 };
 const a = adapter as unknown as {
   probe: { tool: string };
-  connector: { type: string; baseUrl: string; authType: string; authConfig: Record<string, string> };
+  instructions: string;
+  connector: {
+    type: string;
+    baseUrl: string;
+    authType: string;
+    authConfig: Record<string, string>;
+    config?: { graphqlBuiltinsOff?: string[] };
+  };
   tools: Tool[];
 };
 /** Variables an operation declares: `$name: Type` in its header. */
@@ -73,5 +81,23 @@ describe('zenhub adapter: static spec conformance', () => {
     const t = tool('zenhub_list_pipeline_issues');
     expect(t.parameters.properties!.filters.default).toEqual({});
     expect(t.endpointMapping.path).toContain('$filters: IssueSearchFiltersInput! = {}');
+  });
+
+  it('installs the generic mutation and subscription helpers switched off, the query helper on', () => {
+    expect(a.connector.config?.graphqlBuiltinsOff).toEqual(['mutation', 'subscription']);
+    expect(a.instructions).toContain('zenhub_graphql_query');
+    expect(a.instructions).toMatch(/zenhub_graphql_mutation[^.]*installed switched off/);
+    // The helpers exist once the catalog has been regenerated; check how they install.
+    const listed = getAdapter('zenhub');
+    if (!listed) return;
+    const byName = new Map((listed.tools as Array<{ name: string; enabled?: boolean }>).map((t) => [t.name, t]));
+    expect(byName.get('zenhub_graphql_mutation')?.enabled).toBe(false);
+    expect(byName.get('zenhub_graphql_subscription')?.enabled).toBe(false);
+    expect(byName.get('zenhub_graphql_query')?.enabled).not.toBe(false);
+  });
+
+  it('names every typed tool in the instructions and writes no em dash', () => {
+    for (const t of a.tools) expect(`${t.name}:${a.instructions.includes(t.name)}`).toBe(`${t.name}:true`);
+    expect(JSON.stringify(adapter)).not.toMatch(/\u2014/);
   });
 });

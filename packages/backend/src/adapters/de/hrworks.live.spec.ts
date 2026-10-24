@@ -21,6 +21,7 @@ type Tool = {
     method: string;
     path: string;
     bodyMapping?: Record<string, string>;
+    queryParams?: Record<string, string>;
   };
 };
 const tools = (adapter as unknown as { tools: Tool[] }).tools;
@@ -85,6 +86,42 @@ describe("hrworks adapter — static spec conformance", () => {
       });
       expect(tool(name).parameters.required).toEqual(["data"]);
     }
+  });
+
+  // Paths and parameters from the HR WORKS API v2 reference
+  // (developers.hrworks.de: Working Time Status, Onboarding, DELETE Working Times).
+  it("reads the clock status and the onboarding documents", () => {
+    expect(tool("hrworks_get_working_time_status").endpointMapping).toMatchObject({
+      method: "GET",
+      path: "/v2/persons/{personIdentifier}/working-times/status",
+      queryParams: { personIdentifierType: "$personIdentifierType" },
+    });
+    expect(tool("hrworks_get_working_time_status").parameters.required).toEqual(["personIdentifier"]);
+    expect(tool("hrworks_list_onboarding_documents").endpointMapping).toMatchObject({
+      method: "GET",
+      path: "/v2/persons/onboarding",
+      queryParams: { statusFilter: "$statusFilter", organizationUnits: "$organizationUnits" },
+    });
+    expect(tool("hrworks_get_onboarding_document").endpointMapping).toMatchObject({
+      method: "GET",
+      path: "/v2/persons/onboarding/{id}",
+    });
+    expect(tool("hrworks_get_onboarding_document").parameters.required).toEqual(["id"]);
+  });
+
+  it("deletes working times by number, installed switched off", () => {
+    const t = tool("hrworks_delete_working_times") as Tool & {
+      enabled?: boolean;
+      annotations?: Record<string, boolean>;
+    };
+    expect(t.enabled).toBe(false);
+    expect(t.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect(t.endpointMapping).toMatchObject({
+      method: "DELETE",
+      path: "/v2/working-times",
+      queryParams: { numbers: "$numbers" },
+    });
+    expect(t.parameters.required).toEqual(["numbers"]);
   });
 
   it("has no tool for /v3/working-times/{uuid}, which HR WORKS does not serve", () => {

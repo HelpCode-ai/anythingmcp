@@ -54,6 +54,8 @@ const tool = (name: string) => {
   return t;
 };
 const engine = () => new RestEngine({} as OAuth2TokenService, {} as LoginTokenService);
+// Tools the Kommo adapter does not have yet; same API, so they map 1:1 there too.
+const AMOCRM_ONLY = ['amocrm_list_loss_reasons'];
 const WRITES = ['amocrm_add_note', 'amocrm_create_contact', 'amocrm_create_lead', 'amocrm_create_task', 'amocrm_update_lead'];
 
 describe('amocrm adapter: static spec conformance', () => {
@@ -81,9 +83,9 @@ describe('amocrm adapter: static spec conformance', () => {
     expect(() => normalizeSubdomainVariable('AMOCRM_SUBDOMAIN', 'acme.kommo.com', '.amocrm.ru', { singleLabel: true })).toThrow(/AMOCRM_SUBDOMAIN/);
   });
 
-  it('offers the same tools as the Kommo adapter, under the amocrm_ prefix', () => {
-    expect(a.tools.map((t) => t.name)).toEqual(kommo.tools.map((t) => t.name.replace(/^kommo_/, 'amocrm_')));
-    for (const t of a.tools) {
+  it('offers the same tools as the Kommo adapter, under the amocrm_ prefix, plus the amoCRM-only ones', () => {
+    expect(a.tools.map((t) => t.name).filter((n) => !AMOCRM_ONLY.includes(n))).toEqual(kommo.tools.map((t) => t.name.replace(/^kommo_/, 'amocrm_')));
+    for (const t of a.tools.filter((x) => !AMOCRM_ONLY.includes(x.name))) {
       const twin = kommo.tools.find((k) => k.name === t.name.replace(/^amocrm_/, 'kommo_'))!;
       expect(t.endpointMapping).toEqual(twin.endpointMapping);
       expect(Object.keys(t.parameters.properties ?? {})).toEqual(Object.keys(twin.parameters.properties ?? {}));
@@ -110,6 +112,11 @@ describe('amocrm adapter: static spec conformance', () => {
       expect(t.endpointMapping.queryParams).toMatchObject({ page: '$page', limit: '$limit' });
     }
     expect(a.instructions).toMatch(/HTTP 204/);
+  });
+
+  it('lists the loss reasons that lost deals point to', () => {
+    expect(tool('amocrm_list_loss_reasons').endpointMapping).toEqual({ method: 'GET', path: '/leads/loss_reasons' });
+    expect(a.instructions).toContain('amocrm_list_loss_reasons');
   });
 
   it('reads the event log and the notes of a whole entity type', () => {
@@ -238,6 +245,8 @@ live('amocrm adapter: live calls (read-only)', () => {
     expect(Array.isArray(users._embedded.users)).toBe(true);
     const pipelines = await run('amocrm_list_pipelines');
     expect(Array.isArray(pipelines._embedded.pipelines)).toBe(true);
+    const reasons = await run('amocrm_list_loss_reasons');
+    if (reasons) expect(Array.isArray(reasons._embedded.loss_reasons)).toBe(true);
   }, 30000);
 
   it('lists leads, contacts and lead custom fields', async () => {
