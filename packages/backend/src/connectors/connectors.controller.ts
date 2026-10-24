@@ -9,11 +9,15 @@ import {
   Param,
   Query,
   Req,
+  Res,
   UseGuards,
   Logger,
   ForbiddenException,
   BadRequestException,
+  NotFoundException,
+  ValidationPipe,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PaginationQueryDto } from '../common/pagination.dto';
@@ -28,6 +32,7 @@ import {
   IsIn,
   ValidateNested,
   ArrayMinSize,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ConnectorType, AuthType } from '../generated/prisma/client';
@@ -63,6 +68,15 @@ import {
   type StoredDynamicClient,
 } from './mcp-oauth-settings';
 import { mcpPathOf } from './mcp-connector-config.util';
+import {
+  EXPORT_FORMATS,
+  IMPORT_FILE_MAX_CHARS,
+  exportFileName,
+  parseImportFile,
+  serializeExport,
+  toExportEnvelope,
+  type ExportFormat,
+} from './connector-export.util';
 import { catalogMcpToolsFor } from '../adapters/mcp-adapter.util';
 import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 import { resolveMcpEndpointUrl } from '../common/url.util';
@@ -584,6 +598,28 @@ class ImportAllDto {
   secretsIncluded?: boolean;
 }
 
+class ImportFileDto {
+  @ApiProperty({
+    description:
+      'Contents of a file written by export-all or :id/export, JSON or YAML. ' +
+      'Parsed with the YAML core schema (JSON is a subset of it).',
+    example: 'version: "1.0"\nconnectors:\n  - name: Acme CRM\n    type: REST\n    baseUrl: https://api.acme.test\n',
+  })
+  @IsString()
+  @MaxLength(IMPORT_FILE_MAX_CHARS)
+  content: string;
+}
+
+/**
+ * The same pipe main.ts registers globally, run on the parsed file so a YAML
+ * import is validated exactly like a JSON body sent to import-all.
+ */
+const importFilePipe = new ValidationPipe({
+  transform: true,
+  whitelist: true,
+  forbidNonWhitelisted: true,
+});
+
 class UpdateEnvVarsDto {
   @ApiProperty({
     description:
@@ -961,41 +997,51 @@ export class ConnectorsController {
       where: { organizationId: req.user.organizationId },
       include: { tools: true },
     });
-    const includeSecrets = req.user.role === 'ADMIN';
+    return toExportEnvelope(allConnectors, req.user.role === 'ADMIN');
+  }
 
-    const exportData = allConnectors.map((c) => {
-      const masked = includeSecrets ? null : toPublicConnector(c);
-      return {
-        name: c.name,
-        type: c.type,
-        baseUrl: c.baseUrl,
-        isActive: c.isActive,
-        authType: c.authType,
-        specUrl: c.specUrl,
-        headers: masked ? masked.headers : c.headers,
-        config: c.config,
-        envVars: masked ? masked.envVars : c.envVars,
-        ...(masked
-          ? { maskedEnvVars: masked.maskedEnvVars, maskedHeaders: masked.maskedHeaders }
-          : {}),
-        tools: c.tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          isEnabled: t.isEnabled,
-          parameters: t.parameters,
-          endpointMapping: t.endpointMapping,
-          responseMapping: t.responseMapping,
-          outputSchema: t.outputSchema,
-        })),
-      };
+  @Get(':id/export')
+  @ApiOperation({
+    summary: 'Export one connector and its tools as a JSON or YAML file',
+    description:
+      'Same file format as export-all, with a single entry in `connectors`, ' +
+      'so it can be restored with import-all or import. authConfig is never ' +
+      'exported. Secret environment variables and headers are exported only ' +
+      'to admins; for every other role they are left empty and named in ' +
+      '`maskedEnvVars` / `maskedHeaders`.',
+  })
+  @ApiQuery({ name: 'format', required: false, enum: ['json', 'yaml'] })
+  async exportOne(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('format') format: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const fmt = (format ?? 'json').toLowerCase() as ExportFormat;
+    if (!EXPORT_FORMATS.includes(fmt)) {
+      throw new BadRequestException('format must be "json" or "yaml"');
+    }
+    const connector = await this.prisma.connector.findFirst({
+      where: { id },
+      include: { tools: true },
     });
+    if (!connector) {
+      throw new NotFoundException('Connector not found');
+    }
+    this.assertOrgMatch(connector, req);
 
-    return {
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      secretsIncluded: includeSecrets,
-      connectors: exportData,
-    };
+    const secretsIncluded = req.user.role === 'ADMIN';
+    const data = toExportEnvelope([connector], secretsIncluded);
+    res.setHeader('X-Secrets-Included', String(secretsIncluded));
+    res.setHeader(
+      'Content-Type',
+      fmt === 'yaml' ? 'application/yaml; charset=utf-8' : 'application/json; charset=utf-8',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${exportFileName(connector.name, fmt)}"`,
+    );
+    return serializeExport(data, fmt);
   }
 
   @Get(':id')
@@ -1609,8 +1655,48 @@ export class ConnectorsController {
       return { error: 'Provide a "connectors" array with at least one connector' };
     }
 
+    return this.importConnectors(body, req);
+  }
+
+  @Post('import')
+  @ApiOperation({
+    summary: 'Import connectors from an exported JSON or YAML file',
+    description:
+      'Takes the text of a file written by export-all or :id/export, in JSON ' +
+      'or YAML, and imports it like import-all: into the caller\'s ' +
+      'organization only, skipping connectors with duplicate names, never ' +
+      'restoring auth credentials. Not to be confused with POST :id/import, ' +
+      'which imports tools from an API spec into an existing connector.',
+  })
+  async importFile(@Req() req: any, @Body() dto: ImportFileDto) {
+    this.assertCanCreate(req);
+    const parsed = parseImportFile(dto.content);
+    const body: ImportAllDto = await importFilePipe.transform(parsed, {
+      type: 'body',
+      metatype: ImportAllDto,
+      data: '',
+    });
+    return this.importConnectors(body, req);
+  }
+
+  /**
+   * Create the connectors of an export file in the caller's organization.
+   * Shared by import-all and import; the target organization and owner
+   * always come from the request, never from the file.
+   */
+  private async importConnectors(body: ImportAllDto, req: any) {
     const results = { created: 0, skipped: 0, tools: 0, errors: [] as string[] };
     const moves: SecretMoveSummary[] = [];
+
+    // Same base URL check as create and update, run for every connector
+    // before anything is written, so a bad file imports nothing.
+    body.connectors.forEach((c, i) => {
+      try {
+        this.assertUsableBaseUrl(c.baseUrl, c.type);
+      } catch (err: any) {
+        throw new BadRequestException(`connectors[${i}].baseUrl: ${err.message}`);
+      }
+    });
 
     for (const c of body.connectors) {
       // Connector names are not unique in the schema, so the P2002 branch

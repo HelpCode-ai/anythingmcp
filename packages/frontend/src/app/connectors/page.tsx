@@ -149,7 +149,8 @@ export default function ConnectorsPage() {
       a.href = url;
       a.download = `anythingmcp-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
-      URL.revokeObjectURL(url);
+      // Revoke later: some browsers start the download after click() returns.
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
       setMsg(
         data.secretsIncluded === false
           ? 'Configuration exported without secret values (only admins can export them)'
@@ -165,9 +166,9 @@ export default function ConnectorsPage() {
     if (!token || !importJson.trim()) return;
     setImportingAll(true);
     try {
-      const parsed = JSON.parse(importJson);
-      const data = parsed.connectors ? parsed : { connectors: Array.isArray(parsed) ? parsed : [parsed] };
-      const result = await connectors.importAll(data, token);
+      // JSON or YAML: the server parses and validates the file. A bare JSON
+      // connector or array (accepted here before) is wrapped as before.
+      const result = await connectors.importFile(importJson, token);
       // Per-connector failures (a trial limit, an invalid row) come back in
       // `errors` with a 201, so show them rather than only the counts.
       setMsg(
@@ -224,7 +225,7 @@ export default function ConnectorsPage() {
   const utilityActions = [
     { label: checkingHealth ? 'Checking…' : 'Health check', icon: <HeartPulseIcon />, onSelect: handleHealthCheck, disabled: checkingHealth },
     { label: 'Export all as JSON', icon: <DownloadIcon />, onSelect: handleExportAll },
-    { label: 'Import from JSON', icon: <UploadIcon />, onSelect: () => setShowImportModal(true) },
+    { label: 'Import from file', icon: <UploadIcon />, onSelect: () => setShowImportModal(true) },
     { label: 'Browse adapters', icon: <StoreIcon />, href: '/connectors/store' },
   ];
 
@@ -245,7 +246,7 @@ export default function ConnectorsPage() {
         <DownloadIcon />
         <span>Export</span>
       </Button>
-      <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title="Import connectors from JSON backup" className="max-md:hidden">
+      <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title="Import connectors from a JSON or YAML export" className="max-md:hidden">
         <UploadIcon />
         <span>Import</span>
       </Button>
@@ -289,20 +290,21 @@ export default function ConnectorsPage() {
               </Dialog.Close>
             </div>
             <Dialog.Description className="mb-4 text-sm text-[var(--text-3)]">
-              Paste a previously exported JSON backup or upload a file. Duplicate connectors will be skipped.
+              Paste a previously exported JSON or YAML file, or upload one. Duplicate connectors will be skipped.
             </Dialog.Description>
             <div className="mb-3">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]">
                 <UploadIcon size={14} />
                 Choose File
-                <input type="file" accept=".json" onChange={handleImportFile} className="hidden" />
+                <input type="file" accept=".json,.yaml,.yml,application/json,application/yaml,text/yaml" onChange={handleImportFile} className="hidden" />
               </label>
             </div>
             <textarea
               value={importJson}
               onChange={(e) => setImportJson(e.target.value)}
               rows={8}
-              placeholder='{"version":"1.0","connectors":[...]}'
+              aria-label="Export file contents"
+              placeholder={'{"version":"1.0","connectors":[...]}  or  version: "1.0"\nconnectors: ...'}
               className="w-full rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-3 py-2 font-mono text-sm text-[var(--text)]"
             />
             <div className="mt-4 flex gap-2">
