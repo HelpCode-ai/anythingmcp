@@ -170,25 +170,49 @@ export function parsePrivateKey(value: string): KeyObject {
 const b64url = (input: Buffer | string): string =>
   Buffer.from(input).toString('base64url');
 
-/** Signs a client assertion JWT. `now` is injectable for tests. */
-export function signClientAssertion(
-  settings: ClientAssertionSettings,
-  now: number = Date.now(),
-): string {
-  const algorithm = (settings.algorithm || 'RS256').toUpperCase() as Algorithm;
+/**
+ * Signs a JWT over `payload` with a private key, as is. The checks the key
+ * and algorithm need are here; which claims go in is the caller's business
+ * (signClientAssertion below, and LOGIN_TOKEN's `signedJwt` login).
+ */
+export function signJwt(opts: {
+  privateKey: string;
+  algorithm?: string;
+  keyId?: string;
+  payload: Record<string, unknown>;
+}): string {
+  const algorithm = (opts.algorithm || 'RS256').toUpperCase() as Algorithm;
   const alg = ALGORITHMS[algorithm];
   if (!alg) {
     throw new ClientAssertionError(
-      `unsupported algorithm "${settings.algorithm}" (use one of ${Object.keys(ALGORITHMS).join(', ')})`,
+      `unsupported algorithm "${opts.algorithm}" (use one of ${Object.keys(ALGORITHMS).join(', ')})`,
     );
   }
-  const key = parsePrivateKey(settings.privateKey);
+  const key = parsePrivateKey(opts.privateKey);
   if (key.asymmetricKeyType !== alg.keyType) {
     throw new ClientAssertionError(
       `${algorithm} needs an ${alg.keyType.toUpperCase()} key, the configured key is ${String(key.asymmetricKeyType).toUpperCase()}`,
     );
   }
 
+  const header: Record<string, string> = { alg: algorithm, typ: 'JWT' };
+  if (opts.keyId) header.kid = opts.keyId;
+  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(opts.payload))}`;
+  const signature = sign(alg.hash, Buffer.from(signingInput), {
+    key,
+    ...(alg.pss
+      ? { padding: 6 /* RSA_PKCS1_PSS_PADDING */, saltLength: 32 }
+      : {}),
+    ...(alg.keyType === 'ec' ? { dsaEncoding: 'ieee-p1363' as const } : {}),
+  });
+  return `${signingInput}.${b64url(signature)}`;
+}
+
+/** Signs a client assertion JWT. `now` is injectable for tests. */
+export function signClientAssertion(
+  settings: ClientAssertionSettings,
+  now: number = Date.now(),
+): string {
   const ttl = Math.min(
     Math.max(Math.floor(settings.ttlSeconds ?? DEFAULT_TTL_SECONDS), 1),
     MAX_TTL_SECONDS,
@@ -216,17 +240,12 @@ export function signClientAssertion(
     }
   }
 
-  const header: Record<string, string> = { alg: algorithm, typ: 'JWT' };
-  if (settings.keyId) header.kid = settings.keyId;
-  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claims))}`;
-  const signature = sign(alg.hash, Buffer.from(signingInput), {
-    key,
-    ...(alg.pss
-      ? { padding: 6 /* RSA_PKCS1_PSS_PADDING */, saltLength: 32 }
-      : {}),
-    ...(alg.keyType === 'ec' ? { dsaEncoding: 'ieee-p1363' as const } : {}),
+  return signJwt({
+    privateKey: settings.privateKey,
+    algorithm: settings.algorithm,
+    keyId: settings.keyId,
+    payload: claims,
   });
-  return `${signingInput}.${b64url(signature)}`;
 }
 
 /** The two form fields a token request carries under private_key_jwt. */
