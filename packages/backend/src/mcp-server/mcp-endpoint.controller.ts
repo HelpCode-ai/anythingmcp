@@ -45,6 +45,10 @@ import {
   sharedEndpointMode,
   sharedToolsetInstructions,
 } from './shared-toolset';
+import {
+  CHATGPT_APP_INSTRUCTIONS,
+  registerChatgptAppToolset,
+} from './chatgpt-app-toolset';
 
 /**
  * The OAuth client an access token was issued to.
@@ -338,13 +342,61 @@ export class McpEndpointController {
     });
   }
 
+  // ── /mcp/chatgpt-app: the endpoint of the OpenAI directory plugin ──────────
+  //
+  // A fixed set of single-operation tools (see chatgpt-app-toolset.ts), the
+  // same for every caller and every deployment mode: OpenAI's guidelines
+  // forbid the shared endpoint's search/describe/run meta-tools. Same auth,
+  // grant and role scope as /mcp. Declared before the ':serverId' routes so
+  // the static segment wins route matching.
+
+  @Post('chatgpt-app')
+  async handleChatgptAppPost(@Req() req: Request, @Res() res: Response) {
+    if (!(req as any).user?.sub) {
+      // Operator credentials (a static key) name no user and no workspace.
+      res.status(403).json({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'This endpoint needs a signed-in AnythingMCP user.' },
+        id: null,
+      });
+      return;
+    }
+    if (isListenRequest((req as any).body)) {
+      await this.serveStateless(
+        req,
+        res,
+        (req as any).body,
+        () => listenOnlyServer('AnythingMCP', APP_VERSION, { tools: { listChanged: true } }),
+        'chatgpt-app listen',
+      );
+      return;
+    }
+    await this.attachVisibleTools(req);
+    await this.serveSharedToolset(req, res, 'chatgpt-app');
+  }
+
+  @Get('chatgpt-app')
+  handleChatgptAppGet(@Res() res: Response) {
+    this.statelessOnly(res);
+  }
+
+  @Delete('chatgpt-app')
+  handleChatgptAppDelete(@Res() res: Response) {
+    this.statelessOnly(res);
+  }
+
   /**
-   * Serves the shared endpoint's fixed tool set, statelessly, over exactly the
-   * tools `attachVisibleTools` resolved for this caller. Every run is executed
-   * in the one connector that owns the tool, so a same-named tool elsewhere
-   * can never be reached.
+   * Serves a fixed tool set, statelessly, over exactly the tools
+   * `attachVisibleTools` resolved for this caller: the shared endpoint's
+   * (`shared`) or the OpenAI directory plugin's (`chatgpt-app`). Every run is
+   * executed in the one connector that owns the tool, so a same-named tool
+   * elsewhere can never be reached.
    */
-  private async serveSharedToolset(req: Request, res: Response): Promise<void> {
+  private async serveSharedToolset(
+    req: Request,
+    res: Response,
+    variant: 'shared' | 'chatgpt-app' = 'shared',
+  ): Promise<void> {
     const user = (req as any).user;
     // Already narrowed to a pinned credential's server by attachVisibleTools.
     const scopeTools: RegisteredTool[] =
@@ -380,7 +432,9 @@ export class McpEndpointController {
     const setupCtx = setupOrg
       ? { userId: user.sub, organizationId: setupOrg, serverIds, dashboardBase, assistant }
       : null;
+    // The plugin endpoint has no setup tools: don't resolve the permission.
     const canSetUp =
+      variant === 'shared' &&
       !!setupProvider && !!setupCtx && !user.mcpServerId && grant?.mode !== 'none'
         ? await setupProvider.canSetUp(setupCtx)
         : false;
@@ -458,6 +512,27 @@ export class McpEndpointController {
         };
       },
     };
+
+    if (variant === 'chatgpt-app') {
+      await this.serveStateless(
+        req,
+        res,
+        (req as any).body,
+        () => {
+          const mcpServer = new McpServer(
+            { name: 'AnythingMCP', version: APP_VERSION },
+            { instructions: CHATGPT_APP_INSTRUCTIONS },
+          );
+          registerChatgptAppToolset(mcpServer, scopeTools, {
+            ...deps,
+            activity: (ids, days) => this.mcpServersService.activityByConnector(ids, days),
+          });
+          return mcpServer;
+        },
+        'chatgpt-app',
+      );
+      return;
+    }
 
     // Which assistant this connection belongs to, from the OAuth client the
     // token was issued to. API keys and anything unidentified get the default

@@ -84,6 +84,61 @@ export class McpServersService {
     return usage;
   }
 
+  /**
+   * Calls and failed calls per connector over the last `days` days, with the
+   * time of the last call and of the last failure. Counts only: no inputs,
+   * outputs or error texts. Grouped on the (connector_id, created_at) index.
+   */
+  async activityByConnector(
+    connectorIds: string[],
+    days: number,
+  ): Promise<
+    Array<{
+      connectorId: string;
+      calls: number;
+      errors: number;
+      lastCallAt: Date | null;
+      lastErrorAt: Date | null;
+    }>
+  > {
+    const ids = [...new Set(connectorIds)];
+    if (ids.length === 0) return [];
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const where = { connectorId: { in: ids }, createdAt: { gte: since } };
+    const [all, failed] = await Promise.all([
+      this.prisma.toolInvocation.groupBy({
+        by: ['connectorId'],
+        where,
+        _count: { _all: true },
+        _sum: { repeatCount: true },
+        _max: { createdAt: true },
+      }),
+      this.prisma.toolInvocation.groupBy({
+        by: ['connectorId'],
+        where: { ...where, status: { in: ['ERROR', 'TIMEOUT'] } },
+        _count: { _all: true },
+        _sum: { repeatCount: true },
+        _max: { createdAt: true },
+      }),
+    ]);
+    // A row can stand for repeats of the same failure (repeat_count).
+    const calls = (r: { _count: { _all: number }; _sum: { repeatCount: number | null } }) =>
+      r._sum.repeatCount ?? r._count._all;
+    const failedById = new Map(failed.map((r) => [r.connectorId, r]));
+    return all
+      .filter((r) => r.connectorId)
+      .map((r) => {
+        const f = failedById.get(r.connectorId);
+        return {
+          connectorId: r.connectorId as string,
+          calls: calls(r),
+          errors: f ? calls(f) : 0,
+          lastCallAt: r._max.createdAt ?? null,
+          lastErrorAt: f?._max.createdAt ?? null,
+        };
+      });
+  }
+
   async findAllByOrg(
     organizationId: string,
     opts?: { limit?: number; offset?: number },
