@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 544 connectors, 23 of them with no API key." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 544 connectors, 25 of them with no API key." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: self-hosted MCP gateway</h1>
