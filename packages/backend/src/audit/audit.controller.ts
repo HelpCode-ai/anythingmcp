@@ -2,6 +2,11 @@ import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AuditService } from './audit.service';
+import {
+  ANALYTICS_DEFAULT_DAYS,
+  ANALYTICS_MAX_DAYS,
+  AnalyticsQueryDto,
+} from './analytics-query.dto';
 
 @ApiTags('Audit')
 @ApiBearerAuth()
@@ -46,14 +51,19 @@ export class AuditController {
   @ApiOperation({
     summary: 'Get analytics data with daily time-series and top tools',
     description:
-      'Returns 7-day daily breakdown of invocations by status, ' +
+      'Returns a daily breakdown (UTC days, last `days`, default 7) of invocations by status, ' +
       'top 10 most-used tools, success rate, and average duration.',
   })
-  @ApiQuery({ name: 'days', required: false, type: Number })
-  async getAnalytics(@Req() req: any, @Query('days') days?: string) {
+  @ApiQuery({
+    name: 'days',
+    required: false,
+    type: Number,
+    description: `Window in days, 1 to ${ANALYTICS_MAX_DAYS} (default ${ANALYTICS_DEFAULT_DAYS})`,
+  })
+  async getAnalytics(@Req() req: any, @Query() query: AnalyticsQueryDto) {
     return this.auditService.getAnalytics(
       req.user.organizationId,
-      days ? parseInt(days, 10) : 7,
+      query.days ?? ANALYTICS_DEFAULT_DAYS,
     );
   }
 
