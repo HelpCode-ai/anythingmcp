@@ -104,8 +104,29 @@ function isCatalogMcpBridge(config: unknown): boolean {
   return typeof slug === 'string' && getAdapter(slug)?.connector.type === 'MCP';
 }
 
+/**
+ * The variables to resolve placeholders with. An empty value counts as unset,
+ * except for an optional variable of the connector's catalog adapter saved
+ * empty on purpose: it resolves to '' when the connector runs, and that is
+ * its meaning (Microsoft SQL Server: no MSSQL_DOMAIN means a SQL login, not
+ * Windows authentication). Dropping it reported the connector as "Still
+ * empty: MSSQL_DOMAIN" and kept it off MCP. An optional variable that was
+ * never saved still counts as unset: it would stay a literal placeholder.
+ */
+function resolvableEnvVars(input: SetupStatusInput): Record<string, string> {
+  const values = asStringMap(input.envVars);
+  const raw = input.envVars;
+  const slug = (input.config as { adapterSlug?: unknown } | null)?.adapterSlug;
+  const optional = typeof slug === 'string' ? getAdapter(slug)?.optionalEnvVars : undefined;
+  if (!optional?.length || !raw || typeof raw !== 'object') return values;
+  for (const name of optional) {
+    if (!(name in values) && (raw as Record<string, unknown>)[name] === '') values[name] = '';
+  }
+  return values;
+}
+
 export function computeSetupState(input: SetupStatusInput): SetupState {
-  const envVars = asStringMap(input.envVars);
+  const envVars = resolvableEnvVars(input);
   const options = { reservedPrefix: CALLER_CONTEXT_PREFIX };
   const authConfig = interpolateDeep(parseAuthConfig(input.authConfig), envVars, options);
   const isBrowserOAuth =
