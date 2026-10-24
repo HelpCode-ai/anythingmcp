@@ -1,0 +1,559 @@
+{
+  "slug": "helius",
+  "name": "Helius",
+  "aliases": [
+    "Helius RPC",
+    "Helius Solana API",
+    "Solana DAS API"
+  ],
+  "description": "Solana blockchain data through Helius: SOL and token balances, NFTs and tokens of a wallet (DAS API), readable transaction history, single transactions, wallet identity and funding source. Read-only.",
+  "instructions": "## Helius\nThis connector reads the Solana blockchain through **Helius**: standard Solana RPC (`https://mainnet.helius-rpc.com`), the DAS API for NFTs and tokens, Enhanced Transactions for human-readable history and the Wallet API (`https://api.helius.xyz/v1/wallet`, beta). Everything is read-only: no transaction is signed or sent.\n\n**Setup (2 minutes)**\n1. Sign up at https://dashboard.helius.dev (the Free plan works).\n2. Open **API Keys** and copy a key into `HELIUS_API_KEY`. It is sent as the `api-key` query parameter.\n3. Run `helius_get_epoch_info` to check the key.\n\n**Workflow**\n- Balances: `helius_get_balance` for SOL in lamports (divide by 1,000,000,000), `helius_get_assets_by_owner` with `show_fungible` and `show_native_balance` for everything a wallet holds, `helius_get_token_accounts` for raw token accounts by owner or mint, `helius_get_wallet_balances` for a USD-valued portfolio.\n- One asset or token: `helius_get_asset` with the mint address.\n- History: `helius_get_address_transactions` (readable types and transfers, 100 per call, page with `before_signature`), `helius_get_wallet_history` (balance changes per transaction), `helius_get_wallet_transfers` (transfers only), or `helius_get_signatures_for_address` (raw signatures, up to 1000) followed by `helius_get_transaction` or `helius_parse_transactions` for details.\n- Who is this wallet: `helius_get_wallet_identity` (exchanges, protocols, known entities) and `helius_get_wallet_funded_by` (first SOL funder).\n- Chain status: `helius_get_epoch_info`.\n\n**Units and times**: SOL amounts from RPC are lamports (10^9 per SOL). Token amounts from `helius_get_token_accounts` are raw integers; divide by 10^decimals of the mint. `blockTime` and `timestamp` are Unix seconds (UTC).\n\n**Credits and limits**: each plan has monthly credits (Free 1M). Standard RPC calls cost 1 credit, DAS and Enhanced calls more, every Wallet API call 100 credits. Rate limits on the Free plan: RPC 10 requests per second, DAS and Enhanced APIs 2 per second. Prefer the RPC and DAS tools for routine questions and the Wallet API for the questions only it answers.\n\n**Errors**: 401 means a missing or wrong API key. 429 means the plan rate limit or the monthly credits are used up. RPC errors come back as a JSON-RPC `error` object (for example an invalid address). The Wallet API answers 404 when it knows no identity or funder for the wallet.\n\n**Limitations**: mainnet only (devnet is not configured). Enhanced Transactions is in maintenance mode at Helius; the Wallet API is beta and its formats may change. Webhooks, streaming, priority fees and sending transactions are not part of this connector.",
+  "region": "intl",
+  "category": "data",
+  "icon": "helius",
+  "docsUrl": "https://www.helius.dev/docs",
+  "requiredEnvVars": [
+    "HELIUS_API_KEY"
+  ],
+  "envVarMeta": {
+    "HELIUS_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "dashboard.helius.dev, API Keys: copy a key. The Free plan works.",
+      "link": "https://dashboard.helius.dev/",
+      "pattern": "^[A-Za-z0-9-]{20,64}$",
+      "patternMessage": "Paste only the API key (a UUID such as 1a2b3c4d-...), not the whole RPC URL."
+    }
+  },
+  "verifyHints": {
+    "401": "Helius refused the API key. Copy it again from dashboard.helius.dev (API Keys), only the key, not the RPC URL.",
+    "429": "The Helius plan rate limit or the monthly credits are used up. Wait a moment or check the usage in the Helius dashboard."
+  },
+  "probe": {
+    "tool": "helius_get_epoch_info"
+  },
+  "connector": {
+    "name": "Helius Solana API",
+    "type": "REST",
+    "baseUrl": "https://mainnet.helius-rpc.com",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "api-key": "{{HELIUS_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "helius_get_epoch_info",
+      "description": "Get the current Solana epoch: epoch number, slot index and slots in the epoch, absolute slot, block height and transaction count. Costs one RPC credit; use it to check the connection and to know the current slot.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp",
+          "method": "getEpochInfo"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "helius_get_balance",
+      "description": "Get the native SOL balance of an account in lamports (value; 1 SOL = 1,000,000,000 lamports) with the slot it was read at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Solana address (base58), e.g. 86xCnPeV69n6t3DnyGvkKobf9FdN2H9oiVDdaMpo2MMY."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp",
+          "method": "getBalance",
+          "params": [
+            "$address"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "helius_get_assets_by_owner",
+      "description": "List the digital assets a wallet owns through the DAS API: NFTs, compressed NFTs and, with show_fungible, SPL and Token-2022 tokens with balance, decimals and price where known; show_native_balance adds the SOL balance. Paged: page starts at 1, limit up to 1000.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner_address": {
+            "type": "string",
+            "description": "Wallet address (base58)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Assets per page, up to 1000."
+          },
+          "show_fungible": {
+            "type": "boolean",
+            "description": "Include fungible tokens (SPL, Token-2022) with balances."
+          },
+          "show_native_balance": {
+            "type": "boolean",
+            "description": "Include the SOL balance of the wallet."
+          },
+          "show_zero_balance": {
+            "type": "boolean",
+            "description": "Include token accounts with a zero balance."
+          }
+        },
+        "required": [
+          "owner_address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp",
+          "method": "getAssetsByOwner",
+          "params": {
+            "ownerAddress": "$owner_address",
+            "page": "$page",
+            "limit": "$limit",
+            "displayOptions": {
+              "showFungible": "$show_fungible",
+              "showNativeBalance": "$show_native_balance",
+              "showZeroBalance": "$show_zero_balance"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "helius_get_asset",
+      "description": "Get one digital asset (NFT, compressed NFT or token) by its id (mint address) through the DAS API: interface, name, symbol, metadata and image links, ownership, collection grouping, royalties, creators, supply and, for tokens, decimals and price info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "Asset id: the mint address (base58)."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp",
+          "method": "getAsset",
+          "params": {
+            "id": "$asset_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "helius_get_token_accounts",
+      "description": "List SPL token accounts by owner or by mint through the DAS API: token account address, mint, owner, amount (raw, apply the mint decimals) and frozen state. Give owner, mint or both. Paged with page and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner wallet address (base58)."
+          },
+          "mint": {
+            "type": "string",
+            "description": "Token mint address (base58), e.g. EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v for USDC."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Accounts per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp",
+          "method": "getTokenAccounts",
+          "params": {
+            "owner": "$owner",
+            "mint": "$mint",
+            "page": "$page",
+            "limit": "$limit"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "helius_get_signatures_for_address",
+      "description": "List transaction signatures that touched an address, newest first: signature, slot, blockTime (Unix seconds), err (null on success) and memo. Default and maximum 1000; page with before = the last signature received. Fetch the details with helius_get_transaction.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Solana address (base58), e.g. 86xCnPeV69n6t3DnyGvkKobf9FdN2H9oiVDdaMpo2MMY."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of signatures, 1 to 1000."
+          },
+          "before": {
+            "type": "string",
+            "description": "Start before this signature (paging backwards)."
+          },
+          "until": {
+            "type": "string",
+            "description": "Stop at this signature (fetch only newer ones)."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp",
+          "method": "getSignaturesForAddress",
+          "params": [
+            "$address",
+            {
+              "limit": "$limit",
+              "before": "$before",
+              "until": "$until"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "helius_get_transaction",
+      "description": "Get one confirmed transaction by signature with parsed instructions (jsonParsed): slot, blockTime, fee, status, account keys, pre and post SOL and token balances and log messages. Transaction versions legacy, 0 and 1 are accepted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signature": {
+            "type": "string",
+            "description": "Transaction signature (base58)."
+          }
+        },
+        "required": [
+          "signature"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp",
+          "method": "getTransaction",
+          "params": [
+            "$signature",
+            {
+              "encoding": "jsonParsed",
+              "maxSupportedTransactionVersion": 1
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "helius_get_address_transactions",
+      "description": "Get the human-readable transaction history of an address (Enhanced Transactions): type (TRANSFER, SWAP, NFT_SALE...), source, description, fee, timestamp, nativeTransfers and tokenTransfers. Newest first, up to 100 per call; page with before_signature = the last signature received. token_accounts=balanceChanged also includes transfers that only touched the wallet token accounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Solana address (base58), e.g. 86xCnPeV69n6t3DnyGvkKobf9FdN2H9oiVDdaMpo2MMY."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of transactions, 1 to 100."
+          },
+          "before_signature": {
+            "type": "string",
+            "description": "Return transactions older than this signature (paging)."
+          },
+          "after_signature": {
+            "type": "string",
+            "description": "Return transactions newer than this signature."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this transaction type, e.g. TRANSFER, SWAP, NFT_SALE."
+          },
+          "token_accounts": {
+            "type": "string",
+            "description": "none (default), balanceChanged or all: include activity of token accounts the address owns.",
+            "enum": [
+              "none",
+              "balanceChanged",
+              "all"
+            ]
+          },
+          "gte_time": {
+            "type": "integer",
+            "description": "Only transactions at or after this block time (Unix seconds)."
+          },
+          "lte_time": {
+            "type": "integer",
+            "description": "Only transactions at or before this block time (Unix seconds)."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0/addresses/{address}/transactions",
+        "queryParams": {
+          "limit": "$limit",
+          "before-signature": "$before_signature",
+          "after-signature": "$after_signature",
+          "type": "$type",
+          "token-accounts": "$token_accounts",
+          "gte-time": "$gte_time",
+          "lte-time": "$lte_time"
+        }
+      }
+    },
+    {
+      "name": "helius_parse_transactions",
+      "description": "Turn up to 100 transaction signatures into human-readable transactions (Enhanced Transactions): type, source, description, fee, native and token transfers and events. Reads only; nothing is sent to the chain.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signatures": {
+            "type": "array",
+            "description": "Transaction signatures (base58), at most 100.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "signatures"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v0/transactions",
+        "bodyMapping": {
+          "transactions": "$signatures"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "helius_get_wallet_balances",
+      "description": "Get the token balances of a wallet with USD values (Wallet API, beta): mint, symbol, balance, pricePerToken, usdValue and totalUsdValue for the page, sorted by value. Prices are hourly estimates for about the top 10,000 tokens and may be null. 100 per page. Costs 100 credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet address (base58)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Tokens per page, 1 to 100."
+          },
+          "show_zero_balance": {
+            "type": "boolean",
+            "description": "Include tokens with a zero balance."
+          },
+          "show_nfts": {
+            "type": "boolean",
+            "description": "Also list NFTs (first page only, at most 100)."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.helius.xyz/v1/wallet/{address}/balances",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "showZeroBalance": "$show_zero_balance",
+          "showNfts": "$show_nfts"
+        }
+      }
+    },
+    {
+      "name": "helius_get_wallet_history",
+      "description": "Get the transaction history of a wallet with its balance changes per transaction (Wallet API, beta): signature, timestamp, fee and balanceChanges (mint, amount, decimals), newest first. Up to 100 per call; page with before = pagination cursor from the previous answer. Costs 100 credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet address (base58)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of transactions, 1 to 100."
+          },
+          "before": {
+            "type": "string",
+            "description": "Pagination cursor from the previous answer."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this transaction type, e.g. SWAP, TRANSFER, NFT_SALE."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.helius.xyz/v1/wallet/{address}/history",
+        "queryParams": {
+          "limit": "$limit",
+          "before": "$before",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "helius_get_wallet_transfers",
+      "description": "List incoming and outgoing transfers of a wallet (Wallet API, beta): signature, timestamp, direction (in or out), counterparty, mint and amount. Default 50, up to 100 per call; page with cursor from the previous answer. Costs 100 credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet address (base58)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of transfers, 1 to 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor from the previous answer."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.helius.xyz/v1/wallet/{address}/transfers",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "helius_get_wallet_identity",
+      "description": "Identify a known wallet (Wallet API, beta): name and category such as a centralized exchange, protocol or institution. Also accepts a .sol domain. Unknown wallets answer 404. Costs 100 credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet address (base58) or .sol domain, e.g. toly.sol."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.helius.xyz/v1/wallet/{address}/identity"
+      }
+    },
+    {
+      "name": "helius_get_wallet_funded_by",
+      "description": "Find who first funded a wallet with SOL (Wallet API, beta): funder address, funderName and funderType (exchange or null), amount, timestamp and signature. 404 means no funding transfer was found. Costs 100 credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet address (base58)."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.helius.xyz/v1/wallet/{address}/funded-by"
+      }
+    }
+  ]
+}
