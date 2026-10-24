@@ -338,6 +338,7 @@ import * as newsapi from './intl/newsapi.json';
 import * as nextcloud from './intl/nextcloud.json';
 import * as nimble from './intl/nimble.json';
 import * as nominatim from './intl/nominatim.json';
+import * as noonMarketplace from './intl/noon-marketplace.json';
 import * as noonPayments from './intl/noon-payments.json';
 import * as notion from './intl/notion.json';
 import * as novaPoshta from './intl/nova-poshta.json';
@@ -1122,6 +1123,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   nextcloud as unknown as AdapterDefinition,
   nimble as unknown as AdapterDefinition,
   nominatim as unknown as AdapterDefinition,
+  noonMarketplace as unknown as AdapterDefinition,
   noonPayments as unknown as AdapterDefinition,
   notion as unknown as AdapterDefinition,
   novaPoshta as unknown as AdapterDefinition,

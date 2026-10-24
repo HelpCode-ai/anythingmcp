@@ -1,0 +1,1144 @@
+{
+  "slug": "noon-marketplace",
+  "name": "noon Marketplace",
+  "aliases": [
+    "noon Partners",
+    "noon.com"
+  ],
+  "description": "Sell on noon.com (UAE, Saudi Arabia, Egypt) from an AI agent through the noon Partner API: warehouses, catalog content and product groups, offers, prices, stock, FBPI orders and shipments, purchase orders, return lookups and bulk exports. Service account login with a signed JWT; price, stock, product and order writes install switched off.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "noon-marketplace",
+  "docsUrl": "https://noon-docs.noonpartners.dev/docs/getting-started/intro",
+  "instructions": "## noon Marketplace\nThis connector uses the **noon Partner API** on `https://noon-api-gateway.noon.partners`, the API noon offers sellers on noon.com in the UAE (`ae`), Saudi Arabia (`sa`) and Egypt (`eg`): warehouses, catalog content, offers, prices, stock, FBPI orders and shipments, purchase orders, returns and bulk exports.\n\n**Setup (about 5 minutes)**\n1. Sign in to the noon Partner portal and open the **Access App** (or **User & Access** > **User access**), then **API Users** in the left sidebar.\n2. Click **Add Service Account**, enter a display name and username, and pick a role. **Project Viewer** is enough for the read tools; the write tools need a role that may change catalog, prices, stock or orders (**Project Owner** grants everything). You can restrict the key to IP addresses and give it an expiry; without them it works from any IP and never expires. Each partner can create one service account with up to five keys.\n3. When you click **Add**, a `.json` key file downloads. It is shown only once; if you lose it, create a new key.\n4. Copy three fields of that file: `key_id` into `NOON_KEY_ID`, `private_key` into `NOON_PRIVATE_KEY` (the whole PEM; pasting it on one line with the `\\n` sequences from the file is fine) and `project_code` into `NOON_PROJECT_CODE`.\n5. Install and run `noon_marketplace_whoami`.\n\n**How login works.** There is no static API key. For every login the connector signs a fresh RS256 JWT with the private key (`sub` = key id, `iat` = now in seconds, a random `jti`) and posts it, with the project code as `default_project_code`, to `/identity/public/v1/api/login`. noon answers with session cookies, which are sent on every call. A session lasts 30 days; the connector signs in again before it ends and whenever a call returns 401. noon rejects a token whose `iat` is more than five minutes off its clock, so a 401 on login with the right key usually means the server clock is wrong. Every request carries a `User-Agent` (noon may reject requests without one) and the `X-Project` header with the project code, which the content API requires.\n\n**Identifiers**\n- `partner_sku`: your own SKU, unique across all your products. Prices, stock and offers are keyed by it.\n- `sku_parent` (starts with `Z`): noon's id of a product with all its variants, returned by `noon_marketplace_upsert_product`. `noon_marketplace_get_content` and product groups use it.\n- `sku` (noon SKU, the nsku, starts with `N`) and `psku_code` (starts with `P`): noon's ids of one variant.\n- `warehouse_code`: from `noon_marketplace_list_warehouses`. FBPI orders and shipments belong to an integration warehouse.\n- `country_code`: `ae`, `sa` or `eg`, lower case. Prices are per SKU and country, in AED, SAR or EGP.\n- `fbpi_order_nr`, `mp_item_nr` (one item of an order) and your own `integration_shipment_nr` identify orders and shipments. `merchant_code` starts with `STR`.\n\n**Tools**\n- Account: `noon_marketplace_whoami`, `noon_marketplace_list_warehouses`.\n- Catalog content: `noon_marketplace_list_categories` (all category codes), `noon_marketplace_list_category_attributes` (what a category requires and how values are validated), `noon_marketplace_get_content` (completeness, QC status and why a product is not live), `noon_marketplace_upsert_product`, `noon_marketplace_get_product_group`, `noon_marketplace_upsert_product_group`, `noon_marketplace_get_import_status`.\n- Offers, prices and stock: `noon_marketplace_get_product_offers` (price, stock, live status and offer issues per country), `noon_marketplace_get_prices`, `noon_marketplace_upsert_prices`, `noon_marketplace_get_stock`, `noon_marketplace_update_stock`.\n- FBPI orders (fulfilled from your own warehouse): `noon_marketplace_list_orders`, `noon_marketplace_get_order`, `noon_marketplace_get_order_customer`, `noon_marketplace_mark_items_unavailable`, `noon_marketplace_generate_awbs`, `noon_marketplace_create_shipment`, `noon_marketplace_get_shipment`, `noon_marketplace_cancel_shipment`. After a shipment is created, the manifest for noon's pickup is completed in Seller Lab.\n- Purchase orders and returns: `noon_marketplace_get_purchase_order`, `noon_marketplace_list_return_references`.\n- Bulk exports: `noon_marketplace_list_export_categories`, then `noon_marketplace_create_export`, then poll `noon_marketplace_get_export_status` until it has a `download_url`.\n\nSeveral reads are POST requests with a JSON body (noon's API style); they change nothing.\n\n**Switched off at install.** `noon_marketplace_upsert_product`, `noon_marketplace_upsert_product_group`, `noon_marketplace_upsert_prices`, `noon_marketplace_update_stock`, `noon_marketplace_mark_items_unavailable`, `noon_marketplace_create_shipment` and `noon_marketplace_cancel_shipment` change what customers see and buy (live prices, sellable quantity, published content) or act on real orders, and some cannot be undone. Turn on the ones a workspace needs in the connector's tool settings. `noon_marketplace_generate_awbs` and `noon_marketplace_create_export` stay on: they change no data.\n\n**Batch results.** Price, stock and product calls answer 200 even when some items failed. Check `status.status_code` (`OK`, `status_id` 0) on every returned item and resend only the failed ones. `noon_marketplace_update_stock` sets an absolute quantity, it does not add. In `noon_marketplace_upsert_prices`, a field left out or sent as null keeps its value. `noon_marketplace_upsert_product` returning `status_id` 3 means the product was stored with content problems: read them with `noon_marketplace_get_content`.\n\n**Paging.** List tools return `next_token`; call again with it, and with the same filters, until it is empty.\n\n**Rate limits.** Limits apply per project and endpoint, with a main window and a shorter burst window checked together. Most endpoints allow 1500 requests per 60 seconds; `noon_marketplace_list_warehouses` allows 30 per 60 seconds with a burst of 15 per 30 seconds. A 429 says to wait; the `X-Ratelimit-Retry-After` header gives the seconds. Prefer one batch call over many single-item calls.\n\n**Errors.** Errors come as `{\"error\": {\"code\", \"message\", \"fields\": [{\"name\", \"descriptions\"}]}}`. `PERMISSION_DENIED` (403): the service account lacks a role for that call; add one under User Access > Manage Role in the Partner portal. `INVALID_ARGUMENT` (400): read `fields` for the field and the reason. `NOT_FOUND` on a price item: the SKU has no pricing record in that country yet, so set a price first. A 401 means the login or session failed (wrong or deactivated key, wrong clock).",
+  "requiredEnvVars": [
+    "NOON_KEY_ID",
+    "NOON_PRIVATE_KEY",
+    "NOON_PROJECT_CODE"
+  ],
+  "envVarMeta": {
+    "NOON_KEY_ID": {
+      "label": "Key ID",
+      "kind": "credential",
+      "help": "The key_id field of the service account key file (.json) downloaded from the noon Partner portal (User Access > API Users > Add Service Account).",
+      "link": "https://noon-docs.noonpartners.dev/docs/authentication/getting-credentials"
+    },
+    "NOON_PRIVATE_KEY": {
+      "label": "Private key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The private_key field of the same key file: the whole PEM from -----BEGIN PRIVATE KEY----- to -----END PRIVATE KEY-----. You can paste it on one line, with the \\n sequences exactly as they appear in the file.",
+      "link": "https://noon-docs.noonpartners.dev/docs/authentication/getting-credentials",
+      "pattern": "-----BEGIN [A-Z ]*PRIVATE KEY-----",
+      "patternMessage": "Paste the whole private_key value, including the -----BEGIN PRIVATE KEY----- and -----END PRIVATE KEY----- lines."
+    },
+    "NOON_PROJECT_CODE": {
+      "label": "Project code",
+      "kind": "setting",
+      "help": "The project_code field of the same key file: the noon project the session and every call are scoped to.",
+      "example": "PRJ152772",
+      "link": "https://noon-docs.noonpartners.dev/docs/authentication/getting-credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "noon refused the login. Check that NOON_KEY_ID and NOON_PRIVATE_KEY come from the same key file, that the key is not deactivated or expired, and that the server clock is correct: a signed token more than five minutes off noon's clock is rejected.",
+    "403": "PERMISSION_DENIED: the service account has no role for this call. In the noon Partner portal open User Access, Manage Role on the service account, add Project Viewer (reads) or Project Owner (everything), then verify again.",
+    "rate_limited": "noon limits each endpoint per project with a main and a burst window (most endpoints 1500 requests per minute, warehouse listing 30 per minute). Wait for the X-Ratelimit-Retry-After seconds and try again."
+  },
+  "connector": {
+    "name": "noon Partner API",
+    "type": "REST",
+    "baseUrl": "https://noon-api-gateway.noon.partners",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://noon-api-gateway.noon.partners/identity/public/v1/api/login",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "User-Agent": "AnythingMCP/1.0"
+      },
+      "loginBody": {
+        "token": "${signedJwt}",
+        "default_project_code": "{{NOON_PROJECT_CODE}}"
+      },
+      "signedJwt": {
+        "privateKey": "{{NOON_PRIVATE_KEY}}",
+        "algorithm": "RS256",
+        "claims": {
+          "sub": "{{NOON_KEY_ID}}"
+        }
+      },
+      "tokenSource": "cookie",
+      "cookieMode": "all",
+      "tokenTTLSeconds": 2592000,
+      "refreshOn401": true,
+      "headerName": "Cookie",
+      "headerTemplate": "${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP/1.0",
+      "X-Project": "{{NOON_PROJECT_CODE}}"
+    }
+  },
+  "probe": {
+    "tool": "noon_marketplace_whoami"
+  },
+  "tools": [
+    {
+      "name": "noon_marketplace_whoami",
+      "description": "Show which service account the session belongs to (user_code and username). A cheap way to check that the login works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/identity/v1/whoami"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_list_warehouses",
+      "description": "List the warehouses of the partner with warehouse_code, display name, fulfillment system code and whether each is active. Use the codes for stock, orders and shipments. Up to 500 per page; call again with next_token while it is not empty. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fulfillment_system_code": {
+            "type": "string",
+            "description": "Only warehouses of this fulfillment system code. Leave empty for all."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "next_token from the previous page; leave empty for the first page. Keep the same filter while paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/warehouse-platform/v1/warehouses/list",
+        "bodyMapping": {
+          "next_token": "$next_token",
+          "filters": {
+            "fulfillment_system_code": "$fulfillment_system_code"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_list_categories",
+      "description": "List every product category code of the noon catalog, each a full family-type-subtype path such as electronics-mobiles-smartphones. The list is long; pick the code that fits the product and pass it to noon_marketplace_list_category_attributes. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/content/v1/categories/list",
+        "bodyMapping": {}
+      },
+      "responseMapping": {
+        "cacheTtl": 3600
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_list_category_attributes",
+      "description": "List the attributes a category accepts, with is_mandatory, attribute_type, is_localizable (send EN and AR values), is_multivalued, the allowed options, metric units and length or range limits, and is_grouping (usable in product groups). Read it before noon_marketplace_upsert_product. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_code": {
+            "type": "string",
+            "description": "Category code from noon_marketplace_list_categories."
+          }
+        },
+        "required": [
+          "category_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/content/v1/categories/attributes/list",
+        "bodyMapping": {
+          "category_code": "$category_code"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 3600
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_get_content",
+      "description": "Read a product's content by sku_parent: its attribute values, images with review status, and per language the completeness, missing and invalid attributes, QC status with rejection reasons and the overall status. Use it to find out why a product is not live. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_parent": {
+            "type": "string",
+            "description": "sku_parent of the product (starts with Z), as returned by noon_marketplace_upsert_product."
+          }
+        },
+        "required": [
+          "sku_parent"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/content/v1/product/content/get",
+        "bodyMapping": {
+          "sku_parent": "$sku_parent"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_upsert_product",
+      "description": "Create a product, or update the one its partner SKUs belong to, in the noon catalog: brand, category, images and attribute values, plus one entry per variant SKU. Returns the sku_parent and the variants with their noon sku. status.status_id 3 means the product was stored but has content problems: check it with noon_marketplace_get_content. Submitted content goes to noon's QC and can go live. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "description": "Variants: one per partner SKU. Every SKU needs size when there is more than one; all must belong to the same product on an update.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "partner_sku": {
+                  "type": "string",
+                  "description": "Your unique SKU for this variant, unique across all your products."
+                },
+                "size": {
+                  "type": "string",
+                  "description": "Size as printed on the label, e.g. 42 or Large. Optional for a single-SKU product."
+                }
+              },
+              "required": [
+                "partner_sku"
+              ]
+            }
+          },
+          "brand": {
+            "type": "string",
+            "description": "Brand name."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category code from noon_marketplace_list_categories."
+          },
+          "images": {
+            "type": "array",
+            "description": "Product images by public URL, ordered by sort starting at 1.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "Public image URL."
+                },
+                "sort": {
+                  "type": "integer",
+                  "description": "Position, starting at 1."
+                }
+              },
+              "required": [
+                "url",
+                "sort"
+              ]
+            }
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Map of attribute_code to {\"values\": [...]}. Each value is {\"value\": ...}, plus \"language\": \"LANGUAGE_EN\" or \"LANGUAGE_AR\" for localizable attributes and \"sort\" (from 1) for multivalued ones. A metric attribute needs a matching <attribute_code>_unit attribute in the same call. Example: {\"product_title\": {\"values\": [{\"value\": \"Acme Runner\", \"language\": \"LANGUAGE_EN\"}, {\"value\": \"...\", \"language\": \"LANGUAGE_AR\"}]}}."
+          }
+        },
+        "required": [
+          "skus",
+          "brand",
+          "category",
+          "images",
+          "attributes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/content/v1/product/upsert",
+        "bodyMapping": {
+          "skus": "$skus",
+          "brand": "$brand",
+          "category": "$category",
+          "images": "$images",
+          "attributes": "$attributes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_get_product_group",
+      "description": "Read a product group (variants shown together on one page): the attribute codes it varies by and its member products with their values for those attributes. Identify the group by your partner_group_ref or by the sku_parent of any product in it. Large groups are paged: call again with next_token until it is empty. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partner_group_ref": {
+            "type": "string",
+            "description": "Your reference for the group (max 255 characters)."
+          },
+          "sku_parent": {
+            "type": "string",
+            "description": "sku_parent of any product in the group."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page, at most 200.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 200
+          },
+          "next_token": {
+            "type": "string",
+            "description": "next_token from the previous page; leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/content/v1/product/group/get",
+        "bodyMapping": {
+          "partner_group_ref": "$partner_group_ref",
+          "sku_parent": "$sku_parent",
+          "next_token": "$next_token",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_upsert_product_group",
+      "description": "Create a product group or change one. attribute_codes and sku_parents are FULL lists: what you send REPLACES the current list and anything left out is removed from the group (the products themselves stay). To add an entry, read the group with noon_marketplace_get_product_group and send the current list plus the new entry. Leave a list out on an update to keep it. A new group needs both lists and a category or brand. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partner_group_ref": {
+            "type": "string",
+            "description": "Your reference for the group, unique in your catalog (matched ignoring case and punctuation)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category code; category or brand is required to create a group and cannot be changed later."
+          },
+          "brand": {
+            "type": "string",
+            "description": "Brand of the group; category or brand is required to create a group and cannot be changed later."
+          },
+          "attribute_codes": {
+            "type": "array",
+            "description": "Attributes the products vary by, e.g. colour_name; each must have is_grouping true. Max 100. Replaces the current list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sku_parents": {
+            "type": "array",
+            "description": "Products in the group, by sku_parent. Max 2000; a product can be in one group only. Replaces the current list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "partner_group_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/content/v1/product/group/upsert",
+        "bodyMapping": {
+          "partner_group_ref": "$partner_group_ref",
+          "category": "$category",
+          "brand": "$brand",
+          "attribute_codes": "$attribute_codes",
+          "sku_parents": "$sku_parents"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_get_product_offers",
+      "description": "Show a partner SKU's offers in every country and business model: noon sku, title, brand, and per offer the price and currency, whether it is active, the net stock, whether it is live on the storefront and the issues keeping it offline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partner_sku": {
+            "type": "string",
+            "description": "Your partner SKU, as used in your own system and in Seller Lab."
+          }
+        },
+        "required": [
+          "partner_sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offer/v1/product/{partner_sku}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_get_prices",
+      "description": "Read price, MSRP and active state for partner SKUs, one item per SKU and country. Each item comes back with its own status; NOT_FOUND means the SKU has no pricing record in that country yet. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "SKU and country pairs to read.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "partner_sku": {
+                  "type": "string",
+                  "description": "Your partner SKU, as used in your own system and in Seller Lab."
+                },
+                "country_code": {
+                  "type": "string",
+                  "description": "Country of the listing: ae (UAE), sa (Saudi Arabia) or eg (Egypt).",
+                  "enum": [
+                    "ae",
+                    "sa",
+                    "eg"
+                  ]
+                }
+              },
+              "required": [
+                "partner_sku",
+                "country_code"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pricing/v1/pricing/get",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_upsert_prices",
+      "description": "Set the selling price, MSRP (crossed-out reference price) and/or active state of partner SKUs, one item per SKU and country. Only the fields you send change; null never clears a value. is_active true puts a priced SKU on sale, false stops selling it. A 200 can still contain failed items: check status.status_code on each and resend only the failed ones. Changes live prices: installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Price updates, one per SKU and country.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "partner_sku": {
+                  "type": "string",
+                  "description": "Your partner SKU, as used in your own system and in Seller Lab."
+                },
+                "country_code": {
+                  "type": "string",
+                  "description": "Country of the listing: ae (UAE), sa (Saudi Arabia) or eg (Egypt).",
+                  "enum": [
+                    "ae",
+                    "sa",
+                    "eg"
+                  ]
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Selling price in the country's currency (AED, SAR, EGP)."
+                },
+                "msrp": {
+                  "type": "number",
+                  "description": "Reference price shown crossed out."
+                },
+                "is_active": {
+                  "type": "boolean",
+                  "description": "true to sell the SKU in this country, false to stop."
+                }
+              },
+              "required": [
+                "partner_sku",
+                "country_code"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pricing/v1/pricing/upsert",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_get_stock",
+      "description": "Read the available quantity, processing time and last update time for warehouse and partner SKU pairs. Each item has its own status. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Warehouse and SKU pairs to read.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "warehouse_code": {
+                  "type": "string",
+                  "description": "Warehouse code, from noon_marketplace_list_warehouses."
+                },
+                "partner_sku": {
+                  "type": "string",
+                  "description": "Your partner SKU, as used in your own system and in Seller Lab."
+                }
+              },
+              "required": [
+                "warehouse_code",
+                "partner_sku"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stock/v1/stock-list",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_update_stock",
+      "description": "Set the available quantity of partner SKUs in your warehouses. qty is ABSOLUTE: it becomes the new quantity noon sells, it is not added to the current one. A 200 can still contain failed items (e.g. a SKU unknown to noon): check status on each. Changes what customers can buy: installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Stock updates, one per warehouse and SKU.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "warehouse_code": {
+                  "type": "string",
+                  "description": "Warehouse code, from noon_marketplace_list_warehouses."
+                },
+                "partner_sku": {
+                  "type": "string",
+                  "description": "Your partner SKU, as used in your own system and in Seller Lab."
+                },
+                "qty": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "New available quantity (absolute)."
+                },
+                "processing_time": {
+                  "type": "string",
+                  "description": "Processing time for this SKU in this warehouse, in the format noon_marketplace_get_stock returns."
+                }
+              },
+              "required": [
+                "warehouse_code",
+                "partner_sku"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stock/v1/stock-update",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_list_orders",
+      "description": "List FBPI orders (fulfilled from your own warehouse) of one integration warehouse, optionally created within a UTC window, 50 per page. Each order has its marketplace (noon or namshi_v2), country, currency and items with mp_item_nr, partner SKU, marketplace status, integration status and invoiced price. Call again with next_token and the same filters while it is not empty. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_code": {
+            "type": "string",
+            "description": "Integration warehouse code, from noon_marketplace_list_warehouses."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only orders created at or after this UTC time, YYYY-MM-DDTHH:MM:SSZ."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only orders created at or before this UTC time, YYYY-MM-DDTHH:MM:SSZ."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "next_token from the previous page; leave empty for the first page."
+          }
+        },
+        "required": [
+          "warehouse_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fbpi/v1/fbpi-orders/list",
+        "queryParams": {
+          "next_token": "$next_token"
+        },
+        "bodyMapping": {
+          "warehouse_code": "$warehouse_code",
+          "created_after": "$created_after",
+          "created_before": "$created_before"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_get_order",
+      "description": "Read one FBPI order: marketplace and order number, countries, merchant, currency, warehouse, creation time and the items with mp_item_nr, partner SKU, marketplace status (confirmed or cancelled), integration status (acknowledged, out of stock, shipped), invoiced price and cancellation reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fbpi_order_nr": {
+            "type": "string",
+            "description": "FBPI order number (fbpi_order_nr), from noon_marketplace_list_orders or the order webhook."
+          }
+        },
+        "required": [
+          "fbpi_order_nr"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fbpi/v1/fbpi-order/{fbpi_order_nr}/get"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_get_order_customer",
+      "description": "Read the customer of an FBPI order: first and last name, city and administrative division, in Latin characters. Personal data: fetch it only when needed for the shipment or invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fbpi_order_nr": {
+            "type": "string",
+            "description": "FBPI order number (fbpi_order_nr), from noon_marketplace_list_orders or the order webhook."
+          }
+        },
+        "required": [
+          "fbpi_order_nr"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fbpi/v1/fbpi-order/{fbpi_order_nr}/customer-details/get"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_mark_items_unavailable",
+      "description": "Mark items of an FBPI order as out of stock before any shipment is created. noon cancels those items for the customer; the rest of the order goes on to fulfilment. Cannot be undone: installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fbpi_order_nr": {
+            "type": "string",
+            "description": "FBPI order number (fbpi_order_nr), from noon_marketplace_list_orders or the order webhook."
+          },
+          "items": {
+            "type": "array",
+            "description": "Items to cancel.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "mp_item_nr": {
+                  "type": "string",
+                  "description": "Marketplace item number from the order."
+                },
+                "status": {
+                  "type": "string",
+                  "description": "Always UPDATE_ORDER_REQUEST_ITEM_STATUS_OUT_OF_STOCK.",
+                  "enum": [
+                    "UPDATE_ORDER_REQUEST_ITEM_STATUS_OUT_OF_STOCK"
+                  ]
+                }
+              },
+              "required": [
+                "mp_item_nr",
+                "status"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "fbpi_order_nr",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fbpi/v1/fbpi-order/update",
+        "bodyMapping": {
+          "fbpi_order_nr": "$fbpi_order_nr",
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_generate_awbs",
+      "description": "Generate noon logistics AWB (air waybill) numbers for shipments handed to noon's courier, one per parcel or up to 1000 at once to keep in stock. Changes no order; the numbers are used with noon_marketplace_create_shipment and courier noon.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country_code": {
+            "type": "string",
+            "description": "Country of the listing: ae (UAE), sa (Saudi Arabia) or eg (Egypt).",
+            "enum": [
+              "ae",
+              "sa",
+              "eg"
+            ]
+          },
+          "qty": {
+            "type": "integer",
+            "description": "How many AWB numbers to generate, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "country_code",
+          "qty"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fbpi/v1/shipment/noon-logistics-awbs/get",
+        "bodyMapping": {
+          "country_code": "$country_code",
+          "qty": "$qty"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "noon_marketplace_create_shipment",
+      "description": "Create a shipment for an FBPI order: your unique shipment number, the AWB (noon-generated or your courier's) and the items in the parcel. After this, complete the manifest in Seller Lab for noon's pickup. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_code": {
+            "type": "string",
+            "description": "Integration warehouse code handling the order."
+          },
+          "integration_shipment_nr": {
+            "type": "string",
+            "description": "Your unique number for this shipment, any format."
+          },
+          "fbpi_order_nr": {
+            "type": "string",
+            "description": "FBPI order number (fbpi_order_nr), from noon_marketplace_list_orders or the order webhook."
+          },
+          "awbs": {
+            "type": "array",
+            "description": "Courier and AWB pairs for the parcel.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "courier": {
+                  "type": "string",
+                  "description": "noon for a noon logistics AWB, otherwise the name of your own courier."
+                },
+                "awb_nr": {
+                  "type": "string",
+                  "description": "AWB number: one from noon_marketplace_generate_awbs, or your courier's."
+                }
+              },
+              "required": [
+                "courier",
+                "awb_nr"
+              ]
+            }
+          },
+          "items": {
+            "type": "array",
+            "description": "Items in this shipment.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "mp_item_nr": {
+                  "type": "string",
+                  "description": "Marketplace item number from the order."
+                }
+              },
+              "required": [
+                "mp_item_nr"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "warehouse_code",
+          "integration_shipment_nr",
+          "fbpi_order_nr",
+          "awbs",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fbpi/v1/shipment/create",
+        "bodyMapping": {
+          "warehouse_code": "$warehouse_code",
+          "integration_shipment_nr": "$integration_shipment_nr",
+          "fbpi_order_nr": "$fbpi_order_nr",
+          "awbs": "$awbs",
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "noon_marketplace_get_shipment",
+      "description": "Read a shipment by warehouse and your shipment number: its FBPI order, AWBs with courier, and items. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_code": {
+            "type": "string",
+            "description": "Integration warehouse code."
+          },
+          "integration_shipment_nr": {
+            "type": "string",
+            "description": "Your shipment number (integration_shipment_nr), the one sent when the shipment was created."
+          }
+        },
+        "required": [
+          "warehouse_code",
+          "integration_shipment_nr"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fbpi/v1/shipment/get",
+        "bodyMapping": {
+          "warehouse_code": "$warehouse_code",
+          "integration_shipment_nr": "$integration_shipment_nr"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_cancel_shipment",
+      "description": "Cancel a shipment. Every item in it is cancelled too. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_code": {
+            "type": "string",
+            "description": "Integration warehouse code."
+          },
+          "integration_shipment_nr": {
+            "type": "string",
+            "description": "Your shipment number (integration_shipment_nr), the one sent when the shipment was created."
+          }
+        },
+        "required": [
+          "warehouse_code",
+          "integration_shipment_nr"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fbpi/v1/shipment/cancel",
+        "bodyMapping": {
+          "warehouse_code": "$warehouse_code",
+          "integration_shipment_nr": "$integration_shipment_nr"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_get_purchase_order",
+      "description": "Read a purchase order by number: currency, merchant, warehouse, status (pending or released), release date and the lines with partner SKU, quantity and unit cost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "po_nr": {
+            "type": "string",
+            "description": "Purchase order number."
+          }
+        },
+        "required": [
+          "po_nr"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fbpo/v1/po/{po_nr}/get"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_list_return_references",
+      "description": "Find returned items by a barcode (an AWB number or a returns barcode): marketplace, order number, purchase item number, partner SKU, merchant and the barcode references of each item, up to 200. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "description": "Barcode on the returned parcel or item."
+          },
+          "merchant_codes": {
+            "type": "array",
+            "description": "Merchant codes (STR...) to search in, at most 200. Leave out to search the project of this connector.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "barcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/returns/v1/return-references/list",
+        "bodyMapping": {
+          "barcode": "$barcode",
+          "merchant_codes": "$merchant_codes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_list_export_categories",
+      "description": "List the report types that can be exported (export_category_code) with the params each one takes. Start here before noon_marketplace_create_export.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/impex/v1/export/category/list"
+      },
+      "responseMapping": {
+        "cacheTtl": 3600
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_create_export",
+      "description": "Start an export (a bulk report file) of one export category. Returns an export_code; poll noon_marketplace_get_export_status until it is done and has a download_url. Changes no data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "export_category_code": {
+            "type": "string",
+            "description": "Export category from noon_marketplace_list_export_categories."
+          },
+          "params": {
+            "type": "object",
+            "description": "Parameters of the export, with the keys noon_marketplace_list_export_categories lists for that category. Send {} when it takes none."
+          }
+        },
+        "required": [
+          "export_category_code",
+          "params"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/impex/v1/export/create",
+        "bodyMapping": {
+          "export_category_code": "$export_category_code",
+          "params": "$params"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "noon_marketplace_get_export_status",
+      "description": "Check an export: its status, parameters, who created it, timestamps and, once finished, the download_url of the file. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "export_code": {
+            "type": "string",
+            "description": "export_code returned by noon_marketplace_create_export."
+          }
+        },
+        "required": [
+          "export_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/impex/v1/export/status",
+        "bodyMapping": {
+          "export_code": "$export_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_get_import_status",
+      "description": "Check a catalog import (barcode, SKU backfill or SKU grouping import): status (pending, processing, completed, failed, partial), sub-status, the processing report with success and failure counts, and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "import_reference returned when the import was created, or your own client_reference."
+          }
+        },
+        "required": [
+          "reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/catplat/v1/import/status/{reference}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
