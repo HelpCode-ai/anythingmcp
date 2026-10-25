@@ -1,0 +1,15 @@
+- Which orders haven't shipped yet?
+- Show the last ten orders with buyer, total and whether they are paid and shipped.
+- Show order 3412345678 with its line items and shipping address.
+- Which orders came in since Monday, and what did they add up to?
+- Which listings sold the most items among my last 100 sold items?
+- Which of my active listings have fewer than 3 in stock?
+- List my draft listings and which ones still have no photo.
+- Show the reviews I got this month with their ratings.
+- Which listings are in my "Ceramics" shop section?
+- What are the price, quantity and SKU of each variation of listing 1234567890?
+- Which shipping profiles and processing profiles does my shop have?
+- Draft a listing for a hand-thrown mug: 28 EUR, 5 in stock, with my usual shipping profile. (write)
+- Add tracking code 1Z999AA10123456784 from DHL to my last order. (write)
+- Change the stock of listing 1234567890 to 12 and keep the other variations. (write)
+- Add this photo to listing 1234567890 as the main picture: https://example.com/mug.jpg (write)
