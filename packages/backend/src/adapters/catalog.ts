@@ -348,6 +348,7 @@ import * as oddsApi from './intl/odds-api.json';
 import * as odoo from './intl/odoo.json';
 import * as odooJsonrpc from './intl/odoo-jsonrpc.json';
 import * as odooMcp from './intl/odoo-mcp.json';
+import * as ollama from './intl/ollama.json';
 import * as olx from './intl/olx.json';
 import * as omnisend from './intl/omnisend.json';
 import * as onecEnterprise from './intl/onec-enterprise.json';
@@ -1133,6 +1134,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   odoo as unknown as AdapterDefinition,
   odooJsonrpc as unknown as AdapterDefinition,
   odooMcp as unknown as AdapterDefinition,
+  ollama as unknown as AdapterDefinition,
   olx as unknown as AdapterDefinition,
   omnisend as unknown as AdapterDefinition,
   onecEnterprise as unknown as AdapterDefinition,
