@@ -42,6 +42,7 @@
     "rxjs": "7.8.1",
     "mysql2": "^3.24.4",
     "deepmerge-ts": "^8.0.2",
-    "shell-quote": "^1.11.0"
+    "shell-quote": "^1.11.0",
+    "multer": "2.5.0"
   }
 }
