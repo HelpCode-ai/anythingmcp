@@ -423,3 +423,46 @@ test('tools describe and call support JSON, files, stdin, failures and destructi
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test('completion prints a script per shell with every command and usage flag', async () => {
+  const run = (args: string[]) => execFileAsync(process.execPath, [join(__dirname, 'index.js'), ...args]);
+  const usage = (await run(['--help'])).stdout;
+  const flags = [...new Set(usage.match(/--[a-z][a-z-]*/g))];
+  assert.ok(flags.includes('--timeout') && flags.includes('--key-stdin'));
+  for (const shell of ['bash', 'zsh', 'fish']) {
+    const { stdout } = await run(['completion', shell, '--json']);
+    assert.ok(stdout.length > 0 && !stdout.startsWith('{'), `${shell} script is plain text`);
+    for (const word of ['login', 'logout', 'whoami', 'tools', 'completion', 'ls', 'describe', 'call', 'bash', 'zsh', 'fish']) {
+      assert.ok(stdout.split(/[^a-z-]+/).includes(word), `${shell} mentions ${word}`);
+    }
+    for (const flag of [...flags, '--help']) {
+      const name = flag.slice(2);
+      assert.ok(stdout.includes(flag) || stdout.includes(`-l ${name}`), `${shell} completes ${flag}`);
+    }
+  }
+  assert.match(usage, /amcp completion <bash\|zsh\|fish>/);
+});
+
+test('completion rejects a missing or unknown shell with exit code 2', async () => {
+  for (const args of [['completion'], ['completion', 'powershell'], ['completion', 'bash', 'extra']]) {
+    await assert.rejects(execFileAsync(process.execPath, [join(__dirname, 'index.js'), ...args]), (error: unknown) => {
+      const failure = error as { code: number; stdout: string; stderr: string };
+      assert.equal(failure.code, 2);
+      assert.equal(failure.stdout, '');
+      assert.match(failure.stderr, /Usage: amcp completion <bash\|zsh\|fish>/);
+      return true;
+    });
+  }
+});
+
+for (const [shell, args] of [['bash', ['-n']], ['zsh', ['-n']], ['fish', ['--no-execute']]] as const) {
+  test(`completion ${shell} script passes a syntax check`, async (t) => {
+    const probe = await execFileAsync(shell, ['--version']).catch(() => null);
+    if (!probe) { t.skip(`${shell} is not installed`); return; }
+    const dir = await mkdtemp(join(tmpdir(), 'amcp-completion-'));
+    const file = join(dir, `amcp.${shell}`);
+    const { stdout } = await execFileAsync(process.execPath, [join(__dirname, 'index.js'), 'completion', shell]);
+    await writeFile(file, stdout);
+    await execFileAsync(shell, [...args, file]);
+  });
+}

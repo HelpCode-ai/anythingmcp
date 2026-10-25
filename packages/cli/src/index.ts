@@ -2,6 +2,7 @@
 import { parseArgs } from 'node:util';
 import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
+import { completionScript, SHELLS } from './completion.js';
 import { readConfig, writeConfig, profileName, type Profile } from './config.js';
 import { listClientTools, listTools, serverUrl, withClient } from './mcp.js';
 
@@ -133,27 +134,36 @@ function usage(): string {
   amcp tools ls [--filter <text>] [--profile <name>]
   amcp tools describe <name> [--profile <name>]
   amcp tools call <name> [--args '<json>' | --args @file.json | --args -] [--yes] [--timeout <seconds>]
+  amcp completion <bash|zsh|fish>
 
 Use --json for machine-readable output. For CI, set AMCP_URL, AMCP_SERVER and AMCP_API_KEY.
 The key is never accepted as a command argument.`;
 }
+
+const OPTIONS = {
+  url: { type: 'string' }, server: { type: 'string' }, profile: { type: 'string' },
+  'key-stdin': { type: 'boolean' }, filter: { type: 'string' }, help: { type: 'boolean', short: 'h' },
+  args: { type: 'string' }, yes: { type: 'boolean' }, json: { type: 'boolean' },
+  timeout: { type: 'string' },
+} as const;
 
 export async function run(args = process.argv.slice(2)): Promise<number> {
   let json = args.includes('--json');
   try {
     const { values, positionals } = parseArgs({
       args,
-      options: {
-        url: { type: 'string' }, server: { type: 'string' }, profile: { type: 'string' },
-        'key-stdin': { type: 'boolean' }, filter: { type: 'string' }, help: { type: 'boolean', short: 'h' },
-        args: { type: 'string' }, yes: { type: 'boolean' }, json: { type: 'boolean' },
-        timeout: { type: 'string' },
-      },
+      options: OPTIONS,
       allowPositionals: true,
     });
     json = values.json === true;
     if (values.help || positionals.length === 0) {
       print({ usage: usage() }, json, () => process.stdout.write(usage() + '\n'));
+      return 0;
+    }
+    if (positionals[0] === 'completion') {
+      const script = positionals.length === 2 ? completionScript(positionals[1], OPTIONS) : undefined;
+      if (script === undefined) throw new CliError(`Usage: amcp completion <${SHELLS.join('|')}>`, 2);
+      process.stdout.write(script); // plain text even with --json
       return 0;
     }
     let name: string;
