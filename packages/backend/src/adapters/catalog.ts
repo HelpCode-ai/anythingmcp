@@ -337,6 +337,7 @@ import * as newRelic from './intl/new-relic.json';
 import * as newsapi from './intl/newsapi.json';
 import * as nextcloud from './intl/nextcloud.json';
 import * as nimble from './intl/nimble.json';
+import * as nocodb from './intl/nocodb.json';
 import * as nominatim from './intl/nominatim.json';
 import * as noonMarketplace from './intl/noon-marketplace.json';
 import * as noonPayments from './intl/noon-payments.json';
@@ -1122,6 +1123,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   newsapi as unknown as AdapterDefinition,
   nextcloud as unknown as AdapterDefinition,
   nimble as unknown as AdapterDefinition,
+  nocodb as unknown as AdapterDefinition,
   nominatim as unknown as AdapterDefinition,
   noonMarketplace as unknown as AdapterDefinition,
   noonPayments as unknown as AdapterDefinition,
