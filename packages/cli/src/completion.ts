@@ -110,7 +110,7 @@ function bashScript(): string {
 
 function zshScript(): string {
   const values = valueFlags().map((flag) => `--${flag.name}`).join('|');
-  const described = (name: string, description: string) => single(`${name}:${description.replace(/:/g, '\\:')}`);
+  const described = (name: string, description: string) => single(`${name}:${description.replace(/\\/g, '\\\\').replace(/:/g, '\\:')}`);
   const flagItems = (flags: FlagSpec[]) =>
     flags.flatMap((flag) => switches(flag).map((option) => described(option, flag.description))).join(' ');
   return [
