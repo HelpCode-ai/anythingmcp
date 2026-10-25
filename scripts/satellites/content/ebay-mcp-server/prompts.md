@@ -1,0 +1,15 @@
+- Which eBay orders have not started fulfilment yet?
+- Which orders came in since Monday, and what are their totals?
+- Show order 12-34567-89012 with its line items, buyer and shipping address.
+- What did we ship this week, and which orders are still in progress?
+- Which payment disputes are open against me, and by when do I have to respond?
+- Are there disputes on order 12-34567-89012?
+- How much stock does SKU WATCH-001 have, and what condition is it listed in?
+- What price and listing status do the offers for SKU WATCH-001 have?
+- List the first 50 inventory items with their SKUs.
+- Which shipping policies do I have for my marketplace, with handling times and costs?
+- Do my return policies accept returns, for how many days, and who pays the shipping?
+- Is selling enabled on my account, and what are my current selling limits?
+- Show the 20 most recent orders with their buyer and payment status.
+- Change the price of offer 5001234567 to 29.99 EUR. (write)
+- Raise the price of the offers for SKU WATCH-001 to 54.90 EUR. (write)

@@ -235,3 +235,12 @@ maybe('amazon-seller adapter — live sandbox reachability', () => {
     expect(err.config?.headers.Authorization).toBeUndefined();
   }, 30000);
 });
+
+describe('amazon_get_item_offers ItemCondition', () => {
+  it('defaults itemCondition to New, since Amazon requires one', () => {
+    const tool = (adapter as unknown as {
+      tools: { name: string; parameters: { properties: Record<string, { default?: string }> } }[];
+    }).tools.find((t) => t.name === 'amazon_get_item_offers')!;
+    expect(tool.parameters.properties.itemCondition.default).toBe('New');
+  });
+});

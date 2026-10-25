@@ -76,3 +76,23 @@ Exit codes are `0` for success, `1` when a tool returns `isError`, `2` for
 invalid usage or JSON arguments, `3` for authentication failures, and `4` for
 connection or server failures. The API key is never accepted as an argument
 and is never included in CLI status output.
+
+## Shell completion
+
+`amcp completion <bash|zsh|fish>` prints a completion script for commands,
+`tools` subcommands and each command's flags. Install it once for your shell:
+
+```bash
+amcp completion bash > ~/.local/share/bash-completion/completions/amcp
+amcp completion zsh > "${fpath[1]}/_amcp"
+amcp completion fish > ~/.config/fish/completions/amcp.fish
+```
+
+Bash needs the `bash-completion` package for the directory above; without it,
+add `source <(amcp completion bash)` to `~/.bashrc`. In zsh, `compinit` must be
+enabled; to load the script without writing a file, add
+`source <(amcp completion zsh)` to `~/.zshrc` after `compinit`. Open a new shell
+afterwards. The scripts are static and do not read the config file or contact a
+server, so profile and tool names are not completed. `completion` always prints
+the script as plain text, even with `--json`. Any shell other than `bash`, `zsh`
+or `fish` exits with code `2`.

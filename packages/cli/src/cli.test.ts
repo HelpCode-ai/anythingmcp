@@ -8,6 +8,8 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { configPath, writeConfig } from './config.js';
 import { serverUrl } from './mcp.js';
+import { COMMANDS, FLAGS, SHELLS, completionScript, type Shell } from './completion.js';
+import { OPTIONS } from './index.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -422,4 +424,101 @@ test('tools describe and call support JSON, files, stdin, failures and destructi
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+test('completion prints a plain-text script for each shell and rejects anything else', async () => {
+  const run = (args: string[]) => execFileAsync(process.execPath, [join(__dirname, 'index.js'), ...args]);
+  for (const shell of SHELLS) {
+    for (const args of [['completion', shell], ['completion', shell, '--json']]) {
+      const { stdout, stderr } = await run(args);
+      assert.equal(stdout, completionScript(shell));
+      assert.equal(stderr, '');
+    }
+  }
+  for (const args of [['completion'], ['completion', 'powershell'], ['completion', 'bash', 'extra']]) {
+    await assert.rejects(run(args), (error: unknown) => {
+      const failure = error as { code: number; stdout: string; stderr: string };
+      assert.equal(failure.code, 2);
+      assert.equal(failure.stdout, '');
+      assert.match(failure.stderr, /^Usage: amcp completion <bash\|zsh\|fish>/);
+      return true;
+    });
+  }
+  assert.match((await run(['--help'])).stdout, /amcp completion <bash\|zsh\|fish>/);
+});
+
+test('completion covers every command and every parseArgs option', async () => {
+  // Adding an option to parseArgs without adding it to completion fails here.
+  const options = OPTIONS as Record<string, { type: string; short?: string }>;
+  assert.deepEqual(FLAGS.map((flag) => flag.name).sort(), Object.keys(options).sort());
+  for (const flag of FLAGS) {
+    assert.equal(!!flag.value, options[flag.name].type === 'string', `--${flag.name} value`);
+    assert.equal(flag.short, options[flag.name].short, `--${flag.name} short form`);
+  }
+  const { stdout: help } = await execFileAsync(process.execPath, [join(__dirname, 'index.js'), '--help']);
+  for (const [, name] of help.matchAll(/--([a-z][a-z-]*)/g)) {
+    assert.ok(FLAGS.some((flag) => flag.name === name), `--${name} from usage()`);
+  }
+  const words = COMMANDS.flatMap((command) =>
+    [command, ...(command.subcommands ?? []), ...(command.values ?? [])].map((word) => word.name));
+  for (const shell of SHELLS) {
+    const script = completionScript(shell);
+    for (const word of words) assert.match(script, new RegExp(`\\b${word}\\b`), `${shell}: ${word}`);
+    for (const flag of FLAGS) {
+      assert.ok(script.includes(shell === 'fish' ? `-l ${flag.name} ` : `--${flag.name}`), `${shell}: --${flag.name}`);
+    }
+  }
+});
+
+async function scriptFile(shell: Shell): Promise<string> {
+  const file = join(await mkdtemp(join(tmpdir(), 'amcp-completion-')), `amcp.${shell}`);
+  await writeFile(file, completionScript(shell));
+  return file;
+}
+
+async function shellAvailable(shell: string): Promise<boolean> {
+  try { await execFileAsync(shell, ['-c', 'exit 0']); return true; }
+  catch { return false; }
+}
+
+test('completion scripts pass shell syntax checks', async (t) => {
+  const checks: Array<[Shell, string[]]> = [['bash', ['-n']], ['zsh', ['-n']], ['fish', ['--no-execute']]];
+  for (const [shell, flags] of checks) {
+    await t.test(shell, async (st) => {
+      if (!await shellAvailable(shell)) { st.skip(`${shell} is not installed`); return; }
+      await execFileAsync(shell, [...flags, await scriptFile(shell)]);
+    });
+  }
+});
+
+test('bash completion suggests commands, subcommands, flags and shells', async () => {
+  const file = await scriptFile('bash');
+  const complete = async (...words: string[]) => {
+    const { stdout } = await execFileAsync('bash', ['-c',
+      'source "$1"; shift; COMP_WORDS=("$@"); COMP_CWORD=$(($# - 1)); _amcp; printf "%s\\n" "${COMPREPLY[@]}"',
+      'bash', file, 'amcp', ...words]);
+    return stdout.split('\n').filter(Boolean).sort();
+  };
+  assert.deepEqual(await complete(''), ['completion', 'login', 'logout', 'tools', 'whoami']);
+  assert.deepEqual(await complete('tools', 'c'), ['call']);
+  assert.deepEqual(await complete('--profile', 'work', 'tools', ''), ['call', 'describe', 'ls']);
+  assert.deepEqual(await complete('tools', 'call', 'my_tool', '--t'), ['--timeout']);
+  assert.deepEqual(await complete('whoami', ''), ['--help', '--json', '--profile', '-h']);
+  assert.deepEqual(await complete('login', '--profile', ''), []);
+  assert.deepEqual(await complete('completion', ''), ['bash', 'fish', 'zsh']);
+  assert.deepEqual(await complete('-'), ['--help', '--json', '-h']);
+});
+
+test('fish completion suggests commands, subcommands, flags and shells', async (t) => {
+  if (!await shellAvailable('fish')) { t.skip('fish is not installed'); return; }
+  const file = await scriptFile('fish');
+  const complete = async (line: string) => {
+    const { stdout } = await execFileAsync('fish', ['--no-config', '-c', 'source $argv[1]; complete -C $argv[2]', file, line]);
+    return stdout.split('\n').filter(Boolean).map((entry) => entry.split('\t')[0]).sort();
+  };
+  assert.deepEqual(await complete('amcp '), ['completion', 'login', 'logout', 'tools', 'whoami']);
+  assert.deepEqual(await complete('amcp tools c'), ['call']);
+  assert.deepEqual(await complete('amcp --profile work tools '), ['call', 'describe', 'ls']);
+  assert.deepEqual(await complete('amcp tools call my_tool --t'), ['--timeout']);
+  assert.deepEqual(await complete('amcp completion '), ['bash', 'fish', 'zsh']);
 });

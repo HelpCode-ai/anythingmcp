@@ -1,0 +1,31 @@
+{
+  "nav": {
+    "groups": {
+      "overview": "Panoramica",
+      "build": "Crea",
+      "intelligence": "Intelligenza",
+      "getStarted": "Per iniziare"
+    },
+    "items": {
+      "dashboard": "Dashboard",
+      "analytics": "Analisi",
+      "auditLog": "Registro di audit",
+      "connectors": "Connettori",
+      "marketplace": "Marketplace",
+      "mcpServers": "Server MCP",
+      "knowledgeGraph": "Knowledge Graph",
+      "aiSkills": "Skill IA",
+      "memory": "Memoria",
+      "setup": "Setup e onboarding"
+    },
+    "settings": "Impostazioni",
+    "switchWorkspace": "Cambia workspace",
+    "logOut": "Esci",
+    "workspaceFallback": "Workspace",
+    "githubStar": {
+      "label": "Stella su GitHub",
+      "hide": "Nascondi pulsante",
+      "hideAriaLabel": "Nascondi il pulsante Stella su GitHub"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+- Which paid orders are still waiting to be processed?
+- Show order 1045 with its items and shipping details.
+- Which orders are still awaiting payment since last Monday?
+- List the orders created in the last seven days.
+- Which orders did anna@example.com place?
+- Which orders were refunded or partially refunded this month?
+- Which enabled products have fewer than 5 units left?
+- Find the product with SKU MUG-01 and show its price and quantity.
+- Which products in the "Gift sets" category cost between 20 and 50 EUR?
+- Search for products matching "candle" and show which of them are in stock.
+- Find the customer "Maria Lopez" and show her email.
+- Which currency and plan does my store use?
+- Mark order 1045 as shipped with tracking number 1Z999AA10123456784. (write)
+- Set the quantity of product 5521 to 30 and its price to 19.90. (write)
+- Disable product 5521 so it disappears from the storefront. (write)

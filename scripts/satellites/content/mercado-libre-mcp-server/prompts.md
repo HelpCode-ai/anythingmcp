@@ -1,0 +1,15 @@
+- Which of my Mercado Libre orders are paid, newest first?
+- Show the orders I received this week with their totals and items.
+- Which orders were cancelled recently?
+- Which of my listings are active right now?
+- Which of my listings are paused?
+- Find my listing with SKU CAM-001 and show its price and available quantity.
+- How many units of listing MLB1234567890 have been sold, and how many are left?
+- Which of my active listings have the lowest stock?
+- What is my seller reputation level and my share of positive ratings?
+- Which category fits the title "Apple iPhone 15 128GB Black"?
+- Which attributes are required to list a product in category MLB1055?
+- Check this new listing without publishing it and tell me whether it would be accepted.
+- Change the price of listing MLB1234567890 to 249.90. (write)
+- Set the stock of listing MLB1234567890 to 20. (write)
+- Pause listing MLB1234567890. (write)

@@ -1,0 +1,31 @@
+{
+  "nav": {
+    "groups": {
+      "overview": "Overview",
+      "build": "Build",
+      "intelligence": "Intelligence",
+      "getStarted": "Get started"
+    },
+    "items": {
+      "dashboard": "Dashboard",
+      "analytics": "Analytics",
+      "auditLog": "Audit Log",
+      "connectors": "Connectors",
+      "marketplace": "Marketplace",
+      "mcpServers": "MCP Servers",
+      "knowledgeGraph": "Knowledge Graph",
+      "aiSkills": "AI Skills",
+      "memory": "Memory",
+      "setup": "Setup & onboarding"
+    },
+    "settings": "Settings",
+    "switchWorkspace": "Switch workspace",
+    "logOut": "Log out",
+    "workspaceFallback": "Workspace",
+    "githubStar": {
+      "label": "Star on GitHub",
+      "hide": "Hide button",
+      "hideAriaLabel": "Hide Star on GitHub button"
+    }
+  }
+}

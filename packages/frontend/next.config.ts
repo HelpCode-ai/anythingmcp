@@ -1,5 +1,10 @@
 import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs/config';
+import createNextIntlPlugin from 'next-intl/plugin';
+
+// next-intl without i18n routing: no /de/... URL prefixes, so proxy.ts, the
+// rewrites below and every ?redirect= link keep working unchanged.
+const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
 // Internal backend URL for rewrites — never use the public URL here to avoid loops
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || 'http://localhost:4000';
@@ -42,7 +47,7 @@ const nextConfig: NextConfig = {
 // serves them. Self-hosted builds without the token skip the upload. Nothing
 // here decides where a running instance reports: that is SENTRY_DSN, read at
 // runtime (see components/sentry-config.tsx).
-export default withSentryConfig(nextConfig, {
+export default withSentryConfig(withNextIntl(nextConfig), {
   org: 'helpcodeai-gmbh',
   project: 'anythingmcp-cloud-frontend',
   // The organization is in Sentry's EU region.
