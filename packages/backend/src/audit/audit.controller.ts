@@ -1,7 +1,28 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiSecurity, ApiResponse } from '@nestjs/swagger';
+import {
+  BadRequestException,
+  Controller,
+  ForbiddenException,
+  Get,
+  Logger,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiProduces,
+  ApiQuery,
+  ApiSecurity,
+  ApiResponse,
+} from '@nestjs/swagger';
+import type { Response } from 'express';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
-import { AuditService } from './audit.service';
+import { Roles, RolesGuard } from '../auth/roles.guard';
+import { AuditService, InvocationFilters } from './audit.service';
+import { AuditExportEncoder } from './audit-export.format';
 import {
   ANALYTICS_DEFAULT_DAYS,
   ANALYTICS_MAX_DAYS,
@@ -9,6 +30,28 @@ import {
 } from './analytics-query.dto';
 import { ToolPerformanceQueryDto } from './tool-performance-query.dto';
 import { MemberVisibilityService } from '../settings/member-visibility.service';
+import {
+  ExportInvocationsQueryDto,
+  InvocationFilterQueryDto,
+  INVOCATION_STATUSES,
+  ListInvocationsQueryDto,
+} from './invocation-query.dto';
+
+/** Write one chunk, waiting for the socket to drain when its buffer is full. */
+async function writeChunk(res: Response, chunk: string): Promise<void> {
+  if (!chunk || res.destroyed || res.write(chunk)) return;
+  // A socket that is already gone has fired 'close' and will never drain.
+  if (res.destroyed) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      res.off('drain', done);
+      res.off('close', done);
+      resolve();
+    };
+    res.on('drain', done);
+    res.on('close', done);
+  });
+}
 
 /**
  * Every read route of this controller is scoped by member visibility: in a
@@ -24,10 +67,31 @@ import { MemberVisibilityService } from '../settings/member-visibility.service';
 @UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/audit')
 export class AuditController {
+  private readonly logger = new Logger(AuditController.name);
+
   constructor(
     private readonly auditService: AuditService,
     private readonly visibility: MemberVisibilityService,
   ) {}
+
+  /** Query filters as the service takes them; a bare date is midnight UTC. */
+  private filters(query: InvocationFilterQueryDto, organizationId?: string): InvocationFilters {
+    const from = query.from ? new Date(query.from) : undefined;
+    const to = query.to ? new Date(query.to) : undefined;
+    if (from && to && from >= to) {
+      throw new BadRequestException('from must be before to');
+    }
+    return {
+      organizationId,
+      toolId: query.toolId,
+      status: query.status,
+      search: query.search,
+      connectorId: query.connectorId,
+      mcpServerId: query.mcpServerId,
+      from,
+      to,
+    };
+  }
 
   @Get('invocations')
   @ApiOperation({
@@ -48,7 +112,7 @@ export class AuditController {
   @ApiQuery({
     name: 'status',
     required: false,
-    enum: ['SUCCESS', 'ERROR', 'TIMEOUT'],
+    enum: INVOCATION_STATUSES,
     description: 'Only calls with this outcome.',
     example: 'ERROR',
   })
@@ -61,6 +125,8 @@ export class AuditController {
   })
   @ApiQuery({ name: 'connectorId', required: false, type: String, description: 'Only calls of tools of this connector.' })
   @ApiQuery({ name: 'mcpServerId', required: false, type: String, description: 'Only calls made through this MCP server.' })
+  @ApiQuery({ name: 'from', required: false, type: String, description: 'ISO date or date-time, inclusive.', example: '2026-11-01' })
+  @ApiQuery({ name: 'to', required: false, type: String, description: 'ISO date or date-time, exclusive.', example: '2026-11-08' })
   @ApiResponse({
     status: 200,
     schema: {
@@ -84,37 +150,86 @@ export class AuditController {
       ],
     },
   })
-  async listInvocations(
-    @Req() req: any,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
-    @Query('toolId') toolId?: string,
-    @Query('status') status?: 'SUCCESS' | 'ERROR' | 'TIMEOUT',
-    @Query('search') search?: string,
-    @Query('connectorId') connectorId?: string,
-    @Query('mcpServerId') mcpServerId?: string,
-  ) {
+  async listInvocations(@Req() req: any, @Query() query: ListInvocationsQueryDto) {
+    const filters = this.filters(query, req.user.organizationId);
     const scope = await this.visibility.scopeFor(req.user);
-    if (!scope.restricted) {
-      return this.auditService.getRecentInvocations(
-        limit ? parseInt(limit, 10) : 100,
-        offset ? parseInt(offset, 10) : 0,
-        { toolId, status: status as any, search, connectorId, mcpServerId, organizationId: req.user.organizationId },
-      );
-    }
+    if (scope.restricted) filters.onlyUserId = scope.userId;
     return this.auditService.getRecentInvocations(
-      limit ? parseInt(limit, 10) : 100,
-      offset ? parseInt(offset, 10) : 0,
-      {
-        toolId,
-        status: status as any,
-        search,
-        connectorId,
-        mcpServerId,
-        organizationId: req.user.organizationId,
-        onlyUserId: scope.userId,
-      },
+      query.limit ?? 100,
+      query.offset ?? 0,
+      filters,
     );
+  }
+
+  @Get('invocations/export')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Download tool invocation logs as CSV or JSON (admins only)',
+    description:
+      'Takes the filters of the list endpoint and streams every matching row, newest first, ' +
+      'up to AUDIT_EXPORT_MAX_ROWS (default 100,000). A capped CSV ends with a `# truncated` ' +
+      'line; capped JSON has `truncated: true`. On Cloud, only rows still within retention exist.',
+  })
+  @ApiProduces('text/csv', 'application/json')
+  @ApiQuery({ name: 'format', required: true, enum: ['csv', 'json'] })
+  @ApiQuery({ name: 'payloads', required: false, type: Boolean, description: 'Include input and output (default false)' })
+  @ApiQuery({ name: 'toolId', required: false, type: String })
+  @ApiQuery({ name: 'status', required: false, enum: INVOCATION_STATUSES })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'connectorId', required: false, type: String })
+  @ApiQuery({ name: 'mcpServerId', required: false, type: String })
+  @ApiQuery({ name: 'from', required: false, type: String, description: 'ISO date or date-time, inclusive' })
+  @ApiQuery({ name: 'to', required: false, type: String, description: 'ISO date or date-time, exclusive' })
+  async exportInvocations(
+    @Req() req: any,
+    @Query() query: ExportInvocationsQueryDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      throw new ForbiddenException('Exporting the audit log needs an organization');
+    }
+    const filters = this.filters(query, organizationId);
+    // Admin-only today, so never restricted; kept so the export can't show more than the list.
+    const scope = await this.visibility.scopeFor(req.user);
+    if (scope.restricted) filters.onlyUserId = scope.userId;
+    const payloads = query.payloads ?? false;
+    const encoder = new AuditExportEncoder(query.format, payloads);
+
+    const day = (iso?: string) => iso?.slice(0, 10);
+    const filename = `anythingmcp-audit-${day(query.from) ?? 'all'}-${
+      day(query.to) ?? new Date().toISOString().slice(0, 10)
+    }.${query.format}`;
+    res.setHeader(
+      'Content-Type',
+      query.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+
+    // The file starts with the first batch, so a failure before it still
+    // reaches the client as an ordinary error response.
+    let started = false;
+    const begin = () => {
+      if (started) return '';
+      started = true;
+      return encoder.start();
+    };
+
+    try {
+      const result = await this.auditService.exportInvocations(filters, { payloads }, async (rows) => {
+        await writeChunk(res, begin() + encoder.rows(rows));
+        return !res.destroyed;
+      });
+      if (result.aborted || res.destroyed) return;
+      res.end(begin() + encoder.end(result));
+    } catch (err: any) {
+      if (!res.headersSent) throw err;
+      // Mid-file: a clean end would pass a partial file off as complete.
+      this.logger.error(`Audit export for organization ${organizationId} failed: ${err?.message}`);
+      res.destroy(err);
+    }
   }
 
   @Get('stats')

@@ -405,7 +405,21 @@
       "timeouts": "Timeout",
       "searchPlaceholder": "Cerca per strumento o connettore…",
       "allConnectors": "Tutti i connettori",
-      "allServers": "Tutti i server MCP"
+      "allServers": "Tutti i server MCP",
+      "from": "Da",
+      "to": "A"
+    },
+    "export": {
+      "label": "Esporta il registro di audit filtrato",
+      "button": "Esporta",
+      "exporting": "Esportazione…",
+      "csv": "Scarica CSV",
+      "json": "Scarica JSON",
+      "payloads": "Includi input e output",
+      "cloudRetention": "Sul Cloud si può esportare solo ciò che è ancora archiviato: per impostazione predefinita, le chiamate più vecchie di 90 giorni vengono eliminate e input e output più vecchi di 14 giorni vengono ridotti a un estratto.",
+      "truncated": "L'esportazione si è fermata al limite di righe. Restringi l'intervallo di date per ottenere il resto.",
+      "failed": "Esportazione non riuscita: {message}",
+      "unknownError": "errore sconosciuto"
     },
     "columns": {
       "time": "Ora",

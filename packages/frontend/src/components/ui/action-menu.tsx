@@ -14,6 +14,12 @@ export interface ActionMenuItem {
   disabled?: boolean;
   /** Tints the item with the danger colour; keep it for real destruction. */
   destructive?: boolean;
+  /**
+   * Renders the item as a checkbox with this state. Selecting it calls
+   * `onSelect` and keeps the menu open, so the option can be set before
+   * picking an action.
+   */
+  checked?: boolean;
 }
 
 /**
@@ -30,11 +36,16 @@ export interface ActionMenuItem {
 export function ActionMenu({
   items,
   label = 'More actions',
+  trigger,
+  disabled,
   className,
 }: {
   items: ActionMenuItem[];
   /** Accessible name for the trigger. */
   label?: string;
+  /** Trigger content in place of the ⋮ icon, e.g. an icon and a word. */
+  trigger?: React.ReactNode;
+  disabled?: boolean;
   className?: string;
 }) {
   const visible = items.filter(Boolean);
@@ -43,18 +54,22 @@ export function ActionMenu({
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
-        aria-label={label}
+        aria-label={trigger ? undefined : label}
         title={label}
+        disabled={disabled}
         className={cn(
-          'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] outline-none transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] data-[state=open]:border-[var(--border-strong)] data-[state=open]:text-[var(--text)]',
+          'flex h-9 flex-shrink-0 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] outline-none transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-[var(--border-strong)] data-[state=open]:text-[var(--text)]',
+          trigger ? 'gap-1.5 px-3 text-[13px] font-medium' : 'w-9',
           className
         )}
       >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <circle cx="12" cy="5" r="1.6" />
-          <circle cx="12" cy="12" r="1.6" />
-          <circle cx="12" cy="19" r="1.6" />
-        </svg>
+        {trigger ?? (
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="12" cy="5" r="1.6" />
+            <circle cx="12" cy="12" r="1.6" />
+            <circle cx="12" cy="19" r="1.6" />
+          </svg>
+        )}
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
@@ -71,6 +86,28 @@ export function ActionMenu({
                 ? 'text-[var(--danger)] hover:bg-[var(--t-danger-bg)] focus:bg-[var(--t-danger-bg)]'
                 : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)] focus:bg-[var(--surface-2)] focus:text-[var(--text)]'
             );
+            if (item.checked !== undefined) {
+              return (
+                <DropdownMenu.CheckboxItem
+                  key={item.label}
+                  checked={item.checked}
+                  disabled={item.disabled}
+                  // Keeps the menu open, as in MultiSelect.
+                  onSelect={(e) => e.preventDefault()}
+                  onCheckedChange={() => item.onSelect?.()}
+                  className={cls}
+                >
+                  <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-[4px] border border-[var(--border)]">
+                    <DropdownMenu.ItemIndicator>
+                      <svg className="h-3 w-3 text-[var(--brand)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" />
+                      </svg>
+                    </DropdownMenu.ItemIndicator>
+                  </span>
+                  <span className="truncate">{item.label}</span>
+                </DropdownMenu.CheckboxItem>
+              );
+            }
             return (
               <DropdownMenu.Item
                 key={item.label}

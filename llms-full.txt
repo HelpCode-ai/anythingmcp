@@ -8835,20 +8835,70 @@ See [Tool Definition Format](<https://github.com/HelpCode-ai/anythingmcp/blob/ma
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/audit/invocations` | List invocations (with filters) |
+| GET | `/api/audit/invocations/export` | Download invocations as CSV or JSON (admins only) |
 | GET | `/api/audit/stats` | Get invocation stats (24h, 7d, total) |
 | GET | `/api/audit/tool-performance` | Per-tool latency percentiles, failure rates and last recorded errors |
 
 ### Query Invocations
 
+Rows come newest first and are always limited to your organization.
+
+| Parameter | Description |
+|-----------|-------------|
+| `status` | `SUCCESS`, `ERROR` or `TIMEOUT` |
+| `search` | Part of the tool name, case-insensitive |
+| `connectorId` | Only calls of this connector's tools |
+| `mcpServerId` | Only calls made through this MCP server |
+| `toolId` | Only calls of this tool |
+| `from` | ISO 8601 date or date-time, inclusive. A bare date means midnight UTC |
+| `to` | ISO 8601 date or date-time, exclusive. A bare date means midnight UTC |
+| `limit` | Rows per page (default 100) |
+| `offset` | Rows to skip |
+
+An unknown parameter or an invalid value is answered with `400`.
+
 ```bash
-# Filter by tool name
-curl -s "http://localhost:4000/api/audit/invocations?toolName=get_user" \
+# Failed calls of tools whose name contains "get_user"
+curl -s "http://localhost:4000/api/audit/invocations?status=ERROR&search=get_user" \
   -H "Authorization: Bearer $TOKEN"
 
-# Filter by date range
-curl -s "http://localhost:4000/api/audit/invocations?from=2026-01-01&to=2026-01-31" \
+# All of January 2026 (UTC): `to` is exclusive
+curl -s "http://localhost:4000/api/audit/invocations?from=2026-01-01&to=2026-02-01" \
   -H "Authorization: Bearer $TOKEN"
 ```
+
+### Export Invocations
+
+Downloads every row matching the filters above (`limit` and `offset` do not apply), newest first, for a security review, a spreadsheet or a SIEM. The **Export** menu on the Audit Log page (`/logs`) calls this endpoint with the filters and date range the page shows.
+
+Only organization admins can export; other roles get `403`, and so does a token that carries no organization.
+
+| Parameter | Description |
+|-----------|-------------|
+| `format` | `csv` or `json` (required) |
+| `payloads` | `true` adds each call's `input` and `output` (default `false`) |
+| `status`, `search`, `connectorId`, `mcpServerId`, `toolId`, `from`, `to` | As for the list |
+
+```bash
+# CSV of last week's failures (saved under the server's file name)
+curl -sOJ "http://localhost:4000/api/audit/invocations/export?format=csv&status=ERROR&from=2026-10-19&to=2026-10-26" \
+  -H "Authorization: Bearer $TOKEN"
+
+# JSON with inputs and outputs
+curl -sOJ "http://localhost:4000/api/audit/invocations/export?format=json&payloads=true" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+The file is named `anythingmcp-audit-<from>-<to>.csv` (or `.json`); `<from>` is `all` and `<to>` today's date when not given.
+
+Both formats have these columns, in this order: `createdAt` (ISO 8601, UTC), `status`, `tool`, `connector`, `connectorType`, `mcpServer`, `userEmail`, `authMethod`, `apiKeyName`, `durationMs`, `repeatCount`, `error`, and with `payloads=true` also `input` and `output`. `repeatCount` is the number of identical calls a row stands for: a failure that repeats within a minute is counted on the stored row instead of being stored again.
+
+- **CSV** is UTF-8 with a byte order mark (so Excel shows umlauts correctly), with RFC 4180 quoting and CRLF line ends. `input` and `output` are JSON text. A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so a spreadsheet shows it as text instead of running it as a formula.
+- **JSON** is one object: `{"rows": [{...}, ...], "rowCount": 1234, "truncated": false}`.
+
+One export holds at most `AUDIT_EXPORT_MAX_ROWS` rows (default 100,000). When there are more, the file ends after that many rows: the CSV with a last line starting `# truncated:`, the JSON with `"truncated": true`. Narrow the date range to get the rest. The rows are read and written in batches, so a large export does not hold the whole file in the server's memory.
+
+On Cloud, an export only contains what is still stored: by default, calls older than 90 days are deleted, and inputs and outputs older than 14 days are cut to a short excerpt. Self-hosted instances keep every row, so an export can cover the whole history.
 
 ### Get Stats
 
@@ -8857,12 +8907,13 @@ curl -s http://localhost:4000/api/audit/stats \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Response:
+Response (call counts; a row's `repeatCount` is included):
 ```json
 {
-  "last24h": 142,
-  "last7d": 1053,
-  "total": 8721
+  "invocations24h": 142,
+  "errors24h": 9,
+  "invocations7d": 1053,
+  "totalInvocations": 8721
 }
 ```
 
