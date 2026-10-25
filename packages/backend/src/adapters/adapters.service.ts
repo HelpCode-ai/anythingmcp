@@ -30,6 +30,7 @@ import {
   POPULAR_MIN_WORKSPACES,
   POPULAR_WINDOW_DAYS,
 } from './popular-connectors';
+import { INSTALL_RANKING_CACHE_MS, INSTALL_RANKING_MIN_WORKSPACES } from './install-ranking';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
@@ -42,6 +43,7 @@ import {
 } from './env-var-meta';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { storableBaseUrl } from '../connectors/catalog-env-rebuild.util';
+import { setupEffort } from './setup-guide';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
@@ -76,6 +78,7 @@ export class AdaptersService {
           ...a,
           requiredEnvVars,
           setupKind: full ? setupKind({ ...full, requiredEnvVars }) : undefined,
+          setupEffort: full ? setupEffort({ ...full, requiredEnvVars }) : undefined,
         };
       });
   }
@@ -246,6 +249,45 @@ export class AdaptersService {
     return slugs;
   }
 
+  private installRankingCache: { at: number; ranking: SerializedBody } | null = null;
+
+  /**
+   * `{ slugs }`: the listed adapters, most-installed first, as a ready-to-send
+   * body (see ./install-ranking.ts). Cached for six hours; when the query
+   * fails, the last good ranking (or an empty one) is served and the next
+   * request tries again.
+   */
+  async installRanking(): Promise<SerializedBody> {
+    const now = Date.now();
+    const cached = this.installRankingCache;
+    if (cached && now - cached.at < INSTALL_RANKING_CACHE_MS) return cached.ranking;
+    try {
+      // The EXISTS goes through tool_invocations' (connector_id, created_at)
+      // index and stops at the first successful call of each connector.
+      const rows = await this.prisma.$queryRaw<Array<{ slug: string | null }>>`
+        SELECT c.config->>'adapterSlug' AS slug
+        FROM connectors c
+        WHERE c.config ? 'adapterSlug'
+          AND EXISTS (
+            SELECT 1 FROM tool_invocations ti
+            WHERE ti.connector_id = c.id AND ti.status = 'SUCCESS'
+          )
+        GROUP BY 1
+        HAVING COUNT(DISTINCT c.organization_id) >= ${INSTALL_RANKING_MIN_WORKSPACES}
+        ORDER BY COUNT(DISTINCT c.organization_id) DESC, 1`;
+      const listed = new Set(this.listAll().map((a) => a.slug));
+      const slugs = rows
+        .map((r) => r.slug)
+        .filter((s): s is string => typeof s === 'string' && listed.has(s));
+      const ranking = serializeWithEtag({ slugs });
+      this.installRankingCache = { at: now, ranking };
+      return ranking;
+    } catch (err: any) {
+      this.logger.warn(`Could not rank adapters by installs: ${err?.message ?? err}`);
+      return cached?.ranking ?? serializeWithEtag({ slugs: [] });
+    }
+  }
+
   /** Catalog slugs this workspace already has a connector for. */
   async installedAdapterSlugs(organizationId: string): Promise<Set<string>> {
     const rows = await this.prisma.connector.findMany({
@@ -407,10 +449,19 @@ export class AdaptersService {
       const env = (stored?.envVars ?? {}) as Record<string, unknown>;
       // Only names the adapter declares come from the request.
       const declared = new Set([...adapter.requiredEnvVars, ...(adapter.optionalEnvVars ?? [])]);
+      // An optional variable may be empty on purpose (MSSQL_DOMAIN: a SQL
+      // login). The form shows its stored value unless it is a secret, so an
+      // empty one means "cleared", except for a secret, where it means "keep".
+      const optional = new Set(adapter.optionalEnvVars ?? []);
+      const secret = new Set(describeAdapterEnvVars(adapter).filter((d) => d.secret).map((d) => d.name));
       const merged = new Map<string, string>();
-      for (const [k, v] of Object.entries(env)) if (typeof v === 'string' && v) merged.set(k, v);
+      for (const [k, v] of Object.entries(env)) {
+        if (typeof v === 'string' && (v || optional.has(k))) merged.set(k, v);
+      }
       for (const [k, v] of Object.entries(credentials ?? {})) {
-        if (declared.has(k) && typeof v === 'string' && v.trim()) merged.set(k, v);
+        if (!declared.has(k) || typeof v !== 'string') continue;
+        if (v.trim()) merged.set(k, v);
+        else if (optional.has(k) && !(secret.has(k) && merged.get(k))) merged.set(k, '');
       }
       credentials = Object.fromEntries(merged);
     }

@@ -4,6 +4,7 @@ import { buildSchema, introspectionFromSchema } from 'graphql';
 import axios from 'axios';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
+import { urlForLog } from '../../common/log-safe-url.util';
 
 const INTROSPECTION_QUERY = `
   query IntrospectionQuery {
@@ -86,7 +87,7 @@ export class GraphqlParser {
 
     // 2. Fallback: fetch SDL schema from specUrl or {endpoint}/schema
     const sdlUrl = specUrl || `${endpoint}/schema`;
-    this.logger.debug(`Falling back to SDL schema from: ${sdlUrl}`);
+    this.logger.debug(`Falling back to SDL schema from: ${urlForLog(sdlUrl)}`);
 
     try {
       await assertSafeOutboundUrl(sdlUrl);

@@ -11,6 +11,7 @@ import { AppSelect } from '@/components/ui/select';
 import { HeadersEditor, headerRowsToObject, objectToHeaderRows, type HeaderRow } from '@/components/headers-editor';
 import { AppShell } from '@/components/app-shell';
 import * as Dialog from '@radix-ui/react-dialog';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
@@ -589,6 +590,27 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  const handleExport = async (format: 'json' | 'yaml') => {
+    if (!token) return;
+    try {
+      const file = await connectors.exportConnector(id, format, token);
+      const url = URL.createObjectURL(new Blob([file.text], { type: file.contentType }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.filename;
+      a.click();
+      // Revoke later: some browsers start the download after click() returns.
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setMsg(
+        file.secretsIncluded
+          ? `Exported as ${format.toUpperCase()}. The file contains secret values in plain text: store it safely. OAuth credentials are not exported.`
+          : `Exported as ${format.toUpperCase()} without secret values (only admins can export them). OAuth credentials are not exported.`,
+      );
+    } catch (err: any) {
+      setMsg(`Export failed: ${err.message}`);
+    }
+  };
+
   const handleTest = async () => {
     if (!token) return;
     setTestResult(null);
@@ -984,6 +1006,31 @@ export default function ConnectorDetailPage() {
           <Button variant="secondary" size="md" onClick={() => setEditing(!editing)}>
             {editing ? 'Cancel' : 'Edit'}
           </Button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button variant="secondary" size="md" title="Export this connector as a file">
+                Export
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="end"
+                sideOffset={6}
+                collisionPadding={8}
+                className="z-50 min-w-[160px] overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-1 shadow-[var(--shadow)]"
+              >
+                {(['json', 'yaml'] as const).map((format) => (
+                  <DropdownMenu.Item
+                    key={format}
+                    onSelect={() => handleExport(format)}
+                    className="flex cursor-pointer select-none items-center rounded-[7px] px-2.5 py-2 text-[13px] text-[var(--text-2)] outline-none data-[highlighted]:bg-[var(--surface-2)] data-[highlighted]:text-[var(--text)]"
+                  >
+                    Export as {format.toUpperCase()}
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
           <Button variant="outlineDanger" size="md" onClick={handleDelete}>
             Delete
           </Button>

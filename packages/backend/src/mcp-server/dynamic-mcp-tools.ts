@@ -61,7 +61,7 @@ export type ToolResultContent = [
   )[],
 ];
 import { ResponseBodyError } from '../connectors/engines/response-error.util';
-import { isMaskedEnvVar, secretContext } from '../connectors/connector-secrets.util';
+import { connectorSecretValues } from '../connectors/connector-secrets.util';
 import { redactSecretsDeep } from '../common/secret-literals.util';
 import { withTokenRenewal } from '../connectors/engines/bearer-token-renewal.service';
 
@@ -199,18 +199,12 @@ export class DynamicMcpTools {
    * replacing a 3-character string everywhere in a response would mangle it.
    */
   private connectorSecretValues(tool: RegisteredTool): string[] {
-    const envVars = tool.connectorConfig?.envVars;
-    if (!envVars || typeof envVars !== 'object') return [];
-    const ctx = secretContext({
+    if (!tool.connectorConfig) return [];
+    return connectorSecretValues({
+      envVars: tool.connectorConfig.envVars,
       config: tool.connectorConfig.config,
       headers: tool.connectorConfig.headers,
     });
-    return Object.entries(envVars)
-      .filter(
-        ([name, value]) =>
-          typeof value === 'string' && value.length >= 8 && isMaskedEnvVar(name, value, ctx),
-      )
-      .map(([, value]) => value as string);
   }
 
   private async getProxyLimit(organizationId: string): Promise<number> {
@@ -418,6 +412,8 @@ export class DynamicMcpTools {
           ? undefined
           : tool.connectorId,
         errorWhen: connectorErrorWhen(tool.connectorConfig.config),
+        // Masked in the engines' log lines (a bot token in the URL path).
+        logSecrets: secretValues,
         ...(proxyUrl ? { proxyUrl } : {}),
       };
 

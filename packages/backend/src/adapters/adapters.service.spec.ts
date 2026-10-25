@@ -725,6 +725,36 @@ describe('AdaptersService.verifyCredentials on an existing connector', () => {
   });
 });
 
+describe('AdaptersService.verifyCredentials with an optional variable left empty', () => {
+  const sqlLogin = { MSSQL_HOST: 'db.example.com', MSSQL_PORT: '1433', MSSQL_DATABASE: 'erp', MSSQL_USER: 'reader', MSSQL_PASSWORD: '' };
+  function build(stored: Record<string, string>) {
+    const execute = jest.fn().mockResolvedValue({ ok: 1 });
+    const service = new AdaptersService(
+      { connector: { findFirst: jest.fn().mockResolvedValue({ envVars: stored }) } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, execute };
+  }
+
+  it('finishing a connector: an empty MSSQL_DOMAIN is a SQL login, not "still empty"', async () => {
+    // Libredesk #123: the connector was installed from a chat without the
+    // optional variable; the form sent it empty and the check dropped it.
+    const { service } = build({ ...sqlLogin, MSSQL_PASSWORD: 'stored-pw' });
+    const out: any = await service.verifyCredentials('mssql', 'org1', { ...sqlLogin, MSSQL_DOMAIN: '' }, 'c1');
+    expect(out.kind).not.toBe('invalid_input');
+    expect(out.missing).toBeUndefined();
+  });
+
+  it('clearing a domain set earlier switches back to a SQL login', async () => {
+    const { service, execute } = build({ ...sqlLogin, MSSQL_PASSWORD: 'stored-pw', MSSQL_DOMAIN: 'CORP' });
+    const out: any = await service.verifyCredentials('mssql', 'org1', { ...sqlLogin, MSSQL_DOMAIN: '' }, 'c1');
+    expect(out.kind).not.toBe('invalid_input');
+    expect(execute.mock.calls[0][0].envVars).toMatchObject({ MSSQL_DOMAIN: '', MSSQL_PASSWORD: 'stored-pw' });
+  });
+});
+
 describe('AdaptersService unlisted adapters', () => {
   const { getAdapter } = jest.requireActual('./catalog');
 
@@ -814,6 +844,57 @@ describe('AdaptersService popular connectors', () => {
     const items = await svc.popularConnectors('org1');
     expect(items[0].slug).toBe('telegram-bot');
     expect(items.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('AdaptersService install ranking', () => {
+  function service(opts: { rows?: Array<{ slug: string | null }>; fail?: boolean } = {}) {
+    const svc = Object.create(AdaptersService.prototype) as AdaptersService;
+    (svc as any).logger = { warn: jest.fn() };
+    (svc as any).configService = { get: (k: string) => (k === 'DEPLOYMENT_MODE' ? 'cloud' : undefined) };
+    const queryRaw = opts.fail
+      ? jest.fn().mockRejectedValue(new Error('db down'))
+      : jest.fn().mockResolvedValue(opts.rows ?? []);
+    (svc as any).prisma = { $queryRaw: queryRaw };
+    return { svc, queryRaw };
+  }
+  const slugsOf = async (svc: AdaptersService) => JSON.parse((await svc.installRanking()).body).slugs;
+
+  it('keeps the order of the query, which ranks by installing workspaces', async () => {
+    const { svc } = service({ rows: [{ slug: 'telegram-bot' }, { slug: 'etsy' }, { slug: 'odoo' }] });
+    expect(await slugsOf(svc)).toEqual(['telegram-bot', 'etsy', 'odoo']);
+  });
+
+  it('sends only slugs, never a count, and asks for three workspaces that used it', async () => {
+    const { svc, queryRaw } = service({ rows: [{ slug: 'etsy' }] });
+    expect(JSON.parse((await svc.installRanking()).body)).toEqual({ slugs: ['etsy'] });
+    const [sql, ...values] = queryRaw.mock.calls[0];
+    expect(sql.join('?')).toMatch(/ti\.connector_id = c\.id AND ti\.status = 'SUCCESS'/);
+    expect(sql.join('?')).toMatch(/HAVING COUNT\(DISTINCT c\.organization_id\) >= \?/);
+    expect(values).toEqual([3]);
+  });
+
+  it('leaves out adapters that are not listed here (self-host only on the cloud, unknown, null)', async () => {
+    const { svc } = service({ rows: [{ slug: 'etsy' }, { slug: 'no-such-adapter' }, { slug: 'idealista' }, { slug: null }] });
+    expect(await slugsOf(svc)).toEqual(['etsy']);
+  });
+
+  it('ranks once per cache window, not on every request', async () => {
+    const { svc, queryRaw } = service({ rows: [{ slug: 'etsy' }] });
+    await svc.installRanking();
+    await svc.installRanking();
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves the last good ranking when the query fails, and an empty one before any', async () => {
+    const { svc } = service({ fail: true });
+    expect(await slugsOf(svc)).toEqual([]);
+
+    const ok = service({ rows: [{ slug: 'etsy' }] });
+    await ok.svc.installRanking();
+    (ok.svc as any).installRankingCache.at = 0;
+    (ok.svc as any).prisma.$queryRaw = jest.fn().mockRejectedValue(new Error('db down'));
+    expect(await slugsOf(ok.svc)).toEqual(['etsy']);
   });
 });
 

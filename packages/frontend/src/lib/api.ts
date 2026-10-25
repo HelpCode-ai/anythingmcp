@@ -86,6 +86,33 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return response.json();
 }
 
+/**
+ * Fetch an export file as text, with the file name the server suggests.
+ * `secretsIncluded` comes from the X-Secrets-Included response header.
+ */
+async function downloadExport(
+  path: string,
+  token: string,
+): Promise<{ text: string; filename: string; contentType: string; secretsIncluded: boolean }> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({ message: response.statusText }));
+    if (response.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+    throw new ApiError(errorBody.message || `API error: ${response.status}`, response.status, errorBody);
+  }
+  const text = await response.text();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || 'connector.anythingmcp.json';
+  return {
+    text,
+    filename,
+    contentType: response.headers.get('Content-Type') || 'application/octet-stream',
+    secretsIncluded: response.headers.get('X-Secrets-Included') === 'true',
+  };
+}
+
 // Auth
 export const auth = {
   login: (email: string, password: string) =>
@@ -553,6 +580,11 @@ export const connectors = {
     request<{ version: string; exportedAt: string; secretsIncluded?: boolean; connectors: any[] }>('/api/connectors/export-all', { token }),
   importAll: (data: { connectors: any[] }, token: string) =>
     request<{ message: string; created: number; skipped: number; tools: number; errors?: string[] } & SecretMoveSummary>('/api/connectors/import-all', { method: 'POST', body: data, token }),
+  // Takes the text of an export file, JSON or YAML; the server parses it.
+  importFile: (content: string, token: string) =>
+    request<{ message: string; created: number; skipped: number; tools: number; errors?: string[] } & SecretMoveSummary>('/api/connectors/import', { method: 'POST', body: { content }, token }),
+  exportConnector: (id: string, format: 'json' | 'yaml', token: string) =>
+    downloadExport(`/api/connectors/${encodeURIComponent(id)}/export?format=${format}`, token),
   healthCheck: (token: string) =>
     request<{ total: number; healthy: number; unhealthy: number; connectors: any[] }>('/api/connectors/health-check', { token }),
   oauthAuthorize: (id: string, token: string, returnTo?: string) =>
@@ -627,6 +659,36 @@ export interface AdapterSetupInfo {
   setupKind: SetupKind;
   /** What is needed before starting (Markdown), shown above the form. */
   prerequisites?: string;
+  /** A step-by-step setup, shown instead of the form (see backend setup-guide.ts). */
+  setupGuide?: SetupGuide;
+}
+
+export type SetupEffortKind = 'none' | 'one_click' | 'api_key' | 'own_app' | 'admin_needed';
+
+export interface SetupEffort {
+  effort: SetupEffortKind;
+  minutes: number;
+}
+
+export interface SetupGuideStep {
+  id: string;
+  title: string;
+  body?: string;
+  /** Opened in a new tab. May start with {{VAR}}, a value entered in an earlier step. */
+  action?: { label: string; url: string };
+  /** What to type or pick on the provider's page; `value` may hold {{redirectUri}}. */
+  values?: Array<{ label: string; value: string; note?: string; pick?: boolean }>;
+  image?: { src: string; alt: string; capturedAt: string };
+  fields?: string[];
+  problems?: Array<{ q: string; a: string }>;
+  confirm?: string;
+}
+
+export interface SetupGuide extends SetupEffort {
+  examples?: string[];
+  needs?: string[];
+  why?: string;
+  steps: SetupGuideStep[];
 }
 
 export type VerifyResult =

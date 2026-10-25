@@ -79,6 +79,29 @@ export class AdaptersPublicController {
   }
 
   // Two path segments, so the authenticated `GET :slug` never sees it.
+  @Get('ranking/installs')
+  @ApiOperation({
+    summary: 'Listed adapters, most-installed first',
+    description:
+      'The slugs of listed adapters ordered by how many workspaces on this deployment have them installed, ' +
+      'for the marketing website to order its marketplace and guides. Only the order is returned, never a count; ' +
+      'adapters installed by fewer than 3 workspaces are left out. Public.',
+  })
+  async installRanking(
+    @Headers('if-none-match') ifNoneMatch: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { body, etag } = await this.adaptersService.installRanking();
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', PUBLIC_CATALOG_CACHE_CONTROL);
+    if (etagMatches(ifNoneMatch, etag)) {
+      res.status(304).end();
+      return;
+    }
+    res.type('application/json').send(body);
+  }
+
+  // Two path segments, so the authenticated `GET :slug` never sees it.
   @Get(':slug/instructions')
   @ApiOperation({
     summary: "One adapter's setup instructions",

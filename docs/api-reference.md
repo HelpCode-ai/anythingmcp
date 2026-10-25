@@ -84,9 +84,61 @@ curl -s http://localhost:4000/api/auth/invite \
 | POST | `/api/connectors/:id/test` | Test API connection |
 | POST | `/api/connectors/:id/import-spec` | Auto-import tools from connector's spec URL |
 | POST | `/api/connectors/:id/import` | Import tools from any source |
+| GET | `/api/connectors/export-all` | Export every connector of the organization as JSON (backup) |
+| POST | `/api/connectors/import-all` | Import connectors from an export, sent as a JSON body |
+| GET | `/api/connectors/:id/export?format=json\|yaml` | Export one connector and its tools as a JSON (default) or YAML file |
+| POST | `/api/connectors/import` | Import connectors from the text of a JSON or YAML export file (not the same as `:id/import`) |
 | PUT | `/api/connectors/:id/env-vars` | Set environment variables |
 | POST | `/api/connectors/:id/oauth/authorize` | Start OAuth2 authorization flow (returns redirect URL) |
 | GET | `/api/mcp-oauth/callback` | OAuth2 callback — exchanges code for tokens |
+
+### Export and Import a Connector
+
+`GET /api/connectors/:id/export` writes the same envelope as `export-all` with a
+single entry in `connectors`, so its file can be restored with either import
+endpoint. `authConfig` (OAuth and other stored credentials) is never exported:
+re-authorize the connector after importing it. Secret environment variables
+and headers are included only for admins; for other roles they are empty and
+named in `maskedEnvVars` / `maskedHeaders`. Per-tool `useProxy`, annotation
+overrides and role access are not exported.
+
+```bash
+curl -s "http://localhost:4000/api/connectors/$ID/export?format=yaml" \
+  -H "Authorization: Bearer $TOKEN" -OJ
+```
+
+```yaml
+version: '1.0'
+exportedAt: '2026-10-21T10:00:00.000Z'
+secretsIncluded: false
+connectors:
+  - name: Acme CRM
+    type: REST
+    baseUrl: https://api.acme.test
+    authType: OAUTH2
+    envVars:
+      ACME_API_KEY: ''
+    maskedEnvVars:
+      - ACME_API_KEY
+    tools:
+      - name: acme_list_contacts
+        isEnabled: true
+        endpointMapping:
+          method: GET
+          path: /contacts
+```
+
+`POST /api/connectors/import` takes `{ "content": "<file text>" }`, parses it as
+YAML (JSON is accepted too), validates it like `import-all` and imports into
+the caller's organization, skipping connectors whose name already exists.
+Viewers get 403. A syntax error returns 400 naming the line and column.
+
+```bash
+curl -s http://localhost:4000/api/connectors/import \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -Rs '{content: .}' acme-crm.anythingmcp.yaml)"
+```
 
 ### Create Connector
 

@@ -46,6 +46,47 @@ describe('etsy adapter — static spec conformance', () => {
     expect(tool.endpointMapping.queryParams.shop_section_ids).toBe('$shop_section_ids');
   });
 
+  /**
+   * getShopReceiptTransactionsByShop and getListingsByListingIds from Etsy's
+   * OpenAPI spec (https://developers.etsy.com/documentation/reference):
+   * read-only GETs, listing ids as one comma-separated value like the other
+   * id lists in this adapter.
+   */
+  it('lists shop transactions and batches listings with the paths from the Etsy OpenAPI spec', () => {
+    const tools = (adapter as any).tools as Array<any>;
+    const byName = (n: string) => tools.find((t) => t.name === n);
+    const tx = byName('etsy_get_shop_transactions');
+    expect(tx.endpointMapping).toEqual({
+      method: 'GET',
+      path: '/shops/{shop_id}/transactions',
+      queryParams: { limit: '$limit', offset: '$offset' },
+    });
+    expect(tx.parameters.required).toEqual(['shop_id']);
+    expect(Object.keys(tx.parameters.properties).sort()).toEqual(['limit', 'offset', 'shop_id']);
+    const batch = byName('etsy_get_listings_by_ids');
+    expect(batch.endpointMapping).toEqual({
+      method: 'GET',
+      path: '/listings/batch',
+      queryParams: {
+        listing_ids: '$listing_ids',
+        includes: '$includes',
+        currency: '$currency',
+        buyer_country: '$buyer_country',
+      },
+    });
+    expect(batch.parameters.required).toEqual(['listing_ids']);
+    expect(Object.keys(batch.parameters.properties).sort()).toEqual(['buyer_country', 'currency', 'includes', 'listing_ids']);
+    for (const t of [tx, batch]) {
+      expect(t.enabled).toBeUndefined();
+      expect(a.instructions).toContain(t.name);
+    }
+  });
+
+  it('names every tool in the instructions and writes no em dash', () => {
+    for (const t of a.tools) expect(`${t.name}:${a.instructions.includes(t.name)}`).toBe(`${t.name}:true`);
+    expect(JSON.stringify(adapter)).not.toMatch(/—/);
+  });
+
   it('targets the official Etsy Open API v3 base URL', () => {
     expect(a.connector.baseUrl).toBe('https://openapi.etsy.com/v3/application');
   });

@@ -24,6 +24,33 @@ describe('computeSetupState', () => {
     ).toEqual({ status: 'needs_input', missing: ['LEXWARE_API_KEY'] });
   });
 
+  describe('an optional variable of a catalog adapter', () => {
+    // Libredesk #123 (23 Oct 2026): a SQL Server connector with MSSQL_DOMAIN
+    // left empty, as it must be for a SQL login, stayed "Still empty:
+    // MSSQL_DOMAIN" and was never offered on MCP.
+    const mssql = (envVars: Record<string, string>) =>
+      computeSetupState({
+        authType: 'CONNECTION_STRING',
+        authConfig: { username: '{{MSSQL_USER}}', password: '{{MSSQL_PASSWORD}}', domain: '{{MSSQL_DOMAIN}}' },
+        baseUrl: 'mssql://{{MSSQL_HOST}}:{{MSSQL_PORT}}/{{MSSQL_DATABASE}}',
+        envVars,
+        config: { adapterSlug: 'mssql' },
+      });
+    const filled = { MSSQL_HOST: 'db', MSSQL_PORT: '1433', MSSQL_DATABASE: 'erp', MSSQL_USER: 'u', MSSQL_PASSWORD: 'p' };
+
+    it('is ready when saved empty on purpose', () => {
+      expect(mssql({ ...filled, MSSQL_DOMAIN: '' })).toEqual({ status: 'ready', missing: [] });
+    });
+
+    it('still needs input when never saved: it would stay a literal placeholder', () => {
+      expect(mssql(filled)).toEqual({ status: 'needs_input', missing: ['MSSQL_DOMAIN'] });
+    });
+
+    it('does not let a required variable be empty', () => {
+      expect(mssql({ ...filled, MSSQL_PASSWORD: '', MSSQL_DOMAIN: '' })).toEqual({ status: 'needs_input', missing: ['MSSQL_PASSWORD'] });
+    });
+  });
+
   it('counts a variable set later in the env vars', () => {
     expect(
       computeSetupState({

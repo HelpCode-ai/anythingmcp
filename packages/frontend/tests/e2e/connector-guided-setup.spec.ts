@@ -105,7 +105,9 @@ test('checks the key before installing, and shows what the API answered', async 
 
   await page.getByLabel('API key').fill(' key-123 ');
   await page.getByRole('button', { name: 'Check and install' }).click();
-  await expect(page.getByRole('heading', { name: 'Lexware Office is ready' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lexware Office is connected' })).toBeVisible();
+  await expect(page.getByText('AnythingMCP checked it with Lexware Office: it works.')).toBeVisible();
+  await page.getByText('What Lexware Office answered to the check').click();
   await expect(page.getByText('Acme GmbH')).toBeVisible();
   expect(calls.verify).toEqual([{ credentials: { LEXWARE_API_KEY: 'key-123' } }]);
   expect(calls.imports).toEqual([{ credentials: { LEXWARE_API_KEY: 'key-123' } }]);
@@ -170,13 +172,13 @@ test('OAuth: app keys Etsy does not accept yet keep the user here, instead of an
 test('OAuth: back from the provider, shows the connector ready', async ({ page }) => {
   await setup(page);
   await page.goto('/connectors/setup/etsy?connector=c9&step=done&from=claude');
-  await expect(page.getByRole('heading', { name: 'Etsy Open API v3 is ready' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Etsy Open API v3 is connected' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Back to Claude' })).toBeVisible();
 });
 
 test('the way back names the assistant the setup came from, and only links where we chose', async ({ page }) => {
   await setup(page);
-  const ready = page.getByRole('heading', { name: 'Etsy Open API v3 is ready' });
+  const ready = page.getByRole('heading', { name: 'Etsy Open API v3 is connected' });
   const open = (from: string) => page.goto(`/connectors/setup/etsy?connector=c9&step=done&from=${encodeURIComponent(from)}`);
   const externalLinks = () =>
     page.locator('a[href^="http"]').evaluateAll((as) => as.map((a) => (a as HTMLAnchorElement).href));
@@ -237,7 +239,7 @@ test('OAuth: a sign-in that worked with wrong app keys goes back to the keys, no
   await page.goto('/connectors/setup/etsy?connector=c9&step=done&from=claude');
   await expect(page.getByText('Etsy Open API v3 did not accept these credentials.')).toBeVisible();
   await expect(page.getByText('should be in the format keystring:shared_secret')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Etsy Open API v3 is ready' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Etsy Open API v3 is connected' })).toHaveCount(0);
   await expect(page.getByLabel('Shared secret')).toBeVisible();
 });
 
@@ -258,7 +260,7 @@ test('finishing an existing connector keeps a stored secret left empty', async (
   await expect(page.getByRole('heading', { name: 'Finish setting up Lexware Office' })).toBeVisible();
   await expect(page.getByLabel('API key')).toHaveAttribute('placeholder', 'Stored. Leave empty to keep it');
   await page.getByRole('button', { name: 'Check and save' }).click();
-  await expect(page.getByRole('heading', { name: 'Lexware Office is ready' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lexware Office is connected' })).toBeVisible();
   expect(calls.verify).toEqual([{ credentials: { LEXWARE_API_KEY: '' }, connectorId: 'c9' }]);
   expect(calls.envVars).toEqual([{ envVars: { LEXWARE_API_KEY: '' } }]);
   expect(calls.imports).toHaveLength(0);

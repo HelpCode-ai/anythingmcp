@@ -51,12 +51,13 @@ describe('JTL-FFN adapter — static contract', () => {
     expect(a.probe.tool).toBe('jtl_ffn_get_current_user');
   });
 
-  it('prefixes every tool and keeps writes to two switched-off tools', () => {
+  it('prefixes every tool and keeps writes to three switched-off tools', () => {
     expect(a.tools.every((t) => t.name.startsWith('jtl_ffn_'))).toBe(true);
     const writes = a.tools.filter((t) => t.endpointMapping.method !== 'GET');
     expect(writes.map((t) => [t.name, t.endpointMapping.method, t.enabled])).toEqual([
       ['jtl_ffn_create_outbound', 'POST', false],
       ['jtl_ffn_cancel_outbound', 'PUT', false],
+      ['jtl_ffn_create_inbound', 'POST', false],
     ]);
     expect(a.tools.filter((t) => t.endpointMapping.method === 'GET').every((t) => t.enabled === undefined)).toBe(true);
   });
@@ -98,6 +99,20 @@ describe('JTL-FFN adapter — static contract', () => {
         shippingAddress: '$shipping_address',
         items: '$items',
       }),
+    });
+    expect(byName.jtl_ffn_create_inbound.parameters.required).toEqual(['merchant_inbound_number', 'warehouse_id', 'items']);
+    expect(byName.jtl_ffn_create_inbound.endpointMapping).toEqual({
+      method: 'POST',
+      path: '/v1/merchant/inbounds',
+      bodyMapping: {
+        merchantInboundNumber: '$merchant_inbound_number',
+        warehouseId: '$warehouse_id',
+        items: '$items',
+        purchaseOrderNumber: '$purchase_order_number',
+        externalInboundNumber: '$external_inbound_number',
+        supplier: '$supplier',
+        note: '$note',
+      },
     });
     expect(byName.jtl_ffn_cancel_outbound.endpointMapping.bodyMapping).toEqual({
       status: 'Canceled',

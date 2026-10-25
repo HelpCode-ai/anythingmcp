@@ -2,7 +2,7 @@
   "slug": "jtl-ffn",
   "name": "JTL Fulfillment Network",
   "description": "JTL Fulfillment Network (JTL-FFN) for merchants: products, stock per warehouse, outbound orders with shipping status and tracking, inbound deliveries, returns, warehouses and shipping methods of your fulfillers. Create or cancel outbounds on request. OAuth2.",
-  "instructions": "Reads the JTL-FFN Merchant API (`ffn2.api.jtl-software.com`) as the merchant who authorized it. The account needs the Merchant role in the FFN portal.\n\n**Getting credentials**\n1. Sign in once at https://fulfillment.jtl-software.com with your JTL account; until then the API answers 404 for your user.\n2. Open https://kundencenter.jtl-software.de/oauth (it is not in the Kundencenter menu), create an OAuth client with the scopes `ffn.merchant.read` and `ffn.merchant.write`, and set its redirect URI to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when self-hosted.\n3. Paste the client ID and secret into `JTL_FFN_CLIENT_ID` and `JTL_FFN_CLIENT_SECRET`, install, then click **Authorize with Provider** on the connector page. Access tokens last 30 minutes; JTL issues a new refresh token on every renewal and AnythingMCP stores it.\n\n**Workflow**: `jtl_ffn_get_current_user` confirms the account. `jtl_ffn_list_warehouses` and `jtl_ffn_list_shipping_methods` give the ids an outbound needs. Find products with `jtl_ffn_list_products`, then read stock with `jtl_ffn_get_product_stock`. For an order, `jtl_ffn_get_outbound` shows its status and `jtl_ffn_list_outbound_shipping_notifications` the parcels with tracking.\n\n**Formats and gotchas**: a jfsku is JTL's 11-character product id (e.g. `MERC01PRDCT`), not your own SKU (`merchantSku`). Outbound and inbound tools accept either the FFN id or your own order number. `filter` takes an OData-style expression on the fields named in each tool, e.g. `status eq 'Shipped'`. Dates are ISO 8601. `jtl_ffn_create_outbound` and `jtl_ffn_cancel_outbound` install switched off: enable them deliberately, and always confirm the details with the user before a call.\n\n**Pagination and rate limits**: list tools take `limit` (default 50) and `offset`; the answer has `count`, `_page` and `nextPageLink` while more pages exist. Raise `offset` by `limit` until `nextPageLink` is missing. JTL publishes no rate limit; avoid tight polling loops and use the change feed for sync.\n\n**Cloud reachability**: `ffn2.api.jtl-software.com` and `oauth2.api.jtl-software.com` are public HTTPS endpoints, reachable from AnythingMCP Cloud and self-hosted installs.",
+  "instructions": "Reads the JTL-FFN Merchant API (`ffn2.api.jtl-software.com`) as the merchant who authorized it. The account needs the Merchant role in the FFN portal.\n\n**Getting credentials**\n1. Sign in once at https://fulfillment.jtl-software.com with your JTL account; until then the API answers 404 for your user.\n2. Open https://kundencenter.jtl-software.de/oauth (it is not in the Kundencenter menu), create an OAuth client with the scopes `ffn.merchant.read` and `ffn.merchant.write`, and set its redirect URI to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when self-hosted.\n3. Paste the client ID and secret into `JTL_FFN_CLIENT_ID` and `JTL_FFN_CLIENT_SECRET`, install, then click **Authorize with Provider** on the connector page. Access tokens last 30 minutes; JTL issues a new refresh token on every renewal and AnythingMCP stores it.\n\n**Workflow**: `jtl_ffn_get_current_user` confirms the account. `jtl_ffn_list_warehouses` and `jtl_ffn_list_shipping_methods` give the ids an outbound needs. Find products with `jtl_ffn_list_products`, then read stock with `jtl_ffn_get_product_stock`. Deliveries to the warehouse are inbounds: `jtl_ffn_list_inbounds` and `jtl_ffn_get_inbound` show their status. For an order, `jtl_ffn_get_outbound` shows its status and `jtl_ffn_list_outbound_shipping_notifications` the parcels with tracking.\n\n**Formats and gotchas**: a jfsku is JTL's 11-character product id (e.g. `MERC01PRDCT`), not your own SKU (`merchantSku`). Outbound and inbound tools accept either the FFN id or your own order number. `filter` takes an OData-style expression on the fields named in each tool, e.g. `status eq 'Shipped'`. Dates are ISO 8601. `jtl_ffn_create_outbound`, `jtl_ffn_cancel_outbound` and `jtl_ffn_create_inbound` (announces a delivery to the fulfiller's warehouse) install switched off: enable them deliberately, and always confirm the details with the user before a call.\n\n**Pagination and rate limits**: list tools take `limit` (default 50) and `offset`; the answer has `count`, `_page` and `nextPageLink` while more pages exist. Raise `offset` by `limit` until `nextPageLink` is missing. JTL publishes no rate limit; avoid tight polling loops and use the change feed for sync.\n\n**Cloud reachability**: `ffn2.api.jtl-software.com` and `oauth2.api.jtl-software.com` are public HTTPS endpoints, reachable from AnythingMCP Cloud and self-hosted installs.",
   "region": "de",
   "category": "logistics",
   "icon": "jtl-ffn",
@@ -424,6 +424,62 @@
         "encodePathParams": true,
         "bodyMapping": { "status": "Canceled", "cancelReason": "$cancel_reason", "cancelReasonCode": "$cancel_reason_code" }
       }
+    },
+    {
+      "name": "jtl_ffn_create_inbound",
+      "description": "Announce an inbound delivery (Anlieferung, e.g. new stock from a supplier or production) to the fulfiller's warehouse, so the fulfiller can receive and book it. The fulfiller sees it at once. Before calling, show the user the warehouse, the products and quantities and get an explicit yes. Answers 400 when a product is unknown in that warehouse or the merchant_inbound_number is already in use. Follow its status with jtl_ffn_get_inbound.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_inbound_number": { "type": "string", "description": "Your own unique number for this delivery, e.g. IN-2026-001." },
+          "warehouse_id": { "type": "string", "description": "warehouseId from jtl_ffn_list_warehouses." },
+          "items": {
+            "type": "array",
+            "description": "Products arriving. inboundItemId is your own line id (1, 2, 3...); give jfsku or merchantSku for each line.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "inboundItemId": { "type": "string", "description": "Your line id, unique within the inbound." },
+                "jfsku": { "type": "string", "description": "JTL product id, 11 characters, from jtl_ffn_list_products." },
+                "merchantSku": { "type": "string", "description": "Your own SKU, instead of the jfsku." },
+                "quantity": { "type": "number", "description": "Quantity expected." },
+                "supplierSku": { "type": "string", "description": "The supplier's SKU for this product." },
+                "supplierProductName": { "type": "string", "description": "The supplier's product name." },
+                "note": { "type": "string", "description": "Note on this line for the fulfiller." }
+              },
+              "required": ["inboundItemId", "quantity"]
+            }
+          },
+          "purchase_order_number": { "type": "string", "description": "Your purchase order number for this delivery." },
+          "external_inbound_number": { "type": "string", "description": "Another reference, e.g. the supplier's delivery note number." },
+          "supplier": {
+            "type": "object",
+            "description": "The supplier sending the goods.",
+            "properties": {
+              "merchantSupplierNumber": { "type": "string", "description": "Your supplier number." },
+              "merchantSupplierName": { "type": "string", "description": "Supplier name." }
+            },
+            "required": ["merchantSupplierNumber"]
+          },
+          "note": { "type": "string", "description": "Note on the delivery for the fulfiller, e.g. pallets or time slot." }
+        },
+        "required": ["merchant_inbound_number", "warehouse_id", "items"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/merchant/inbounds",
+        "bodyMapping": {
+          "merchantInboundNumber": "$merchant_inbound_number",
+          "warehouseId": "$warehouse_id",
+          "items": "$items",
+          "purchaseOrderNumber": "$purchase_order_number",
+          "externalInboundNumber": "$external_inbound_number",
+          "supplier": "$supplier",
+          "note": "$note"
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false }
     }
   ]
 }

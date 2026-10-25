@@ -55,6 +55,13 @@ export const ProductEvents = {
   OAUTH_FAILED: 'oauth_failed',
   SETUP_SAVED_UNVERIFIED: 'setup_saved_unverified',
   /**
+   * A step of a setup guide (adapter `setupGuide`) was shown / left with
+   * Continue. metadata.adapterSlug, metadata.step = the step id,
+   * metadata.index = its position from 1. Answers which step people give up on.
+   */
+  SETUP_STEP_VIEWED: 'setup_step_viewed',
+  SETUP_STEP_COMPLETED: 'setup_step_completed',
+  /**
    * A new cloud account was created; metadata = the first and last touch the
    * visitor arrived through (see signup-attribution.ts). Written by the
    * server on sign-up, never accepted from a client. Answers: which channel

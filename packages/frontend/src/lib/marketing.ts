@@ -10,6 +10,13 @@ const DEFAULT_MARKETING_URL = 'https://anythingmcp.com';
  */
 export const CLAUDE_DIRECTORY_URL = 'https://claude.ai/directory/anythingmcp';
 
+/**
+ * Opens claude.ai straight on its "Add custom connector" dialog. Connectors
+ * moved from Settings to Customize → Connectors; the old settings URL now only
+ * says so. Connectors added on claude.ai also appear in Claude Desktop.
+ */
+export const CLAUDE_ADD_CONNECTOR_URL = 'https://claude.ai/new?modal=add-custom-connector#customize/connectors';
+
 export function getMarketingUrl(): string {
   if (typeof process !== 'undefined') {
     const env = (process as { env?: Record<string, string | undefined> }).env;

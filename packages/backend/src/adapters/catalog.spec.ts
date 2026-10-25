@@ -368,15 +368,25 @@ describe('adapter catalog', () => {
         expect(typeof cfg.loginUrl).toBe('string');
         // Same rule as LoginTokenService: a token read from a cookie has no
         // JSON path, it names the cookie instead.
+        // With cookieMode "all" every cookie is the token and cookieName is
+        // optional.
         if (cfg.tokenSource === 'cookie') {
-          expect(typeof cfg.cookieName).toBe('string');
+          if (cfg.cookieMode !== 'all') expect(typeof cfg.cookieName).toBe('string');
         } else {
           expect(typeof cfg.tokenJsonPath).toBe('string');
         }
-        // performLogin refuses to start without both, even when the body
-        // does not use them.
-        expect(typeof cfg.username).toBe('string');
-        expect(typeof cfg.password).toBe('string');
+        if (cfg.signedJwt) {
+          // A signed-JWT login needs a key and has to send the token.
+          const jwt = cfg.signedJwt as Record<string, unknown>;
+          expect(typeof jwt.privateKey).toBe('string');
+          const param = typeof jwt.outputParam === 'string' ? jwt.outputParam : 'signedJwt';
+          expect(JSON.stringify(cfg.loginBody ?? cfg.loginBodyTemplate ?? '')).toContain(`\${${param}}`);
+        } else {
+          // performLogin refuses to start without both, even when the body
+          // does not use them.
+          expect(typeof cfg.username).toBe('string');
+          expect(typeof cfg.password).toBe('string');
+        }
         if (cfg.passwordHashing) {
           const ph = cfg.passwordHashing as Record<string, unknown>;
           expect(VALID_PASSWORD_HASHING_SCHEMES.has(String(ph.scheme))).toBe(true);

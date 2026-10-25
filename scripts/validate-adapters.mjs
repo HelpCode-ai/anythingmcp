@@ -15,7 +15,7 @@
  * Environment-reference checks are also informational because
  * some adapters document values supplied as tool parameters.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -239,6 +239,104 @@ export function errorWhenProblems(value) {
   return problems;
 }
 
+const SETUP_EFFORTS = new Set(['none', 'one_click', 'api_key', 'own_app', 'admin_needed']);
+const GUIDE_FIELDS = new Set(['effort', 'minutes', 'examples', 'needs', 'why', 'steps']);
+const STEP_FIELDS = new Set(['id', 'title', 'body', 'action', 'values', 'image', 'fields', 'problems', 'confirm']);
+const FRONTEND_PUBLIC = join(REPO_ROOT, 'packages/frontend/public');
+const nonEmpty = (v) => typeof v === 'string' && v.trim() !== '';
+
+/**
+ * The step-by-step setup (setup-guide.ts). Every variable the user must enter
+ * is asked for in exactly one step, links open the provider over https, and a
+ * screenshot is a real file: the guide is the only setup the page shows, so a
+ * gap in it is a setup nobody can finish.
+ */
+export function validateSetupGuide(adapter, publicDir = FRONTEND_PUBLIC) {
+  const errors = [];
+  const g = adapter.setupGuide;
+  const bad = (rule, path, message, fix) => errors.push(error(rule, path, message, fix, 'setup-guide'));
+  if (!g || typeof g !== 'object' || Array.isArray(g)) {
+    bad('setup-guide-shape', 'setupGuide', 'setupGuide must be an object', 'Use { "effort": "api_key", "minutes": 2, "steps": [...] }.');
+    return errors;
+  }
+  for (const k of Object.keys(g)) if (!GUIDE_FIELDS.has(k)) bad('setup-guide-field', `setupGuide.${k}`, `Unknown setupGuide field "${k}"`, `Use one of: ${[...GUIDE_FIELDS].join(', ')}.`);
+  if (!SETUP_EFFORTS.has(g.effort)) bad('setup-guide-effort', 'setupGuide.effort', `effort must be one of ${[...SETUP_EFFORTS].join(', ')}`, 'Pick what the setup asks of the user.');
+  if (!Number.isInteger(g.minutes) || g.minutes < 1 || g.minutes > 120) bad('setup-guide-minutes', 'setupGuide.minutes', 'minutes must be a whole number from 1 to 120', 'Say about how long the setup takes.');
+  for (const key of ['examples', 'needs']) {
+    if (g[key] !== undefined && (!Array.isArray(g[key]) || g[key].length === 0 || !g[key].every(nonEmpty))) {
+      bad('setup-guide-list', `setupGuide.${key}`, `${key} must be a non-empty array of strings`, 'List short lines, or remove the field.');
+    }
+  }
+  if (g.why !== undefined && !nonEmpty(g.why)) bad('setup-guide-why', 'setupGuide.why', 'why must be a non-empty string', 'Explain in a few sentences, or remove the field.');
+  if (!Array.isArray(g.steps) || g.steps.length === 0) {
+    bad('setup-guide-steps', 'setupGuide.steps', 'steps must be a non-empty array', 'Add at least one step.');
+    return errors;
+  }
+
+  const declared = [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
+  const asked = new Map();
+  const ids = new Set();
+  const titles = new Set();
+  g.steps.forEach((step, i) => {
+    const at = `setupGuide.steps[${i}]`;
+    if (!step || typeof step !== 'object' || Array.isArray(step)) { bad('setup-guide-step', at, 'Each step must be an object', 'Use { "id": "…", "title": "…" }.'); return; }
+    for (const k of Object.keys(step)) if (!STEP_FIELDS.has(k)) bad('setup-guide-field', `${at}.${k}`, `Unknown step field "${k}"`, `Use one of: ${[...STEP_FIELDS].join(', ')}.`);
+    if (typeof step.id !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(step.id)) bad('setup-guide-step-id', `${at}.id`, 'id must be kebab-case', 'Use a short id like "create-app".');
+    else if (ids.has(step.id)) bad('setup-guide-step-id', `${at}.id`, `id "${step.id}" is used twice`, 'Give every step its own id.');
+    else ids.add(step.id);
+    if (!nonEmpty(step.title)) bad('setup-guide-step-title', `${at}.title`, 'title must be a non-empty string', 'Say what the step does.');
+    else if (titles.has(step.title.trim().toLowerCase())) bad('setup-guide-step-title', `${at}.title`, `title "${step.title}" is used twice`, 'Give every step its own title.');
+    else titles.add(step.title.trim().toLowerCase());
+    if (step.body !== undefined && !nonEmpty(step.body)) bad('setup-guide-step-body', `${at}.body`, 'body must be a non-empty string', 'Write the step, or remove the field.');
+    if (step.action !== undefined) {
+      // A link into the user's own instance starts with a variable asked for
+      // in an earlier step whose pattern makes it an https address.
+      const url = String(step.action?.url ?? '');
+      const lead = /^\{\{([A-Z0-9_]+)\}\}\/\S*$/.exec(url);
+      const leadOk = lead && asked.has(lead[1]) && /^\^https:/.test(String(adapter.envVarMeta?.[lead[1]]?.pattern ?? ''));
+      if (!step.action || !nonEmpty(step.action.label) || !(/^https:\/\/\S+$/.test(url) || leadOk) || /\{\{/.test(url.replace(/^\{\{[A-Z0-9_]+\}\}/, ''))) {
+        bad('setup-guide-action', `${at}.action`, 'action needs a label and an https url (or one starting with an https address asked for in an earlier step)', 'Link the provider page this step happens on.');
+      }
+    }
+    if (step.values !== undefined) {
+      if (!Array.isArray(step.values) || step.values.length === 0) bad('setup-guide-values', `${at}.values`, 'values must be a non-empty array', 'List what to enter on the provider page, or remove the field.');
+      else step.values.forEach((v, j) => {
+        if (!v || !nonEmpty(v.label) || !nonEmpty(v.value)) bad('setup-guide-values', `${at}.values[${j}]`, 'Each value needs a label and a value', 'Use { "label": "Name", "value": "AnythingMCP" }.');
+        else if (/\{\{(?!redirectUri\}\})/.test(v.value)) bad('setup-guide-values', `${at}.values[${j}].value`, 'Only {{redirectUri}} can be filled in', 'Write the value out.');
+      });
+    }
+    if (step.image !== undefined) {
+      const img = step.image;
+      // Only a file under packages/frontend/public: `//host/x.png` would load
+      // from another site.
+      if (!img || typeof img.src !== 'string' || !/^\/(?!\/)[\w./-]+$/.test(img.src) || img.src.includes('..') || !nonEmpty(img.alt) || !/^\d{4}-\d{2}-\d{2}$/.test(String(img.capturedAt))) {
+        bad('setup-guide-image', `${at}.image`, 'image needs a src under /, an alt text and capturedAt (YYYY-MM-DD)', 'Use { "src": "/setup-guides/etsy/app-form.png", "alt": "…", "capturedAt": "2026-10-22" }.');
+      } else if (!existsSync(join(publicDir, img.src))) {
+        bad('setup-guide-image', `${at}.image.src`, `${img.src} is not in packages/frontend/public`, 'Add the screenshot, or remove the image.');
+      }
+    }
+    if (step.fields !== undefined) {
+      if (!Array.isArray(step.fields) || step.fields.length === 0) bad('setup-guide-fields', `${at}.fields`, 'fields must be a non-empty array of variable names', 'List the variables entered in this step, or remove the field.');
+      else for (const f of step.fields) {
+        if (!declared.includes(f)) bad('setup-guide-fields', `${at}.fields`, `"${f}" is not in requiredEnvVars or optionalEnvVars`, 'Ask only for variables the adapter declares.');
+        else if (asked.has(f)) bad('setup-guide-fields', `${at}.fields`, `"${f}" is already asked for in step ${asked.get(f) + 1}`, 'Ask for each variable in one step.');
+        else asked.set(f, i);
+      }
+    }
+    if (step.problems !== undefined && (!Array.isArray(step.problems) || step.problems.length === 0 || step.problems.some((p) => !p || !nonEmpty(p.q) || !nonEmpty(p.a)))) {
+      bad('setup-guide-problems', `${at}.problems`, 'problems must be a non-empty array of { q, a }', 'Write the question and its answer, or remove the field.');
+    }
+    if (step.confirm !== undefined && !nonEmpty(step.confirm)) bad('setup-guide-confirm', `${at}.confirm`, 'confirm must be a non-empty string', 'Say what the user confirms, or remove the field.');
+  });
+  // A required variable the guide never asks for blocks the last step.
+  // Advanced ones (a token the sign-in fills in) stay out of the steps.
+  const meta = adapter.envVarMeta && typeof adapter.envVarMeta === 'object' ? adapter.envVarMeta : {};
+  for (const v of adapter.requiredEnvVars || []) {
+    if (!asked.has(v) && !meta[v]?.advanced) bad('setup-guide-missing-field', 'setupGuide.steps', `The required variable "${v}" is not asked for in any step`, `Add "${v}" to the fields of the step where the user finds it.`);
+  }
+  return errors;
+}
+
 export function validateAdapter(adapter, file, region) {
   const errors = [];
   const warnings = [];
@@ -317,6 +415,7 @@ export function validateAdapter(adapter, file, region) {
   if (adapter.appRegistrationUrl !== undefined && !/^https:\/\/\S+$/.test(String(adapter.appRegistrationUrl))) {
     errors.push(error('app-registration-url', 'appRegistrationUrl', 'appRegistrationUrl must be an https URL', 'Link the provider page where the user creates the app, or remove the field.', 'adapter-fields'));
   }
+  if (adapter.setupGuide !== undefined) errors.push(...validateSetupGuide(adapter));
   if (adapter.previousOAuthScopes !== undefined && (!Array.isArray(adapter.previousOAuthScopes) || adapter.previousOAuthScopes.some((v) => typeof v !== 'string' || !v.trim()))) {
     errors.push(error('previous-oauth-scopes', 'previousOAuthScopes', 'previousOAuthScopes must be an array of scope strings', 'List the scope strings earlier versions of this adapter asked for.', 'adapter-fields'));
   }

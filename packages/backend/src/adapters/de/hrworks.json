@@ -2,7 +2,7 @@
   "slug": "hrworks",
   "name": "HR WORKS",
   "description": "Access HR WORKS, the German HR/payroll platform: employees, absences, sick leaves, remote work (home office), working times, time accounts, wage payments, personnel files, projects, applicants, organization units, holidays and cost centers via the v2 REST API.",
-  "instructions": "This connector uses the HR WORKS v2 REST API (https://developers.hrworks.de).\n\n**Authentication — automatic token refresh**: HR WORKS issues short-lived tokens (~15 minutes). This connector uses the `LOGIN_TOKEN` flow: it POSTs `{accessKey, secretAccessKey}` to `/v2/authentication`, reads the returned `token`, sends it as `Authorization: Bearer <token>`, and refreshes it automatically before expiry (and re-logs-in on a 401). You never handle tokens manually.\n\n**Setup**: create an API key pair in HR WORKS (Administration → API) and set:\n- `HRWORKS_ACCESS_KEY` = your access key\n- `HRWORKS_SECRET_ACCESS_KEY` = your secret access key\n\n**Sandbox**: HR WORKS provides a demo environment at `https://api.demo-hrworks.de`. To test against it, change the connector's Base URL and the `loginUrl` in the auth config to the demo host.\n\n**Identifiers**: most person-related endpoints accept either the HR WORKS personnel number or the HR WORKS username. Use the optional `personIdentifierType` / `usePersonnelNumbers` parameters when the identifier you have on hand is not the default.\n\n**Date intervals**: most listing endpoints (absences, sick leaves, working times, remote work) require ISO `YYYY-MM-DD` `beginDate`/`endDate` — maximum span is one year (or 31 days if `interval=days`). Working times are stricter: at most 31 days touching at most two calendar months per call.\n\n**Pagination**: page size is 50; the API returns a `Link` header with next/prev URLs. Pass `page` to step through results.\n\n**Rate limit**: HR WORKS imposes per-tenant rate limits — see their developer portal for details.",
+  "instructions": "This connector uses the HR WORKS v2 REST API (https://developers.hrworks.de).\n\n**Authentication: automatic token refresh**: HR WORKS issues short-lived tokens (~15 minutes). This connector uses the `LOGIN_TOKEN` flow: it POSTs `{accessKey, secretAccessKey}` to `/v2/authentication`, reads the returned `token`, sends it as `Authorization: Bearer <token>`, and refreshes it automatically before expiry (and re-logs-in on a 401). You never handle tokens manually.\n\n**Setup**: create an API key pair in HR WORKS (Administration → API) and set:\n- `HRWORKS_ACCESS_KEY` = your access key\n- `HRWORKS_SECRET_ACCESS_KEY` = your secret access key\n\n**Sandbox**: HR WORKS provides a demo environment at `https://api.demo-hrworks.de`. To test against it, change the connector's Base URL and the `loginUrl` in the auth config to the demo host.\n\n**Identifiers**: most person-related endpoints accept either the HR WORKS personnel number or the HR WORKS username. Use the optional `personIdentifierType` / `usePersonnelNumbers` parameters when the identifier you have on hand is not the default.\n\n**Date intervals**: most listing endpoints (absences, sick leaves, working times, remote work) require ISO `YYYY-MM-DD` `beginDate`/`endDate`; the maximum span is one year (or 31 days if `interval=days`). Working times are stricter: at most 31 days touching at most two calendar months per call.\n\n**Pagination**: page size is 50; the API returns a `Link` header with next/prev URLs. Pass `page` to step through results.\n\n**Rate limit**: HR WORKS imposes per-tenant rate limits; see their developer portal for details.\n\n**Clock status, onboarding and deleting working times**: `hrworks_get_working_time_status` tells whether a person is clocked in right now. `hrworks_list_onboarding_documents` and `hrworks_get_onboarding_document` read the onboarding documents of new employees, which hold private data (bank account, social security number): share only what the user needs. `hrworks_delete_working_times` deletes working times by their number (`<personnel number>_<start as Unix seconds>`); it is installed switched off, and like the other working-time writes it answers with a job id for `hrworks_get_working_times_job`.",
   "region": "de",
   "category": "hr",
   "icon": "hrworks",
@@ -605,7 +605,7 @@
     },
     {
       "name": "hrworks_list_projects",
-      "description": "List time-tracking projects of the company.",
+      "description": "List the time-tracking projects of the company, e.g. to find the project id behind a working time.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -617,7 +617,7 @@
     },
     {
       "name": "hrworks_get_project",
-      "description": "Return the data of a specific time-tracking project by id.",
+      "description": "Return the data of one time-tracking project by its id from hrworks_list_projects.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -635,7 +635,7 @@
     },
     {
       "name": "hrworks_list_project_customers",
-      "description": "List the customers used for project time tracking.",
+      "description": "List the customers that time-tracking projects are booked for (project customers).",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -679,7 +679,7 @@
     },
     {
       "name": "hrworks_list_posts",
-      "description": "List all recruiting posts (job postings) of the company.",
+      "description": "List the recruiting posts (job postings) of the company; inactive ones on request.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -699,7 +699,7 @@
     },
     {
       "name": "hrworks_get_post",
-      "description": "Return the data of a single recruiting post by uuid.",
+      "description": "Return the data of one recruiting post (job posting) by its uuid from hrworks_list_posts.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -779,7 +779,7 @@
     },
     {
       "name": "hrworks_list_cost_objectives",
-      "description": "List all cost objectives (Kostenträger) of the company.",
+      "description": "List all cost objectives (Kostenträger) of the company with their number and name.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -1409,13 +1409,13 @@
     },
     {
       "name": "hrworks_get_working_times_job",
-      "description": "Return the status and result of a create or update of working times, by the job id those tools returned. Read-only.",
+      "description": "Return the status and result of a create, update or delete of working times, by the job id those tools returned. Read-only.",
       "parameters": {
         "type": "object",
         "properties": {
           "jobId": {
             "type": "string",
-            "description": "Job id returned by hrworks_create_working_times or hrworks_update_working_times."
+            "description": "Job id returned by hrworks_create_working_times, hrworks_update_working_times or hrworks_delete_working_times."
           }
         },
         "required": ["jobId"]
@@ -1424,6 +1424,103 @@
         "method": "GET",
         "path": "/v2/working-times/jobs/{jobId}"
       }
+    },
+    {
+      "name": "hrworks_get_working_time_status",
+      "description": "Return whether a person is clocked in right now and, if so, the running working time: start, type (working time, business errand, doctor's appointment...), project, comment and kiosk. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personIdentifier": {
+            "type": "string",
+            "description": "Personnel number of the person (default), or the identifier named in personIdentifierType."
+          },
+          "personIdentifierType": {
+            "type": "string",
+            "enum": ["personId", "personnelNumber", "personLicenseNumber", "uuid", "personIdentifierForKiosk"],
+            "description": "Type of personIdentifier. Leave out for the company's default identifier for working times (usually the personnel number)."
+          }
+        },
+        "required": ["personIdentifier"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/persons/{personIdentifier}/working-times/status",
+        "queryParams": {
+          "personIdentifierType": "$personIdentifierType"
+        }
+      }
+    },
+    {
+      "name": "hrworks_list_onboarding_documents",
+      "description": "List the onboarding documents (Onboarding-Dokumente) of new employees: name, join date, organization unit, superior, status and the personal data the new employee entered. Contains private data such as address, bank account and social security number. Filter by status or organization unit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statusFilter": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["created", "editingFinished", "activated"] },
+            "description": "Only documents in these states: created (sent to the new employee), editingFinished (filled in, waiting for HR) or activated (the person was created from it)."
+          },
+          "organizationUnits": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Only documents of people assigned to these organization units (numbers from hrworks_list_organization_units)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/persons/onboarding",
+        "queryParams": {
+          "statusFilter": "$statusFilter",
+          "organizationUnits": "$organizationUnits"
+        }
+      }
+    },
+    {
+      "name": "hrworks_get_onboarding_document",
+      "description": "Return one onboarding document by id, with all the data the new employee entered (address, bank account, tax and social security data, emergency contact) and its status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Onboarding document id from hrworks_list_onboarding_documents."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/persons/onboarding/{id}"
+      }
+    },
+    {
+      "name": "hrworks_delete_working_times",
+      "description": "Delete recorded working times. Each one is named by its number: the personnel number, an underscore and the start as Unix time in seconds (e.g. 1_1683093600), the `id` that hrworks_list_working_times returns. Deleted times are gone from time tracking and the time accounts change. HR WORKS processes the request in the background and answers with a job id: check the result with hrworks_get_working_times_job. List the times to delete to the user and confirm before calling. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "numbers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": { "type": "string" },
+            "description": "Working time numbers to delete, e.g. [\"1_1683093600\"]."
+          }
+        },
+        "required": ["numbers"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/working-times",
+        "queryParams": {
+          "numbers": "$numbers"
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true }
     }
   ]
 }

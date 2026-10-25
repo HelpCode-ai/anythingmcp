@@ -39,6 +39,23 @@ describe('odoo adapter — static spec conformance', () => {
     expect(i).toContain('/jsonrpc');
   });
 
+  it("steers res.partner calls away from the mobile field Odoo 19 removed", () => {
+    const i = (adapter as unknown as { instructions: string }).instructions;
+    expect(i).toContain('no `mobile`');
+    const tools = a.tools as unknown as Array<{
+      name: string;
+      parameters?: { properties?: Record<string, { description?: string }> };
+      endpointMapping: { bodyMapping?: Record<string, unknown> };
+    }>;
+    for (const name of ['odoo_search_read', 'odoo_read']) {
+      const fields = tools.find((t) => t.name === name)?.parameters?.properties?.fields;
+      expect(fields?.description).toContain('`phone`, not `mobile`');
+    }
+    // The partner wrapper's fixed field list must work on Odoo 19 as shipped.
+    const partners = tools.find((t) => t.name === 'odoo_list_partners');
+    expect(JSON.stringify(partners?.endpointMapping)).not.toContain('"mobile"');
+  });
+
   it("ships both a generic search_read and the common wrappers", () => {
     expect(toolNames).toEqual(expect.arrayContaining(['odoo_search_read', 'odoo_list_partners', 'odoo_list_sale_orders', 'odoo_list_invoices']));
   });

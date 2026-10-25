@@ -96,6 +96,30 @@ describe('Daftra adapter — static contract', () => {
       InvoicePayment: { invoice_id: '$invoice_id', amount: '$amount' },
     });
     expect(byName.daftra_update_product.endpointMapping).toMatchObject({ method: 'PUT', path: '/products/{id}.json' });
+    expect(byName.daftra_update_journal.endpointMapping).toEqual({
+      method: 'PUT',
+      path: '/journals/{id}.json',
+      bodyMapping: { Journal: '$Journal', JournalTransaction: '$JournalTransaction' },
+    });
+    expect(byName.daftra_update_journal.parameters.required).toEqual(['id', 'Journal', 'JournalTransaction']);
+    expect(byName.daftra_create_treasury.endpointMapping).toMatchObject({
+      method: 'POST',
+      path: '/treasuries.json',
+      bodyMapping: { Treasury: { name: '$name', type: '$type', active: '$active', currency_code: '$currency_code' } },
+    });
+    expect(byName.daftra_create_journal_category.endpointMapping).toEqual({
+      method: 'POST',
+      path: '/journal_cats.json',
+      bodyMapping: { JournalCat: { name: '$name', code: '$code', journal_cat_id: '$journal_cat_id', type: '$type' } },
+    });
+  });
+
+  it('maps the invoice draft switch, a GET that writes, as a write', () => {
+    const tool = byName.daftra_set_invoice_draft_status as Tool & { annotations?: Record<string, boolean> };
+    expect(tool.endpointMapping).toEqual({ method: 'GET', path: '/invoices/update_draft/{id}/{draft_status}.json' });
+    expect(tool.parameters.required).toEqual(['id', 'draft_status']);
+    expect(tool.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect(tool.description).toMatch(/confirm/i);
   });
 
   it('asks for confirmation on writes and installs deletes switched off', () => {
@@ -103,9 +127,19 @@ describe('Daftra adapter — static contract', () => {
     expect(writes.length).toBeGreaterThan(0);
     for (const tool of writes) expect(tool.description).toMatch(/confirm/i);
     const deletes = a.tools.filter((tool) => tool.endpointMapping.method === 'DELETE');
-    expect(deletes.map((tool) => tool.name).sort()).toEqual(['daftra_delete_expense', 'daftra_delete_invoice', 'daftra_delete_invoice_payment']);
+    expect(deletes.map((tool) => tool.name).sort()).toEqual([
+      'daftra_delete_expense',
+      'daftra_delete_invoice',
+      'daftra_delete_invoice_payment',
+      'daftra_delete_journal',
+    ]);
     for (const tool of deletes) expect(tool.enabled).toBe(false);
-    for (const tool of a.tools.filter((t) => t.endpointMapping.method !== 'DELETE')) expect(tool.enabled).not.toBe(false);
+    // Rewriting a posted journal and issuing an invoice are hard to undo: off as well.
+    const offWrites = ['daftra_update_journal', 'daftra_set_invoice_draft_status'];
+    for (const name of offWrites) expect(byName[name].enabled).toBe(false);
+    for (const tool of a.tools.filter((t) => t.endpointMapping.method !== 'DELETE' && !offWrites.includes(t.name))) {
+      expect(tool.enabled).not.toBe(false);
+    }
   });
 
   it('keeps the instructions free of em dashes and within the house limits', () => {

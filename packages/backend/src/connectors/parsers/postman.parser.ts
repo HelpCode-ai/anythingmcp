@@ -6,6 +6,7 @@ import { pathForToolName } from './tool-name.util';
 import { findSecretInQueryParam } from '../../common/secret-literals.util';
 import { inferJsonSchema } from '../output-schema.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
+import { urlForLog } from '../../common/log-safe-url.util';
 
 /**
  * Postman Collection v2.1 Parser.
@@ -90,7 +91,7 @@ export class PostmanParser {
   }
 
   async parseFromUrl(url: string): Promise<ParsedTool[]> {
-    this.logger.debug(`Fetching Postman Collection from: ${url}`);
+    this.logger.debug(`Fetching Postman Collection from: ${urlForLog(url)}`);
 
     // Detect Postman Documenter URLs (they serve HTML, not JSON)
     const documenterMatch = url.match(

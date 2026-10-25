@@ -1,0 +1,313 @@
+{
+  "slug": "tbank",
+  "name": "T-Bank Business",
+  "aliases": [
+    "T-API",
+    "Tinkoff Business",
+    "Т-Бизнес",
+    "Т-Банк",
+    "Тинькофф Бизнес"
+  ],
+  "description": "T-Bank Business (T-API, formerly Tinkoff Business): company details, accounts and balances, account statements with counterparties, payment confirmations, issued invoice status and card acquiring terminals and operations. Read-only.",
+  "instructions": "## T-Bank Business (T-API)\nThis connector reads the **T-Bank Business API (T-API)** of a Russian company account at T-Bank (formerly Tinkoff): company details, accounts with balances, account statements with counterparties, payment confirmations, issued invoice status, acquiring terminals and their card operations. It is read-only: no payments are created or signed.\n\n**Setup (10 minutes)**\n1. In T-Business (business.tbank.ru) open **Integrations > T-API** and click **Issue token**.\n2. Enter the IP addresses the calls come from, or for small and medium businesses choose **Disable address check** (the AnythingMCP server calls from its own address; on AnythingMCP Cloud the address check must be disabled or set to the Cloud egress address).\n3. Under **What the API may access**, tick at least: company information (T-Business ID), account information (`bank-accounts/get`), account operations (statements); add acquiring terminals, invoices and webhooks if you want those tools. You can limit the token to certain accounts.\n4. Copy the token into `TBANK_API_TOKEN`. It is valid for 90 days after its last use, so a token in regular use does not expire. To change addresses or access, issue a new token.\n5. `TBANK_API_URL` is `https://business.tbank.ru/openapi`. For the sandbox use `https://business.tbank.ru/openapi/sandbox` with the token `TBankSandboxToken` (answers do not depend on your data).\n6. Run `tbank_get_company` to check the token.\n\n**Certificates**: T-API presents a TLS certificate issued by the Russian Ministry of Digital Development (Russian Trusted Root CA); the old public certificates were revoked. A server that does not trust that root fails with a certificate error before any HTTP status. AnythingMCP Cloud does not trust that root, so this connector is offered for self-hosted AnythingMCP only. Self-hosted: add the root (from gosuslugi.ru/crt) to the Node trust store, e.g. `NODE_EXTRA_CA_CERTS=/path/russian_trusted_root_ca.pem`, and restart.\n\n**Workflow**\n- Accounts and balances: `tbank_list_accounts` (`balance.otb` is what can be spent now).\n- Statement: `tbank_get_statement` with `account_number` and `from` (and `to`); page with `cursor` = `nextCursor` until it is missing. `typeOfOperation` Credit = money in, Debit = money out. Filter by counterparty with `counterparty_inns`.\n- Proof of a payment: `tbank_get_payment_document` with the operationId and operationDate from the statement (PDF).\n- Invoices issued through T-API: `tbank_get_invoice_info`.\n- Card acquiring: `tbank_list_terminals`, then `tbank_list_terminal_operations` per terminal and day (amounts in kopecks).\n- Company details and webhooks: `tbank_get_company`, `tbank_list_webhooks`.\n\n**Dates and amounts**: date-time parameters and answers are ISO 8601 in UTC; operations on a weekend are booked on the next working day. Amounts are in the account currency (roubles with kopecks as decimals), except acquiring operations in kopecks.\n\n**Limits**: statement 20 calls per second, accounts and company 6, payment documents and acquiring 1 per second. Statements start in June 2023.\n\n**Errors**: 401 means a wrong or expired token, or a call from an address the token does not allow. 403 means the token lacks the access for that method (issue a new token with it ticked) or the account is not allowed for this token. 422 names an invalid parameter (e.g. an account number that is not 20 digits). Every error has an `errorId` worth quoting to T-Bank support.\n\n**Limitations**: payments, salary registers, self-employed payouts, cards with mTLS (secured-openapi) and the partner (OAuth) integration are not part of this connector.",
+  "region": "intl",
+  "category": "banking",
+  "icon": "tbank",
+  "docsUrl": "https://developer.tbank.ru/docs/api/scheta-i-vipiski",
+  "selfHostOnly": true,
+  "requiredEnvVars": [
+    "TBANK_API_URL",
+    "TBANK_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "TBANK_API_URL": {
+      "label": "API address",
+      "kind": "address",
+      "help": "https://business.tbank.ru/openapi for your data, https://business.tbank.ru/openapi/sandbox for the sandbox (token TBankSandboxToken).",
+      "example": "https://business.tbank.ru/openapi",
+      "pattern": "^https://business\\.tbank\\.ru/openapi(/sandbox)?/?$",
+      "patternMessage": "Use https://business.tbank.ru/openapi or https://business.tbank.ru/openapi/sandbox."
+    },
+    "TBANK_API_TOKEN": {
+      "label": "T-API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "T-Business, Integrations, T-API, Issue token: tick company information, accounts and account operations; disable the IP address check or allow the server address.",
+      "link": "https://developer.tbank.ru/docs/intro/manuals/self-service-auth",
+      "pattern": "^(t\\.[A-Za-z0-9_-]{20,}|TBankSandboxToken)$",
+      "patternMessage": "Paste the token as shown, it starts with t. (or TBankSandboxToken for the sandbox)."
+    }
+  },
+  "verifyHints": {
+    "401": "T-Bank refused the token: it is wrong, expired after 90 days unused, or the call came from an IP address the token does not allow. Issue a new token with the address check disabled or the server address allowed.",
+    "403": "The token works but lacks this access. Issue a new token in T-Business, Integrations, T-API with company information, accounts and account operations ticked.",
+    "unreachable": "The connection to business.tbank.ru failed. T-API uses a certificate of the Russian Trusted Root CA: the server must trust it (self-hosted: NODE_EXTRA_CA_CERTS with the root from gosuslugi.ru/crt), and the network must reach T-Bank."
+  },
+  "probe": {
+    "tool": "tbank_get_company"
+  },
+  "connector": {
+    "name": "T-Bank Business API",
+    "type": "REST",
+    "baseUrl": "{{TBANK_API_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TBANK_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "tbank_get_company",
+      "description": "Get the company behind the token: full and short name, INN, KPP, OGRN, legal form, tax regime, legal address, registration date and the bank details (bank name, BIC, correspondent account). Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/company"
+      }
+    },
+    {
+      "name": "tbank_list_accounts",
+      "description": "List the company accounts at T-Bank (settlement and, with with_invest, investment accounts; active, closed, blocked or arrested): account number, name, status, type, currency, opening date, tariff and balances (balance.otb available to spend, authorized holds, pending payments). The token may be limited to some accounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with_invest": {
+            "type": "boolean",
+            "description": "Also return investment (brokerage) accounts."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/bank-accounts",
+        "queryParams": {
+          "withInvest": "$with_invest"
+        }
+      }
+    },
+    {
+      "name": "tbank_get_statement",
+      "description": "Get the operations of an account for a period, from June 2023: operationId, operationDate, operationStatus (Authorization or Transaction), typeOfOperation (Credit or Debit), category, operationAmount and currency, rubleAmount, description, payPurpose, counterParty (name, INN, KPP, account, bank BIC) and card details for card operations. Up to 5000 per call (default 1000); when nextCursor is returned, call again with cursor = nextCursor. with_balances adds opening and closing balances and turnover per day (first page only).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_number": {
+            "type": "string",
+            "description": "Account number, 20 digits, from tbank_list_accounts, e.g. 40702810110011000000.",
+            "pattern": "^[0-9]{20}$"
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601 date-time in UTC, inclusive, e.g. 2026-10-01T00:00:00Z."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period, ISO 8601 date-time in UTC, exclusive. Omit for up to now."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous answer, to fetch the next portion."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Operations per call, 1 to 5000, default 1000."
+          },
+          "with_balances": {
+            "type": "boolean",
+            "description": "Return balances and daily turnover (only on the first call, without cursor)."
+          },
+          "operation_status": {
+            "type": "string",
+            "description": "All (default), Authorization (holds not yet settled) or Transaction (settled).",
+            "enum": [
+              "All",
+              "Authorization",
+              "Transaction"
+            ]
+          },
+          "categories": {
+            "type": "array",
+            "description": "Only these operation categories (at most 50), see the T-Bank category list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "counterparty_inns": {
+            "type": "array",
+            "description": "Only operations with these counterparty INNs (at most 50).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "card_ucid": {
+            "type": "integer",
+            "description": "Only operations of the company card with this UCID."
+          }
+        },
+        "required": [
+          "account_number",
+          "from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/statement",
+        "queryParams": {
+          "accountNumber": "$account_number",
+          "from": "$from",
+          "to": "$to",
+          "cursor": "$cursor",
+          "limit": "$limit",
+          "withBalances": "$with_balances",
+          "operationStatus": "$operation_status",
+          "categories": "$categories",
+          "inns": "$counterparty_inns",
+          "ucid": "$card_ucid"
+        }
+      }
+    },
+    {
+      "name": "tbank_get_payment_document",
+      "description": "Get the bank confirmation of an executed operation (payment order, bank order, memorial order and similar) as a Base64 string of a PDF (large; call it only when the user wants the document). Only for operations with operationStatus Transaction. Limit 1 call per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_number": {
+            "type": "string",
+            "description": "Account number, 20 digits, from tbank_list_accounts, e.g. 40702810110011000000.",
+            "pattern": "^[0-9]{20}$"
+          },
+          "operation_id": {
+            "type": "string",
+            "description": "operationId (UUID) from tbank_get_statement."
+          },
+          "operation_date": {
+            "type": "string",
+            "description": "Date of the operation, YYYY-MM-DD, from tbank_get_statement."
+          }
+        },
+        "required": [
+          "account_number",
+          "operation_id",
+          "operation_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/payment-document",
+        "queryParams": {
+          "accountNumber": "$account_number",
+          "operationId": "$operation_id",
+          "operationDate": "$operation_date"
+        }
+      }
+    },
+    {
+      "name": "tbank_get_invoice_info",
+      "description": "Get the status of an invoice the company issued through T-API (for example whether it has been paid).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id (UUID) returned when the invoice was issued."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/openapi/invoice/{invoice_id}/info"
+      }
+    },
+    {
+      "name": "tbank_list_terminals",
+      "description": "List the active card acquiring terminals of the company (terminal key, address, status). Paged: page starts at 0. Limit 1 call per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Terminals per page, e.g. 50."
+          }
+        },
+        "required": [
+          "page",
+          "size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/tacq/terminals",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "tbank_list_terminal_operations",
+      "description": "List the card operations of one acquiring terminal for at most one day: amounts in kopecks, status, card mask, time. At most 1000 per call; data can lag up to two hours. Limit 1 call per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "terminal_key": {
+            "type": "string",
+            "description": "Terminal serial number (terminal key) from tbank_list_terminals."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start, ISO 8601 date-time in UTC."
+          },
+          "till": {
+            "type": "string",
+            "description": "End, ISO 8601 date-time in UTC, at most one day after from."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum operations, up to 1000."
+          }
+        },
+        "required": [
+          "terminal_key",
+          "from",
+          "till",
+          "limit"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/tacq/operations/terminal/{terminal_key}",
+        "queryParams": {
+          "from": "$from",
+          "till": "$till",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "tbank_list_webhooks",
+      "description": "List the webhooks configured for the company (event type and URL), for example the account operation notifications.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/webhooks/by-company"
+      }
+    }
+  ]
+}

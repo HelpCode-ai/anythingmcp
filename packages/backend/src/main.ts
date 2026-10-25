@@ -126,6 +126,8 @@ async function bootstrap() {
     origin: corsOrigin,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
+    // Read by the frontend when it downloads a connector export.
+    exposedHeaders: ['Content-Disposition', 'X-Secrets-Included'],
   });
 
   // Swagger documentation

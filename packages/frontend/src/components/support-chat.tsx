@@ -8,6 +8,7 @@ interface LibredeskInstance {
   setUser?: (jwt: string) => void;
   logout?: () => void;
   destroy?: () => void;
+  showChat?: () => void;
 }
 
 declare global {
@@ -18,6 +19,16 @@ declare global {
 }
 
 const SCRIPT_ID = 'libredesk-widget';
+
+/**
+ * Opens the support chat, for a "Stuck? Ask us" link. False when there is no
+ * chat on this instance (self-hosted) or it has not loaded yet.
+ */
+export function openSupportChat(): boolean {
+  if (typeof window === 'undefined' || typeof window.Libredesk?.showChat !== 'function') return false;
+  window.Libredesk.showChat();
+  return true;
+}
 
 /**
  * Live support chat for signed-in users. The backend answers 404 unless this

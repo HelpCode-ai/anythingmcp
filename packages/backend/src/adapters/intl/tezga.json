@@ -1,0 +1,566 @@
+{
+  "slug": "tezga",
+  "name": "Tezga eKasa",
+  "aliases": [
+    "Tezga fiskalna kasa",
+    "Narbiz POS"
+  ],
+  "description": "Tezga eKasa, the online fiscal cash register for Serbian companies: fiscal setup and tax labels, status and fiscal data of issued receipts, and bank transactions. Issuing, cancelling or refunding receipts and writing customers and items are included, installed switched off.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "tezga",
+  "docsUrl": "https://tezgafiskal.com/api-za-fiskalizaciju",
+  "instructions": "## Tezga\nThis connector uses the **Tezga eKasa public API** (`https://pos.narbiz.com/api/integrations`), the online fiscal cash register (ESIR with V-PFR) of GoSimple for Serbian companies. It reads the account's fiscal setup and tax labels, the status and fiscal data of issued documents and the company's bank transactions. Issuing a fiscal receipt, cancelling or refunding one, and writing customers and catalogue items are included but installed switched off.\n\n**Setup (about 3 minutes)**\n1. API access is part of the **Posao** and **Biznis** plans (or the Enterprise level). On other plans every call answers 402.\n2. In Tezga open **Podešavanja > Integracije > API ključevi**, name a key (e.g. AnythingMCP) and create it. It is shown once; copy it into `TEZGA_API_KEY`. Keys start with `tzg_` followed by 48 hex characters. Use a separate key for this connector so you can pause or delete it alone; you can also bind it to the server's IP addresses there.\n3. Install and run `tezga_get_account_setup` to check the key and see the environment.\n\nThe key is sent in the `X-Tezga-Api-Key` header. Keys rotate every 90 days: Tezga e-mails a reminder on day 76; paste the new key here before the old one is switched off. A read-only key is enough for the read tools; writes with it answer 403.\n\n**Environment first**: test and production keys look the same; the environment belongs to the account. `tezga_get_account_setup` returns `okruzenje`: `produkcija` (real receipts reported to the Tax Administration), `sandbox` (official test environment), `simulacija` (demo, PFR numbers start with MOCK) or `nepovezano` (no security element, fiscalisation refused). Tell the user which one before any write.\n\n**Workflow**\n- Status of an order: `tezga_find_document` with your order number (externalId), or `tezga_get_document` with the Tezga document id. `statusDokumenta` is nacrt (draft), izdat (issued) or storniran (cancelled); `fiskalni` holds the PFR number, counter and verification URL, null when not fiscalised; `javniPdfUrl` opens without login.\n- Payments: `tezga_list_bank_transactions` (`smer` uplata for incoming, isplata for outgoing, `since` for a start time).\n- Writes (switched off): `tezga_issue_receipt` (fiscal receipt, proforma or SEF e-invoice; idempotent per externalId), `tezga_refund_document` (storno or refund, a new document referring to the original), `tezga_upsert_customers` and `tezga_upsert_products` (match by PIB/e-mail/name or by item code; nothing is deleted). A fiscal receipt cannot be undone, only refunded, so an admin turns these on deliberately; before each call show the user the lines, amounts and environment and wait for a yes.\n\n**Amounts and tax**: prices are RSD including VAT (`cenaSaPdv`). Tax rates are 20, 10, 0 or oslobodjeno. A company outside the VAT system has every line recorded as exempt whatever rate is sent.\n\n**Limits**: 240 reads and 120 writes per minute per company by default; responses carry `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`, and 429 comes with `Retry-After`. At most 500 lines per receipt and 500 customers or items per call; body up to 512 KB.\n\n**Errors**: 401 missing or wrong key. 402 plan without API access or subscription not active (`error` says which). 403 read-only key used for a write, a till-terminal key, or a request from an IP not on the key's list. 404 the document does not exist in your company. 409 the action is not allowed (not issued, already partly refunded) or the same externalId is being processed. 422 field or rule errors listed in `fields`. 202 on a write means the document exists but the Tax Administration has not accepted it yet; Tezga retries by itself, do not send it again.",
+  "prerequisites": "A Tezga account on a plan with API access (Posao, Biznis or Enterprise level) and an API key from Podešavanja > Integracije.",
+  "requiredEnvVars": [
+    "TEZGA_API_KEY"
+  ],
+  "envVarMeta": {
+    "TEZGA_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Tezga, Podešavanja > Integracije > API ključevi: create a key and copy it (shown once). It starts with tzg_.",
+      "link": "https://tezgafiskal.com/api-za-fiskalizaciju",
+      "pattern": "^tzg_[0-9a-fA-F]{48}$",
+      "patternMessage": "Paste only the key: tzg_ followed by 48 hex characters."
+    }
+  },
+  "verifyHints": {
+    "401": "Tezga refused the key. Create a new one under Podešavanja > Integracije and paste it (tzg_ plus 48 characters).",
+    "402": "The company's plan does not include API access (Posao, Biznis or Enterprise level) or the subscription is not active.",
+    "403": "The key is bound to IP addresses that do not include this server, or it is a read-only or till-terminal key. Check the shield icon next to the key in Podešavanja > Integracije."
+  },
+  "probe": {
+    "tool": "tezga_get_account_setup"
+  },
+  "connector": {
+    "name": "Tezga eKasa public API",
+    "type": "REST",
+    "baseUrl": "https://pos.narbiz.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Tezga-Api-Key",
+      "apiKey": "{{TEZGA_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/integrations/tax-labels"
+  },
+  "tools": [
+    {
+      "name": "tezga_get_account_setup",
+      "description": "Read the account's fiscal setup: the environment (produkcija = real receipts at the Tax Administration, sandbox = official test environment, simulacija = demo, nothing reported, nepovezano = no security element yet), whether the company is in the VAT system and subject to fiscalisation, and the tax rates and labels it uses. Call it first; it also checks the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/integrations/tax-labels"
+      }
+    },
+    {
+      "name": "tezga_get_document",
+      "description": "Get a document (receipt, proforma, refund) by its Tezga id: number, type, status (nacrt draft, izdat issued, storniran cancelled), total with VAT, payment method, the fiscal data (PFR number and time, receipt counter, verification URL, QR payload; null when not fiscalised) and public links to the receipt page and PDF.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Tezga document UUID (documentId from an issued receipt or from tezga_find_document)."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/integrations/documents/{document_id}"
+      }
+    },
+    {
+      "name": "tezga_find_document",
+      "description": "Find the document issued for one of your order numbers (externalId) and return its status, fiscal data (PFR number, verification URL) and public PDF link. Use it to check whether an order already has a fiscal receipt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "externalId": {
+            "type": "string",
+            "description": "Your order number as it was sent to Tezga, e.g. NALOG-1042."
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "woocommerce",
+              "shopify",
+              "prestashop",
+              "opencart",
+              "magento",
+              "bigcommerce",
+              "custom"
+            ],
+            "description": "Where the order came from; default custom (orders sent through this API). Use the shop name for orders a connected web shop sent."
+          }
+        },
+        "required": [
+          "externalId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/integrations/documents",
+        "queryParams": {
+          "externalId": "$externalId",
+          "provider": "$provider"
+        }
+      }
+    },
+    {
+      "name": "tezga_list_bank_transactions",
+      "description": "List the company's bank transactions imported from statements (incoming payments and outgoing payments), newest first, for matching payments to invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "smer": {
+            "type": "string",
+            "enum": [
+              "uplata",
+              "isplata"
+            ],
+            "description": "uplata = incoming payments, isplata = outgoing payments; omit for both."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only transactions from this moment on, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many, default 200, at most 500."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/integrations/transactions",
+        "queryParams": {
+          "smer": "$smer",
+          "since": "$since",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "tezga_issue_receipt",
+      "description": "Issue and fiscalise a receipt (or a proforma) for an order: Tezga signs it at the Tax Administration (V-PFR) and returns the PFR number, verification URL and public PDF; with tok sef it sends an e-invoice to SEF instead. Idempotent per externalId: the same order number never creates a second receipt. In produkcija this is a real fiscal receipt. Installed switched off; confirm the items, prices and payment method with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "externalId": {
+            "type": "string",
+            "description": "Your unique order number, up to 200 characters. The same number never issues a second receipt."
+          },
+          "stavke": {
+            "type": "array",
+            "description": "Receipt lines.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "naziv": {
+                  "type": "string",
+                  "description": "Item name as printed."
+                },
+                "sifra": {
+                  "type": "string",
+                  "description": "Item code; a code from the catalogue takes name, tax rate and price from it unless cenaIzZahteva is true."
+                },
+                "kolicina": {
+                  "type": "number",
+                  "description": "Quantity."
+                },
+                "cenaSaPdv": {
+                  "type": "number",
+                  "description": "Unit price including VAT, in RSD."
+                },
+                "poreskaStopa": {
+                  "type": "string",
+                  "description": "20, 10, 0 or oslobodjeno (exempt)."
+                },
+                "jedinicaMere": {
+                  "type": "string",
+                  "description": "Unit, e.g. kom, usluga, h, kg (default kom)."
+                },
+                "popustProcenat": {
+                  "type": "number",
+                  "description": "Line discount in percent."
+                },
+                "popustRsd": {
+                  "type": "number",
+                  "description": "Line discount in RSD for the whole line."
+                }
+              },
+              "required": [
+                "naziv",
+                "kolicina",
+                "cenaSaPdv"
+              ]
+            }
+          },
+          "kupac": {
+            "type": "object",
+            "description": "Buyer: naziv, pib (tax id, for companies), email, adresa, mesto, postanskiBroj, maticniBroj. Without pib it is a sale to a private person.",
+            "properties": {
+              "naziv": {
+                "type": "string"
+              },
+              "pib": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "adresa": {
+                "type": "string"
+              },
+              "mesto": {
+                "type": "string"
+              },
+              "postanskiBroj": {
+                "type": "string"
+              },
+              "maticniBroj": {
+                "type": "string"
+              }
+            }
+          },
+          "nacinPlacanja": {
+            "type": "string",
+            "description": "Payment method as text: gotovina (cash), kartica (card, default), instant/IPS, prenos (bank transfer), vaucer, cek; anything else counts as other non-cash."
+          },
+          "tipDokumenta": {
+            "type": "string",
+            "enum": [
+              "racun",
+              "predracun"
+            ],
+            "description": "racun (receipt, default) or predracun (proforma, needs pozivNaBroj)."
+          },
+          "tok": {
+            "type": "string",
+            "enum": [
+              "fiskalni",
+              "sef",
+              "fiskalni_i_sef",
+              "avans"
+            ],
+            "description": "fiskalni = fiscal receipt; sef = e-invoice on SEF (needs kupac.pib); fiskalni_i_sef = both; avans = order paid in advance, delivered later. Without a buyer pib always fiscal."
+          },
+          "posaljiMejl": {
+            "type": "boolean",
+            "description": "E-mail the PDF to the buyer."
+          },
+          "posaljiNaSef": {
+            "type": "boolean",
+            "description": "Send the e-invoice to SEF automatically (tok sef)."
+          },
+          "fiskalizujPredracun": {
+            "type": "boolean",
+            "description": "Fiscalise the proforma itself (fiscal flow only)."
+          },
+          "model": {
+            "type": "string",
+            "description": "Payment reference model, e.g. 97."
+          },
+          "pozivNaBroj": {
+            "type": "string",
+            "description": "Payment reference number; required for a proforma."
+          },
+          "popustProcenat": {
+            "type": "number",
+            "description": "Discount on the whole receipt in percent (not together with popustRsd)."
+          },
+          "popustRsd": {
+            "type": "number",
+            "description": "Discount on the whole receipt in RSD (not together with popustProcenat)."
+          },
+          "cenaIzZahteva": {
+            "type": "boolean",
+            "description": "true: prices and discounts from this request apply to catalogue items too."
+          },
+          "datumUplate": {
+            "type": "string",
+            "description": "Only with tok avans: day the payment arrived, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "externalId",
+          "stavke"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/integrations/order",
+        "queryParams": {
+          "provider": "custom"
+        },
+        "bodyMapping": {
+          "externalId": "$externalId",
+          "stavke": "$stavke",
+          "kupac": "$kupac",
+          "nacinPlacanja": "$nacinPlacanja",
+          "tipDokumenta": "$tipDokumenta",
+          "tok": "$tok",
+          "posaljiMejl": "$posaljiMejl",
+          "posaljiNaSef": "$posaljiNaSef",
+          "fiskalizujPredracun": "$fiskalizujPredracun",
+          "model": "$model",
+          "pozivNaBroj": "$pozivNaBroj",
+          "popustProcenat": "$popustProcenat",
+          "popustRsd": "$popustRsd",
+          "cenaIzZahteva": "$cenaIzZahteva",
+          "datumUplate": "$datumUplate"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "tezga_refund_document",
+      "description": "Cancel (storno) or refund an issued receipt. A fiscal receipt is never changed: Tezga issues a new refund document referring to the original and reports it to the Tax Administration. A refund can be partial by line. A refund of a cash payment needs the buyer's identity document number when the original has none. Installed switched off; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vrsta": {
+            "type": "string",
+            "enum": [
+              "storno",
+              "refundacija"
+            ],
+            "description": "storno = receipt issued by mistake; refundacija = money returned to the buyer."
+          },
+          "documentId": {
+            "type": "string",
+            "description": "Tezga UUID of the original receipt."
+          },
+          "externalId": {
+            "type": "string",
+            "description": "Or your order number of the original instead of documentId."
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "woocommerce",
+              "shopify",
+              "prestashop",
+              "opencart",
+              "magento",
+              "bigcommerce",
+              "custom"
+            ],
+            "description": "Where the order came from; default custom (orders sent through this API). Use the shop name for orders a connected web shop sent."
+          },
+          "razlog": {
+            "type": "string",
+            "description": "Reason, up to 500 characters."
+          },
+          "stavke": {
+            "type": "array",
+            "description": "Only for a partial refund: lines to refund.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "redosled": {
+                  "type": "string",
+                  "description": "Line position on the original, the first is 0."
+                },
+                "kolicina": {
+                  "type": "number",
+                  "description": "Quantity to refund."
+                }
+              },
+              "required": [
+                "redosled",
+                "kolicina"
+              ]
+            }
+          },
+          "kupacIdTip": {
+            "type": "string",
+            "description": "Buyer ID document type code of the Tax Administration: 20 ID card (default), 23 domestic passport, 30 foreign passport, 36 EU ID card, 10 PIB, 11 JMBG."
+          },
+          "kupacIdBroj": {
+            "type": "string",
+            "description": "Buyer ID document number; needed only to refund a cash payment when the original has no buyer identification."
+          }
+        },
+        "required": [
+          "vrsta"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/integrations/refund",
+        "bodyMapping": {
+          "vrsta": "$vrsta",
+          "documentId": "$documentId",
+          "externalId": "$externalId",
+          "provider": "$provider",
+          "razlog": "$razlog",
+          "stavke": "$stavke",
+          "kupacIdTip": "$kupacIdTip",
+          "kupacIdBroj": "$kupacIdBroj"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "tezga_upsert_customers",
+      "description": "Create or update 1 to 500 customers in Tezga. A customer is matched by PIB, then e-mail, then name: a match is updated with the fields you send (empty fields do not overwrite), otherwise a new customer is created; nothing is deleted. Returns the outcome per customer (kreiran, izmenjen, bez_izmene, greska). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kupci": {
+            "type": "array",
+            "description": "Customers to write, 1 to 500.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "naziv": {
+                  "type": "string",
+                  "description": "Company name or full name."
+                },
+                "pib": {
+                  "type": "string",
+                  "description": "Tax id, 9 digits; first matching key."
+                },
+                "maticniBroj": {
+                  "type": "string",
+                  "description": "Company registration number, 8 digits (needs pib)."
+                },
+                "jbkjs": {
+                  "type": "string",
+                  "description": "Public sector budget user number, 5 digits."
+                },
+                "email": {
+                  "type": "string",
+                  "description": "E-mail; second matching key."
+                },
+                "telefon": {
+                  "type": "string"
+                },
+                "adresa": {
+                  "type": "string"
+                },
+                "mesto": {
+                  "type": "string",
+                  "description": "City."
+                },
+                "postanskiBroj": {
+                  "type": "string",
+                  "description": "Postal code, 5 digits."
+                }
+              },
+              "required": [
+                "naziv"
+              ]
+            }
+          }
+        },
+        "required": [
+          "kupci"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/integrations/customers",
+        "bodyMapping": {
+          "kupci": "$kupci"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "tezga_upsert_products",
+      "description": "Create or update 1 to 500 catalogue items. An item is matched by code (sifra): a match gets the name, price and fields you send (the price change goes into the price history), otherwise a new item is created; nothing is deleted and stock is not changed here. Returns the outcome per item. Installed switched off; prices change at the till at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stavke": {
+            "type": "array",
+            "description": "Items to write, 1 to 500.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sifra": {
+                  "type": "string",
+                  "description": "Item code from your ERP; the matching key."
+                },
+                "naziv": {
+                  "type": "string",
+                  "description": "Name as printed on receipts."
+                },
+                "cenaSaPdv": {
+                  "type": "number",
+                  "description": "Unit price including VAT, in RSD."
+                },
+                "poreskaStopa": {
+                  "type": "string",
+                  "description": "20, 10, 0 or oslobodjeno; omitted keeps the current rate (new items 20)."
+                },
+                "jedinicaMere": {
+                  "type": "string",
+                  "description": "Unit, e.g. kom, kg, l, usluga."
+                },
+                "gtin": {
+                  "type": "string",
+                  "description": "Barcode, 8 to 14 digits."
+                },
+                "aktivan": {
+                  "type": "boolean",
+                  "description": "false hides the item at the till."
+                }
+              },
+              "required": [
+                "sifra",
+                "naziv",
+                "cenaSaPdv"
+              ]
+            }
+          }
+        },
+        "required": [
+          "stavke"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/integrations/products",
+        "bodyMapping": {
+          "stavke": "$stavke"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

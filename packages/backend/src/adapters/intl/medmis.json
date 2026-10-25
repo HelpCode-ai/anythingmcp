@@ -1,0 +1,1813 @@
+{
+  "slug": "medmis",
+  "name": "Medmis",
+  "aliases": [
+    "МЕДМИС",
+    "MEDMIS API"
+  ],
+  "description": "Medmis clinic management platform (Russia): branches, specialists and schedules, appointments, patients, invoices, payments, price list, stock, to-do tasks and occupational check-ups. Booking or changing an appointment and creating a task are included, installed switched off; nothing is deleted.",
+  "region": "intl",
+  "category": "healthcare",
+  "icon": "medmis",
+  "docsUrl": "https://node3.medmis.ru/apix/swagger/index.html",
+  "instructions": "## Medmis\nThis connector uses the **MEDMIS API v1** (the integration bus of the Medmis clinic management platform, `<your node>/apix/v1`): branches, specialists and their schedules, appointments, patients, invoices, payments, the price list, reserves, stock, to-do tasks and the occupational check-up module (Профосмотры). It reads; booking or changing an appointment and creating a task are included but installed switched off. Nothing is ever deleted through this connector.\n\n**Setup (about 5 minutes)**\n1. Ask Medmis support (support@medmis.ru, subject marked DEV / API_CORE) or your Medmis administrator for an **API user**: a login, its password and the **system name** used to sign in. The API user's permissions decide what the tools can read (`appointments.get`, `patients.get`, `patient_invoices.get`, `payments.get`, `schedules.get`, `stores.get`, `todo.tasks.get`, `profex.*`...).\n2. `MEDMIS_URL` is the address of your clinic's Medmis node, e.g. `https://node3.medmis.ru`, without `/apix`. Its API reference is at `<MEDMIS_URL>/apix/swagger`.\n3. Fill in `MEDMIS_LOGIN`, `MEDMIS_PASSWORD` (at least 6 characters) and `MEDMIS_SYSTEM_NAME`, install, and run `medmis_list_branches` to check.\n\nThe connector signs in with `POST /apix/v1/Auth/login` and sends the access token as a Bearer header; tokens live about an hour and are renewed automatically.\n\n**Workflow**\n- Start with `medmis_list_branches` and `medmis_list_employees` (ids of branches, specialists and their specializations).\n- Free time: `medmis_get_schedule_grid` with branchIds, dateFrom, dateTo and `onlyFreeSlots=true`.\n- Appointments: `medmis_list_appointments` for a period (filter by specialist, status, patient), `medmis_get_appointment`, and `medmis_list_appointment_reference` (statuses, types, visitations, sources, tags) to read the ids.\n- Patients: `medmis_list_patients` (name, phone, e-mail, card number), `medmis_get_patient` for the full record, `medmis_list_patient_reference` (tags, attractions, identity_doc_types).\n- Money: `medmis_list_invoices`, `medmis_get_invoice`, `medmis_list_invoice_services`, `medmis_list_payments`, `medmis_get_payment`.\n- Price list: `medmis_list_service_categories`, `medmis_list_services`, and a specialist's offer with `medmis_list_employee_services`.\n- Other: `medmis_list_reserves`, `medmis_get_reserve`, `medmis_get_branch`; stock with `medmis_list_stores` (per branch), `medmis_list_store_materials`, `medmis_get_stock_levels`, `medmis_list_material_series`; tasks with `medmis_list_tasks`; check-ups with `medmis_list_checkup_companies`, `medmis_list_checkup_contracts`, `medmis_list_checkup_patients`.\n\n**Writes switched off**: `medmis_create_appointment` (book a slot), `medmis_update_appointment` (move, cancel via status, change comment or tags) and `medmis_create_task`. They change the clinic's live schedule, so an admin turns them on deliberately; before each call show the user the patient, specialist, day and time and wait for a yes.\n\n**Patient data**: patients, appointments, invoices and payments are personal health data. Read only what the question needs and do not repeat identity documents or contact data unless the user asks. The patient list leaves out identity document numbers, INN and SNILS.\n\n**Dates and ids**: day filters are `YYYY-MM-DD`; change-time filters are `yyyy-MM-ddTHH:mm:ss` in UTC. Appointments carry both UTC and local times (`datetimeFromLocal`) plus `utcOffsetMinutes`; quote local times. Branches, specialists, patients, appointments and payments use UUIDs; invoices, stores, materials, tasks and check-up records use numbers. List filters ending in `Ids` take several values.\n\n**Pagination and limits**: lists return `items`, `page`, `pageSize`, `totalCount` and `totalPages`; pageSize is at most 100, page starts at 1. Medmis limits each method: filtered lists 20 requests a minute (one per second), reference lists 40 a minute, single records 100 a minute, sign-in 40 a minute. Avoid tight loops; 429 means wait.\n\n**Errors**: 401 means a wrong login, password or system name, or an expired session (the connector signs in again once). 403 means the API user lacks the permission for that method. 400 `ValidationError` lists the bad fields (e.g. a password shorter than 6 characters, a malformed date). 404 means the id does not exist on your node.",
+  "prerequisites": "A Medmis clinic account and an API user (login, password and system name) from Medmis support or your administrator, with the permissions for the data you want to read.",
+  "requiredEnvVars": [
+    "MEDMIS_URL",
+    "MEDMIS_LOGIN",
+    "MEDMIS_PASSWORD",
+    "MEDMIS_SYSTEM_NAME"
+  ],
+  "envVarMeta": {
+    "MEDMIS_URL": {
+      "label": "Medmis node address",
+      "kind": "address",
+      "help": "Address of your clinic's Medmis node, without /apix. Medmis support tells you which node your clinic runs on.",
+      "example": "https://node3.medmis.ru",
+      "pattern": "^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{2,5})?/?$",
+      "patternMessage": "Only the address, e.g. https://node3.medmis.ru, without /apix."
+    },
+    "MEDMIS_LOGIN": {
+      "label": "API login",
+      "kind": "credential",
+      "help": "Login of the Medmis API user."
+    },
+    "MEDMIS_PASSWORD": {
+      "label": "API password",
+      "kind": "credential",
+      "secret": true,
+      "help": "Password of the Medmis API user, at least 6 characters.",
+      "pattern": "^.{6,}$",
+      "patternMessage": "Medmis passwords have at least 6 characters."
+    },
+    "MEDMIS_SYSTEM_NAME": {
+      "label": "System name",
+      "kind": "setting",
+      "help": "The system name the API user signs in with (systemName in the login request), given with the API user.",
+      "example": "medmis"
+    }
+  },
+  "verifyHints": {
+    "401": "Medmis refused the sign-in. Check MEDMIS_LOGIN, MEDMIS_PASSWORD and MEDMIS_SYSTEM_NAME with Medmis support.",
+    "403": "Signed in, but the API user lacks the permission for this method (e.g. branches.get). Ask your Medmis administrator to grant it.",
+    "404": "Nothing found at this address. MEDMIS_URL must be your node's address without /apix, e.g. https://node3.medmis.ru.",
+    "429": "Medmis rate limit reached. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "medmis_list_branches"
+  },
+  "connector": {
+    "name": "MEDMIS API v1",
+    "type": "REST",
+    "baseUrl": "{{MEDMIS_URL}}/apix",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{MEDMIS_URL}}/apix/v1/Auth/login",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "login": "${username}",
+        "systemName": "${aud}",
+        "password": "${password}"
+      },
+      "username": "{{MEDMIS_LOGIN}}",
+      "password": "{{MEDMIS_PASSWORD}}",
+      "aud": "{{MEDMIS_SYSTEM_NAME}}",
+      "tokenJsonPath": "accessToken",
+      "expiryJsonPath": "expiresIn",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "medmis_list_branches",
+      "description": "List the clinic's branches (филиалы): id, code, name, official name, address, phone, e-mail, working hours, licence and UTC offset. The id is the branchId other tools filter by.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Branches",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_get_branch",
+      "description": "Get one branch by id with its address, contacts, working hours, licence data and UTC offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branchId": {
+            "type": "string",
+            "description": "Branch UUID from medmis_list_branches."
+          }
+        },
+        "required": [
+          "branchId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Branches/{branchId}"
+      }
+    },
+    {
+      "name": "medmis_list_employees",
+      "description": "List the specialists (doctors and other staff with schedules): id, name, mobile phone, specializations with their ids, branches and whether they are dismissed. Filter by branch or specialization. The employee id and the employeeSpecializationID are what the schedule and appointment tools take.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branchIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these branches (specialists with a schedule there) (UUIDs)."
+          },
+          "specializationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these specializations (UUIDs)."
+          },
+          "includeDismissed": {
+            "type": "boolean",
+            "description": "Include dismissed specialists (default true)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Employees",
+        "queryParams": {
+          "branchIds": "$branchIds",
+          "specializationIds": "$specializationIds",
+          "includeDismissed": "$includeDismissed",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "items[*].snils"
+          ]
+        }
+      }
+    },
+    {
+      "name": "medmis_list_employee_services",
+      "description": "List the services one specialist can provide, after service categories, individual settings and exclusions are applied.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employeeId": {
+            "type": "string",
+            "description": "Specialist UUID from medmis_list_employees."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        },
+        "required": [
+          "employeeId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Employees/{employeeId}/services",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_get_schedule_grid",
+      "description": "Working schedule of specialists for one or more branches and a date range: per specialist and day the schedule id, working hours and slots, optionally only the free ones. Use it to find a free slot before booking. Needs at least one branch and both dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branchIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Branch UUIDs, at least one (from medmis_list_branches)."
+          },
+          "dateFrom": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "onlyFreeSlots": {
+            "type": "boolean",
+            "description": "true returns only free slots (default false)."
+          },
+          "employeeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these specialists (UUIDs)."
+          },
+          "specializationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these specializations (UUIDs)."
+          }
+        },
+        "required": [
+          "branchIds",
+          "dateFrom",
+          "dateTo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Schedule/grid",
+        "queryParams": {
+          "branchIds": "$branchIds",
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "onlyFreeSlots": "$onlyFreeSlots",
+          "employeeIds": "$employeeIds",
+          "specializationIds": "$specializationIds"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_appointments",
+      "description": "List appointments (записи на приём) with filters: period, branches, patients, specialists, specializations, statuses, types, tags, creation or change time. Returns id, schedule, times (UTC and local), status, patient, specialist, source, visit type, cabinet and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dateFrom": {
+            "type": "string",
+            "description": "First appointment day, YYYY-MM-DD."
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "Last appointment day, YYYY-MM-DD."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these appointments (UUIDs)."
+          },
+          "branchIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these branches (UUIDs)."
+          },
+          "patientIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these patients (UUIDs)."
+          },
+          "employeeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these specialists (UUIDs)."
+          },
+          "specializationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these specializations (UUIDs)."
+          },
+          "statusIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these status ids (from medmis_list_appointment_reference with dictionary=statuses)."
+          },
+          "typeIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these appointment type ids (dictionary=types)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only appointments carrying all of these tags."
+          },
+          "updatedAtAfter": {
+            "type": "string",
+            "description": "Changed after, yyyy-MM-ddTHH:mm:ss in UTC."
+          },
+          "updatedAtBefore": {
+            "type": "string",
+            "description": "Changed before, yyyy-MM-ddTHH:mm:ss in UTC."
+          },
+          "createdAtAfter": {
+            "type": "string",
+            "description": "Created after, yyyy-MM-ddTHH:mm:ss in UTC."
+          },
+          "createdAtBefore": {
+            "type": "string",
+            "description": "Created before, yyyy-MM-ddTHH:mm:ss in UTC."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Appointments",
+        "queryParams": {
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "ids": "$ids",
+          "branchIds": "$branchIds",
+          "patientIds": "$patientIds",
+          "employeeIds": "$employeeIds",
+          "specializationIds": "$specializationIds",
+          "statusIds": "$statusIds",
+          "typeIds": "$typeIds",
+          "tags": "$tags",
+          "updatedAtAfter": "$updatedAtAfter",
+          "updatedAtBefore": "$updatedAtBefore",
+          "createdAtAfter": "$createdAtAfter",
+          "createdAtBefore": "$createdAtBefore",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_get_appointment",
+      "description": "Get one appointment by id: schedule, start and end (UTC and local), status, patient, specialist and specialization, source, visit type, cabinet, tags, comment and whether a paid invoice exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointmentId": {
+            "type": "string",
+            "description": "Appointment UUID from medmis_list_appointments."
+          }
+        },
+        "required": [
+          "appointmentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Appointments/{appointmentId}"
+      }
+    },
+    {
+      "name": "medmis_list_appointment_reference",
+      "description": "Read an appointment reference list: statuses, types (in person, telemedicine), visitations (first or repeat visit), sources (how the booking came in) or tags. Returns id/name pairs to read or filter appointments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dictionary": {
+            "type": "string",
+            "enum": [
+              "statuses",
+              "types",
+              "visitations",
+              "sources",
+              "tags"
+            ],
+            "description": "Which reference list to read."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        },
+        "required": [
+          "dictionary"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Appointments/{dictionary}",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_patients",
+      "description": "Search patients with filters: name parts (partial match), e-mail or mobile phone (exact), outpatient card number, birth date or age range, sex, tags, acquisition source, creation date and marketing consents. Returns contact data, card number, balances and flags; identity document numbers, INN and SNILS are left out of the list (use medmis_get_patient for one patient).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lastname": {
+            "type": "string",
+            "description": "Surname, partial match."
+          },
+          "firstname": {
+            "type": "string",
+            "description": "First name, partial match."
+          },
+          "middlename": {
+            "type": "string",
+            "description": "Patronymic, partial match."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail, exact match."
+          },
+          "mobilephone": {
+            "type": "string",
+            "description": "Mobile phone, exact match as stored (e.g. 79161234567)."
+          },
+          "outpatientCardNumber": {
+            "type": "string",
+            "description": "Outpatient card number, exact match."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these patients (UUIDs)."
+          },
+          "birthdateAfter": {
+            "type": "string",
+            "description": "Born after, YYYY-MM-DD."
+          },
+          "birthdateBefore": {
+            "type": "string",
+            "description": "Born before, YYYY-MM-DD."
+          },
+          "ageAfter": {
+            "type": "integer",
+            "description": "Older than this many years."
+          },
+          "ageBefore": {
+            "type": "integer",
+            "description": "Younger than this many years."
+          },
+          "sex": {
+            "type": "string",
+            "enum": [
+              "Male",
+              "Female"
+            ],
+            "description": "Sex."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only patients with these tags."
+          },
+          "attractionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these acquisition sources (dictionary=attractions) (UUIDs)."
+          },
+          "createdAfter": {
+            "type": "string",
+            "description": "Created after, YYYY-MM-DD."
+          },
+          "createdBefore": {
+            "type": "string",
+            "description": "Created before, YYYY-MM-DD."
+          },
+          "agreeEmail": {
+            "type": "boolean",
+            "description": "Consent to e-mail."
+          },
+          "agreeSms": {
+            "type": "boolean",
+            "description": "Consent to SMS."
+          },
+          "agreeWhatsapp": {
+            "type": "boolean",
+            "description": "Consent to WhatsApp."
+          },
+          "agreePush": {
+            "type": "boolean",
+            "description": "Consent to push notifications."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Patients",
+        "queryParams": {
+          "lastname": "$lastname",
+          "firstname": "$firstname",
+          "middlename": "$middlename",
+          "email": "$email",
+          "mobilephone": "$mobilephone",
+          "outpatientCardNumber": "$outpatientCardNumber",
+          "ids": "$ids",
+          "birthdateAfter": "$birthdateAfter",
+          "birthdateBefore": "$birthdateBefore",
+          "ageAfter": "$ageAfter",
+          "ageBefore": "$ageBefore",
+          "sex": "$sex",
+          "tags": "$tags",
+          "attractionIds": "$attractionIds",
+          "createdAfter": "$createdAfter",
+          "createdBefore": "$createdBefore",
+          "agreeEmail": "$agreeEmail",
+          "agreeSms": "$agreeSms",
+          "agreeWhatsapp": "$agreeWhatsapp",
+          "agreePush": "$agreePush",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "items[*].snils",
+            "items[*].inn",
+            "items[*].identityDocTypeId",
+            "items[*].identityDocNum",
+            "items[*].identityDocIssueDate",
+            "items[*].identityDocIssueAuthority",
+            "items[*].identityDocIssueCode"
+          ]
+        }
+      }
+    },
+    {
+      "name": "medmis_get_patient",
+      "description": "Get one patient's full record by id: name, birth date and age, contacts, sex, tags, card and contract numbers, identity document, address, branch, consents, debtor and minor flags, and account balances. Contains personal and health-related data; show only what the user needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Patient UUID from medmis_list_patients or an appointment."
+          }
+        },
+        "required": [
+          "patientId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Patients/{patientId}"
+      }
+    },
+    {
+      "name": "medmis_list_patient_reference",
+      "description": "Read a patient reference list: tags, attractions (acquisition sources) or identity_doc_types (identity document types). Returns id/name pairs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dictionary": {
+            "type": "string",
+            "enum": [
+              "tags",
+              "attractions",
+              "identity_doc_types"
+            ],
+            "description": "Which reference list to read."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        },
+        "required": [
+          "dictionary"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Patients/{dictionary}",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_invoices",
+      "description": "List patient invoices (счета) with filters: period, branches, patients, appointments, paid or not, deleted, change time. Returns id, number, date, amount, patient, appointment, payment and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dateFrom": {
+            "type": "string",
+            "description": "First invoice day, YYYY-MM-DD."
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "Last invoice day, YYYY-MM-DD."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these invoice ids (numbers)."
+          },
+          "branchIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these branches (UUIDs)."
+          },
+          "patientIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these patients (UUIDs)."
+          },
+          "appointmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these appointments (UUIDs)."
+          },
+          "isPaid": {
+            "type": "boolean",
+            "description": "true paid only, false unpaid only."
+          },
+          "isDeleted": {
+            "type": "boolean",
+            "description": "true deleted only, false active only; omit for both."
+          },
+          "updatedAtAfter": {
+            "type": "string",
+            "description": "Changed after, yyyy-MM-ddTHH:mm:ss in UTC."
+          },
+          "updatedAtBefore": {
+            "type": "string",
+            "description": "Changed before, yyyy-MM-ddTHH:mm:ss in UTC."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/PatientInvoices",
+        "queryParams": {
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "ids": "$ids",
+          "branchIds": "$branchIds",
+          "patientIds": "$patientIds",
+          "appointmentIds": "$appointmentIds",
+          "isPaid": "$isPaid",
+          "isDeleted": "$isDeleted",
+          "updatedAtAfter": "$updatedAtAfter",
+          "updatedAtBefore": "$updatedAtBefore",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_get_invoice",
+      "description": "Get one patient invoice by its numeric id: number, date, amount, duration, patient, appointment, payment and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "integer",
+            "description": "Numeric invoice id from medmis_list_invoices."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/PatientInvoices/{invoiceId}"
+      }
+    },
+    {
+      "name": "medmis_list_invoice_services",
+      "description": "List the lines (services and goods) of one invoice with quantities, prices and discounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "integer",
+            "description": "Numeric invoice id from medmis_list_invoices."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/PatientInvoices/{invoiceId}/services",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_payments",
+      "description": "List payments with filters: period, branches, patients, payment type (1 standard payment, 2 prepared partial refund, 3 completed partial refund, 7 auto-deleted), fiscalised or not, deleted, change time. Returns amounts by method (cash, card, bonus points, insurance, company), cash desk, fiscal flag and patient.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dateFrom": {
+            "type": "string",
+            "description": "First payment day, YYYY-MM-DD."
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "Last payment day, YYYY-MM-DD."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these payments (UUIDs)."
+          },
+          "branchIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these branches (UUIDs)."
+          },
+          "patientIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these patients (UUIDs)."
+          },
+          "typeIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Payment types: 1 standard, 2 partial refund prepared, 3 partial refund completed, 7 auto-deleted."
+          },
+          "isFiscaled": {
+            "type": "boolean",
+            "description": "true fiscalised only, false not fiscalised."
+          },
+          "isDeleted": {
+            "type": "boolean",
+            "description": "true deleted only, false active only; omit for both."
+          },
+          "updatedAtAfter": {
+            "type": "string",
+            "description": "Changed after, yyyy-MM-ddTHH:mm:ss in UTC."
+          },
+          "updatedAtBefore": {
+            "type": "string",
+            "description": "Changed before, yyyy-MM-ddTHH:mm:ss in UTC."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Payments",
+        "queryParams": {
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "ids": "$ids",
+          "branchIds": "$branchIds",
+          "patientIds": "$patientIds",
+          "typeIds": "$typeIds",
+          "isFiscaled": "$isFiscaled",
+          "isDeleted": "$isDeleted",
+          "updatedAtAfter": "$updatedAtAfter",
+          "updatedAtBefore": "$updatedAtBefore",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_get_payment",
+      "description": "Get one payment by id with its amounts per payment method, cash desk, fiscal flag, notes and patient.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "description": "Payment UUID from medmis_list_payments."
+          }
+        },
+        "required": [
+          "paymentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Payments/{paymentId}"
+      }
+    },
+    {
+      "name": "medmis_list_service_categories",
+      "description": "List the price list's service categories, optionally below a parent category, by name or for one branch.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these categories (UUIDs)."
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent category UUID; omit for all."
+          },
+          "name": {
+            "type": "string",
+            "description": "Category name, partial match."
+          },
+          "branchId": {
+            "type": "string",
+            "description": "Branch UUID."
+          },
+          "includeDeleted": {
+            "type": "boolean",
+            "description": "Include deleted categories (default false)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Pricelist/service_categories",
+        "queryParams": {
+          "ids": "$ids",
+          "parentId": "$parentId",
+          "name": "$name",
+          "branchId": "$branchId",
+          "includeDeleted": "$includeDeleted",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_services",
+      "description": "Search the price list's services (услуги): code, PMU code, name, type (0 service, 1 goods, 2 lab test), category and price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Service name, partial match."
+          },
+          "code": {
+            "type": "string",
+            "description": "Service code, exact."
+          },
+          "codePMU": {
+            "type": "string",
+            "description": "PMU code (Russian medical services nomenclature), exact."
+          },
+          "serviceCategoryId": {
+            "type": "string",
+            "description": "Category UUID from medmis_list_service_categories."
+          },
+          "typeId": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 service, 1 goods, 2 lab test."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these services (UUIDs)."
+          },
+          "includeDeleted": {
+            "type": "boolean",
+            "description": "Include deleted services (default false)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Pricelist/services",
+        "queryParams": {
+          "name": "$name",
+          "code": "$code",
+          "codePMU": "$codePMU",
+          "serviceCategoryId": "$serviceCategoryId",
+          "typeId": "$typeId",
+          "ids": "$ids",
+          "includeDeleted": "$includeDeleted",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_reserves",
+      "description": "List reserves (time held in a specialist's schedule for a person, with name and phone) with filters: period, branches, specialists, patients, tags, creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dateFrom": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these reserves (UUIDs)."
+          },
+          "branchIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these branches (UUIDs)."
+          },
+          "employeeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these specialists (UUIDs)."
+          },
+          "patientIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these patients (UUIDs)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only reserves with these tags."
+          },
+          "createdAtAfter": {
+            "type": "string",
+            "description": "Created after, yyyy-MM-ddTHH:mm:ss in UTC."
+          },
+          "createdAtBefore": {
+            "type": "string",
+            "description": "Created before, yyyy-MM-ddTHH:mm:ss in UTC."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Reserves",
+        "queryParams": {
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "ids": "$ids",
+          "branchIds": "$branchIds",
+          "employeeIds": "$employeeIds",
+          "patientIds": "$patientIds",
+          "tags": "$tags",
+          "createdAtAfter": "$createdAtAfter",
+          "createdAtBefore": "$createdAtBefore",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_get_reserve",
+      "description": "Get one reserve by id: a time held in a specialist's schedule for a person, with branch, specialist, date and time, the person's name and phone, comment, tags and auto-extension settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reserveId": {
+            "type": "string",
+            "description": "Reserve UUID from medmis_list_reserves."
+          }
+        },
+        "required": [
+          "reserveId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Reserves/{reserveId}"
+      }
+    },
+    {
+      "name": "medmis_list_stores",
+      "description": "List the stores (warehouses) of one branch. The id is the storeId for medmis_get_stock_levels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branchId": {
+            "type": "string",
+            "description": "Branch UUID from medmis_list_branches."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        },
+        "required": [
+          "branchId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Store/{branchId}",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_store_materials",
+      "description": "Search the store nomenclature (materials, medicines, consumables) by name or code; isSection separates folders from items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text matched against name and code."
+          },
+          "isSection": {
+            "type": "boolean",
+            "description": "true folders only, false materials only; omit for both."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Store/materials",
+        "queryParams": {
+          "search": "$search",
+          "isSection": "$isSection",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_get_stock_levels",
+      "description": "Stock on hand of materials per store, optionally for one store or one material.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeId": {
+            "type": "integer",
+            "description": "Store id from medmis_list_stores."
+          },
+          "storeMaterialId": {
+            "type": "integer",
+            "description": "Material id from medmis_list_store_materials."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Store/rest",
+        "queryParams": {
+          "storeId": "$storeId",
+          "storeMaterialId": "$storeMaterialId",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_material_series",
+      "description": "List batches (series) of store materials with expiry, optionally only expired ones or for one material.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeMaterialId": {
+            "type": "integer",
+            "description": "Material id from medmis_list_store_materials."
+          },
+          "search": {
+            "type": "string",
+            "description": "Series number, partial match."
+          },
+          "expiredOnly": {
+            "type": "boolean",
+            "description": "Only expired series (default false)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Store/material-series",
+        "queryParams": {
+          "storeMaterialId": "$storeMaterialId",
+          "search": "$search",
+          "expiredOnly": "$expiredOnly",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_tasks",
+      "description": "List internal to-do tasks with filters: author, performer, responsible user, patient, status (0 to do, 2 in progress, 4 paused, 6 done), priority (0 high, 2 medium, 4 low), tags and creation, change, start or deadline time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these task ids."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only tasks with these tags."
+          },
+          "authorUserID": {
+            "type": "string",
+            "description": "Author user UUID."
+          },
+          "performerUserID": {
+            "type": "string",
+            "description": "Performer user UUID."
+          },
+          "responsibleUserID": {
+            "type": "string",
+            "description": "Responsible user UUID."
+          },
+          "patientID": {
+            "type": "string",
+            "description": "Linked patient UUID."
+          },
+          "todoTaskStatusIDs": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Statuses: 0 to do, 2 in progress, 4 paused, 6 done."
+          },
+          "todoTaskPriorityIDs": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Priorities: 0 high, 2 medium, 4 low."
+          },
+          "createdAfter": {
+            "type": "string",
+            "description": "Created after, ISO 8601 UTC."
+          },
+          "createdBefore": {
+            "type": "string",
+            "description": "Created before, ISO 8601 UTC."
+          },
+          "modifiedAfter": {
+            "type": "string",
+            "description": "Changed after, ISO 8601 UTC."
+          },
+          "modifiedBefore": {
+            "type": "string",
+            "description": "Changed before, ISO 8601 UTC."
+          },
+          "startAfter": {
+            "type": "string",
+            "description": "Start after, ISO 8601 UTC."
+          },
+          "startBefore": {
+            "type": "string",
+            "description": "Start before, ISO 8601 UTC."
+          },
+          "deadlineAfter": {
+            "type": "string",
+            "description": "Deadline after, ISO 8601 UTC."
+          },
+          "deadlineBefore": {
+            "type": "string",
+            "description": "Deadline before, ISO 8601 UTC."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Todo/tasks",
+        "queryParams": {
+          "ids": "$ids",
+          "tags": "$tags",
+          "authorUserID": "$authorUserID",
+          "performerUserID": "$performerUserID",
+          "responsibleUserID": "$responsibleUserID",
+          "patientID": "$patientID",
+          "todoTaskStatusIDs": "$todoTaskStatusIDs",
+          "todoTaskPriorityIDs": "$todoTaskPriorityIDs",
+          "createdAfter": "$createdAfter",
+          "createdBefore": "$createdBefore",
+          "modifiedAfter": "$modifiedAfter",
+          "modifiedBefore": "$modifiedBefore",
+          "startAfter": "$startAfter",
+          "startBefore": "$startBefore",
+          "deadlineAfter": "$deadlineAfter",
+          "deadlineBefore": "$deadlineBefore",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_checkup_companies",
+      "description": "List the companies of the occupational medical check-up module (Профосмотры): the employers the clinic examines staff for.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Profex/companies",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_checkup_contracts",
+      "description": "List check-up contracts with filters: company (B2B), patient (B2C), status, branch and creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profexCompanyId": {
+            "type": "integer",
+            "description": "Company id from medmis_list_checkup_companies."
+          },
+          "patientId": {
+            "type": "string",
+            "description": "Patient UUID (B2C contracts)."
+          },
+          "stateId": {
+            "type": "integer",
+            "description": "Contract status id."
+          },
+          "branchId": {
+            "type": "string",
+            "description": "Branch UUID."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these contract ids."
+          },
+          "createdAtAfter": {
+            "type": "string",
+            "description": "Created from this day, yyyy-MM-ddTHH:mm:ss (time ignored)."
+          },
+          "createdAtBefore": {
+            "type": "string",
+            "description": "Created up to this day, yyyy-MM-ddTHH:mm:ss (time ignored)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Profex/contracts",
+        "queryParams": {
+          "profexCompanyId": "$profexCompanyId",
+          "patientId": "$patientId",
+          "stateId": "$stateId",
+          "branchId": "$branchId",
+          "ids": "$ids",
+          "createdAtAfter": "$createdAtAfter",
+          "createdAtBefore": "$createdAtBefore",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_list_checkup_patients",
+      "description": "List the people (check-ups) under check-up contracts with filters: contract, patient, status and check-up date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profexContractId": {
+            "type": "integer",
+            "description": "Contract id from medmis_list_checkup_contracts."
+          },
+          "patientId": {
+            "type": "string",
+            "description": "Patient UUID."
+          },
+          "stateId": {
+            "type": "integer",
+            "description": "Status id."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these check-up ids."
+          },
+          "profexDateAfter": {
+            "type": "string",
+            "description": "Check-up from this day, yyyy-MM-ddTHH:mm:ss (time ignored)."
+          },
+          "profexDateBefore": {
+            "type": "string",
+            "description": "Check-up up to this day, yyyy-MM-ddTHH:mm:ss (time ignored)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Profex/contract-patients",
+        "queryParams": {
+          "profexContractId": "$profexContractId",
+          "patientId": "$patientId",
+          "stateId": "$stateId",
+          "ids": "$ids",
+          "profexDateAfter": "$profexDateAfter",
+          "profexDateBefore": "$profexDateBefore",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "medmis_create_appointment",
+      "description": "Book an appointment in a free slot of a specialist's schedule. Take scheduleId and a free slot from medmis_get_schedule_grid and employeeSpecializationID from medmis_list_employees; times are local clinic time HH:mm. Installed switched off; confirm patient, specialist, day and time with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scheduleId": {
+            "type": "string",
+            "description": "Schedule UUID of the specialist's working day (from medmis_get_schedule_grid)."
+          },
+          "employeeSpecializationID": {
+            "type": "string",
+            "description": "UUID of the specialist's specialization (from medmis_list_employees)."
+          },
+          "timeFrom": {
+            "type": "string",
+            "description": "Start, local time HH:mm, e.g. 10:00."
+          },
+          "timeTo": {
+            "type": "string",
+            "description": "End, local time HH:mm, e.g. 10:30."
+          },
+          "patientId": {
+            "type": "string",
+            "description": "Patient UUID from medmis_list_patients."
+          },
+          "statusId": {
+            "type": "integer",
+            "description": "Status id (dictionary=statuses); omit for the default."
+          },
+          "sourceID": {
+            "type": "integer",
+            "description": "Booking source id (dictionary=sources)."
+          },
+          "typeId": {
+            "type": "integer",
+            "description": "Appointment type id (dictionary=types), e.g. in person or telemedicine."
+          },
+          "visitation": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 not set, 1 first visit, 2 repeat visit."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment shown on the appointment."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Existing tags in the form |tag1|tag2|."
+          },
+          "cabinetID": {
+            "type": "string",
+            "description": "Cabinet (room) UUID."
+          }
+        },
+        "required": [
+          "scheduleId",
+          "employeeSpecializationID",
+          "timeFrom",
+          "timeTo",
+          "patientId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/Appointments",
+        "bodyMapping": {
+          "scheduleId": "$scheduleId",
+          "employeeSpecializationID": "$employeeSpecializationID",
+          "timeFrom": "$timeFrom",
+          "timeTo": "$timeTo",
+          "patientId": "$patientId",
+          "statusId": "$statusId",
+          "sourceID": "$sourceID",
+          "typeId": "$typeId",
+          "visitation": "$visitation",
+          "comment": "$comment",
+          "tags": "$tags",
+          "cabinetID": "$cabinetID"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "medmis_update_appointment",
+      "description": "Change an existing appointment: status (e.g. cancel or confirm), start and end time in UTC, comment, tags, cabinet, source, type or visit type. Only the fields you pass change. Installed switched off; confirm the change with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointmentId": {
+            "type": "string",
+            "description": "Appointment UUID from medmis_list_appointments."
+          },
+          "statusId": {
+            "type": "integer",
+            "description": "New status id (dictionary=statuses)."
+          },
+          "statusSubId": {
+            "type": "integer",
+            "description": "Status sub-id, if the status uses one."
+          },
+          "datetimeFrom": {
+            "type": "string",
+            "description": "New start, ISO 8601 UTC."
+          },
+          "datetimeTo": {
+            "type": "string",
+            "description": "New end, ISO 8601 UTC."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment (replaces the current one)."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Tags |tag1|tag2| (replaces the current ones)."
+          },
+          "cabinetID": {
+            "type": "string",
+            "description": "Cabinet UUID."
+          },
+          "sourceID": {
+            "type": "integer",
+            "description": "Booking source id."
+          },
+          "typeId": {
+            "type": "integer",
+            "description": "Appointment type id."
+          },
+          "visitation": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 not set, 1 first visit, 2 repeat visit."
+          }
+        },
+        "required": [
+          "appointmentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/Appointments/{appointmentId}",
+        "bodyMapping": {
+          "statusId": "$statusId",
+          "statusSubId": "$statusSubId",
+          "datetimeFrom": "$datetimeFrom",
+          "datetimeTo": "$datetimeTo",
+          "comment": "$comment",
+          "tags": "$tags",
+          "cabinetID": "$cabinetID",
+          "sourceID": "$sourceID",
+          "typeId": "$typeId",
+          "visitation": "$visitation"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "medmis_create_task",
+      "description": "Create an internal to-do task, optionally linked to a patient, with performers, responsible user, start, deadline, status and priority. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Task description."
+          },
+          "patientID": {
+            "type": "string",
+            "description": "Linked patient UUID."
+          },
+          "performerUserIDsArray": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Performer user UUIDs."
+          },
+          "responsibleUserID": {
+            "type": "string",
+            "description": "Responsible user UUID."
+          },
+          "startDateUtc": {
+            "type": "string",
+            "description": "Start, ISO 8601 UTC."
+          },
+          "deadlineDateUtc": {
+            "type": "string",
+            "description": "Deadline, ISO 8601 UTC."
+          },
+          "todoTaskStatusID": {
+            "type": "integer",
+            "enum": [
+              0,
+              2,
+              4,
+              6
+            ],
+            "description": "0 to do (default), 2 in progress, 4 paused, 6 done."
+          },
+          "todoTaskPriorityID": {
+            "type": "integer",
+            "enum": [
+              0,
+              2,
+              4
+            ],
+            "description": "0 high, 2 medium, 4 low."
+          },
+          "tagsArray": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/Todo/tasks",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "patientID": "$patientID",
+          "performerUserIDsArray": "$performerUserIDsArray",
+          "responsibleUserID": "$responsibleUserID",
+          "startDateUtc": "$startDateUtc",
+          "deadlineDateUtc": "$deadlineDateUtc",
+          "todoTaskStatusID": "$todoTaskStatusID",
+          "todoTaskPriorityID": "$todoTaskPriorityID",
+          "tagsArray": "$tagsArray"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

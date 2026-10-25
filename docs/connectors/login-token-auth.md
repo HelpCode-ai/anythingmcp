@@ -97,6 +97,16 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
     "outputParam": "passwordHashed"  // name exposed to the body template (default: passwordHashed)
   },
 
+  // ─── Or: a JWT signed with the account's private key (no password) ─
+  "signedJwt": {
+    "privateKey": "{{SERVICE_PRIVATE_KEY}}", // PEM, PKCS#1 / PKCS#8 / SEC1
+    "algorithm":  "RS256",                   // RS256 (default) | RS384 | RS512 | PS256 | ES256 | ES384
+    "claims":     { "sub": "{{SERVICE_KEY_ID}}" },
+    "keyId":      "…",                       // optional `kid` header
+    "ttlSeconds": 300,                       // optional; adds exp = iat + ttlSeconds
+    "outputParam": "signedJwt"               // name exposed to the body template (default: signedJwt)
+  },
+
   // ─── Where to find the token & expiry in the login response ────
   "tokenJsonPath":  "data.signIn.jwtToken.token",
   "expiryJsonPath": "data.signIn.jwtToken.expiredAt",
@@ -133,8 +143,29 @@ The placeholders below are substituted by the engine when rendering `loginBody` 
 | `${passwordHashed}` | output of the password preprocessor (renamed via `outputParam`) |
 | `${aud}` | `authConfig.aud` |
 | `${otp}` | `authConfig.otp` |
+| `${signedJwt}` | a JWT signed for this login (see below; renamed via `outputParam`) |
 
 In `headerTemplate` and `extraHeaders`, only `${token}` and `${aud}` are available (these refer to the issued token, not the credentials).
+
+### Signed JWT logins
+
+Some APIs take no password: the client signs a short JWT with the private key
+of a service account and posts it to the login endpoint (noon's Partner API:
+RS256, `sub` = the key id, then the session comes back as cookies). With
+`signedJwt` set, `username` and `password` are not required, and every login
+signs a new token: `iat` is the current time in whole seconds, `jti` a random
+UUID, then the configured `claims`; `exp` is added only when `ttlSeconds` is
+set. A claim whose `{{VARIABLE}}` has no value stops the login with an error
+that names it. The key is read as for OAuth2 `private_key_jwt` client
+assertions: a PEM pasted on one line or with literal `\n` works, an encrypted
+key is refused, and no error message contains key material.
+
+```json
+"loginBody": { "token": "${signedJwt}", "default_project_code": "{{NOON_PROJECT_CODE}}" },
+"signedJwt": { "privateKey": "{{NOON_PRIVATE_KEY}}", "algorithm": "RS256", "claims": { "sub": "{{NOON_KEY_ID}}" } },
+"tokenSource": "cookie",
+"cookieMode": "all"
+```
 
 ### Expiry formats
 
@@ -172,6 +203,7 @@ whole body, for logins that answer with a bare token string).
 
 ## Security notes
 
+- **Private keys never leave the server.** With `signedJwt`, only the signed token is sent; the key stays in encrypted storage like a password.
 - **Plain passwords never leave the server.** Only the bcrypt hash is sent over the wire; the plain password lives only in encrypted `authConfig` storage.
 - The encrypted `authConfig` is decrypted in-process at request time and never logged.
 - Tokens persisted in `connector_auth_cache` are encrypted with the same AES-256-GCM key (`ENCRYPTION_KEY` env var).

@@ -70,6 +70,25 @@ ChatGPT will call the appropriate MCP tool and show you the results.
 
 ---
 
+## The fixed plugin endpoint: `/mcp/chatgpt-app`
+
+`https://<your-host>/mcp/chatgpt-app` serves one fixed set of tools, the same for every user. It is the endpoint for a plugin published in OpenAI's plugin directory, whose guidelines require every operation to be its own tool. It does not run your connectors' own tools; use `/mcp/<server-id>` (or `/mcp`) for that.
+
+| Tool | What it does |
+|------|--------------|
+| `anythingmcp_list_connectors` | Connectors the connection reaches, their type and setup state |
+| `anythingmcp_list_databases` | Databases that can be queried, with their engine |
+| `anythingmcp_get_database_schema` | Tables and columns of one database |
+| `anythingmcp_get_query_examples` | Example queries in the database's dialect |
+| `anythingmcp_query_database` | One read-only query (SQL `SELECT`, or a MongoDB find) |
+| `anythingmcp_get_connector_activity` | Calls and failures per connector, counts only |
+| `anythingmcp_get_workspace_guide` | The workspace's notes on its connectors |
+| `anythingmcp_get_configuration_url` | Link to the dashboard |
+
+Only database connectors set to **read-only** are queried; a connector with write access is listed as not queryable. Sign-in, the server or workspace picker, MCP roles and the audit log work as on `/mcp`. The endpoint behaves the same on Cloud and on a self-hosted instance, and needs a signed-in user (OAuth or a per-user MCP API key), not the static `MCP_API_KEY` / `MCP_BEARER_TOKEN`.
+
+---
+
 ## Authentication Options
 
 | Method | Configuration |

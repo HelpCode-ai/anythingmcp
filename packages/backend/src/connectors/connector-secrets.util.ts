@@ -332,3 +332,24 @@ export function mergeMaskedHeaders(
 ): Record<string, string> {
   return keepMaskedValues(incoming, stored, (n, v) => isMaskedHeader(n, v, ctx));
 }
+
+/**
+ * The values of a connector's secret variables (by name, by the slot the
+ * adapter uses them in, or by their shape: what the dashboard withholds),
+ * for masking wherever they could be quoted back: an echoing response, an
+ * error, a log line. Values under 8 characters are skipped: they would match
+ * inside ordinary words and ids.
+ */
+export function connectorSecretValues(
+  connector: ConnectorLike & { envVars?: unknown },
+): string[] {
+  const envVars = connector.envVars;
+  if (!envVars || typeof envVars !== 'object') return [];
+  const ctx = secretContext(connector);
+  return Object.entries(envVars as Record<string, unknown>)
+    .filter(
+      ([name, value]) =>
+        typeof value === 'string' && value.length >= 8 && isMaskedEnvVar(name, value, ctx),
+    )
+    .map(([, value]) => value as string);
+}
