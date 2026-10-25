@@ -174,6 +174,32 @@ describe('POST import-all accepts the file written by GET export-all', () => {
 
     expect(prisma.connector.create.mock.calls[0][0].data).not.toHaveProperty('authConfig');
   });
+
+  it('moves a database password out of the connection string into an encrypted authConfig (#1245)', async () => {
+    const { decrypt } = require('../common/crypto/encryption.util');
+    const file = await exportFile('ADMIN');
+    Object.assign(file.connectors[0], {
+      name: 'Shop DB',
+      type: 'DATABASE',
+      authType: 'NONE',
+      baseUrl: 'postgresql://app:s3cret@db.example.com:5432/shop',
+      headers: {},
+      config: {},
+      envVars: {},
+      tools: [],
+    });
+    const { controller, prisma } = buildController();
+
+    await controller.importAll(req('ADMIN'), await validate(file));
+
+    const data = prisma.connector.create.mock.calls[0][0].data;
+    expect(data.baseUrl).toBe('postgresql://db.example.com:5432/shop');
+    expect(JSON.parse(decrypt(data.authConfig, VALID_ENCRYPTION_KEY))).toEqual({
+      username: 'app',
+      password: 's3cret',
+    });
+    expect(JSON.stringify(data)).not.toContain('s3cret');
+  });
 });
 
 describe('POST import-all stays in the caller’s organization', () => {

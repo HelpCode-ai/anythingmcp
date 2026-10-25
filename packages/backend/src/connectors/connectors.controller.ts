@@ -56,7 +56,8 @@ import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { getRequiredSecret } from '../common/secrets.util';
-import { decrypt } from '../common/crypto/encryption.util';
+import { decrypt, encrypt } from '../common/crypto/encryption.util';
+import { keepMaskedUrlPassword, moveUrlCredentials } from './database-url-credentials.util';
 import { getAdapter } from '../adapters/catalog';
 import { resolvePkce, resolveRestAuthorizeSettings } from './oauth-authorize-settings';
 import { tokenEndpointUserAgent } from './engines/oauth2-token.service';
@@ -1076,6 +1077,10 @@ export class ConnectorsController {
     // means "unchanged", not "erase".
     const ctx = secretContext(connector);
     const data = { ...dto };
+    if (connector.type === 'DATABASE' && dto.baseUrl !== undefined) {
+      // The connection string was shown with its password masked.
+      data.baseUrl = keepMaskedUrlPassword(dto.baseUrl, connector.baseUrl);
+    }
     if (dto.envVars) {
       // Cleaned as in PUT :id/env-vars: this route stores variables too.
       data.envVars = this.normalizeVariables(
@@ -1724,7 +1729,13 @@ export class ConnectorsController {
       // headers and tools: restored, they land in variables instead.
       const secrets = new SecretExtractor(c.name, c.envVars as Record<string, string> | undefined);
       const guarded = SECRET_GUARDED_TYPES.has(c.type);
-      const baseUrl = guarded ? secrets.extractUrl(c.baseUrl, 'baseUrl') : c.baseUrl;
+      // An export carries no authConfig, so a database password restored
+      // from it can only be in the connection string: move it there.
+      const dbCredentials =
+        c.type === 'DATABASE' ? moveUrlCredentials(c.baseUrl, undefined) : null;
+      const baseUrl = guarded
+        ? secrets.extractUrl(c.baseUrl, 'baseUrl')
+        : (dbCredentials?.baseUrl ?? c.baseUrl);
       // A catalog connector's headers are rebuilt from its own template when
       // its variables change (catalog-env-rebuild.util.ts); they are left alone.
       const fromCatalog = !!(c.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
@@ -1755,6 +1766,9 @@ export class ConnectorsController {
             baseUrl,
             isActive: c.isActive ?? true,
             authType: c.authType || 'NONE',
+            ...(dbCredentials
+              ? { authConfig: encrypt(JSON.stringify(dbCredentials.authConfig), this.encryptionKey) }
+              : {}),
             specUrl: c.specUrl,
             headers: headers as any,
             config: config as any,

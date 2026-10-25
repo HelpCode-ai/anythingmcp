@@ -15,6 +15,7 @@ import { attachResponseMeta } from './engines/response-headers.util';
 import { SoapEngine, WsdlReadError } from './engines/soap.engine';
 import { wsdlUrlForLog } from './parsers/wsdl.parser';
 import { connectorSecretValues } from './connector-secrets.util';
+import { moveUrlCredentials } from './database-url-credentials.util';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
@@ -143,6 +144,11 @@ export class ConnectorsService {
     },
   ): Promise<Connector> {
     assertValidHeaderNames(data.headers, data.authConfig);
+    // A password typed into a connection string goes to the encrypted
+    // authConfig; the engine splices it back in at call time.
+    const moved =
+      data.type === 'DATABASE' ? moveUrlCredentials(data.baseUrl, data.authConfig) : null;
+    if (moved) data = { ...data, baseUrl: moved.baseUrl, authConfig: moved.authConfig };
     const encryptedAuth = data.authConfig
       ? encrypt(JSON.stringify(data.authConfig), this.encryptionKey)
       : null;
@@ -183,6 +189,14 @@ export class ConnectorsService {
   ): Promise<Connector> {
     const existing = await this.findById(id);
     assertValidHeaderNames(data.headers, data.authConfig);
+
+    if (existing.type === 'DATABASE' && data.baseUrl !== undefined) {
+      const moved = moveUrlCredentials(
+        data.baseUrl,
+        data.authConfig ?? this.readAuthConfig(existing.authConfig),
+      );
+      if (moved) data = { ...data, baseUrl: moved.baseUrl, authConfig: moved.authConfig };
+    }
 
     const updateData: any = { ...data };
     if (data.authConfig) {
