@@ -1,0 +1,1248 @@
+{
+  "slug": "braze",
+  "name": "Braze",
+  "description": "Let your AI work with Braze: review campaigns, Canvases and their results, check segments, daily active users and revenue, look up user profiles and subscriptions, record attributes and events, and trigger API campaigns after you confirm.",
+  "instructions": "## Braze\nThis connector reads and writes **Braze** (customer engagement: campaigns, Canvases, segments, users and messaging) through the Braze REST API with a workspace REST API key: campaign and Canvas lists, details and results, segments, the daily KPIs, custom events, purchases, subscription groups and user profiles; it also records attributes and events and can trigger API campaigns and Canvases.\n\n**Setup (about 5 minutes)**\n1. In Braze open **Settings, APIs and Identifiers, API Keys** and click **Create API Key**. Keys belong to one workspace.\n2. Give it a name and tick the permissions the tools need. For reading: `campaigns.list`, `campaigns.details`, `campaigns.data_series`, `sends.data_series`, `canvas.list`, `canvas.details`, `canvas.data_summary`, `segments.list`, `segments.details`, `segments.data_series`, `kpi.dau.data_series`, `kpi.mau.data_series`, `kpi.new_users.data_series`, `kpi.uninstalls.data_series`, `events.list`, `events.data_series`, `purchases.product_list`, `purchases.quantity_series`, `purchases.revenue_series`, `subscription.status.get`, `subscription.groups.get`, `users.export.ids`. For writing add `users.track`, `campaigns.trigger.send` and `canvas.trigger.send` (and `users.delete` only if the delete tool will be turned on). A key's permissions cannot be changed later: create a new key instead.\n3. Copy the key and the **REST endpoint** shown on the same page and paste them into `BRAZE_REST_API_KEY` and `BRAZE_REST_ENDPOINT`. The endpoint depends on your Braze instance: https://rest.iad-01.braze.com, https://rest.iad-02.braze.com, https://rest.iad-03.braze.com, https://rest.iad-04.braze.com, https://rest.iad-05.braze.com, https://rest.iad-06.braze.com, https://rest.iad-07.braze.com, https://rest.iad-08.braze.com and https://rest.us-10.braze.com (US), https://rest.fra-01.braze.eu and https://rest.fra-02.braze.eu (EU), https://rest.au-01.braze.com, https://rest.id-01.braze.com, https://rest.jp-01.braze.com, https://rest.kr-01.braze.com. The dashboard address tells which: dashboard-01.braze.com uses rest.iad-01, dashboard-01.braze.eu uses rest.fra-01, and so on.\n\nThe key acts for the whole workspace, not for one person: whoever uses this connector sees what the key can read, including user profiles. Share the MCP server only with people allowed to see that.\n\n**Limits**: most endpoints allow 250,000 requests an hour. `/users/export/ids` allows 250 a minute for workspaces onboarded since August 2024 (2,500 before); `/events/list` and `/purchases/product_list` share 1,000 an hour; `/users/track` takes up to 75 objects per call (attributes, events and purchases combined) at a rate set by your contract; the send endpoints allow 250 broadcast calls a minute, 10 a minute per audience. Braze answers 429 when a limit is reached.\n\n**How to work**\n1. Campaigns: `braze_list_campaigns` for ids, then `braze_get_campaign` for setup and messages and `braze_get_campaign_data_series` for daily results. `braze_get_send_data_series` gives the results of one tracked send of an API campaign.\n2. Canvases: `braze_list_canvases`, `braze_get_canvas`, then `braze_get_canvas_data_summary` for entries, conversions and revenue (per variant or step on request).\n3. Audience: `braze_list_segments`, `braze_get_segment` and `braze_get_segment_size_series` (segments with analytics tracking).\n4. App health: `braze_get_kpi_series` with metric dau, mau, new_users or uninstalls.\n5. Behaviour and revenue: `braze_list_custom_events` then `braze_get_custom_event_series`; `braze_list_products`, `braze_get_purchase_quantity_series` and `braze_get_revenue_series`.\n6. People: `braze_export_users_by_ids` reads profiles by external id, alias, braze_id, email or phone (POST, but only reads); `braze_get_subscription_group_status` and `braze_list_user_subscription_groups` show subscription states.\n7. Writes, each only after the user confirms: `braze_track_users` records attributes, events and purchases (it can move users into segments and start Canvases). `braze_send_campaign` and `braze_send_canvas` send real messages: show what will be sent and to whom first, and for broadcast or more than one recipient wait for an explicit \"yes, send\".\n8. `braze_delete_users` deletes profiles for good and is installed switched off; an administrator turns it on deliberately.\n\nSeries take `length` in days (1 to 100, Canvas summaries 1 to 14) before `ending_at` (ISO 8601, default now). Lists come 100 per page starting at page 0.\n\n**Common errors**\n- 401 \"Invalid API key\": the key is wrong or belongs to another instance; check that the REST endpoint matches your dashboard.\n- 403 \"Access Denied\": the key lacks the permission for this endpoint. Create a key with it.\n- 400: a parameter is missing or invalid, e.g. length out of range or an unknown campaign_id; the message names it.\n- 429: a rate limit is reached; wait and retry once.\n\n**Out of scope here**: content blocks and templates, catalogs, email lists and hard bounces, scheduled messages, preference centers, SCIM, user alias and identify endpoints, segment exports to cloud storage and Currents.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "braze",
+  "docsUrl": "https://www.braze.com/docs/api/basics",
+  "prerequisites": "A Braze user who can create a REST API key under Settings, APIs and Identifiers, and the REST endpoint of your Braze instance shown on that page. About 5 minutes.",
+  "requiredEnvVars": [
+    "BRAZE_REST_ENDPOINT",
+    "BRAZE_REST_API_KEY"
+  ],
+  "envVarMeta": {
+    "BRAZE_REST_ENDPOINT": {
+      "label": "REST endpoint",
+      "kind": "address",
+      "help": "Braze, Settings, APIs and Identifiers, API Keys: the REST endpoint shown there, such as https://rest.iad-01.braze.com (US) or https://rest.fra-01.braze.eu (EU). It matches your dashboard address: dashboard-01.braze.com is rest.iad-01, dashboard-01.braze.eu is rest.fra-01.",
+      "link": "https://www.braze.com/docs/api/basics#endpoints",
+      "example": "https://rest.iad-01.braze.com",
+      "pattern": "^(https://)?rest\\.[a-z]{2,3}-[0-9]{2}\\.braze\\.(com|eu)/?$",
+      "patternMessage": "Paste the REST endpoint of your Braze instance, such as https://rest.iad-01.braze.com or https://rest.fra-01.braze.eu, without a path. The dashboard address is not the REST endpoint."
+    },
+    "BRAZE_REST_API_KEY": {
+      "label": "REST API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Created under Settings, APIs and Identifiers, API Keys, Create API Key, with the permissions listed in the setup steps. The key belongs to one workspace.",
+      "link": "https://www.braze.com/docs/api/basics#creating-rest-api-keys",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste the REST API key as Braze shows it, without spaces or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Braze refused the REST API key. Check the key, and that the REST endpoint is the one of your Braze instance (a key only works on its own instance).",
+    "403": "Braze refused this key for the request: it lacks the permission (campaigns.list is used for the check). Create a key with the permissions from the setup steps.",
+    "404": "Nothing answered at this REST endpoint. Copy it from Settings, APIs and Identifiers, for example https://rest.iad-01.braze.com.",
+    "429": "Braze's rate limit is reached. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "braze_list_campaigns"
+  },
+  "connector": {
+    "name": "Braze",
+    "type": "REST",
+    "baseUrl": "{{BRAZE_REST_ENDPOINT}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{BRAZE_REST_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/campaigns/list"
+  },
+  "tools": [
+    {
+      "name": "braze_list_campaigns",
+      "description": "List the campaigns of the Braze workspace, 100 per page: id (campaign API identifier), name, whether it is an API campaign, tags and last edit time. Use the id with braze_get_campaign and braze_get_campaign_data_series. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page to return, starting at 0 (up to 100 items per page). Call again with page + 1 while the list is full."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "Also list archived campaigns. Default false."
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort by creation time: desc for newest first, asc (Braze default) for oldest first.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "last_edited_after": {
+            "type": "string",
+            "description": "Only campaigns edited after this time, ISO 8601 such as 2026-09-01T00:00:00Z."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/list",
+        "queryParams": {
+          "page": "$page",
+          "include_archived": "$include_archived",
+          "sort_direction": "$sort_direction",
+          "last_edit.time[gt]": "$last_edited_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "campaigns": "$.campaigns"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_get_campaign",
+      "description": "Get the details of one Braze campaign: name, description, enabled, archived and draft flags, schedule type, channels, first and last sent, tags, teams, conversion behaviors and its messages (variations by channel). Large message bodies are capped. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign API identifier from braze_list_campaigns or the campaign's details page."
+          },
+          "post_launch_draft_version": {
+            "type": "boolean",
+            "description": "For a campaign with a post-launch draft, show the draft changes. Default false."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/details",
+        "queryParams": {
+          "campaign_id": "$campaign_id",
+          "post_launch_draft_version": "$post_launch_draft_version"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "name": "$.name",
+            "description": "$.description",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "archived": "$.archived",
+            "draft": "$.draft",
+            "enabled": "$.enabled",
+            "has_post_launch_draft": "$.has_post_launch_draft",
+            "schedule_type": "$.schedule_type",
+            "channels": "$.channels",
+            "first_sent": "$.first_sent",
+            "last_sent": "$.last_sent",
+            "tags": "$.tags",
+            "teams": "$.teams",
+            "conversion_behaviors": "$.conversion_behaviors",
+            "messages": "$.messages"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "braze_get_campaign_data_series",
+      "description": "Get a daily series of a Braze campaign's results: unique recipients, conversions, revenue and, per channel and variation, sends, deliveries, opens, clicks, bounces, unsubscribes and errors. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign API identifier from braze_list_campaigns."
+          },
+          "length": {
+            "type": "integer",
+            "description": "How many days before ending_at the series covers, 1 to 100. Default 30.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "ending_at": {
+            "type": "string",
+            "description": "Last day of the series, ISO 8601 (e.g. 2026-10-14T23:59:59Z). Default: now."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/data_series",
+        "queryParams": {
+          "campaign_id": "$campaign_id",
+          "length": "$length",
+          "ending_at": "$ending_at"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "data": "$.data"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "braze_get_send_data_series",
+      "description": "Get the daily results of one send of an API campaign (a send_id groups the messages of one trigger call): per channel and variation sends, deliveries, opens, clicks, bounces, conversions and revenue. Braze keeps send results for 14 days after the send. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign API identifier of the API campaign."
+          },
+          "send_id": {
+            "type": "string",
+            "description": "Send identifier used when the campaign was triggered."
+          },
+          "length": {
+            "type": "integer",
+            "description": "How many days before ending_at the series covers, 1 to 100. Default 30.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "ending_at": {
+            "type": "string",
+            "description": "Last day of the series, ISO 8601 (e.g. 2026-10-14T23:59:59Z). Default: now."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "send_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sends/data_series",
+        "queryParams": {
+          "campaign_id": "$campaign_id",
+          "send_id": "$send_id",
+          "length": "$length",
+          "ending_at": "$ending_at"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "data": "$.data"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "braze_list_canvases",
+      "description": "List the Canvases (multi-step journeys) of the Braze workspace, 100 per page: id (Canvas API identifier), name, tags and last edit time. Stopped Canvases are included, archived ones only on request. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page to return, starting at 0 (up to 100 items per page). Call again with page + 1 while the list is full."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "Also list archived Canvases. Default false."
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort by creation time: desc for newest first, asc (Braze default) for oldest first.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "last_edited_after": {
+            "type": "string",
+            "description": "Only Canvases edited after this time, ISO 8601 such as 2026-09-01T00:00:00Z."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/canvas/list",
+        "queryParams": {
+          "page": "$page",
+          "include_archived": "$include_archived",
+          "sort_direction": "$sort_direction",
+          "last_edit.time[gt]": "$last_edited_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "canvases": "$.canvases"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_get_canvas",
+      "description": "Get the details of one Braze Canvas: name, description, enabled, archived and draft flags, schedule type, first and last entry, channels, tags, teams, variants and steps with their messages. Large message bodies are capped. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "canvas_id": {
+            "type": "string",
+            "description": "Canvas API identifier from braze_list_canvases."
+          },
+          "post_launch_draft_version": {
+            "type": "boolean",
+            "description": "For a Canvas with a post-launch draft, show the draft changes. Default false."
+          }
+        },
+        "required": [
+          "canvas_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/canvas/details",
+        "queryParams": {
+          "canvas_id": "$canvas_id",
+          "post_launch_draft_version": "$post_launch_draft_version"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "name": "$.name",
+            "description": "$.description",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "archived": "$.archived",
+            "draft": "$.draft",
+            "enabled": "$.enabled",
+            "has_post_launch_draft": "$.has_post_launch_draft",
+            "schedule_type": "$.schedule_type",
+            "first_entry": "$.first_entry",
+            "last_entry": "$.last_entry",
+            "channels": "$.channels",
+            "tags": "$.tags",
+            "teams": "$.teams",
+            "variants": "$.variants",
+            "steps": "$.steps"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "braze_get_canvas_data_summary",
+      "description": "Get the totals of a Braze Canvas for a period: entries, conversions, revenue and, on request, the same per variant and per step with message results by channel. Give ending_at and either length (1 to 14 days) or starting_at. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "canvas_id": {
+            "type": "string",
+            "description": "Canvas API identifier from braze_list_canvases."
+          },
+          "ending_at": {
+            "type": "string",
+            "description": "End of the period, ISO 8601 (e.g. 2026-10-14T23:59:59Z). Use the current time for 'until now'."
+          },
+          "starting_at": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601. Give this or length."
+          },
+          "length": {
+            "type": "integer",
+            "description": "Days before ending_at to include, 1 to 14. Give this or starting_at.",
+            "minimum": 1,
+            "maximum": 14
+          },
+          "include_variant_breakdown": {
+            "type": "boolean",
+            "description": "Add the totals per variant. Default false."
+          },
+          "include_step_breakdown": {
+            "type": "boolean",
+            "description": "Add the totals per step, with message results by channel. Default false."
+          },
+          "include_deleted_step_data": {
+            "type": "boolean",
+            "description": "Include steps that were deleted. Default false."
+          }
+        },
+        "required": [
+          "canvas_id",
+          "ending_at"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/canvas/data_summary",
+        "queryParams": {
+          "canvas_id": "$canvas_id",
+          "ending_at": "$ending_at",
+          "starting_at": "$starting_at",
+          "length": "$length",
+          "include_variant_breakdown": "$include_variant_breakdown",
+          "include_step_breakdown": "$include_step_breakdown",
+          "include_deleted_step_data": "$include_deleted_step_data"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "data": "$.data"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "braze_list_segments",
+      "description": "List the segments of the Braze workspace, 100 per page: id (segment API identifier), name, whether analytics tracking is enabled, and tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page to return, starting at 0 (up to 100 items per page). Call again with page + 1 while the list is full."
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort by creation time: desc for newest first, asc (Braze default) for oldest first.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments/list",
+        "queryParams": {
+          "page": "$page",
+          "sort_direction": "$sort_direction"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "segments": "$.segments"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_get_segment",
+      "description": "Get the details of one Braze segment: name, description of its filters, created and updated time, and tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "segment_id": {
+            "type": "string",
+            "description": "Segment API identifier from braze_list_segments."
+          }
+        },
+        "required": [
+          "segment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments/details",
+        "queryParams": {
+          "segment_id": "$segment_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "name": "$.name",
+            "description": "$.description",
+            "text_description": "$.text_description",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "tags": "$.tags",
+            "teams": "$.teams"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_get_segment_size_series",
+      "description": "Get the estimated size of a Braze segment per day. Only works for segments with analytics tracking enabled (see braze_list_segments). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "segment_id": {
+            "type": "string",
+            "description": "Segment API identifier from braze_list_segments."
+          },
+          "length": {
+            "type": "integer",
+            "description": "How many days before ending_at the series covers, 1 to 100. Default 30.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "ending_at": {
+            "type": "string",
+            "description": "Last day of the series, ISO 8601 (e.g. 2026-10-14T23:59:59Z). Default: now."
+          }
+        },
+        "required": [
+          "segment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments/data_series",
+        "queryParams": {
+          "segment_id": "$segment_id",
+          "length": "$length",
+          "ending_at": "$ending_at"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "data": "$.data"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_get_kpi_series",
+      "description": "Get a daily series of a Braze key metric for the workspace or one app: dau (daily active users), mau (monthly active users, rolling 30 days), new_users (daily new users) or uninstalls (daily uninstalls). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string",
+            "description": "Which metric: dau, mau, new_users or uninstalls.",
+            "enum": [
+              "dau",
+              "mau",
+              "new_users",
+              "uninstalls"
+            ]
+          },
+          "length": {
+            "type": "integer",
+            "description": "How many days before ending_at the series covers, 1 to 100. Default 30.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "ending_at": {
+            "type": "string",
+            "description": "Last day of the series, ISO 8601 (e.g. 2026-10-14T23:59:59Z). Default: now."
+          },
+          "app_id": {
+            "type": "string",
+            "description": "Optional app identifier (Settings, APIs and Identifiers) to limit the series to one app. Leave out for every app of the workspace."
+          }
+        },
+        "required": [
+          "metric"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kpi/{metric}/data_series",
+        "queryParams": {
+          "length": "$length",
+          "ending_at": "$ending_at",
+          "app_id": "$app_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "data": "$.data"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_list_custom_events",
+      "description": "List the names of the custom events recorded in the Braze workspace, 250 per page, in alphabetical order. Use a name with braze_get_custom_event_series. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page to return, starting at 0 (up to 250 names per page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/list",
+        "queryParams": {
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "events": "$.events"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_get_custom_event_series",
+      "description": "Get how often a Braze custom event occurred per day or per hour, for the workspace, one app or one analytics-enabled segment. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Custom event name, as listed by braze_list_custom_events."
+          },
+          "length": {
+            "type": "integer",
+            "description": "How many units (days or hours) before ending_at, 1 to 100. Default 30.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "unit": {
+            "type": "string",
+            "description": "Interval between data points: day (default) or hour.",
+            "enum": [
+              "day",
+              "hour"
+            ]
+          },
+          "ending_at": {
+            "type": "string",
+            "description": "Last day of the series, ISO 8601 (e.g. 2026-10-14T23:59:59Z). Default: now."
+          },
+          "app_id": {
+            "type": "string",
+            "description": "Optional app identifier (Settings, APIs and Identifiers) to limit the series to one app. Leave out for every app of the workspace."
+          },
+          "segment_id": {
+            "type": "string",
+            "description": "Optional segment API identifier of an analytics-enabled segment, to count only its users."
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/data_series",
+        "queryParams": {
+          "event": "$event",
+          "length": "$length",
+          "unit": "$unit",
+          "ending_at": "$ending_at",
+          "app_id": "$app_id",
+          "segment_id": "$segment_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "data": "$.data"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_list_products",
+      "description": "List the product ids of the purchases recorded in Braze, page by page. Use a product id to filter braze_get_purchase_quantity_series and braze_get_revenue_series. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page of the product list to return. Leave out for the first page; ask for higher page numbers until the list comes back empty."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchases/product_list",
+        "queryParams": {
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "products": "$.products"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_get_purchase_quantity_series",
+      "description": "Get the number of items purchased per day or per hour in Braze, for all products or one, for the workspace or one app. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "length": {
+            "type": "integer",
+            "description": "How many days before ending_at the series covers, 1 to 100. Default 30.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "unit": {
+            "type": "string",
+            "description": "Interval between data points: day (default) or hour.",
+            "enum": [
+              "day",
+              "hour"
+            ]
+          },
+          "ending_at": {
+            "type": "string",
+            "description": "Last day of the series, ISO 8601 (e.g. 2026-10-14T23:59:59Z). Default: now."
+          },
+          "app_id": {
+            "type": "string",
+            "description": "Optional app identifier (Settings, APIs and Identifiers) to limit the series to one app. Leave out for every app of the workspace."
+          },
+          "product": {
+            "type": "string",
+            "description": "Optional product id from braze_list_products."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchases/quantity_series",
+        "queryParams": {
+          "length": "$length",
+          "unit": "$unit",
+          "ending_at": "$ending_at",
+          "app_id": "$app_id",
+          "product": "$product"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "data": "$.data"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_get_revenue_series",
+      "description": "Get the revenue per day or per hour recorded from purchases in Braze, for all products or one, for the workspace or one app. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "length": {
+            "type": "integer",
+            "description": "How many days before ending_at the series covers, 1 to 100. Default 30.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "unit": {
+            "type": "string",
+            "description": "Interval between data points: day (default) or hour.",
+            "enum": [
+              "day",
+              "hour"
+            ]
+          },
+          "ending_at": {
+            "type": "string",
+            "description": "Last day of the series, ISO 8601 (e.g. 2026-10-14T23:59:59Z). Default: now."
+          },
+          "app_id": {
+            "type": "string",
+            "description": "Optional app identifier (Settings, APIs and Identifiers) to limit the series to one app. Leave out for every app of the workspace."
+          },
+          "product": {
+            "type": "string",
+            "description": "Optional product id from braze_list_products."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchases/revenue_series",
+        "queryParams": {
+          "length": "$length",
+          "unit": "$unit",
+          "ending_at": "$ending_at",
+          "app_id": "$app_id",
+          "product": "$product"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "data": "$.data"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_get_subscription_group_status",
+      "description": "Get whether a user is subscribed to one Braze subscription group (SMS, WhatsApp or email), identified by external_id, email or phone. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_group_id": {
+            "type": "string",
+            "description": "Subscription group id (Audience, Subscriptions in the dashboard)."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "The user's external_id. When given, email and phone are ignored."
+          },
+          "email": {
+            "type": "string",
+            "description": "The user's email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "The user's phone number in E.164 format, e.g. +4915112345678. Do not send it together with email."
+          }
+        },
+        "required": [
+          "subscription_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscription/status/get",
+        "queryParams": {
+          "subscription_group_id": "$subscription_group_id",
+          "external_id": "$external_id",
+          "email": "$email",
+          "phone": "$phone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "status": "$.status"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_list_user_subscription_groups",
+      "description": "List the subscription groups a Braze user belongs to and their state, identified by external_id, email or phone. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "The user's external_id."
+          },
+          "email": {
+            "type": "string",
+            "description": "The user's email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "The user's phone number in E.164 format. Do not send it together with email."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, up to 100 (default)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscription/user/status",
+        "queryParams": {
+          "external_id": "$external_id",
+          "email": "$email",
+          "phone": "$phone",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "total_count": "$.total_count",
+            "users": "$.users"
+          }
+        }
+      }
+    },
+    {
+      "name": "braze_export_users_by_ids",
+      "description": "Read Braze user profiles by identifier: external_ids (up to 50), user aliases, braze_id, email_address or phone. Returns the fields asked for in fields_to_export (a compact default set: identifiers, name, contact, locale, subscription states, custom attributes, total revenue, apps). Sent as a POST but only reads. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "External user ids to read, up to 50.",
+            "maxItems": 50
+          },
+          "user_aliases": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "User aliases to read: [{\"alias_name\": \"...\", \"alias_label\": \"...\"}]."
+          },
+          "braze_id": {
+            "type": "string",
+            "description": "Braze identifier of one user."
+          },
+          "email_address": {
+            "type": "string",
+            "description": "Email address of the user (returns every profile with that address)."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number of the user in E.164 format."
+          },
+          "device_id": {
+            "type": "string",
+            "description": "Device identifier as returned by the Braze SDK."
+          },
+          "fields_to_export": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Profile fields to return. Others: dob, gender, home_city, last_coordinates, custom_events, purchases, devices, push_tokens, attributed_campaign, attributed_source, random_bucket, uninstalled_at, user_aliases.",
+            "default": [
+              "external_id",
+              "braze_id",
+              "user_aliases",
+              "first_name",
+              "last_name",
+              "email",
+              "phone",
+              "country",
+              "language",
+              "time_zone",
+              "created_at",
+              "email_subscribe",
+              "push_subscribe",
+              "custom_attributes",
+              "total_revenue",
+              "apps"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/export/ids",
+        "bodyMapping": {
+          "external_ids": "$external_ids",
+          "user_aliases": "$user_aliases",
+          "braze_id": "$braze_id",
+          "email_address": "$email_address",
+          "phone": "$phone",
+          "device_id": "$device_id",
+          "fields_to_export": "$fields_to_export"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "users[*].push_tokens"
+          ],
+          "select": {
+            "message": "$.message",
+            "users": "$.users",
+            "invalid_user_ids": "$.invalid_user_ids"
+          },
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "braze_track_users",
+      "description": "Write to Braze user profiles: set or change attributes (standard and custom), record custom events and record purchases, up to 75 objects per call (attributes, events and purchases combined). Profiles that do not exist yet are created. Each object needs one identifier: external_id, user_alias or braze_id (or email / phone). Changing data can put users into or out of segments and start Canvases, so show the user what will be written and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Attribute objects: [{\"external_id\": \"u1\", \"first_name\": \"Ada\", \"email_subscribe\": \"opted_in\", \"my_custom_attribute\": \"value\"}].",
+            "maxItems": 75
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Event objects: [{\"external_id\": \"u1\", \"name\": \"trial_started\", \"time\": \"2026-10-14T10:00:00Z\", \"properties\": {\"plan\": \"pro\"}}].",
+            "maxItems": 75
+          },
+          "purchases": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Purchase objects: [{\"external_id\": \"u1\", \"product_id\": \"sku-1\", \"currency\": \"EUR\", \"price\": 19.9, \"quantity\": 1, \"time\": \"2026-10-14T10:00:00Z\"}].",
+            "maxItems": 75
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/track",
+        "bodyMapping": {
+          "attributes": "$attributes",
+          "events": "$events",
+          "purchases": "$purchases"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message",
+            "attributes_processed": "$.attributes_processed",
+            "events_processed": "$.events_processed",
+            "purchases_processed": "$.purchases_processed",
+            "errors": "$.errors"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "braze_send_campaign",
+      "description": "Send an API-triggered Braze campaign now: to listed recipients, to a connected audience, or with broadcast true to the campaign's whole target segment. This sends real messages (email, push, SMS and other channels) to real people. Before calling, show the user the campaign, the channel and exactly who will receive it, and call only after the user confirms. For broadcast or any audience of more than one person the user must answer with an explicit \"yes, send\". Returns a dispatch_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign API identifier of an API-triggered campaign."
+          },
+          "send_id": {
+            "type": "string",
+            "description": "Optional send identifier to group the results of this send (see braze_get_send_data_series)."
+          },
+          "trigger_properties": {
+            "type": "object",
+            "description": "Personalization key-value pairs for every recipient, used as {{api_trigger_properties.${key}}}."
+          },
+          "broadcast": {
+            "type": "boolean",
+            "description": "true sends to the campaign's entire target segment set in the dashboard and must not be combined with recipients. Needs the explicit \"yes, send\" from the user."
+          },
+          "audience": {
+            "type": "object",
+            "description": "Connected audience filter object, to send only to users matching custom attribute or subscription filters."
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Recipients, up to 50: [{\"external_user_id\": \"u1\", \"trigger_properties\": {...}}] or with \"user_alias\" or \"email\" (email needs \"prioritization\").",
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/trigger/send",
+        "bodyMapping": {
+          "campaign_id": "$campaign_id",
+          "send_id": "$send_id",
+          "trigger_properties": "$trigger_properties",
+          "broadcast": "$broadcast",
+          "audience": "$audience",
+          "recipients": "$recipients"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "braze_send_canvas",
+      "description": "Start an API-triggered Braze Canvas now: for listed recipients, a connected audience, or with broadcast true for the Canvas's whole target segment. The Canvas then sends its messages to real people. Before calling, show the user the Canvas and exactly who will enter it, and call only after the user confirms. For broadcast or any audience of more than one person the user must answer with an explicit \"yes, send\". Returns a dispatch_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "canvas_id": {
+            "type": "string",
+            "description": "Canvas API identifier of an API-triggered Canvas."
+          },
+          "context": {
+            "type": "object",
+            "description": "Canvas context properties for every recipient, used as {{context.${key}}}. For workspaces with Canvas Context (the personalization menu shows Context Variables)."
+          },
+          "canvas_entry_properties": {
+            "type": "object",
+            "description": "Canvas entry properties for every recipient, used as {{canvas_entry_properties.${key}}}. For workspaces without Canvas Context (the personalization menu shows Canvas Entry Properties); send this instead of context."
+          },
+          "broadcast": {
+            "type": "boolean",
+            "description": "true starts the Canvas for its entire target segment and must not be combined with recipients. Needs the explicit \"yes, send\" from the user."
+          },
+          "audience": {
+            "type": "object",
+            "description": "Connected audience filter object, to start the Canvas only for users matching it."
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Recipients, up to 50: [{\"external_user_id\": \"u1\", \"context\": {...}}] (or \"canvas_entry_properties\" on workspaces without Canvas Context) or with \"user_alias\" or \"email\" (email needs \"prioritization\").",
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "canvas_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/canvas/trigger/send",
+        "bodyMapping": {
+          "canvas_id": "$canvas_id",
+          "context": "$context",
+          "canvas_entry_properties": "$canvas_entry_properties",
+          "broadcast": "$broadcast",
+          "audience": "$audience",
+          "recipients": "$recipients"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "braze_delete_users",
+      "description": "Permanently delete Braze user profiles, up to 50 per call, by external_ids, user_aliases, braze_ids, email_addresses or phone_numbers, only one of these kinds per call. Cannot be undone. Installed switched off: an administrator turns it on deliberately. Read the profiles with braze_export_users_by_ids first, show the user what will be deleted, and only call this after the user confirms the exact identifiers.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "External ids of the users to delete.",
+            "maxItems": 50
+          },
+          "user_aliases": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "User aliases to delete: [{\"alias_name\": \"...\", \"alias_label\": \"...\"}].",
+            "maxItems": 50
+          },
+          "braze_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Braze identifiers of the users to delete.",
+            "maxItems": 50
+          },
+          "email_addresses": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Email addresses whose profiles to delete, each with a prioritization that picks the profile when several share the address: [{\"email\": \"ada@example.com\", \"prioritization\": [\"unidentified\", \"most_recently_updated\"]}]. Allowed values: identified or unidentified (not both), most_recently_updated.",
+            "maxItems": 50
+          },
+          "phone_numbers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Phone numbers (E.164) whose profiles to delete, each with a prioritization as for email_addresses: [{\"phone\": \"+4915112345678\", \"prioritization\": [\"identified\", \"most_recently_updated\"]}].",
+            "maxItems": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/delete",
+        "bodyMapping": {
+          "external_ids": "$external_ids",
+          "user_aliases": "$user_aliases",
+          "braze_ids": "$braze_ids",
+          "email_addresses": "$email_addresses",
+          "phone_numbers": "$phone_numbers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

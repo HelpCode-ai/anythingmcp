@@ -11,6 +11,7 @@
  * ./common/sentry-scrub.ts for the exact rules.
  */
 import * as Sentry from '@sentry/nestjs';
+import { APP_VERSION } from './common/app-version';
 import { scrubBreadcrumb, scrubEvent } from './common/sentry-scrub';
 import { sampleRateFor } from './common/sentry-sampler';
 
@@ -28,7 +29,7 @@ if (dsn) {
       process.env.SENTRY_ENVIRONMENT ||
       process.env.NODE_ENV ||
       'development',
-    release: process.env.SENTRY_RELEASE || process.env.npm_package_version,
+    release: process.env.SENTRY_RELEASE || APP_VERSION,
 
     // Tracing is opt-in on top of error reporting because it adds overhead.
     // SENTRY_TRACES_SAMPLE_RATE applies to HTTP requests; MCP calls take

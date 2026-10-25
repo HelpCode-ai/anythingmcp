@@ -66,7 +66,7 @@ function makeReq(overrides: Partial<Request> = {}): Request {
 describe('LoginController', () => {
   let controller: LoginController;
   let authService: jest.Mocked<Pick<AuthService, 'comparePassword' | 'verifyToken'>>;
-  let prisma: { user: { findUnique: jest.Mock } };
+  let prisma: { user: { findUnique: jest.Mock; findMany: jest.Mock } };
   let config: jest.Mocked<Pick<ConfigService, 'get'>>;
   let store: jest.Mocked<
     Pick<PrismaOAuthStore, 'getOAuthSession' | 'getClient'>
@@ -86,7 +86,7 @@ describe('LoginController', () => {
         throw new Error('invalid');
       }),
     };
-    prisma = { user: { findUnique: jest.fn() } };
+    prisma = { user: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) } };
     config = { get: jest.fn().mockReturnValue(undefined) };
     store = { getOAuthSession: jest.fn(), getClient: jest.fn() };
     sso = { startMcp: jest.fn() };
@@ -283,12 +283,12 @@ describe('LoginController', () => {
       makeReq({ signedCookies: { login_csrf: 'tok' }, headers: { host: 'mcp.test' } });
 
     it('sets login_user and redirects to /callback on valid credentials', async () => {
-      prisma.user.findUnique.mockResolvedValue({
+      prisma.user.findMany.mockResolvedValue([{
         id: 'u1',
         email: 'a@b.com',
         name: 'A',
         passwordHash: 'hash',
-      });
+      }]);
       authService.comparePassword.mockResolvedValue(true);
 
       const res = makeRes();
@@ -304,12 +304,42 @@ describe('LoginController', () => {
       expect(res._redirect).toBe('http://mcp.test/callback');
     });
 
+    it('signs in an account stored with capitals from the lower-case address', async () => {
+      prisma.user.findMany.mockResolvedValue([{
+        id: 'u1',
+        email: 'Name@Example.com',
+        name: 'A',
+        passwordHash: 'hash',
+      }]);
+      authService.comparePassword.mockResolvedValue(true);
+
+      const res = makeRes();
+      await controller.handleLogin(
+        okReq(),
+        { email: 'name@example.com', password: 'pw', csrf: 'tok', action: 'approve' },
+        res,
+      );
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith({
+        where: {
+          OR: [
+            { email: { in: ['name@example.com'] } },
+            { email: { equals: 'name@example.com', mode: 'insensitive' } },
+          ],
+        },
+      });
+      expect(authService.comparePassword).toHaveBeenCalledWith('pw', 'hash');
+      const profile = JSON.parse(Buffer.from(res._cookies['login_user'].value, 'base64url').toString());
+      expect(profile.id).toBe('u1');
+      expect(res._redirect).toBe('http://mcp.test/callback');
+    });
+
     it('redirects with an error on wrong password (no login_user set)', async () => {
-      prisma.user.findUnique.mockResolvedValue({
+      prisma.user.findMany.mockResolvedValue([{
         id: 'u1',
         email: 'a@b.com',
         passwordHash: 'hash',
-      });
+      }]);
       authService.comparePassword.mockResolvedValue(false);
 
       const res = makeRes();
@@ -522,7 +552,7 @@ describe('LoginController', () => {
     let licenseGuard: { getTrialState: jest.Mock };
     let eligibility: { hadSubscription: jest.Mock };
     let cloudPrisma: {
-      user: { findUnique: jest.Mock };
+      user: { findUnique: jest.Mock; findMany: jest.Mock };
       organizationMember: { findFirst: jest.Mock };
       connector: { count: jest.Mock };
     };
@@ -545,6 +575,7 @@ describe('LoginController', () => {
           ? { organizationId: 'org-1', email: 'a@b.com' }
           : { id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'hash' },
       );
+      cloudPrisma.user.findMany.mockResolvedValue([{ id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'hash' }]);
       cloudPrisma.organizationMember.findFirst.mockResolvedValue({ role: opts.role ?? 'ADMIN' });
       cloudPrisma.connector.count.mockResolvedValue(opts.connectors ?? 0);
       authService.comparePassword.mockResolvedValue(true);
@@ -566,7 +597,7 @@ describe('LoginController', () => {
 
     beforeEach(() => {
       cloudPrisma = {
-        user: { findUnique: jest.fn() },
+        user: { findUnique: jest.fn(), findMany: jest.fn() },
         organizationMember: { findFirst: jest.fn() },
         connector: { count: jest.fn() },
       };
@@ -638,7 +669,7 @@ describe('LoginController', () => {
         expect(res._sent).toContain('Your free trial runs until October&nbsp;13.');
         expect(res._sent).toContain('Nothing is charged before October&nbsp;13.');
         expect(res._sent).toMatch(
-          /<a href="https:\/\/cloud\.example\/start-trial" target="_blank" rel="noopener noreferrer">add a card now \(new tab\)<\/a>/,
+          /<a href="https:\/\/cloud\.example\/start-trial\?source=post_approve" target="_blank" rel="noopener noreferrer">add a card now \(new tab\)<\/a>/,
         );
         // Continue stays the first and only button.
         const html = res._sent ?? '';

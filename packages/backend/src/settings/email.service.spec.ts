@@ -1,6 +1,7 @@
 import * as nodemailer from 'nodemailer';
-import { EmailService } from './email.service';
+import { EmailService, systemSmtpFrom } from './email.service';
 import { verifyUnsubscribe } from './unsubscribe-token';
+import { readEmailLinkToken } from '../common/email-link-token';
 
 jest.mock('nodemailer', () => ({ createTransport: jest.fn() }));
 
@@ -12,11 +13,22 @@ describe('EmailService', () => {
   const sendMail = jest.fn().mockResolvedValue({});
   const ENV = { ...process.env };
 
-  function make(opts: { cloud?: boolean; stats?: any; user?: { id: string } | null } = {}) {
+  function make(
+    opts: {
+      cloud?: boolean;
+      stats?: any;
+      user?: { id: string; email: string; socialIdentities?: Array<{ provider: string }> } | null;
+    } = {},
+  ) {
     const siteSettings = { getSmtpConfig: jest.fn().mockResolvedValue(null), get: jest.fn() };
     const orgSettings = { getJson: jest.fn().mockResolvedValue(null) };
     const prisma = {
-      user: { findUnique: jest.fn().mockResolvedValue(opts.user === undefined ? { id: 'user-1' } : opts.user) },
+      // Stored with capitals: the recipient is looked up in any case.
+      user: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue(opts.user === undefined ? [{ id: 'user-1', email: 'A@b.com' }] : opts.user ? [opts.user] : []),
+      },
       license: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const cloud = opts.cloud ?? true;
@@ -91,6 +103,33 @@ describe('EmailService', () => {
     });
   });
 
+  describe('sender of the system SMTP', () => {
+    it('keeps what the cloud and existing installs send', () => {
+      expect(systemSmtpFrom({ SMTP_FROM: 'AnythingMCP <noreply@anythingmcp.com>' })).toBe(
+        'AnythingMCP <noreply@anythingmcp.com>',
+      );
+      expect(systemSmtpFrom({ SMTP_FROM: 'noreply@example.com' })).toBe('noreply@example.com');
+      expect(systemSmtpFrom({ SMTP_USER: 'mailer@example.com' })).toBe('AnythingMCP <mailer@example.com>');
+      expect(systemSmtpFrom({})).toBe('AnythingMCP');
+    });
+
+    it('uses SMTP_FROM_NAME, which setup.sh writes next to a bare SMTP_FROM', () => {
+      expect(systemSmtpFrom({ SMTP_FROM: 'noreply@acme.com', SMTP_FROM_NAME: 'Acme AI' })).toBe(
+        'Acme AI <noreply@acme.com>',
+      );
+      expect(systemSmtpFrom({ SMTP_USER: 'mailer@acme.com', SMTP_FROM_NAME: 'Acme AI' })).toBe(
+        'Acme AI <mailer@acme.com>',
+      );
+      // A name SMTP_FROM already carries wins.
+      expect(
+        systemSmtpFrom({ SMTP_FROM: 'Ops <ops@acme.com>', SMTP_FROM_NAME: 'Acme AI' }),
+      ).toBe('Ops <ops@acme.com>');
+      expect(systemSmtpFrom({ SMTP_FROM: 'noreply@acme.com', SMTP_FROM_NAME: 'Acme, Inc.' })).toBe(
+        '"Acme, Inc." <noreply@acme.com>',
+      );
+    });
+  });
+
   it('escapes the inviter and role in invitations', async () => {
     const { service } = make();
     await service.sendInvitationEmail('a@b.com', 'https://cloud.anythingmcp.com/i', '<b onmouseover=x>Eve</b>', '<i>Admin</i>');
@@ -134,12 +173,123 @@ describe('EmailService', () => {
     expect(mail.headers).toBeUndefined();
   });
 
+  describe('pricing links carry the recipient as an address token', () => {
+    const pricingLinks = (text: string) =>
+      text.split(/\s+/).filter((word) => {
+        if (!word.startsWith('https://')) return false;
+        const url = new URL(word);
+        return url.host === 'anythingmcp.com' && url.pathname === '/pricing';
+      });
+
+    afterEach(() => {
+      delete process.env.EMAIL_LINK_SECRET;
+    });
+
+    it('in the trial lifecycle and win-back emails, so the site refuses a second subscription', async () => {
+      process.env.EMAIL_LINK_SECRET = 'shared-with-the-licence-site';
+      const { service } = make();
+      await service.sendTrialLifecycleEmail('Ann@Example.com', 'Ann', 'warn1', { connectors: 1, successfulCalls: 3, daysLeft: 1 });
+      await service.sendTrialWinbackEmail('Ann@Example.com', 'Ann', {
+        kind: 'discount',
+        percentOff: 30,
+        promoCode: 'START30',
+        stage: 'first',
+        trialEndedAt: new Date('2026-10-07T09:30:00Z'),
+        successfulCalls: 3,
+      });
+      await service.sendTrialWinbackEmail('Ann@Example.com', 'Ann', { kind: 'help', trialEndedAt: new Date('2026-10-07T09:30:00Z') });
+
+      for (const [mail] of sendMail.mock.calls) {
+        const links = pricingLinks(mail.text);
+        expect(links.length).toBeGreaterThan(0);
+        for (const link of links) {
+          const token = new URL(link).hash.replace(/^#t=/, '');
+          expect(readEmailLinkToken(token)).toBe('ann@example.com');
+          // The address itself never appears in the link.
+          expect(link.toLowerCase()).not.toContain('ann@example.com');
+          // The email names itself to the checkout, ahead of the token.
+          expect(new URL(link).searchParams.get('source')).toMatch(/^email_(trial_(warn3|warn1|expired)|winback)$/);
+        }
+      }
+    });
+
+    it('not without EMAIL_LINK_SECRET: the links go out as before', async () => {
+      const { service } = make();
+      await service.sendTrialLifecycleEmail('a@b.com', 'Ada', 'expired', { connectors: 0, successfulCalls: 0, daysLeft: 0 });
+      const links = pricingLinks(sent().text);
+      expect(links).toEqual([
+        'https://anythingmcp.com/pricing?return_url=' +
+          encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate') +
+          '&source=email_trial_expired',
+      ]);
+    });
+  });
+
   it('makes no Cloud-only claims on a self-hosted instance', async () => {
     const { service } = make({ cloud: false });
     await service.sendPasswordResetEmail('a@b.com', 'https://mcp.example.com/reset?t=1');
     const mail = sent();
     expect(mail.html).not.toMatch(/Frankfurt|DPA|Claude Directory|AI tool calls/);
     expect(mail.html).toContain('Open source');
+  });
+
+  describe('dashboard links for someone who signs in with Google, Microsoft or GitHub', () => {
+    const google = { id: 'user-1', email: 'A@b.com', socialIdentities: [{ provider: 'google' }] };
+    const viaGoogle = (path: string) =>
+      `https://cloud.anythingmcp.com/login?continueWith=google&redirect=${encodeURIComponent(path)}`;
+    const offer = {
+      name: 'Ada',
+      connectorName: 'Etsy',
+      nextSteps: [],
+      trialEndsAt: new Date('2026-10-29T10:00:00Z'),
+      cardTrial: true,
+      ctaPath: '/start-trial?source=first_success_email',
+    };
+
+    it('sign in with that provider in the card-trial offer, activation and onboarding emails', async () => {
+      const { service, prisma } = make({ user: google });
+      await service.sendCardTrialOfferEmail('a@b.com', offer);
+      expect(sendMail.mock.calls[0][0].text).toContain(viaGoogle('/start-trial?source=first_success_email'));
+      await service.sendActivationReminderEmail('a@b.com', 'Ada', '/connectors/c1');
+      expect(sendMail.mock.calls[1][0].text).toContain(viaGoogle('/connectors/c1'));
+      await service.sendOnboardingReminderEmail('a@b.com', 'Ada', 1);
+      expect(sendMail.mock.calls[2][0].text).toContain(viaGoogle('/welcome'));
+      await service.sendOnboardingReminderEmail('a@b.com', 'Ada', 1, { aiClient: 'Claude' });
+      expect(sendMail.mock.calls[3][0].text).toContain(viaGoogle('/connectors/store'));
+      // The MCP endpoint is not a dashboard page: never wrapped.
+      expect(sendMail.mock.calls[3][0].text).toContain('https://cloud.anythingmcp.com/mcp.');
+      // The most recently used provider, looked up with the address in any case.
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
+            socialIdentities: expect.objectContaining({ select: { provider: true }, take: 1 }),
+          }),
+        }),
+      );
+    });
+
+    it('link straight to the page for a password account', async () => {
+      const { service } = make({ user: { id: 'user-1', email: 'a@b.com', socialIdentities: [] } });
+      await service.sendCardTrialOfferEmail('a@b.com', offer);
+      expect(sent().text).toContain('https://cloud.anythingmcp.com/start-trial?source=first_success_email');
+      expect(sent().text).not.toContain('continueWith');
+    });
+
+    it('ignore a provider this build does not know, and a failed lookup', async () => {
+      const { service, prisma } = make({ user: { id: 'user-1', email: 'a@b.com', socialIdentities: [{ provider: 'facebook' }] } });
+      await service.sendActivationReminderEmail('a@b.com', 'Ada', '/connectors/c1');
+      expect(sendMail.mock.calls[0][0].text).toContain('https://cloud.anythingmcp.com/connectors/c1');
+      prisma.user.findMany.mockRejectedValue(new Error('db down'));
+      await expect(service.sendActivationReminderEmail('a@b.com', 'Ada', '/connectors/c1')).resolves.toBe(true);
+      expect(sendMail.mock.calls[1][0].text).toContain('https://cloud.anythingmcp.com/connectors/c1');
+      expect(sendMail.mock.calls[1][0].text).not.toContain('continueWith');
+    });
+
+    it('never on a self-hosted instance, which has no social sign-in', async () => {
+      const { service } = make({ cloud: false, user: google });
+      await service.sendActivationReminderEmail('a@b.com', 'Ada', '/connectors/c1');
+      expect(sent().text).not.toContain('continueWith');
+    });
   });
 
   it('still sends when the trust numbers are unavailable', async () => {

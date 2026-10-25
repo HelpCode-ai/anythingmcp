@@ -1,8 +1,8 @@
 {
   "slug": "magento",
   "name": "Magento (Adobe Commerce)",
-  "description": "Drive Magento 2 / Adobe Commerce from any AI agent: products, categories, orders, customers, stock. 12 tools, Bearer admin-token auth, per-store base URL.",
-  "instructions": "This connector uses the Magento 2 REST API (devdocs.magento.com).\n\n**Setup**:\n1. As Magento admin → **System → Integrations → Add New Integration**.\n2. Name + email, then on the API tab pick scopes: at minimum Catalog (Products + Categories + Stock), Customers, Sales (Orders + Invoices + Shipments).\n3. **Activate** the integration → grant access. Magento generates an **Access Token** (this is the long-lived bearer token).\n4. Set:\n   - `MAGENTO_BASE_URL` = your storefront base URL (e.g. `https://shop.example.com`)\n   - `MAGENTO_ACCESS_TOKEN` = the integration access token\n   - Optionally `MAGENTO_STORE_VIEW` if you want a specific store view (default 'default' or use 'all')\n\n**Authentication**: `Authorization: Bearer ${MAGENTO_ACCESS_TOKEN}`.\n\n**Path prefix**: `/rest/{store_view}/V1/...`. The adapter uses `/rest/default/V1/` as default — if you need to target a different store view, replace baseUrl accordingly or pass `?storeCode=` (Magento accepts both).\n\n**Search criteria DSL**: Magento has a unique multi-key search syntax for list endpoints:\n```\n?searchCriteria[filter_groups][0][filters][0][field]=status\n&searchCriteria[filter_groups][0][filters][0][value]=1\n&searchCriteria[filter_groups][0][filters][0][condition_type]=eq\n&searchCriteria[pageSize]=20\n&searchCriteria[currentPage]=1\n```\nIt's verbose but powerful. The adapter exposes the most common filters as flat params and lets you pass arbitrary criteria via `searchCriteria_raw` for advanced cases.\n\n**SKU as primary key**: most product endpoints use SKU (not ID) in the URL: `/V1/products/{sku}`.\n\n**Rate limits**: not enforced by Magento core — depends on hosting. On 429 back off.\n\n**Out of scope here**: GraphQL endpoint (separate), Inventory MSI deep features, B2B/Commerce-only features (shared catalogs, company hierarchies), CMS pages/blocks, sales rules editing.",
+  "description": "Drive Magento 2 / Adobe Commerce from any AI agent: products, categories, orders, customers, stock and low-stock items, guest carts and checkout, and CMS pages and blocks. Bearer admin-token auth, per-store base URL.",
+  "instructions": "This connector uses the Magento 2 / Adobe Commerce REST API (developer.adobe.com/commerce/webapi/rest).\n\n**Setup**:\n1. As Magento admin open **System > Extensions > Integrations > Add New Integration**.\n2. Name and e-mail, then on the API tab grant the resources you need: Catalog (Products, Categories, Inventory), Customers, Sales (Orders), Content (Pages, Blocks).\n3. **Activate** the integration and allow access. Magento shows an **Access Token** (long-lived).\n4. Set `MAGENTO_BASE_URL` to the store address (e.g. `https://shop.example.com`, without `/rest`) and `MAGENTO_ACCESS_TOKEN` to the integration access token.\n\n**Authentication**: `Authorization: Bearer <MAGENTO_ACCESS_TOKEN>`. Since 2.4.4 this needs Stores > Configuration > Services > OAuth > Consumer Settings > \"Allow OAuth Access Tokens to be used as standalone Bearer tokens\" set to Yes.\n\n**Store views**: requests go to `/rest/default/V1/...`, the default store view. `magento_list_store_views` lists the views and their codes. The guest cart tools take the store view code as `storeCode`; CMS pages and blocks always use `all` (see below).\n\n**Search criteria**: Magento list endpoints filter with `searchCriteria[filter_groups][i][filters][j][field|value|condition_type]`, `searchCriteria[pageSize]` and `searchCriteria[currentPage]`. The search tools turn their flat parameters into these keys; filters in different groups combine with AND.\n\n**SKU as key**: product endpoints use the SKU, not the numeric id, in the URL.\n\n**Rate limits**: not enforced by Magento core; they depend on the hosting. On 429 wait and try again.\n\n**Tools**: store views `magento_list_store_views`; catalog `magento_search_products`, `magento_get_product`, `magento_create_product`, `magento_update_product`, `magento_delete_product`, `magento_update_stock`, `magento_list_low_stock_items`, `magento_list_categories`; sales `magento_search_orders`, `magento_get_order`, `magento_cancel_order`; customers `magento_search_customers`, `magento_get_customer`; CMS `magento_search_cms_pages`, `magento_get_cms_page`, `magento_search_cms_blocks`, `magento_get_cms_block`, `magento_create_cms_page`, `magento_update_cms_page`, `magento_create_cms_block`, `magento_update_cms_block`.\n\n**Low stock**: `magento_list_low_stock_items` takes a quantity threshold and the stock scope (0 for the default stock). It reads the legacy catalog inventory; with Multi-Source Inventory the per-source stock is not in this list.\n\n**Guest checkout (an order on behalf of a guest)**: the guest cart tools work in one store view (`storeCode`, `default` unless the shop has several views; keep the same code for the whole cart). Flow: `magento_create_guest_cart` returns a cart id > `magento_add_guest_cart_item` per SKU > optionally `magento_apply_guest_cart_coupon` > `magento_estimate_guest_cart_shipping` for the carrier and method codes > `magento_set_guest_cart_shipping` with the addresses and the chosen method > `magento_list_guest_cart_payment_methods` > `magento_place_guest_order` with the customer e-mail and payment method, which returns the order id. `magento_get_guest_cart` and `magento_get_guest_cart_totals` show the cart and its totals at any step. The cart writes and the order placement are installed switched off: an admin turns them on for shops that take orders this way. Before placing an order show the items, totals, address and payment method and wait for a yes.\n\n**Out of scope here**: the GraphQL endpoint, Multi-Source Inventory sources, B2B features (shared catalogs, companies) and editing sales rules.\n\n**CMS pages and blocks** always go through the `all` store code (`/rest/all/V1/cmsPage`, `/rest/all/V1/cmsBlock`), Magento's admin scope, so a page written there is not silently moved to one store view. The create and update tools change the live storefront and are installed switched off; there is no delete tool.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "magento",
@@ -40,12 +40,12 @@
     {"name": "magento_list_store_views", "description": "List the store views of the Magento / Adobe Commerce instance (id, code, name, website). A cheap read that also confirms the access token works.", "parameters": {"type": "object", "properties": {}}, "endpointMapping": {"method": "GET", "path": "/store/storeViews"}},
     {
       "name": "magento_search_products",
-      "description": "Search products with Magento's search criteria DSL. For simple filters use the flat params (sku/name/status/visibility). For complex multi-condition use searchCriteria_raw.",
+      "description": "Search products with Magento's search criteria DSL. Filter by SKUs, name, status and visibility; filters combine with AND.",
       "parameters": {
         "type": "object",
         "properties": {
           "sku_in": { "type": "string", "description": "Comma-separated SKUs (matches with condition_type=in)." },
-          "name_like": { "type": "string", "description": "Name LIKE substring (auto-wraps in %)." },
+          "name_like": { "type": "string", "description": "Name pattern for a LIKE match; wrap it in % for a substring, e.g. %shirt%." },
           "status": { "type": "integer", "description": "1=enabled, 2=disabled." },
           "visibility": { "type": "integer", "description": "1=not visible, 2=catalog only, 3=search only, 4=catalog+search." },
           "pageSize": { "type": "integer", "description": "Per page (default 20, max ~300 due to URL length)." },
@@ -114,12 +114,12 @@
     },
     {
       "name": "magento_update_product",
-      "description": "Update a product by SKU (PUT).",
+      "description": "Update a product by SKU: send only the fields to change (name, price, status, visibility, custom attributes...). Changes the live catalog: confirm with the user first.",
       "parameters": {
         "type": "object",
         "properties": {
           "sku": { "type": "string", "description": "Product SKU." },
-          "product": { "type": "object", "description": "Partial product object — only fields to change." }
+          "product": { "type": "object", "description": "Partial product object: only the fields to change." }
         },
         "required": ["sku", "product"]
       },
@@ -131,7 +131,7 @@
     },
     {
       "name": "magento_delete_product",
-      "description": "Permanently delete a product by SKU.",
+      "description": "Delete a product by SKU from the catalog. This cannot be undone; to take a product offline set its status to 2 (disabled) with magento_update_product instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -162,8 +162,48 @@
       }
     },
     {
+      "name": "magento_list_low_stock_items",
+      "description": "List stock items whose quantity is below a threshold: product id, SKU, qty, in-stock flag and low-stock date. Uses the legacy catalog inventory (single source); on shops that run Multi-Source Inventory the per-source quantities live elsewhere and this list can be empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "qty": {
+            "type": "number",
+            "description": "Threshold: items with a quantity below this value are returned, e.g. 5."
+          },
+          "scopeId": {
+            "type": "integer",
+            "default": 0,
+            "description": "Stock scope (website) id; 0 is the default stock used by single-source shops."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, e.g. 50."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "1-based page."
+          }
+        },
+        "required": [
+          "qty",
+          "scopeId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockItems/lowStock/",
+        "queryParams": {
+          "qty": "$qty",
+          "scopeId": "$scopeId",
+          "pageSize": "$pageSize",
+          "currentPage": "$currentPage"
+        }
+      }
+    },
+    {
       "name": "magento_list_categories",
-      "description": "List the category tree (or below a rootCategoryId).",
+      "description": "Return the category tree (id, name, active flag, product count and children) from a root category down to a depth.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -182,14 +222,14 @@
     },
     {
       "name": "magento_search_orders",
-      "description": "Search orders.",
+      "description": "Search orders by status, customer e-mail and creation date window: increment id, state, totals, items, addresses and payment. Pages with pageSize and currentPage.",
       "parameters": {
         "type": "object",
         "properties": {
           "status": { "type": "string", "description": "pending, processing, complete, closed, canceled, holded." },
           "customer_email": { "type": "string", "description": "Filter by customer email." },
-          "created_at_from": { "type": "string", "description": "ISO 8601 — orders created after." },
-          "created_at_to": { "type": "string", "description": "ISO 8601 — created before." },
+          "created_at_from": { "type": "string", "description": "ISO 8601; orders created after this time." },
+          "created_at_to": { "type": "string", "description": "ISO 8601; orders created before this time." },
           "pageSize": { "type": "integer", "description": "Per page." },
           "currentPage": { "type": "integer", "description": "1-based page." }
         }
@@ -240,8 +280,335 @@
       "endpointMapping": { "method": "POST", "path": "/orders/{orderId}/cancel" }
     },
     {
+      "name": "magento_create_guest_cart",
+      "description": "Start a new empty guest cart (a quote, not yet an order) in a store view and return its cart id for the other guest cart tools. Installed switched off together with the rest of the cart flow.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "default": "default",
+            "description": "Store view code the cart belongs to (prices, currency and language of that view), from magento_list_store_views, e.g. default. Use the same code for every call on one cart."
+          }
+        },
+        "required": [
+          "storeCode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{MAGENTO_BASE_URL}}/rest/{storeCode}/V1/guest-carts"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "magento_get_guest_cart",
+      "description": "Read a guest cart: items (SKU, name, qty, price, item id), customer e-mail, addresses, currency and whether it is still active (false once an order was placed from it).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "default": "default",
+            "description": "Store view code the cart belongs to (prices, currency and language of that view), from magento_list_store_views, e.g. default. Use the same code for every call on one cart."
+          },
+          "cartId": {
+            "type": "string",
+            "description": "The guest cart id (a 32-character masked id) returned by magento_create_guest_cart."
+          }
+        },
+        "required": [
+          "storeCode",
+          "cartId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/{storeCode}/V1/guest-carts/{cartId}"
+      }
+    },
+    {
+      "name": "magento_add_guest_cart_item",
+      "description": "Add a product to a guest cart by SKU and quantity. Simple products only need sku and qty; a configurable or bundle product also needs product_option with the chosen options. Returns the cart item with its price. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "default": "default",
+            "description": "Store view code the cart belongs to (prices, currency and language of that view), from magento_list_store_views, e.g. default. Use the same code for every call on one cart."
+          },
+          "cartId": {
+            "type": "string",
+            "description": "The guest cart id (a 32-character masked id) returned by magento_create_guest_cart."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Product SKU."
+          },
+          "qty": {
+            "type": "number",
+            "description": "Quantity to add."
+          },
+          "product_option": {
+            "type": "object",
+            "description": "Only for configurable or bundle products, e.g. {\"extension_attributes\": {\"configurable_item_options\": [{\"option_id\": \"93\", \"option_value\": 52}]}}."
+          }
+        },
+        "required": [
+          "storeCode",
+          "cartId",
+          "sku",
+          "qty"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{MAGENTO_BASE_URL}}/rest/{storeCode}/V1/guest-carts/{cartId}/items",
+        "bodyMapping": {
+          "cartItem": {
+            "sku": "$sku",
+            "qty": "$qty",
+            "quote_id": "$cartId",
+            "product_option": "$product_option"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "magento_apply_guest_cart_coupon",
+      "description": "Apply a coupon (discount) code to a guest cart; Magento answers 404 when the code does not exist or does not apply. Check the discount with magento_get_guest_cart_totals. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "default": "default",
+            "description": "Store view code the cart belongs to (prices, currency and language of that view), from magento_list_store_views, e.g. default. Use the same code for every call on one cart."
+          },
+          "cartId": {
+            "type": "string",
+            "description": "The guest cart id (a 32-character masked id) returned by magento_create_guest_cart."
+          },
+          "couponCode": {
+            "type": "string",
+            "description": "The coupon code."
+          }
+        },
+        "required": [
+          "storeCode",
+          "cartId",
+          "couponCode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "{{MAGENTO_BASE_URL}}/rest/{storeCode}/V1/guest-carts/{cartId}/coupons/{couponCode}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "magento_estimate_guest_cart_shipping",
+      "description": "List the shipping methods and prices available for a guest cart to an address: carrier_code, method_code, amount and availability. Pass the codes to magento_set_guest_cart_shipping. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "default": "default",
+            "description": "Store view code the cart belongs to (prices, currency and language of that view), from magento_list_store_views, e.g. default. Use the same code for every call on one cart."
+          },
+          "cartId": {
+            "type": "string",
+            "description": "The guest cart id (a 32-character masked id) returned by magento_create_guest_cart."
+          },
+          "address": {
+            "type": "object",
+            "description": "Destination; country_id is enough for a rough estimate, add postcode and region for an exact one. Address object: {\"firstname\": \"...\", \"lastname\": \"...\", \"street\": [\"...\"], \"city\": \"...\", \"postcode\": \"...\", \"country_id\": \"NL\", \"region\": \"...\", \"telephone\": \"...\", \"email\": \"...\"}."
+          }
+        },
+        "required": [
+          "storeCode",
+          "cartId",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{MAGENTO_BASE_URL}}/rest/{storeCode}/V1/guest-carts/{cartId}/estimate-shipping-methods",
+        "bodyMapping": {
+          "address": "$address"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "magento_set_guest_cart_shipping",
+      "description": "Set the shipping address, billing address and shipping method of a guest cart. Returns the payment methods available and the totals. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "default": "default",
+            "description": "Store view code the cart belongs to (prices, currency and language of that view), from magento_list_store_views, e.g. default. Use the same code for every call on one cart."
+          },
+          "cartId": {
+            "type": "string",
+            "description": "The guest cart id (a 32-character masked id) returned by magento_create_guest_cart."
+          },
+          "addressInformation": {
+            "type": "object",
+            "description": "{\"shipping_address\": {...}, \"billing_address\": {...}, \"shipping_carrier_code\": \"flatrate\", \"shipping_method_code\": \"flatrate\"}. The codes come from magento_estimate_guest_cart_shipping. Address object: {\"firstname\": \"...\", \"lastname\": \"...\", \"street\": [\"...\"], \"city\": \"...\", \"postcode\": \"...\", \"country_id\": \"NL\", \"region\": \"...\", \"telephone\": \"...\", \"email\": \"...\"}."
+          }
+        },
+        "required": [
+          "storeCode",
+          "cartId",
+          "addressInformation"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{MAGENTO_BASE_URL}}/rest/{storeCode}/V1/guest-carts/{cartId}/shipping-information",
+        "bodyMapping": {
+          "addressInformation": "$addressInformation"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "magento_list_guest_cart_payment_methods",
+      "description": "List the payment methods the guest cart can use (code and title, e.g. checkmo, banktransfer, cashondelivery, free). Available once the shipping information is set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "default": "default",
+            "description": "Store view code the cart belongs to (prices, currency and language of that view), from magento_list_store_views, e.g. default. Use the same code for every call on one cart."
+          },
+          "cartId": {
+            "type": "string",
+            "description": "The guest cart id (a 32-character masked id) returned by magento_create_guest_cart."
+          }
+        },
+        "required": [
+          "storeCode",
+          "cartId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/{storeCode}/V1/guest-carts/{cartId}/payment-methods"
+      }
+    },
+    {
+      "name": "magento_get_guest_cart_totals",
+      "description": "Read the totals of a guest cart: subtotal, discount (with the applied coupon), shipping, tax and grand total per item and overall, in the store view's currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "default": "default",
+            "description": "Store view code the cart belongs to (prices, currency and language of that view), from magento_list_store_views, e.g. default. Use the same code for every call on one cart."
+          },
+          "cartId": {
+            "type": "string",
+            "description": "The guest cart id (a 32-character masked id) returned by magento_create_guest_cart."
+          }
+        },
+        "required": [
+          "storeCode",
+          "cartId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/{storeCode}/V1/guest-carts/{cartId}/totals"
+      }
+    },
+    {
+      "name": "magento_place_guest_order",
+      "description": "Place the order from a guest cart: sets the customer e-mail, payment method and billing address and turns the cart into a real order, which Magento confirms to the customer by e-mail. Returns the order id (use magento_get_order). Creates a binding order: installed switched off. Show the items, totals, address and payment method to the user and wait for a yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "default": "default",
+            "description": "Store view code the cart belongs to (prices, currency and language of that view), from magento_list_store_views, e.g. default. Use the same code for every call on one cart."
+          },
+          "cartId": {
+            "type": "string",
+            "description": "The guest cart id (a 32-character masked id) returned by magento_create_guest_cart."
+          },
+          "email": {
+            "type": "string",
+            "description": "Customer e-mail for the order."
+          },
+          "paymentMethod": {
+            "type": "object",
+            "description": "{\"method\": \"checkmo\"}; the code comes from magento_list_guest_cart_payment_methods."
+          },
+          "billingAddress": {
+            "type": "object",
+            "description": "Billing address, if not set with the shipping information. Address object: {\"firstname\": \"...\", \"lastname\": \"...\", \"street\": [\"...\"], \"city\": \"...\", \"postcode\": \"...\", \"country_id\": \"NL\", \"region\": \"...\", \"telephone\": \"...\", \"email\": \"...\"}."
+          }
+        },
+        "required": [
+          "storeCode",
+          "cartId",
+          "email",
+          "paymentMethod"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{MAGENTO_BASE_URL}}/rest/{storeCode}/V1/guest-carts/{cartId}/payment-information",
+        "bodyMapping": {
+          "email": "$email",
+          "paymentMethod": "$paymentMethod",
+          "billingAddress": "$billingAddress"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
       "name": "magento_search_customers",
-      "description": "Search customers with the same DSL.",
+      "description": "Search customers by e-mail or a part of the first or last name: id, name, e-mail, group, addresses and creation date.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -272,7 +639,7 @@
     },
     {
       "name": "magento_get_customer",
-      "description": "Fetch one customer by ID.",
+      "description": "Return one customer by numeric id with name, e-mail, group, default billing and shipping addresses and custom attributes.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -281,6 +648,256 @@
         "required": ["customerId"]
       },
       "endpointMapping": { "method": "GET", "path": "/customers/{customerId}" }
+    },
+    {
+      "name": "magento_search_cms_pages",
+      "description": "Search CMS pages (content pages such as about-us, shipping, terms) with id, identifier (URL key), title, active flag, meta data and the HTML content. Without a filter it pages through all pages. Example filter: field identifier, value %shipping%, condition_type like.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Field to filter on, e.g. identifier, title, is_active, page_id."
+          },
+          "value": {
+            "type": "string",
+            "description": "Filter value; with condition_type like wrap it in %, e.g. %shipping%."
+          },
+          "condition_type": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq"
+            ],
+            "description": "Comparison. Default eq."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, e.g. 20."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "1-based page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsPage/search",
+        "queryParams": {
+          "searchCriteria[filterGroups][0][filters][0][field]": "$field",
+          "searchCriteria[filterGroups][0][filters][0][value]": "$value",
+          "searchCriteria[filterGroups][0][filters][0][conditionType]": "$condition_type",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_get_cms_page",
+      "description": "Read one CMS page by its numeric id, including the full HTML content, layout and meta data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageId": {
+            "type": "integer",
+            "description": "Numeric page id from magento_search_cms_pages."
+          }
+        },
+        "required": [
+          "pageId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsPage/{pageId}"
+      }
+    },
+    {
+      "name": "magento_search_cms_blocks",
+      "description": "Search CMS blocks (reusable content such as header, footer and homepage banners) with id, identifier, title, active flag and the HTML content. Example filter: field identifier, value %footer%, condition_type like.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Field to filter on, e.g. identifier, title, is_active, block_id."
+          },
+          "value": {
+            "type": "string",
+            "description": "Filter value; with condition_type like wrap it in %."
+          },
+          "condition_type": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq"
+            ],
+            "description": "Comparison. Default eq."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, e.g. 20."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "1-based page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsBlock/search",
+        "queryParams": {
+          "searchCriteria[filterGroups][0][filters][0][field]": "$field",
+          "searchCriteria[filterGroups][0][filters][0][value]": "$value",
+          "searchCriteria[filterGroups][0][filters][0][conditionType]": "$condition_type",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_get_cms_block",
+      "description": "Read one CMS block by its numeric id, including the full HTML content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blockId": {
+            "type": "integer",
+            "description": "Numeric block id from magento_search_cms_blocks."
+          }
+        },
+        "required": [
+          "blockId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsBlock/{blockId}"
+      }
+    },
+    {
+      "name": "magento_create_cms_page",
+      "description": "Create a CMS page. page is {\"identifier\": \"url-key\", \"title\": \"...\", \"content\": \"<p>HTML</p>\", \"active\": true, \"page_layout\": \"1column\", \"meta_title\": \"...\", \"meta_description\": \"...\"}. The page goes live on the storefront when active is true. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "description": "The page fields, as described above. identifier and title are required."
+          }
+        },
+        "required": [
+          "page"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsPage",
+        "bodyMapping": {
+          "page": "$page"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "magento_update_cms_page",
+      "description": "Change a CMS page. Read it first with magento_get_cms_page and send page with its id, identifier and title plus the fields to change, e.g. {\"id\": 5, \"identifier\": \"shipping\", \"title\": \"Shipping\", \"content\": \"<p>...</p>\"}. Changes are live on the storefront at once (after the page cache refreshes). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageId": {
+            "type": "integer",
+            "description": "Numeric page id."
+          },
+          "page": {
+            "type": "object",
+            "description": "The page fields: id, identifier and title always, then what changes."
+          }
+        },
+        "required": [
+          "pageId",
+          "page"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsPage/{pageId}",
+        "bodyMapping": {
+          "page": "$page"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "magento_create_cms_block",
+      "description": "Create a CMS block. block is {\"identifier\": \"...\", \"title\": \"...\", \"content\": \"<div>HTML</div>\", \"active\": true}. A block only shows where a layout or widget references its identifier. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "block": {
+            "type": "object",
+            "description": "The block fields. identifier and title are required."
+          }
+        },
+        "required": [
+          "block"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsBlock",
+        "bodyMapping": {
+          "block": "$block"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "magento_update_cms_block",
+      "description": "Change a CMS block. Read it first with magento_get_cms_block and send block with its id, identifier and title plus the fields to change. Header, footer and homepage blocks change on every page that uses them. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blockId": {
+            "type": "integer",
+            "description": "Numeric block id."
+          },
+          "block": {
+            "type": "object",
+            "description": "The block fields: id, identifier and title always, then what changes."
+          }
+        },
+        "required": [
+          "blockId",
+          "block"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "{{MAGENTO_BASE_URL}}/rest/all/V1/cmsBlock/{blockId}",
+        "bodyMapping": {
+          "block": "$block"
+        }
+      },
+      "enabled": false
     }
   ]
 }

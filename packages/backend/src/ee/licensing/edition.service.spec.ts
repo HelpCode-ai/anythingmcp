@@ -208,6 +208,41 @@ describe('EditionService', () => {
     });
   });
 
+  describe('memory', () => {
+    const now = new Date('2026-10-19T12:00:00Z');
+
+    it('is available with an active Enterprise licence, on Cloud and self-hosted', async () => {
+      for (const cloud of [true, false]) {
+        const { service } = make({ cloud, license: { plan: 'enterprise', status: 'active', expiresAt: null } });
+        expect(await service.hasMemory('org-A', now)).toBe(true);
+      }
+    });
+
+    it('is not available with Business, Team, a trial, the transition or an expired key', async () => {
+      const cases = [
+        { license: { plan: 'business', status: 'active', expiresAt: null } },
+        { license: { plan: 'team', status: 'active', expiresAt: null } },
+        { license: { plan: 'enterprise', status: 'inactive', expiresAt: null } },
+        { license: { plan: 'enterprise', status: 'active', expiresAt: '2026-10-01T00:00:00Z' } },
+        { license: null, settings: { business_trial_ends_at: '2026-11-01T00:00:00Z' } },
+        { license: null, settings: { business_transition_until: '2026-12-01T00:00:00Z' } },
+      ];
+      for (const c of cases) {
+        const { service } = make(c as any);
+        expect(await service.hasMemory('org-A', now)).toBe(false);
+      }
+    });
+
+    it('reads the workspace licence and refuses with edition_required', async () => {
+      const { service } = make({ cloud: true, license: null });
+      await expect(service.assertMemory('org-A')).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'edition_required' }),
+      });
+      expect((service as any).licenses.getCurrentLicense).toHaveBeenCalledWith('org-A');
+      expect(await service.hasMemory('')).toBe(false);
+    });
+  });
+
   describe('startTrial', () => {
     it('starts once, for BUSINESS_TRIAL_DAYS', async () => {
       const now = new Date('2026-10-01T00:00:00Z');

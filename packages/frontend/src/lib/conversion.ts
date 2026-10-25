@@ -18,7 +18,7 @@ export const SIGN_UP_VERIFIED_EVENT = 'sign_up_verified';
  * this browser; the event itself carries only how the address was verified,
  * never who.
  */
-export function pushSignUpVerified(once: string, method: 'code' | 'link'): void {
+export function pushSignUpVerified(once: string, method: 'code' | 'link' | 'social'): void {
   if (typeof window === 'undefined') return;
   const dataLayer = window.dataLayer;
   if (!Array.isArray(dataLayer)) return;

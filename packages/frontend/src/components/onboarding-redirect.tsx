@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors, license, users } from '@/lib/api';
 import { cardTrialEligible, readCardTrialPrompt, writeCardTrialPrompt } from '@/lib/card-trial';
+import { startTrialPath } from '@/lib/checkout-source';
 
 // Routes where we MUST NOT redirect, even if the wizard hasn't been
 // completed yet. Login + token-bound flows handle their own redirects,
@@ -116,7 +117,7 @@ export function OnboardingRedirect() {
           // Coming back to the dashboard must be evaluated afresh (for the
           // wizard), not skipped as already seen.
           lastRun.current = null;
-          router.replace('/start-trial');
+          router.replace(startTrialPath('signup_prompt'));
           return;
         }
 

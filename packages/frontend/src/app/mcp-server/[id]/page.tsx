@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { mcpServers, connectors as connectorsApi, mcpKeys, productEvents } from '@/lib/api';
+import { mcpServers, connectors as connectorsApi, mcpKeys, productEvents, server as serverApi } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,14 +14,17 @@ import { ConnectionCheck } from '@/components/connection-check';
 import { FirstSuccessOffer } from '@/components/first-success-offer';
 import { copyText } from '@/lib/clipboard';
 import { getApiOrigin } from '@/lib/origin';
-import { CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
+import { CLAUDE_ADD_CONNECTOR_URL, CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
 import { INSPECTOR_URL, inspectorCommand } from '@/lib/inspector-url';
-
-// Opens claude.ai straight on its "Add custom connector" dialog. Connectors
-// moved from Settings to Customize → Connectors; the old settings URL now only
-// says so. Connectors added on claude.ai also appear in Claude Desktop.
-const CLAUDE_ADD_CONNECTOR_URL =
-  'https://claude.ai/new?modal=add-custom-connector#customize/connectors';
+import {
+  cursorDeepLink as buildCursorDeepLink,
+  vscodeDeepLink as buildVscodeDeepLink,
+  cursorInstallUrl,
+  vscodeInstallUrl,
+  installBadgesHtml,
+  installBadgesMarkdown,
+  isLocalOnlyUrl,
+} from '@/lib/mcp-install-links';
 
 export default function McpServerDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,11 +38,14 @@ export default function McpServerDetailPage() {
   const [offerKey, setOfferKey] = useState(0);
   const [allConnectors, setAllConnectors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // MCP auth mode of this instance; install badges only work with OAuth.
+  const [mcpAuthMode, setMcpAuthMode] = useState('');
 
   // Edit state
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
+  const [editSkillsDelivery, setEditSkillsDelivery] = useState<'auto' | 'inline' | 'index'>('auto');
   const [saveMsg, setSaveMsg] = useState('');
 
   // API key state
@@ -96,6 +103,7 @@ export default function McpServerDetailPage() {
       setEditName(srv.name);
       setEditDescription(srv.description || '');
       setEditInstructions(srv.instructions || '');
+      setEditSkillsDelivery(srv.skillsDelivery || 'auto');
       setAllConnectors(conns);
       const ids = new Set<string>(srv.connectors?.map((c: any) => c.connector.id) || []);
       currentIds.current = ids;
@@ -103,6 +111,10 @@ export default function McpServerDetailPage() {
       setAssignedIds(ids);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [token, id]);
+
+  useEffect(() => {
+    serverApi.info().then((info) => setMcpAuthMode(info?.mcpAuthMode || '')).catch(() => {});
+  }, []);
 
   const apiUrl = getApiOrigin();
 
@@ -113,6 +125,7 @@ export default function McpServerDetailPage() {
         name: editName.trim(),
         description: editDescription.trim() || undefined,
         instructions: editInstructions.trim() || undefined,
+        skillsDelivery: editSkillsDelivery,
       }, token);
       setServer((prev: any) => ({ ...prev, ...updated }));
       setSaveMsg('Saved');
@@ -336,15 +349,12 @@ export default function McpServerDetailPage() {
   }
 }`;
 
-  const cursorDeepLink = () => {
-    const config = btoa(JSON.stringify({ url: endpointUrl }));
-    return `cursor://anysphere.cursor-deeplink/mcp/install?name=${encodeURIComponent(slug)}&config=${config}`;
-  };
-
-  const vscodeDeepLink = () => {
-    const config = { name: slug, type: 'http', url: endpointUrl };
-    return `vscode:mcp/install?${encodeURIComponent(JSON.stringify(config))}`;
-  };
+  const installTarget = { name: slug, url: endpointUrl };
+  const cursorDeepLink = () => buildCursorDeepLink(installTarget);
+  const vscodeDeepLink = () => buildVscodeDeepLink(installTarget);
+  const badgesMarkdown = installBadgesMarkdown(installTarget);
+  const badgesHtml = installBadgesHtml(installTarget);
+  const badgesSupported = mcpAuthMode === 'oauth2' || mcpAuthMode === 'both';
 
   const aiClients: { id: string; name: string; init: string; tone: Tone }[] = [
     { id: 'cursor', name: 'Cursor', init: 'Cu', tone: 'info' },
@@ -557,12 +567,18 @@ export default function McpServerDetailPage() {
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. Click the button below to open ChatGPT&apos;s connector settings.<br />
-              2. Click <strong>Add connector</strong> or <strong>Create</strong>.<br />
-              3. Paste the MCP endpoint URL below.
+              1. Click the button below to open <strong>Plugins</strong> in ChatGPT, then click <strong>+</strong> and <strong>Add custom MCP server</strong>.<br />
+              2. Enter a name (e.g. AnythingMCP), paste the MCP endpoint URL below as the <strong>Server URL</strong> and keep <strong>Authentication</strong> on <strong>OAuth</strong>.<br />
+              3. Select <strong>I understand and want to continue</strong>, then <strong>Create as a plugin</strong>, and sign in to AnythingMCP when asked.<br />
+              4. Install the plugin from your personal plugins, then type <strong>@</strong> in a chat to use it.
             </p>
-            {linkAction('https://chatgpt.com/admin/mcp', 'Open ChatGPT Settings', true)}
+            {linkAction('https://chatgpt.com/plugins', 'Open ChatGPT Plugins', true)}
             {endpointRow('modal-chatgpt-url')}
+            <p className="text-xs leading-[1.55] text-[var(--text-3)]">
+              No developer mode needed. On a Business workspace only admins and owners can add
+              custom MCP servers; on Enterprise and Edu an admin can grant the <strong>Create plugins with MCPs</strong> permission
+              under <strong>Workspace settings → Permissions &amp; roles</strong>.
+            </p>
           </div>
         );
       case 'muse': {
@@ -796,6 +812,64 @@ Auth: OAuth`;
             </div>
           </details>
         </Card>
+        {mcpAuthMode && (
+        <Card className="p-[22px]" data-testid="share-server">
+          <div className="mb-[6px] text-sm font-semibold">Share this server</div>
+          <p className="mb-[14px] text-[12px] text-[var(--text-3)]">
+            Put one-click install badges in your team README, wiki or onboarding page.
+            They contain only the MCP URL; whoever clicks still signs in.
+          </p>
+          {!badgesSupported ? (
+            <p className="text-[12px] text-[var(--text-2)]" data-testid="share-oauth-required">
+              One-click installs need OAuth: set <code className="rounded bg-[var(--surface-2)] px-1 font-mono">MCP_AUTH_MODE=oauth2</code> or <code className="rounded bg-[var(--surface-2)] px-1 font-mono">both</code>.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {isLocalOnlyUrl(endpointUrl) && (
+                <p
+                  className="rounded-[9px] px-3 py-2 text-[12px]"
+                  style={{ background: 'var(--t-warn-bg)', color: 'var(--t-warn-fg)' }}
+                  data-testid="share-localhost-warning"
+                >
+                  This MCP URL points to localhost, so the badges only work on this machine.
+                </p>
+              )}
+              {/* Local preview: styled links only, no remote images (offline installs). */}
+              <div className="flex flex-wrap gap-2" data-testid="share-preview">
+                <a
+                  href={cursorInstallUrl(installTarget)}
+                  className="inline-flex items-center overflow-hidden rounded-[6px] bg-[#0b1220] text-[12px] font-semibold text-white"
+                >
+                  <span className="px-2 py-1">Cursor</span>
+                  <span className="bg-[#1f2937] px-2 py-1">Add to Cursor</span>
+                </a>
+                <a
+                  href={vscodeInstallUrl(installTarget)}
+                  className="inline-flex items-center overflow-hidden rounded-[6px] bg-[#0b1220] text-[12px] font-semibold text-white"
+                >
+                  <span className="px-2 py-1">VS Code</span>
+                  <span className="bg-[#0066CC] px-2 py-1">Add to VS Code</span>
+                </a>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleCopy(badgesMarkdown, 'badge-markdown')}
+                  className={buttonVariants({ variant: 'secondary', size: 'md' })}
+                >
+                  {copied === 'badge-markdown' ? 'Copied!' : 'Copy Markdown'}
+                </button>
+                <button
+                  onClick={() => handleCopy(badgesHtml, 'badge-html')}
+                  className={buttonVariants({ variant: 'secondary', size: 'md' })}
+                >
+                  {copied === 'badge-html' ? 'Copied!' : 'Copy HTML'}
+                </button>
+              </div>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-[10px] bg-[#0c0f16] p-[13px] font-mono text-[12px] leading-[1.6] text-[#cdd6e8]">{badgesMarkdown}</pre>
+            </div>
+          )}
+        </Card>
+        )}
         </aside>
 
         {/* Connect Modal */}
@@ -1083,6 +1157,29 @@ Auth: OAuth`;
               />
               <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
                 Sent to AI clients on connect, combined with connector-level instructions.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="skills-delivery" className="mb-1.5 block text-[12.5px] font-medium">
+                Workspace skills on connect
+              </label>
+              <select
+                id="skills-delivery"
+                value={editSkillsDelivery}
+                onChange={(e) => setEditSkillsDelivery(e.target.value as 'auto' | 'inline' | 'index')}
+                className="h-[38px] w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13.5px] outline-none focus:border-[var(--brand)]"
+              >
+                <option value="auto">Automatic: full text while short, otherwise a list to open on demand</option>
+                <option value="inline">Always the full text</option>
+                <option value="index">Always a list (the AI opens a skill with skill_get)</option>
+              </select>
+              <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
+                How this server&apos;s{' '}
+                <Link href="/knowledge-graph/skills" className="text-[var(--brand)] hover:underline">
+                  AI Skills
+                </Link>{' '}
+                reach the AI client. A list keeps the instructions short; long procedures are always
+                opened on demand.
               </p>
             </div>
             {saveMsg && (

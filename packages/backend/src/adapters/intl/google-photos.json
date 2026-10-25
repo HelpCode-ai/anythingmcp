@@ -1,0 +1,190 @@
+{
+  "slug": "google-photos",
+  "name": "Google Photos",
+  "description": "Let your AI see which photos and videos you choose to share from Google Photos: you pick them in a Google Photos window, the AI reads their names, dates, sizes and camera details. Google no longer lets apps browse a whole library, so only the items you pick are shared.",
+  "instructions": "## Google Photos\nThis connector lets the user share chosen photos and videos from their **Google Photos** library with the AI through the **Google Photos Picker API** (`https://photospicker.googleapis.com/v1`). The user picks the items themselves in a Google Photos page; the AI then reads what was picked: file name, type, MIME type, size in pixels, capture time and camera details. Personal Google accounts, and Google Workspace accounts where the admin has Google Photos turned on.\n\n**What it can and cannot do**\n- Since 31 March 2025 Google no longer lets apps read or search a user's whole Photos library. The only way in is the Picker: the user opens a link, selects items and taps **Done**. The AI never browses the library, searches it by content, or sees albums.\n- The AI receives the **metadata** of the picked items. It cannot look at the pictures: each item's `baseUrl` only answers requests that carry the user's authorization and expires after 60 minutes, so it does not open in a browser and cannot be passed to another tool or shown as a link.\n- It cannot upload, edit, delete, share or organise photos and albums.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Photos Picker API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. An External app that Google has not verified shows an \"unverified app\" warning; for your own use it can be clicked through (Advanced → Go to ...).\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Google account whose photos the user will pick from. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Docs, Google Meet, Google Photos and the others). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Scope**: `https://www.googleapis.com/auth/photospicker.mediaitems.readonly`, which allows creating, reading and deleting picking sessions and reading the items the user picked in them, nothing else.\n\n**Workflow**\n1. `google_photos_create_session` when the user wants to share photos. It returns `id` and `pickerUri`.\n2. Give the user the `pickerUri` and ask them to open it in a browser (or on a phone with the Google Photos app) **signed in to the same Google account**, select the photos and tap **Done**, then come back and say so. The link stops working after Done and the session expires at `expireTime`.\n3. `google_photos_get_session` with the `id`: when `mediaItemsSet` is `true` the user has finished. While it is `false`, ask the user whether they are done rather than calling it in a loop; `pollingConfig` gives Google's suggested wait between checks.\n4. `google_photos_list_picked_media` with the session `id` lists the picked items, up to 100 per call; continue with `page_token` = `nextPageToken` until it is missing.\n5. `google_photos_delete_session` when finished. It removes only the session, never photos, and Google limits how many open sessions a user may have.\n\n**Picked items**: `id`, `type` (`PHOTO` or `VIDEO`), `createTime` (when it was taken, not uploaded), `mimeType`, `filename`, `width` and `height`, `cameraMake` and `cameraModel`, and `photo` (focal length, aperture, ISO, exposure) or `video` (fps, processing status). Location is not provided.\n\n**Common errors**\n- 401, or 400 `invalid_token` from `google_photos_check_access`: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `PERMISSION_DENIED` on a session: access to it has expired; create a new one. 403 \"has not been used in project\": enable the Google Photos Picker API in the Cloud project.\n- 400 `FAILED_PRECONDITION` on `google_photos_list_picked_media`: the user has not finished picking yet. On `google_photos_create_session`: the account has no active Google Photos (on Workspace, ask the admin to turn on Google Photos).\n- 404 `NOT_FOUND`: wrong session id, or the session was deleted or belongs to another account.\n- 429 `RESOURCE_EXHAUSTED`: too many open sessions; delete finished ones.\n\n**Out of scope here**: uploading, albums, sharing, editing, and the Google Photos Library API, which since 2025 only reaches content an app uploaded itself.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "google-photos",
+  "docsUrl": "https://developers.google.com/photos/picker/reference/rest",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "400": "Google did not accept the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Google Photos Picker API is not enabled in the Google Cloud project, or the authorization lacks the photospicker scope. Enable it under APIs & Services → Library and authorize again.",
+    "rate_limited": "Google Photos is throttling this account or project, or too many picking sessions are open. Wait a minute and try again."
+  },
+  "unlisted": true,
+  "probe": {
+    "tool": "google_photos_check_access"
+  },
+  "prerequisites": "A Google Cloud project with the **Google Photos Picker API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. The same client can serve all Google connectors. About 10 minutes.",
+  "connector": {
+    "name": "Google Photos",
+    "type": "REST",
+    "baseUrl": "https://photospicker.googleapis.com/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "https://oauth2.googleapis.com/tokeninfo"
+  },
+  "tools": [
+    {
+      "name": "google_photos_check_access",
+      "description": "Check that the Google authorization works and which scopes it grants: returns scope and expires_in (seconds left on the current access token). Use it when picking fails with an authorization error.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://oauth2.googleapis.com/tokeninfo"
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "{scope: scope, expires_in: expires_in, access_type: access_type}"
+        }
+      }
+    },
+    {
+      "name": "google_photos_create_session",
+      "description": "Start a picking session when the user wants to share photos or videos from Google Photos. Returns id, pickerUri, expireTime and pollingConfig. Give the user the pickerUri to open in a browser signed in to the same Google account, select items and tap Done. Changes nothing in their library.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_items": {
+            "type": "integer",
+            "description": "Most items the user may pick, 1 to 2000 (default 2000).",
+            "minimum": 1,
+            "maximum": 2000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sessions",
+        "bodyMapping": {
+          "pickingConfig": {
+            "maxItemCount": "$max_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "google_photos_get_session",
+      "description": "Check a picking session: mediaItemsSet is true once the user tapped Done, then list the items with google_photos_list_picked_media. Also returns pickerUri, expireTime and pollingConfig (suggested pollInterval and timeoutIn while the user is still picking).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Session id: the `id` returned by google_photos_create_session."
+          }
+        },
+        "required": [
+          "session_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sessions/{session_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_photos_list_picked_media",
+      "description": "List the photos and videos the user picked in a session: id, type, createTime (when taken), mimeType, filename, width, height, camera and photo or video details. Only after mediaItemsSet is true. Up to 100 per call; continue with page_token = nextPageToken. baseUrl needs the authorization and expires in 60 minutes: never show it as a link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Session id: the `id` returned by google_photos_create_session."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to get the next page."
+          }
+        },
+        "required": [
+          "session_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mediaItems",
+        "queryParams": {
+          "sessionId": "$session_id",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "{mediaItems: mediaItems[].{id: id, type: type, createTime: createTime, mimeType: mediaFile.mimeType, filename: mediaFile.filename, width: mediaFile.mediaFileMetadata.width, height: mediaFile.mediaFileMetadata.height, cameraMake: mediaFile.mediaFileMetadata.cameraMake, cameraModel: mediaFile.mediaFileMetadata.cameraModel, photo: mediaFile.mediaFileMetadata.photoMetadata, video: mediaFile.mediaFileMetadata.videoMetadata, baseUrl: mediaFile.baseUrl}, nextPageToken: nextPageToken}",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_photos_delete_session",
+      "description": "Delete a picking session once its items have been read, or when the user gave up. Removes only the session and access to its picked items, never photos from the library. Afterwards the items can no longer be listed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Session id: the `id` returned by google_photos_create_session."
+          }
+        },
+        "required": [
+          "session_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/sessions/{session_id}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    }
+  ]
+}

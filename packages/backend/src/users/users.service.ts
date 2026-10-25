@@ -5,6 +5,7 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import { UserLifecycleService, LifecycleContext } from './user-lifecycle.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import { LicenseReleaseService } from '../license/license-release.service';
+import { findUserByEmail, findUsersByEmail, normalizeEmail } from '../common/email.util';
 
 @Injectable()
 export class UsersService {
@@ -18,8 +19,14 @@ export class UsersService {
     private readonly licenseRelease: LicenseReleaseService,
   ) {}
 
+  /** Case-insensitive: rows written before addresses were normalised are still found. */
   async findByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { email } });
+    return findUserByEmail<User>(this.prisma, email);
+  }
+
+  /** Every account with this address in any case (more than one only for legacy duplicates). */
+  async findAllByEmail(email: string): Promise<User[]> {
+    return findUsersByEmail<User>(this.prisma, email);
   }
 
   async findById(id: string): Promise<User | null> {
@@ -33,7 +40,12 @@ export class UsersService {
     role?: UserRole;
     organizationId: string;
   }): Promise<User> {
-    return this.prisma.user.create({ data });
+    return this.prisma.user.create({ data: { ...data, email: normalizeEmail(data.email) } });
+  }
+
+  /** Whether the user can sign in with Google, Microsoft or GitHub (Cloud). */
+  async hasSocialIdentity(userId: string): Promise<boolean> {
+    return (await this.prisma.socialIdentity.count({ where: { userId } })) > 0;
   }
 
   async count(): Promise<number> {
@@ -79,6 +91,9 @@ export class UsersService {
       joinedAt: m.joinedAt,
       deactivatedAt: m.deactivatedAt,
       active: m.deactivatedAt === null,
+      learningMode: m.learningMode,
+      learningOptOut: m.learningOptOut,
+      memoryAccess: m.memoryAccess,
     }));
   }
 
@@ -203,6 +218,10 @@ export class UsersService {
     await this.prisma.$transaction([
       this.prisma.userRoleAssignment.deleteMany({ where: { userId, organizationId } }),
       this.prisma.mcpApiKey.deleteMany({ where: { userId, organizationId } }),
+      // Personal memory belongs to the membership: it leaves with it.
+      this.prisma.memoryItem.deleteMany({
+        where: { organizationId, scope: 'personal', ownerUserId: userId },
+      }),
       this.prisma.organizationMember.delete({
         where: { userId_organizationId: { userId, organizationId } },
       }),

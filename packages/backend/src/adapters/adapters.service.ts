@@ -10,13 +10,15 @@ import { encrypt } from '../common/crypto/encryption.util';
 import { ConfigService } from '@nestjs/config';
 import { listAdapters, getAdapter, AdapterMeta, AdapterDefinition } from './catalog';
 import { hashInstructions } from './catalog-fingerprint';
+import { SerializedBody, serializeWithEtag, toAdapterSummary } from './catalog-summary';
 import { getRequiredSecret } from '../common/secrets.util';
 import {
   withOperatorProvided,
   withoutOperatorProvided,
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
-import { odooDatabaseHint } from './odoo-database-hint';
+import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
+import { odooCheckAdvice } from './odoo-database-hint';
 import { outboundRequest } from '../common/outbound-http';
 import { interpolateString } from '../common/env-interpolation.util';
 import { normalizeAddressVariables } from '../common/base-url-variable.util';
@@ -28,6 +30,7 @@ import {
   POPULAR_MIN_WORKSPACES,
   POPULAR_WINDOW_DAYS,
 } from './popular-connectors';
+import { INSTALL_RANKING_CACHE_MS, INSTALL_RANKING_MIN_WORKSPACES } from './install-ranking';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
@@ -40,14 +43,18 @@ import {
 } from './env-var-meta';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { storableBaseUrl } from '../connectors/catalog-env-rebuild.util';
+import { setupEffort } from './setup-guide';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
+import { matchCatalogUrl, UrlMatch, UrlMatchCandidate } from './catalog-url-match';
 
 @Injectable()
 export class AdaptersService {
   private readonly logger = new Logger(AdaptersService.name);
   private readonly encryptionKey: string;
+  private readonly publicCatalogCache = new Map<string, SerializedBody>();
+  private urlMatchCandidates: UrlMatchCandidate[] | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -71,8 +78,48 @@ export class AdaptersService {
           ...a,
           requiredEnvVars,
           setupKind: full ? setupKind({ ...full, requiredEnvVars }) : undefined,
+          setupEffort: full ? setupEffort({ ...full, requiredEnvVars }) : undefined,
         };
       });
+  }
+
+  /**
+   * The public catalog as a ready-to-send body: the full list (`full`, what
+   * the connector store loads) or the website's slim one (`slim`, see
+   * AdapterSummary). The catalog only changes with a release, so each view is
+   * built and serialised once per process (per deployment mode) instead of
+   * per request.
+   */
+  publicCatalog(view: 'full' | 'slim'): SerializedBody {
+    const key = `${view}|${this.configService.get<string>('DEPLOYMENT_MODE') ?? ''}`;
+    let entry = this.publicCatalogCache.get(key);
+    if (!entry) {
+      const all = this.listAll();
+      entry = serializeWithEtag(view === 'slim' ? all.map(toAdapterSummary) : all);
+      this.publicCatalogCache.set(key, entry);
+    }
+    return entry;
+  }
+
+  /**
+   * The listed adapters that serve the API at `url`, for the custom connector
+   * form: someone typing a base URL the catalog knows is offered the
+   * ready-made connector (see catalog-url-match.ts).
+   */
+  matchByUrl(url: string): UrlMatch[] {
+    this.urlMatchCandidates ??= this.listAll().flatMap((a) => {
+      const baseUrl = getAdapter(a.slug)?.connector?.baseUrl;
+      return typeof baseUrl === 'string'
+        ? [{ slug: a.slug, name: a.name, icon: a.icon, description: a.description, toolCount: a.toolCount, baseUrl }]
+        : [];
+    });
+    return matchCatalogUrl(url, this.urlMatchCandidates);
+  }
+
+  /** Setup instructions of one listed adapter, for its marketplace page. */
+  publicInstructions(slug: string): { slug: string; instructions: string | null } {
+    const adapter = this.getBySlug(slug);
+    return { slug: adapter.slug, instructions: adapter.instructions ?? null };
   }
 
   /**
@@ -202,6 +249,45 @@ export class AdaptersService {
     return slugs;
   }
 
+  private installRankingCache: { at: number; ranking: SerializedBody } | null = null;
+
+  /**
+   * `{ slugs }`: the listed adapters, most-installed first, as a ready-to-send
+   * body (see ./install-ranking.ts). Cached for six hours; when the query
+   * fails, the last good ranking (or an empty one) is served and the next
+   * request tries again.
+   */
+  async installRanking(): Promise<SerializedBody> {
+    const now = Date.now();
+    const cached = this.installRankingCache;
+    if (cached && now - cached.at < INSTALL_RANKING_CACHE_MS) return cached.ranking;
+    try {
+      // The EXISTS goes through tool_invocations' (connector_id, created_at)
+      // index and stops at the first successful call of each connector.
+      const rows = await this.prisma.$queryRaw<Array<{ slug: string | null }>>`
+        SELECT c.config->>'adapterSlug' AS slug
+        FROM connectors c
+        WHERE c.config ? 'adapterSlug'
+          AND EXISTS (
+            SELECT 1 FROM tool_invocations ti
+            WHERE ti.connector_id = c.id AND ti.status = 'SUCCESS'
+          )
+        GROUP BY 1
+        HAVING COUNT(DISTINCT c.organization_id) >= ${INSTALL_RANKING_MIN_WORKSPACES}
+        ORDER BY COUNT(DISTINCT c.organization_id) DESC, 1`;
+      const listed = new Set(this.listAll().map((a) => a.slug));
+      const slugs = rows
+        .map((r) => r.slug)
+        .filter((s): s is string => typeof s === 'string' && listed.has(s));
+      const ranking = serializeWithEtag({ slugs });
+      this.installRankingCache = { at: now, ranking };
+      return ranking;
+    } catch (err: any) {
+      this.logger.warn(`Could not rank adapters by installs: ${err?.message ?? err}`);
+      return cached?.ranking ?? serializeWithEtag({ slugs: [] });
+    }
+  }
+
   /** Catalog slugs this workspace already has a connector for. */
   async installedAdapterSlugs(organizationId: string): Promise<Set<string>> {
     const rows = await this.prisma.connector.findMany({
@@ -243,10 +329,17 @@ export class AdaptersService {
     let credentials = input;
     // Values the operator provides for everyone (e.g. the cloud's own MOTIS
     // URL) go in here, and override anything the request carried. Only the
-    // adapters that declare the variable get it.
+    // adapters that declare the variable get it. The declared list comes from
+    // the catalog entry as well: the copy getBySlug hands out has the
+    // operator-provided vars removed (they are hidden from the setup form),
+    // and without them the value was never applied, so every Deutsche Bahn
+    // install with MOTIS_INTERNAL_URL set failed with "MOTIS_URL is required".
+    const catalogEntry = getAdapter(adapter.slug);
     credentials = withOperatorProvided(credentials, [
       ...adapter.requiredEnvVars,
       ...(adapter.optionalEnvVars ?? []),
+      ...(catalogEntry?.requiredEnvVars ?? []),
+      ...(catalogEntry?.optionalEnvVars ?? []),
     ]);
 
     // Credentials arrive from the UI verbatim — a stray leading/trailing
@@ -356,10 +449,19 @@ export class AdaptersService {
       const env = (stored?.envVars ?? {}) as Record<string, unknown>;
       // Only names the adapter declares come from the request.
       const declared = new Set([...adapter.requiredEnvVars, ...(adapter.optionalEnvVars ?? [])]);
+      // An optional variable may be empty on purpose (MSSQL_DOMAIN: a SQL
+      // login). The form shows its stored value unless it is a secret, so an
+      // empty one means "cleared", except for a secret, where it means "keep".
+      const optional = new Set(adapter.optionalEnvVars ?? []);
+      const secret = new Set(describeAdapterEnvVars(adapter).filter((d) => d.secret).map((d) => d.name));
       const merged = new Map<string, string>();
-      for (const [k, v] of Object.entries(env)) if (typeof v === 'string' && v) merged.set(k, v);
+      for (const [k, v] of Object.entries(env)) {
+        if (typeof v === 'string' && (v || optional.has(k))) merged.set(k, v);
+      }
       for (const [k, v] of Object.entries(credentials ?? {})) {
-        if (declared.has(k) && typeof v === 'string' && v.trim()) merged.set(k, v);
+        if (!declared.has(k) || typeof v !== 'string') continue;
+        if (v.trim()) merged.set(k, v);
+        else if (optional.has(k) && !(secret.has(k) && merged.get(k))) merged.set(k, '');
       }
       credentials = Object.fromEntries(merged);
     }
@@ -451,24 +553,32 @@ export class AdaptersService {
       const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.[classified.kind];
       const hint = typeof own === 'string' ? own : own?.hint ?? classified.hint;
       const message = hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream;
-      // A wrong Odoo database name: look up the right one rather than send
-      // the user looking for a value Odoo shows nowhere.
-      const database = await odooDatabaseHint(
-        adapter.slug,
+      // Odoo: a JSON-2 404 is told apart by asking Odoo its version (older
+      // than 19, a wrong database name, no database at this address), and a
+      // wrong database name is looked up rather than left for the user to
+      // find. When that says what is wrong, the adapter's own suggestion (the
+      // JSON-RPC connector) stands only if the advice repeats it.
+      const odoo = await odooCheckAdvice({
+        adapterSlug: adapter.slug,
+        status,
+        kind: classified.kind,
         message,
-        prepared.resolvedBaseUrl,
-        credentials?.ODOO_DB,
-      );
-      // ...in which case the JSON-RPC adapter is not the better choice either.
-      const suggest =
-        !database && typeof own === 'object' && own?.suggest ? own.suggest : undefined;
+        upstream,
+        baseUrl: prepared.resolvedBaseUrl,
+        enteredDatabase: credentials?.ODOO_DB,
+      });
+      const suggest = odoo
+        ? odoo.suggest
+        : typeof own === 'object' && own?.suggest
+          ? own.suggest
+          : undefined;
       return {
         ok: false,
         kind: classified.kind,
         toolName: call.toolName,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
-        message: database ? `${database} ${message}` : message,
+        message: odoo ? odoo.message : message,
         ...(suggest ? { suggest, suggestName: getAdapter(suggest)?.name ?? suggest } : {}),
       };
     }
@@ -819,6 +929,8 @@ export class AdaptersService {
     ) {
       return null;
     }
+    // Same for a Shopee shop, authorized with "Authorize shop" after install.
+    if (shopeeNeedsAuthorization(adapter.connector.authType, auth)) return null;
     const call = pickProbe(adapter);
     if (!call) return null;
     const started = Date.now();
@@ -862,14 +974,21 @@ export class AdaptersService {
         message: upstream,
       });
       const message = hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream;
-      const database = await odooDatabaseHint(adapter.slug, message, baseUrl, envVars.ODOO_DB);
+      const odoo = await odooCheckAdvice({
+        adapterSlug: adapter.slug,
+        status,
+        message,
+        upstream,
+        baseUrl,
+        enteredDatabase: envVars.ODOO_DB,
+      });
       return {
         ok: false,
         toolName: call.toolName,
         durationMs: Date.now() - started,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
-        message: database ? `${database} ${message}` : message,
+        message: odoo ? odoo.message : message,
       };
     }
   }

@@ -1,0 +1,1040 @@
+{
+  "slug": "fireflies",
+  "name": "Fireflies.ai",
+  "aliases": [
+    "Fireflies AI"
+  ],
+  "description": "Let your AI work with your Fireflies.ai meeting notes: find recorded meetings, read AI summaries, action items and transcripts, search what was said, ask AskFred about one or many meetings, and with your confirmation send the notetaker bot into a live call or upload a recording.",
+  "instructions": "## Fireflies.ai\nThis connector works with **Fireflies.ai**, the AI notetaker, through its public GraphQL API (`https://api.fireflies.ai/graphql`) with the API key of a Fireflies user: recorded meetings with their AI notes and full text, soundbites, the team and channels, and AskFred, Fireflies' assistant that answers questions about meetings. It can also send the notetaker bot into a running meeting and upload a recording for transcription.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://app.fireflies.ai and open **Integrations, Fireflies API** (https://app.fireflies.ai/integrations/custom/fireflies), or **Settings, Developer settings**.\n2. Copy the API key and paste it into `FIREFLIES_API_KEY`. It is sent as `Authorization: Bearer <key>` and only to Fireflies.\n3. Check the setup with `fireflies_get_current_user`.\n\nThe key acts as its owner: the connector sees the meetings that user can see in Fireflies (an admin's key sees the whole team's). Share the MCP server only with people allowed to see those meetings.\n\n**Recordings and transcripts are personal data.** They hold what colleagues, customers and other participants said, with names and email addresses. Only fetch what the user's question needs, prefer the AI notes and short summaries over the full text, and do not copy transcripts to other systems unless the user asks for it.\n\n**How to work**\n1. Find meetings: `fireflies_list_transcripts` (date range, organizers, participants, a team member, a channel, or `mine`), or `fireflies_search_transcripts` for a word in titles or in what was said. Both page with `limit` (up to 50) and `skip`.\n2. Read one meeting: `fireflies_get_transcript` for the AI notes (overview, action items, keywords, outline, topics), speakers and attendees. `fireflies_get_transcript_text` for what was said, 700 lines at a time as [start second, speaker, text]; when `totalLines` is above 700, `fireflies_get_transcript_text_more` gives lines 701 to 1400. Fireflies has no further paging; for very long meetings search or ask AskFred.\n3. Ask questions: `fireflies_ask_about_meeting` (one meeting) or `fireflies_ask_across_meetings` (filters, default last 30 days), then `fireflies_ask_follow_up` with the returned `threadId`. **Each AskFred answer uses AI credits of the Fireflies plan**: tell the user before the first question of a conversation. Earlier conversations: `fireflies_list_askfred_threads`, `fireflies_get_askfred_thread`.\n4. Soundbites: `fireflies_list_bites` (pass `mine`, `my_team` or `transcript_id`), `fireflies_get_bite`, and `fireflies_create_bite` to cut a new clip.\n5. Team: `fireflies_get_current_user`, `fireflies_list_users`, `fireflies_list_channels`. Live: `fireflies_list_active_meetings`.\n\n**Writes: confirm first.** `fireflies_create_bite` and `fireflies_upload_audio` create content in the account. `fireflies_add_bot_to_live_meeting` sends the Fireflies bot into a running call, where every participant sees it join and knows the call is recorded: tell the user that, confirm the meeting link and wait for their yes. In some places recording needs everyone's consent; that is the user's responsibility. `fireflies_delete_transcript` (deletes for good) and `fireflies_set_user_role` (admin rights) are installed switched off; an admin turns them on deliberately.\n\n**Limits**: Free plan 30 requests a minute and 500 a day, Pro 60 a minute and 5,000 a day, Business and Enterprise 60 a minute per paid seat for the team. Adding the bot is limited to 3 calls per 20 minutes per user. Audio and video URLs need a Pro plan or higher.\n\n**Errors**\n- `auth_failed` (Fireflies answers it with HTTP 500): the API key is wrong or was replaced. Copy it again from Integrations, Fireflies API.\n- `object_not_found`: wrong id, or the key's user cannot see that meeting.\n- `too_many_requests` or HTTP 429: the plan's limit is reached; wait for the time in the message.\n- `paid_required`: the feature (audio or video links, analytics) needs a higher Fireflies plan.\n- `forbidden` or `require_elevated_privilege`: the key's user may not do this, for example someone else's meeting without admin rights.\n- `require_ai_credits`: AskFred has no AI credits left on the plan.\n\n**Other operations**: `fireflies_graphql_query` runs any read of the API; Fireflies shows its schema to signed-in requests, so ask for a type with `query { __type(name: \\\"Transcript\\\") { fields { name } } }`. Fireflies publishes no SDL file, so `fireflies_graphql_schema` cannot load the schema; use that introspection instead. `fireflies_graphql_mutation` could change or delete anything the key can and is installed switched off, like `fireflies_graphql_subscription`.\n\n**Out of scope here**: sharing meetings and changing privacy, titles or channels, user groups, live action items, pausing a recording, analytics, AI app outputs, contacts, the audit log and webhooks.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "fireflies",
+  "docsUrl": "https://docs.fireflies.ai/",
+  "prerequisites": "A Fireflies.ai account and its API key from Integrations, Fireflies API (or Settings, Developer settings). About 2 minutes.",
+  "requiredEnvVars": [
+    "FIREFLIES_API_KEY"
+  ],
+  "envVarMeta": {
+    "FIREFLIES_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Fireflies, Integrations, Fireflies API (or Settings, Developer settings): copy the API key. It acts as your Fireflies user.",
+      "link": "https://app.fireflies.ai/integrations/custom/fireflies",
+      "example": "3f1c2b4a-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+      "pattern": "^(?!Bearer\\s)\\S{16,}$",
+      "patternMessage": "Paste only the API key Fireflies shows, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "auth_failed": "Fireflies refused the API key (auth_failed). Copy it again from Integrations, Fireflies API; a new key replaces the old one.",
+    "401": "Fireflies refused the API key. Copy it again from Integrations, Fireflies API.",
+    "500": "Fireflies answered with an error. If the message says auth_failed, the API key is wrong or was replaced: copy it again from Integrations, Fireflies API.",
+    "429": "The Fireflies plan's request limit is reached (500 a day on the Free plan). Wait and verify again."
+  },
+  "probe": {
+    "tool": "fireflies_get_current_user"
+  },
+  "connector": {
+    "name": "Fireflies.ai GraphQL API",
+    "type": "GRAPHQL",
+    "baseUrl": "https://api.fireflies.ai/graphql",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FIREFLIES_API_KEY}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "graphqlBuiltinsOff": [
+        "mutation",
+        "subscription"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "fireflies_get_current_user",
+      "description": "Read the Fireflies account that owns the API key: user id, name, email, whether it is a team admin, number of meetings, minutes used, the most recent meeting and the connected integrations. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query CurrentUser { user { user_id email name is_admin num_transcripts minutes_consumed recent_meeting integrations user_groups { id name handle } } }"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "user": "$.user"
+          }
+        }
+      }
+    },
+    {
+      "name": "fireflies_list_users",
+      "description": "List the members of the Fireflies team: user id, name, email, admin flag, number of meetings, minutes used and most recent meeting. The user ids filter fireflies_list_transcripts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Users { users { user_id email name is_admin num_transcripts minutes_consumed recent_meeting } }"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "users": "$.users"
+          }
+        }
+      }
+    },
+    {
+      "name": "fireflies_list_channels",
+      "description": "List the channels (folders) that organise meetings in Fireflies: id, title, whether it is private, and when it was created. A channel id filters fireflies_list_transcripts and AskFred questions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Channels { channels { id title is_private created_at } }"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "channels": "$.channels"
+          }
+        }
+      }
+    },
+    {
+      "name": "fireflies_list_transcripts",
+      "description": "List recorded meetings, newest first, with id, title, date, duration in minutes, organizer, participant emails, a short summary and the link in Fireflies. Filter by date range, organizers, participants, a team member, a channel, or only the key owner's meetings. Page with limit and skip. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "Only meetings on or after this moment, ISO 8601 date-time such as 2026-10-01T00:00:00.000Z."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Only meetings before this moment, ISO 8601 date-time such as 2026-10-31T23:59:59.000Z."
+          },
+          "organizers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only meetings organized by any of these email addresses."
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only meetings attended by any of these email addresses."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Only meetings where this team member (user_id from fireflies_list_users) is organizer or participant."
+          },
+          "mine": {
+            "type": "boolean",
+            "description": "true: only meetings organized by the owner of the API key."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Only meetings in this channel (id from fireflies_list_channels)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Meetings per page, 1 to 50 (default 20).",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "skip": {
+            "type": "integer",
+            "description": "How many meetings to skip, for the next page: add the limit to the previous skip.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Transcripts($fromDate: DateTime, $toDate: DateTime, $organizers: [String!], $participants: [String!], $userId: String, $mine: Boolean, $channelId: String, $limit: Int, $skip: Int) { transcripts(fromDate: $fromDate, toDate: $toDate, organizers: $organizers, participants: $participants, user_id: $userId, mine: $mine, channel_id: $channelId, limit: $limit, skip: $skip) { id title dateString duration organizer_email participants transcript_url is_live summary { short_summary } } }",
+        "queryParams": {
+          "fromDate": "$from_date",
+          "toDate": "$to_date",
+          "organizers": "$organizers",
+          "participants": "$participants",
+          "userId": "$user_id",
+          "mine": "$mine",
+          "channelId": "$channel_id",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meetings": {
+              "$from": "$.transcripts[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "date": "dateString",
+                "durationMinutes": "duration",
+                "organizer": "organizer_email",
+                "participants": "participants",
+                "shortSummary": "summary.short_summary",
+                "isLive": "is_live",
+                "url": "transcript_url"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "fireflies_search_transcripts",
+      "description": "Search meetings for a word or phrase in the title, in what was said, or both, and return the matching meetings (id, title, date, duration, organizer, participants, short summary, link). Optional date range and participants. Page with limit and skip. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Word or phrase to look for, up to 255 characters."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Where to look: title, sentences (what was said) or all (default).",
+            "enum": [
+              "title",
+              "sentences",
+              "all"
+            ],
+            "default": "all"
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Only meetings on or after this moment, ISO 8601 date-time such as 2026-10-01T00:00:00.000Z."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Only meetings before this moment, ISO 8601 date-time such as 2026-10-31T23:59:59.000Z."
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only meetings attended by any of these email addresses."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Meetings per page, 1 to 50 (default 20).",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "skip": {
+            "type": "integer",
+            "description": "How many meetings to skip, for the next page: add the limit to the previous skip.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query SearchTranscripts($keyword: String!, $scope: String, $fromDate: DateTime, $toDate: DateTime, $participants: [String!], $limit: Int, $skip: Int) { transcripts(keyword: $keyword, scope: $scope, fromDate: $fromDate, toDate: $toDate, participants: $participants, limit: $limit, skip: $skip) { id title dateString duration organizer_email participants transcript_url is_live summary { short_summary } } }",
+        "queryParams": {
+          "keyword": "$keyword",
+          "scope": "$scope",
+          "fromDate": "$from_date",
+          "toDate": "$to_date",
+          "participants": "$participants",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meetings": {
+              "$from": "$.transcripts[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "date": "dateString",
+                "durationMinutes": "duration",
+                "organizer": "organizer_email",
+                "participants": "participants",
+                "shortSummary": "summary.short_summary",
+                "isLive": "is_live",
+                "url": "transcript_url"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "fireflies_get_transcript",
+      "description": "Read one meeting without its full text: title, date, duration, organizer, participants, speakers, attendees with join and leave times, channels, privacy, and Fireflies' AI notes (overview, short summary, action items, keywords, outline, topics, meeting type). Use fireflies_get_transcript_text for what was said. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Meeting (transcript) id from fireflies_list_transcripts or fireflies_search_transcripts."
+          }
+        },
+        "required": [
+          "transcript_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Transcript($id: String!) { transcript(id: $id) { id title dateString duration organizer_email participants transcript_url meeting_link privacy is_live speakers { id name } meeting_attendees { displayName email name } meeting_attendance { name join_time leave_time } meeting_info { summary_status silent_meeting fred_joined } channels { id title } summary { overview short_summary gist action_items keywords outline topics_discussed meeting_type } } }",
+        "queryParams": {
+          "id": "$transcript_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meeting": {
+              "id": "$.transcript.id",
+              "title": "$.transcript.title",
+              "date": "$.transcript.dateString",
+              "durationMinutes": "$.transcript.duration",
+              "organizer": "$.transcript.organizer_email",
+              "participants": "$.transcript.participants",
+              "speakers": "$.transcript.speakers",
+              "attendees": "$.transcript.meeting_attendees",
+              "attendance": "$.transcript.meeting_attendance",
+              "channels": "$.transcript.channels",
+              "privacy": "$.transcript.privacy",
+              "isLive": "$.transcript.is_live",
+              "summaryStatus": "$.transcript.meeting_info.summary_status",
+              "meetingLink": "$.transcript.meeting_link",
+              "url": "$.transcript.transcript_url"
+            },
+            "notes": "$.transcript.summary"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "fireflies_get_transcript_text",
+      "description": "Read what was said in a meeting, lines 1 to 700: each line is [start second, speaker, text]. totalLines tells how long the meeting is; when it is over 700, read the rest with fireflies_get_transcript_text_more. For a live meeting it returns the captions so far. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Meeting (transcript) id from fireflies_list_transcripts or fireflies_search_transcripts."
+          }
+        },
+        "required": [
+          "transcript_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query TranscriptText($id: String!) { transcript(id: $id) { id title is_live sentences { start_time speaker_name text } } }",
+        "queryParams": {
+          "id": "$transcript_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: transcript.id, title: transcript.title, isLive: transcript.is_live, totalLines: length(transcript.sentences || `[]`), firstLine: `1`, lines: transcript.sentences[0:700].[start_time, speaker_name, text]}",
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "fireflies_get_transcript_text_more",
+      "description": "Read lines 701 to 1400 of what was said in a long meeting, each line [start second, speaker, text], after fireflies_get_transcript_text showed totalLines over 700. Fireflies sends no further pages: for longer meetings use fireflies_search_transcripts with scope sentences or ask AskFred. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Meeting (transcript) id from fireflies_list_transcripts or fireflies_search_transcripts."
+          }
+        },
+        "required": [
+          "transcript_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query TranscriptTextMore($id: String!) { transcript(id: $id) { id title is_live sentences { start_time speaker_name text } } }",
+        "queryParams": {
+          "id": "$transcript_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: transcript.id, title: transcript.title, isLive: transcript.is_live, totalLines: length(transcript.sentences || `[]`), firstLine: `701`, lines: transcript.sentences[700:1400].[start_time, speaker_name, text]}",
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "fireflies_list_bites",
+      "description": "List soundbites (short clips cut from meetings): id, meeting id, name, start and end second, summary, status, media type, privacy and creator. Pass at least one of mine, my_team or transcript_id. Page with limit and skip. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mine": {
+            "type": "boolean",
+            "description": "true: only soundbites created by the owner of the API key."
+          },
+          "my_team": {
+            "type": "boolean",
+            "description": "true: soundbites of the whole team."
+          },
+          "transcript_id": {
+            "type": "string",
+            "description": "Only soundbites cut from this meeting."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Soundbites per page, 1 to 50 (default 20).",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "skip": {
+            "type": "integer",
+            "description": "How many soundbites to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Bites($mine: Boolean, $myTeam: Boolean, $transcriptId: ID, $limit: Int, $skip: Int) { bites(mine: $mine, my_team: $myTeam, transcript_id: $transcriptId, limit: $limit, skip: $skip) { id transcript_id name start_time end_time summary status media_type privacies created_at user { name } } }",
+        "queryParams": {
+          "mine": "$mine",
+          "myTeam": "$my_team",
+          "transcriptId": "$transcript_id",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "bites": {
+              "$from": "$.bites[*]",
+              "$select": {
+                "id": "id",
+                "transcriptId": "transcript_id",
+                "name": "name",
+                "startSecond": "start_time",
+                "endSecond": "end_time",
+                "summary": "summary",
+                "status": "status",
+                "mediaType": "media_type",
+                "privacy": "privacies",
+                "createdAt": "created_at",
+                "createdBy": "user.name"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "fireflies_get_bite",
+      "description": "Read one soundbite: name, meeting id, start and end second, summary, status, privacy, the captions (speaker and text) and the media links. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bite_id": {
+            "type": "string",
+            "description": "Soundbite id from fireflies_list_bites."
+          }
+        },
+        "required": [
+          "bite_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Bite($id: ID!) { bite(id: $id) { id transcript_id name start_time end_time summary status media_type privacies created_at user { name } captions { speaker_name text start_time end_time } sources { src type } } }",
+        "queryParams": {
+          "id": "$bite_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "bite": "$.bite"
+          },
+          "exclude": [
+            "bite.user.picture"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "fireflies_create_bite",
+      "description": "Cut a soundbite (a short shareable clip) from a recorded meeting, between two moments in seconds, with an optional name, summary and privacy. Creates content others may see: Confirm with the user before calling it and wait for their yes. Returns the new soundbite id and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Meeting (transcript) id from fireflies_list_transcripts or fireflies_search_transcripts."
+          },
+          "start_second": {
+            "type": "number",
+            "description": "Where the clip starts, in seconds from the beginning of the meeting.",
+            "minimum": 0
+          },
+          "end_second": {
+            "type": "number",
+            "description": "Where the clip ends, in seconds; after start_second."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the soundbite, up to 256 characters."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Short summary of the clip, up to 500 characters."
+          },
+          "media_type": {
+            "type": "string",
+            "description": "audio or video.",
+            "enum": [
+              "audio",
+              "video"
+            ]
+          },
+          "privacies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "public",
+                "team",
+                "participants"
+              ]
+            },
+            "description": "Who may see it: any of public, team, participants."
+          }
+        },
+        "required": [
+          "transcript_id",
+          "start_second",
+          "end_second"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateBite($transcriptId: ID!, $startTime: Float!, $endTime: Float!, $name: String, $summary: String, $mediaType: String, $privacies: [BitePrivacy!]) { createBite(transcript_id: $transcriptId, start_time: $startTime, end_time: $endTime, name: $name, summary: $summary, media_type: $mediaType, privacies: $privacies) { id name status } }",
+        "queryParams": {
+          "transcriptId": "$transcript_id",
+          "startTime": "$start_second",
+          "endTime": "$end_second",
+          "name": "$name",
+          "summary": "$summary",
+          "mediaType": "$media_type",
+          "privacies": "$privacies"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "bite": "$.createBite"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "fireflies_ask_about_meeting",
+      "description": "Ask Fireflies' AskFred a question about one meeting and get its answer, the thread id for follow-ups, and suggested next questions. Each answer uses AskFred AI credits of the Fireflies plan: before the first question in a conversation, tell the user and wait for their yes. Starts a new AskFred thread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Meeting (transcript) id from fireflies_list_transcripts or fireflies_search_transcripts."
+          },
+          "question": {
+            "type": "string",
+            "description": "The question, up to 2000 characters."
+          }
+        },
+        "required": [
+          "transcript_id",
+          "question"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation AskAboutMeeting($transcriptId: String!, $question: String!) { createAskFredThread(input: { query: $question, transcript_id: $transcriptId }) { message { id thread_id query answer suggested_queries status } cost } }",
+        "queryParams": {
+          "transcriptId": "$transcript_id",
+          "question": "$question"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "threadId": "$.createAskFredThread.message.thread_id",
+            "answer": "$.createAskFredThread.message.answer",
+            "status": "$.createAskFredThread.message.status",
+            "suggestedFollowUps": "$.createAskFredThread.message.suggested_queries",
+            "cost": "$.createAskFredThread.cost"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "fireflies_ask_across_meetings",
+      "description": "Ask AskFred a question across many meetings, narrowed by date range (default: the last 30 days, at most one year back), organizers, participants, channels or meeting ids. Returns the answer, the thread id and suggested next questions. Uses AskFred AI credits: before the first question in a conversation, tell the user and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The question, up to 2000 characters."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Meetings from this moment, ISO 8601, not more than a year ago. Default: 30 days before end_time."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Meetings until this moment, ISO 8601. Default: today."
+          },
+          "organizers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only meetings organized by these email addresses."
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only meetings with these participant email addresses."
+          },
+          "channel_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only meetings in these channels (ids from fireflies_list_channels)."
+          },
+          "transcript_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these meetings (ids from fireflies_list_transcripts)."
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation AskAcrossMeetings($question: String!, $startTime: String, $endTime: String, $organizers: [String!], $participants: [String!], $channelIds: [String!], $transcriptIds: [String!]) { createAskFredThread(input: { query: $question, filters: { start_time: $startTime, end_time: $endTime, organizers: $organizers, participants: $participants, channel_ids: $channelIds, transcript_ids: $transcriptIds } }) { message { id thread_id query answer suggested_queries status } cost } }",
+        "queryParams": {
+          "question": "$question",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "organizers": "$organizers",
+          "participants": "$participants",
+          "channelIds": "$channel_ids",
+          "transcriptIds": "$transcript_ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "threadId": "$.createAskFredThread.message.thread_id",
+            "answer": "$.createAskFredThread.message.answer",
+            "status": "$.createAskFredThread.message.status",
+            "suggestedFollowUps": "$.createAskFredThread.message.suggested_queries",
+            "cost": "$.createAskFredThread.cost"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "fireflies_ask_follow_up",
+      "description": "Ask a follow-up question in an existing AskFred thread, which keeps the context of the earlier questions and answers. Uses AskFred AI credits like the first question. Returns the answer and suggested next questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "threadId returned by fireflies_ask_about_meeting or fireflies_ask_across_meetings, or an id from fireflies_list_askfred_threads."
+          },
+          "question": {
+            "type": "string",
+            "description": "The follow-up question, up to 2000 characters."
+          }
+        },
+        "required": [
+          "thread_id",
+          "question"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation AskFollowUp($threadId: String!, $question: String!) { continueAskFredThread(input: { thread_id: $threadId, query: $question }) { message { id thread_id query answer suggested_queries status } cost } }",
+        "queryParams": {
+          "threadId": "$thread_id",
+          "question": "$question"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "threadId": "$.continueAskFredThread.message.thread_id",
+            "answer": "$.continueAskFredThread.message.answer",
+            "status": "$.continueAskFredThread.message.status",
+            "suggestedFollowUps": "$.continueAskFredThread.message.suggested_queries",
+            "cost": "$.continueAskFredThread.cost"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "fireflies_list_askfred_threads",
+      "description": "List the AskFred conversations of the key owner: thread id, title, meeting id (when it was about one meeting) and creation time. Optionally only those about one meeting. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Only threads about this meeting."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query AskFredThreads($transcriptId: String) { askfred_threads(transcript_id: $transcriptId) { id title transcript_id created_at } }",
+        "queryParams": {
+          "transcriptId": "$transcript_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "threads": "$.askfred_threads"
+          }
+        }
+      }
+    },
+    {
+      "name": "fireflies_get_askfred_thread",
+      "description": "Read one AskFred conversation with every question and answer in order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "Thread id from fireflies_list_askfred_threads."
+          }
+        },
+        "required": [
+          "thread_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query AskFredThread($id: String!) { askfred_thread(id: $id) { id title transcript_id created_at messages { query answer status created_at } } }",
+        "queryParams": {
+          "id": "$thread_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "thread": "$.askfred_thread"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "fireflies_list_active_meetings",
+      "description": "List the meetings Fireflies is recording right now: id, title, organizer, meeting link, start and end time, privacy and state (active or paused). Admins can look at another team member by email. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Only this team member's live meetings; regular users can only use their own email or leave it out."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ActiveMeetings($email: String) { active_meetings(input: { email: $email }) { id title organizer_email meeting_link start_time end_time privacy state } }",
+        "queryParams": {
+          "email": "$email"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "meetings": "$.active_meetings"
+          }
+        }
+      }
+    },
+    {
+      "name": "fireflies_upload_audio",
+      "description": "Send a recording to Fireflies to be transcribed, from a public https link to an mp3, mp4, wav, m4a or ogg file (audio up to 200 MB). Fireflies downloads it and creates a new meeting in the account. Confirm with the user before calling it and wait for their yes. Returns whether the upload was accepted; the transcript appears in fireflies_list_transcripts after processing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public https link that downloads the media file directly (not a preview page).",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the new meeting."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language code of the recording, e.g. en, de, es (see Fireflies' language codes). Default: English."
+          },
+          "meeting_date": {
+            "type": "string",
+            "description": "When the meeting took place, ISO 8601 such as 2026-03-14T15:00:00Z, not in the future. Default: now."
+          },
+          "save_video": {
+            "type": "boolean",
+            "description": "true: keep the video as well, for a video file."
+          },
+          "client_reference_id": {
+            "type": "string",
+            "description": "Your own reference for this upload."
+          }
+        },
+        "required": [
+          "url",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation UploadAudio($url: String!, $title: String!, $customLanguage: String, $meetingDate: String, $saveVideo: Boolean, $clientReferenceId: String) { uploadAudio(input: { url: $url, title: $title, custom_language: $customLanguage, meeting_date: $meetingDate, save_video: $saveVideo, client_reference_id: $clientReferenceId }) { success title message } }",
+        "queryParams": {
+          "url": "$url",
+          "title": "$title",
+          "customLanguage": "$language",
+          "meetingDate": "$meeting_date",
+          "saveVideo": "$save_video",
+          "clientReferenceId": "$client_reference_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "success": "$.uploadAudio.success",
+            "title": "$.uploadAudio.title",
+            "message": "$.uploadAudio.message"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "fireflies_add_bot_to_live_meeting",
+      "description": "Send the Fireflies notetaker bot into a meeting that is running now (Zoom, Google Meet, Teams and others) to record and transcribe it. The bot joins as a visible participant and everyone in the call sees that the meeting is being recorded: tell the user this, confirm the meeting link and wait for their yes. Limited to 3 calls per 20 minutes per user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_link": {
+            "type": "string",
+            "description": "Join link of the running meeting, e.g. https://meet.google.com/abc-defg-hij.",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string",
+            "description": "Title for the recording, up to 256 characters."
+          },
+          "meeting_password": {
+            "type": "string",
+            "description": "Meeting passcode, if the meeting needs one (up to 32 characters)."
+          },
+          "duration_minutes": {
+            "type": "integer",
+            "description": "How long the bot stays, 15 to 120 minutes (default 60).",
+            "minimum": 15,
+            "maximum": 120
+          },
+          "language": {
+            "type": "string",
+            "description": "Language code of the meeting, e.g. en, de, es. Default: English."
+          },
+          "attendees": {
+            "type": "array",
+            "description": "Expected participants, each with displayName, email and optionally phoneNumber.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "displayName": {
+                  "type": "string",
+                  "description": "Name as shown in the meeting."
+                },
+                "email": {
+                  "type": "string",
+                  "description": "Email address."
+                },
+                "phoneNumber": {
+                  "type": "string",
+                  "description": "Phone number."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "meeting_link"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation AddToLiveMeeting($meetingLink: String!, $title: String, $meetingPassword: String, $duration: Int, $language: String, $attendees: [AttendeeInput!]) { addToLiveMeeting(meeting_link: $meetingLink, title: $title, meeting_password: $meetingPassword, duration: $duration, language: $language, attendees: $attendees) { success message } }",
+        "queryParams": {
+          "meetingLink": "$meeting_link",
+          "title": "$title",
+          "meetingPassword": "$meeting_password",
+          "duration": "$duration_minutes",
+          "language": "$language",
+          "attendees": "$attendees"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "success": "$.addToLiveMeeting.success",
+            "message": "$.addToLiveMeeting.message"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "fireflies_delete_transcript",
+      "description": "Delete a meeting with its recording, transcript and notes from Fireflies for good. Installed switched off. Only on an explicit request: name the meeting (title and date) to the user and wait for their yes. Owners can delete their own meetings, admins any meeting of the team.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Meeting (transcript) id from fireflies_list_transcripts or fireflies_search_transcripts."
+          }
+        },
+        "required": [
+          "transcript_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation DeleteTranscript($id: String!) { deleteTranscript(id: $id) { id title } }",
+        "queryParams": {
+          "id": "$transcript_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deleted": "$.deleteTranscript"
+          }
+        }
+      }
+    },
+    {
+      "name": "fireflies_set_user_role",
+      "description": "Make a team member a Fireflies admin or a regular user. Changes who can see and manage the team's meetings. Installed switched off; needs an admin key. Name the person and the new role to the user and wait for their yes.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "user_id from fireflies_list_users."
+          },
+          "role": {
+            "type": "string",
+            "description": "New role: admin or user.",
+            "enum": [
+              "admin",
+              "user"
+            ]
+          }
+        },
+        "required": [
+          "user_id",
+          "role"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation SetUserRole($userId: String!, $role: Role!) { setUserRole(user_id: $userId, role: $role) { user_id email name is_admin } }",
+        "queryParams": {
+          "userId": "$user_id",
+          "role": "$role"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "user": "$.setUserRole"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -15,6 +15,7 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -26,6 +27,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { UserLifecycleService, LifecycleContext } from './user-lifecycle.service';
 import { SEAT_LIMIT, seatLimitMessage } from '../ee/licensing/edition.service';
+import { normalizeEmail, sameEmail } from '../common/email.util';
 
 class RevokeSessionsDto {
   @ApiPropertyOptional({
@@ -91,11 +93,19 @@ class UpdateUserRoleDto {
   role: UserRole;
 }
 
+/** How recent a sign-in must be to delete an account that has no password. */
+const FRESH_SESSION_MS = 10 * 60 * 1000;
+
 class DeleteSelfDto {
-  @ApiProperty({ description: 'Account password (re-confirmation).', format: 'password' })
+  @ApiPropertyOptional({
+    description:
+      'Account password (re-confirmation). Accounts without a password (social sign-in) confirm with a fresh sign-in instead.',
+    format: 'password',
+  })
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  password: string;
+  password?: string;
 
   @ApiProperty({
     description: 'Must equal the literal string "DELETE" — protection against accidental calls.',
@@ -164,13 +174,21 @@ export class UsersController {
       // keep the old behaviour.
       if (process.env.DEPLOYMENT_MODE === 'cloud') {
         const current = await this.usersService.findById(req.user.sub);
-        if (dto.email.trim().toLowerCase() !== current?.email?.trim().toLowerCase()) {
+        if (!sameEmail(dto.email, current?.email)) {
           throw new BadRequestException(
             'Your email address cannot be changed here. Contact support@anythingmcp.com to change it.',
           );
         }
       } else {
-        data.email = dto.email;
+        // Stored normalised, and refused when another account already has
+        // the address in any case: the unique index only sees exact
+        // spellings, so `Name@Example.com` would otherwise sit next to
+        // `name@example.com` as a second account.
+        const owners = await this.usersService.findAllByEmail(dto.email);
+        if (owners.some((u) => u.id !== req.user.sub)) {
+          throw new ConflictException('Email already registered');
+        }
+        data.email = normalizeEmail(dto.email);
       }
     }
 
@@ -185,20 +203,44 @@ export class UsersController {
     const user = await this.usersService.findById(req.user.sub);
     if (!user) throw new UnauthorizedException('User not found');
 
-    // An IdP-provisioned user has no password to confirm with. Refuse rather
-    // than hand null to bcrypt — and rather than skip the confirmation, which
-    // would make account deletion a one-click action on a stolen session.
-    if (!user.passwordHash) {
+    if (user.passwordHash) {
+      if (!dto.password) throw new UnauthorizedException('Invalid password');
+      const isValid = await this.authService.comparePassword(dto.password, user.passwordHash);
+      if (!isValid) throw new UnauthorizedException('Invalid password');
+    } else if (await this.usersService.hasSocialIdentity(user.id)) {
+      // Signed up with Google, Microsoft or GitHub: there is no password to
+      // re-type, so the confirmation is a sign-in that just happened. A stolen
+      // session that is more than a few minutes old cannot delete the account.
+      if (!this.isFreshSession(req)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'reauth_required',
+          message: 'For your security, sign in again to confirm, then delete your account within 10 minutes.',
+        });
+      }
+    } else {
+      // An IdP-provisioned user has no password to confirm with. Refuse rather
+      // than hand null to bcrypt — and rather than skip the confirmation, which
+      // would make account deletion a one-click action on a stolen session.
       throw new UnauthorizedException(
         'This account has no password. Account deletion is not available for SSO-only accounts.',
       );
     }
 
-    const isValid = await this.authService.comparePassword(dto.password, user.passwordHash);
-    if (!isValid) throw new UnauthorizedException('Invalid password');
-
     await this.usersService.deleteSelf(req.user.sub);
     return { message: 'Account deleted' };
+  }
+
+  /** Whether the bearer token on this request was issued in the last 10 minutes. */
+  private isFreshSession(req: any): boolean {
+    const header: string | undefined = req?.headers?.authorization;
+    if (!header?.startsWith('Bearer ')) return false;
+    try {
+      const iat = (this.authService.verifyToken(header.slice(7).trim()) as any)?.iat;
+      return typeof iat === 'number' && Date.now() - iat * 1000 <= FRESH_SESSION_MS;
+    } catch {
+      return false;
+    }
   }
 
   @Put('me/password')

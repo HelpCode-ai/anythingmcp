@@ -26,10 +26,12 @@ const INVOCATION_FULL_PAYLOADS_PER_HOUR = envInt('INVOCATION_FULL_PAYLOADS_PER_H
 const INVOCATION_LOG_VOLUME_EXCERPT_BYTES = 512;
 const REPEAT_KEYS_MAX = 10_000;
 import { PrismaService } from '../common/prisma.service';
+import { findUserByEmail, normalizeEmail } from '../common/email.util';
 import { InvocationStatus, Prisma } from '../generated/prisma/client';
 import { AdsActivationService } from './ads-activation.service';
 import { FirstSuccessService } from './first-success.service';
 import { AlertsService } from '../alerts/alerts.service';
+import { ANALYTICS_DEFAULT_DAYS, ANALYTICS_MAX_DAYS } from './analytics-query.dto';
 
 @Injectable()
 export class AuditService implements OnModuleDestroy {
@@ -76,6 +78,8 @@ export class AuditService implements OnModuleDestroy {
     usedProxy?: boolean;
     /** Natural-language user intent that led to the call (opt-in capture). */
     intent?: string;
+    /** The caller contributed to skill learning when the call was made. */
+    learnable?: boolean;
     input: Record<string, unknown>;
     output?: Record<string, unknown>;
     status: 'SUCCESS' | 'ERROR' | 'TIMEOUT';
@@ -127,6 +131,7 @@ export class AuditService implements OnModuleDestroy {
           connectorId: data.connectorId,
           usedProxy: data.usedProxy ?? false,
           intent: data.intent,
+          learnable: data.learnable ?? false,
           input: input as any,
           output: output as any,
           status: data.status as InvocationStatus,
@@ -293,14 +298,11 @@ export class AuditService implements OnModuleDestroy {
     }
 
     if (!userEmail) return undefined;
-    const key = userEmail.toLowerCase();
+    const key = normalizeEmail(userEmail);
     const cached = this.emailToIdCache.get(key);
     if (cached) return cached;
 
-    const byEmail = await this.prisma.user.findUnique({
-      where: { email: key },
-      select: { id: true },
-    });
+    const byEmail = await findUserByEmail<{ id: string; email: string }>(this.prisma, userEmail, { id: true });
     if (!byEmail) return undefined;
 
     this.emailToIdCache.set(key, byEmail.id);
@@ -399,96 +401,89 @@ export class AuditService implements OnModuleDestroy {
   }
 
   /**
-   * Analytics: time-series invocation data for the last 7 days,
-   * grouped by day and status. Also returns top tools by usage.
+   * Analytics for the last `days` (capped at ANALYTICS_MAX_DAYS): calls per
+   * UTC day by status, the 10 most used tools, success rate and durations.
+   *
+   * Postgres does the aggregation and returns one row per day and one per
+   * tool name. This used to load every row of the window into Node and loop
+   * over it: about 200k rows for a busy workspace over 7 days, which blocked
+   * the event loop (and every other tenant) for 4.6 s.
+   *
+   * Semantics are unchanged: a row counts `repeat_count` calls (repeats of
+   * the same failure), while durations are averaged per stored row for days
+   * and the whole window and per call for tools, as before.
    */
-  async getAnalytics(organizationId?: string, days = 7) {
-    const safeDays = Math.min(Math.max(days || 7, 1), 365);
+  async getAnalytics(organizationId: string, days = ANALYTICS_DEFAULT_DAYS) {
+    const safeDays = Math.min(
+      Math.max(Math.floor(days) || ANALYTICS_DEFAULT_DAYS, 1),
+      ANALYTICS_MAX_DAYS,
+    );
     const now = new Date();
     const since = new Date(now.getTime() - safeDays * 24 * 60 * 60 * 1000);
-    const scope = this.orgScope(organizationId);
 
-    // Get all invocations for the selected window
-    const invocations = await this.prisma.toolInvocation.findMany({
-      where: { createdAt: { gte: since }, ...scope },
-      select: {
-        status: true,
-        durationMs: true,
-        createdAt: true,
-        repeatCount: true,
-        tool: { select: { name: true } },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
+    const groups = organizationId
+      ? await this.prisma.$queryRaw<AnalyticsGroupRow[]>(analyticsQuery(organizationId, since))
+      : [];
 
-    // Group by day
-    const dailyMap = new Map<string, { success: number; error: number; timeout: number; totalDuration: number; count: number }>();
-    const toolUsageMap = new Map<string, { count: number; errors: number; avgDuration: number; totalDuration: number }>();
-
-    for (const inv of invocations) {
-      // Daily aggregation
-      const dayKey = inv.createdAt.toISOString().slice(0, 10);
-      if (!dailyMap.has(dayKey)) {
-        dailyMap.set(dayKey, { success: 0, error: 0, timeout: 0, totalDuration: 0, count: 0 });
+    const dailyMap = new Map<string, AnalyticsGroupRow>();
+    const toolRows: AnalyticsGroupRow[] = [];
+    let totalCalls = 0;
+    let successCalls = 0;
+    let totalDuration = 0;
+    let storedRows = 0;
+    for (const g of groups) {
+      if (Number(g.by_tool) === 1) {
+        toolRows.push(g);
+        continue;
       }
-      const day = dailyMap.get(dayKey)!;
-      // A row can stand for repeats of the same failure (repeat_count).
-      const n = inv.repeatCount ?? 1;
-      if (inv.status === 'SUCCESS') day.success += n;
-      else if (inv.status === 'ERROR') day.error += n;
-      else if (inv.status === 'TIMEOUT') day.timeout += n;
-      day.totalDuration += inv.durationMs || 0;
-      day.count++;
-
-      // Tool usage aggregation
-      const toolName = inv.tool?.name || 'unknown';
-      if (!toolUsageMap.has(toolName)) {
-        toolUsageMap.set(toolName, { count: 0, errors: 0, avgDuration: 0, totalDuration: 0 });
-      }
-      const toolStats = toolUsageMap.get(toolName)!;
-      toolStats.count += n;
-      if (inv.status === 'ERROR') toolStats.errors += n;
-      toolStats.totalDuration += inv.durationMs || 0;
+      dailyMap.set(g.day as string, g);
+      totalCalls += Number(g.calls);
+      successCalls += Number(g.success);
+      totalDuration += Number(g.duration);
+      storedRows += Number(g.row_count);
     }
 
-    // Build daily timeline (fill empty days) across the selected window
+    // Daily timeline (empty days filled) across the selected window. The
+    // partial UTC day `since` falls on stays out of it, as before, but its
+    // calls count in the totals and top tools.
     const daily: Array<{ date: string; success: number; error: number; timeout: number; avgDuration: number }> = [];
     for (let i = safeDays - 1; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
       const key = d.toISOString().slice(0, 10);
-      const stats = dailyMap.get(key) || { success: 0, error: 0, timeout: 0, totalDuration: 0, count: 0 };
+      const g = dailyMap.get(key);
+      const rows = g ? Number(g.row_count) : 0;
       daily.push({
         date: key,
-        success: stats.success,
-        error: stats.error,
-        timeout: stats.timeout,
-        avgDuration: stats.count > 0 ? Math.round(stats.totalDuration / stats.count) : 0,
+        success: g ? Number(g.success) : 0,
+        error: g ? Number(g.error) : 0,
+        timeout: g ? Number(g.timeout) : 0,
+        avgDuration: rows > 0 ? Math.round(Number(g!.duration) / rows) : 0,
       });
     }
 
-    // Top tools sorted by usage
-    const topTools = Array.from(toolUsageMap.entries())
-      .map(([name, stats]) => ({
-        name,
-        count: stats.count,
-        errors: stats.errors,
-        avgDuration: stats.count > 0 ? Math.round(stats.totalDuration / stats.count) : 0,
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
+    // Most used first; ties keep the order tools were first called in, as
+    // the old in-memory loop (rows sorted by time) did.
+    const topTools = toolRows
+      .map((g) => {
+        const count = Number(g.calls);
+        return {
+          name: g.tool_name as string,
+          count,
+          errors: Number(g.error),
+          avgDuration: count > 0 ? Math.round(Number(g.duration) / count) : 0,
+          firstAt: new Date(g.first_at).getTime(),
+        };
+      })
+      .sort((a, b) => b.count - a.count || a.firstAt - b.firstAt || a.name.localeCompare(b.name))
+      .slice(0, 10)
+      .map(({ firstAt: _firstAt, ...tool }) => tool);
 
-    const totalCalls = invocations.reduce((sum, i) => sum + (i.repeatCount ?? 1), 0);
-    const successCalls = invocations
-      .filter((i) => i.status === 'SUCCESS')
-      .reduce((sum, i) => sum + (i.repeatCount ?? 1), 0);
     return {
       daily,
       topTools,
       totalInvocations: totalCalls,
       successRate: totalCalls > 0 ? Math.round((successCalls / totalCalls) * 100) : 0,
-      avgDuration: invocations.length > 0
-        ? Math.round(invocations.reduce((sum, i) => sum + (i.durationMs || 0), 0) / invocations.length)
-        : 0,
+      avgDuration: storedRows > 0 ? Math.round(totalDuration / storedRows) : 0,
     };
   }
 
@@ -587,6 +582,62 @@ export class AuditService implements OnModuleDestroy {
       ),
     };
   }
+}
+
+/** One row of analyticsQuery: a UTC day (by_tool 0) or a tool name (by_tool 1). */
+export interface AnalyticsGroupRow {
+  by_tool: number | bigint;
+  day: string | null;
+  tool_name: string | null;
+  calls: bigint | number;
+  success: bigint | number;
+  error: bigint | number;
+  timeout: bigint | number;
+  /** Sum of duration_ms over stored rows (null counts as 0). */
+  duration: bigint | number;
+  /** Stored rows, not calls: a row may stand for repeats. */
+  row_count: bigint | number;
+  first_at: Date | string;
+}
+
+/**
+ * One pass over the workspace's calls since `since`, grouped both by UTC day
+ * and by tool name (GROUPING SETS). Scoped like the rest of AuditService:
+ * calls of tools whose connector belongs to the organisation. created_at is
+ * a UTC `timestamp without time zone`, so to_char gives the same UTC date as
+ * `toISOString().slice(0, 10)` whatever the session time zone is, and the
+ * bound is converted to UTC explicitly for the same reason.
+ */
+export function analyticsQuery(organizationId: string, since: Date): Prisma.Sql {
+  return Prisma.sql`
+    WITH scoped AS (
+      SELECT
+        to_char(ti.created_at, 'YYYY-MM-DD') AS day,
+        COALESCE(NULLIF(t.name, ''), 'unknown') AS tool_name,
+        ti.status::text AS status,
+        ti.repeat_count,
+        COALESCE(ti.duration_ms, 0) AS duration_ms,
+        ti.created_at
+      FROM tool_invocations ti
+      JOIN mcp_tools t ON t.id = ti.tool_id
+      JOIN connectors c ON c.id = t.connector_id
+      WHERE c.organization_id = ${organizationId}
+        AND ti.created_at >= (${since.toISOString()}::timestamptz AT TIME ZONE 'UTC')
+    )
+    SELECT
+      GROUPING(day) AS by_tool,
+      day,
+      tool_name,
+      COALESCE(SUM(repeat_count), 0)::bigint AS calls,
+      COALESCE(SUM(repeat_count) FILTER (WHERE status = 'SUCCESS'), 0)::bigint AS success,
+      COALESCE(SUM(repeat_count) FILTER (WHERE status = 'ERROR'), 0)::bigint AS error,
+      COALESCE(SUM(repeat_count) FILTER (WHERE status = 'TIMEOUT'), 0)::bigint AS timeout,
+      COALESCE(SUM(duration_ms), 0)::bigint AS duration,
+      COUNT(*)::bigint AS row_count,
+      MIN(created_at) AS first_at
+    FROM scoped
+    GROUP BY GROUPING SETS ((day), (tool_name))
+  `;
 }
 
 /**

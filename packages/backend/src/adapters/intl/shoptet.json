@@ -1,0 +1,890 @@
+{
+  "slug": "shoptet",
+  "name": "Shoptet",
+  "aliases": [
+    "Shoptet Premium",
+    "Shoptet API",
+    "myshoptet"
+  ],
+  "description": "Shoptet e-shop (Czech Republic, Slovakia, Hungary), read-only: orders with history and notes, products and variants with prices and stock, categories, brands, stock levels and movements, customers, invoices, proforma invoices, credit notes, payment and shipping methods.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "shoptet",
+  "docsUrl": "https://api.docs.shoptet.com/",
+  "instructions": "## Shoptet\nThis connector reads a **Shoptet** e-shop (Czech Republic, Slovakia, Hungary) through the official Shoptet REST API with a private API token: orders and their history, products and variants with stock, categories and brands, stock levels and movements, customers, invoices, proforma invoices and credit notes, payment and shipping methods. It is read-only.\n\n**Setup (about 3 minutes)**\n1. The private API is available to **Shoptet Premium** e-shops. In the Shoptet administration open **Connections (Propojení), Private API** and create a token. Give it read access to the areas you want the AI to see (orders, products, stock, customers, documents); a missing area answers 403.\n2. Paste the token into `SHOPTET_API_TOKEN`. One token belongs to one e-shop: for a second shop (e.g. .cz and .sk) install the connector a second time with that shop's token.\n3. Install and run `shoptet_get_eshop` to check the token.\n\n**Workflow**\n- Look-ups that differ per shop come first: `shoptet_list_order_statuses` (status ids), `shoptet_list_order_sources`, `shoptet_list_payment_methods`, `shoptet_list_shipping_methods`, `shoptet_list_stocks` (stock ids), `shoptet_list_categories`, `shoptet_list_brands`, `shoptet_list_customer_groups`. `shoptet_get_eshop` with `include=orderStatuses,paymentMethods,shippingMethods` returns several at once.\n- Orders: `shoptet_list_orders` (newest first, at most 50 per page) by status, time range, e-mail, phone, customer or product code; `shoptet_get_order` with `include=notes` for remarks and the tracking number; `shoptet_get_order_history` for status changes and e-mails sent.\n- Products: `shoptet_list_products`, then `shoptet_get_product` (by guid) or `shoptet_get_product_by_code` (product or variant code) for variants, prices and stock; `include=perStockAmounts` gives the amount per stock.\n- Stock: `shoptet_list_stock_supplies` for current amounts and claimed (reserved) quantities, `shoptet_list_stock_movements` for what changed.\n- Customers and documents: `shoptet_list_customers`, `shoptet_get_customer`, `shoptet_list_invoices`, `shoptet_get_invoice`, `shoptet_list_credit_notes`, `shoptet_list_proforma_invoices`.\n\n**Paging and times**: list answers carry `data.paginator` with `totalCount`, `page` and `pageCount`; ask for the next `page` while it is below `pageCount`. Time filters are ISO 8601 with an offset, e.g. `2026-10-20T00:00:00+0200`; Czech and Slovak shops run on Europe/Prague time. Prices are strings with the shop currency (`currencyCode`).\n\n**Limits**: Shoptet allows 3 simultaneous requests per token and throttles bursts (`429`, retry after a few seconds). Ask for what you need rather than paging through the whole shop.\n\n**Errors**: every answer has `data`, `errors` and `metadata`. 401 `expired-token` or `invalid-token` means the token was deleted or expired: create a new one. 403 `invalid-token-no-rights` means the token lacks that area: edit its rights in Private API. 404 means no order, product or document with that code.",
+  "prerequisites": "A Shoptet Premium e-shop and a private API token from Connections, Private API in the Shoptet administration.",
+  "requiredEnvVars": [
+    "SHOPTET_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "SHOPTET_API_TOKEN": {
+      "label": "Private API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shoptet administration, Connections (Propojení), Private API: create a token with read access to orders, products, stock, customers and documents. One token per e-shop.",
+      "link": "https://developers.shoptet.com/api/documentation/",
+      "pattern": "^[A-Za-z0-9_-]{16,}$",
+      "patternMessage": "Paste only the token, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Shoptet refused the token: it is wrong, deleted or expired. Create a new one under Connections, Private API.",
+    "403": "The token works, but it has no rights for this area. Edit the token under Connections, Private API and grant read access.",
+    "rate_limited": "Shoptet allows 3 simultaneous requests per token. Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "shoptet_get_eshop"
+  },
+  "connector": {
+    "name": "Shoptet REST API",
+    "type": "REST",
+    "baseUrl": "https://api.myshoptet.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Shoptet-Private-API-Token",
+      "apiKey": "{{SHOPTET_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/api/eshop"
+  },
+  "tools": [
+    {
+      "name": "shoptet_get_eshop",
+      "description": "Get the e-shop's own settings: name, URL, contact and billing details, VAT payer, time zone, default price list, currencies and languages. include adds order statuses, payment and shipping methods, additional order fields, countries or the cash desk. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: orderStatuses, paymentMethods, shippingMethods, orderAdditionalFields, countries, cashDesk, imageCuts."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/eshop",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "shoptet_list_orders",
+      "description": "List orders, newest first, at most 50 per page: code, creation and change time, customer name, e-mail and phone, status, paid flag, total price with and without VAT, payment and shipping method, sales channel and admin link. Filter by status, time range, customer, product or payment and shipping method. data.paginator has totalCount and pageCount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statusId": {
+            "type": "integer",
+            "description": "Order status id (from shoptet_list_order_statuses), e.g. -1 for new orders in a default shop."
+          },
+          "creationTimeFrom": {
+            "type": "string",
+            "description": "Created at or after. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "creationTimeTo": {
+            "type": "string",
+            "description": "Created at or before. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "changeTimeFrom": {
+            "type": "string",
+            "description": "Changed at or after. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "changeTimeTo": {
+            "type": "string",
+            "description": "Changed at or before. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "email": {
+            "type": "string",
+            "description": "Customer e-mail (exact, case-insensitive)."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Customer phone in international format, e.g. +420735314978."
+          },
+          "customerGuid": {
+            "type": "string",
+            "description": "Registered customer guid."
+          },
+          "productCode": {
+            "type": "string",
+            "description": "Only orders containing this product or variant code."
+          },
+          "paymentMethodGuid": {
+            "type": "string",
+            "description": "Payment method guid (shoptet_list_payment_methods)."
+          },
+          "shippingGuid": {
+            "type": "string",
+            "description": "Shipping method guid (shoptet_list_shipping_methods)."
+          },
+          "sourceId": {
+            "type": "integer",
+            "description": "Order source id (shoptet_list_order_sources), e.g. the e-shop, a marketplace or the cash desk."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/orders",
+        "queryParams": {
+          "statusId": "$statusId",
+          "creationTimeFrom": "$creationTimeFrom",
+          "creationTimeTo": "$creationTimeTo",
+          "changeTimeFrom": "$changeTimeFrom",
+          "changeTimeTo": "$changeTimeTo",
+          "email": "$email",
+          "phone": "$phone",
+          "customerGuid": "$customerGuid",
+          "productCode": "$productCode",
+          "paymentMethodGuid": "$paymentMethodGuid",
+          "shippingGuid": "$shippingGuid",
+          "sourceId": "$sourceId",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "shoptet_get_order",
+      "description": "Get one order by its code (order number): billing and delivery address, items with code, name, amount, unit price and VAT, prices, status, payment and shipping method, paid flag, language and admin link. include adds notes (customer and shop remarks, tracking number), images, shipping details, stock location, surcharges, payment transactions or product flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Order code, e.g. 2023024742."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: notes, images, shippingDetails, stockLocation, surchargeParameters, paymentTransactions, productFlags."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/orders/{code}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "shoptet_get_order_history",
+      "description": "Get the history of an order: every status change, e-mail sent, remark and system event with time, text and the user who did it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Order code."
+          },
+          "system": {
+            "type": "boolean",
+            "description": "true for system entries only, false for user entries only; omit for both."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/orders/{code}/history",
+        "queryParams": {
+          "system": "$system"
+        }
+      }
+    },
+    {
+      "name": "shoptet_list_order_statuses",
+      "description": "List the order statuses of the shop (they differ from shop to shop): id, name, whether it is a system status, whether it marks the order paid, colour, and the default status for new orders. The id is what statusId takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/orders/statuses"
+      }
+    },
+    {
+      "name": "shoptet_list_order_sources",
+      "description": "List the order sources of the shop (e-shop, cash desk, marketplaces, imports) with id and name. The id is what sourceId takes in shoptet_list_orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/orders/sources"
+      }
+    },
+    {
+      "name": "shoptet_list_products",
+      "description": "List products, 1 to 100 per page: guid, name, type, visibility, default category, brand, supplier, URL and rating. Filter by visibility, category, brand, flag, supplier or creation and change time; productCodes looks up specific codes. Read prices, variants and stock with shoptet_get_product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "description": "Visibility.",
+            "enum": [
+              "visible",
+              "hidden",
+              "blocked",
+              "cashDeskOnly",
+              "detailOnly"
+            ]
+          },
+          "categoryGuid": {
+            "type": "string",
+            "description": "Only products in this category (any of its categories)."
+          },
+          "defaultCategoryGuid": {
+            "type": "string",
+            "description": "Only products whose main category is this one."
+          },
+          "brandCode": {
+            "type": "string",
+            "description": "Brand code."
+          },
+          "flag": {
+            "type": "string",
+            "description": "Product flag code, e.g. action or new."
+          },
+          "supplierGuid": {
+            "type": "string",
+            "description": "Supplier guid."
+          },
+          "productCodes": {
+            "type": "string",
+            "description": "Comma-separated product codes, up to 50; overrides the other filters."
+          },
+          "creationTimeFrom": {
+            "type": "string",
+            "description": "Created at or after. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "changeTimeFrom": {
+            "type": "string",
+            "description": "Changed at or after. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "include": {
+            "type": "string",
+            "description": "images to add product images."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/products",
+        "queryParams": {
+          "visibility": "$visibility",
+          "categoryGuid": "$categoryGuid",
+          "defaultCategoryGuid": "$defaultCategoryGuid",
+          "brandCode": "$brandCode",
+          "flag": "$flag",
+          "supplierGuid": "$supplierGuid",
+          "productCodes": "$productCodes",
+          "creationTimeFrom": "$creationTimeFrom",
+          "changeTimeFrom": "$changeTimeFrom",
+          "include": "$include",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "shoptet_get_product",
+      "description": "Get one product by guid with its variants: code, EAN, price, VAT rate, stock amount, availability, weight and parameters per variant, descriptions, categories, brand and URL. include adds images, all categories, flags, descriptive parameters, per-stock amounts, per-price-list prices, related products and more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "guid": {
+            "type": "string",
+            "description": "Product guid from shoptet_list_products."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: images, allCategories, flags, descriptiveParameters, variantParameters, perStockAmounts, perPricelistPrices, measureUnit, surchargeParameters, setItems, gifts, alternativeProducts, relatedProducts, warranty."
+          }
+        },
+        "required": [
+          "guid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/products/{guid}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "shoptet_get_product_by_code",
+      "description": "Get a product by the code of the product or of one of its variants (the SKU shown in the admin and on orders), with the same details and include options as shoptet_get_product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Product or variant code, e.g. G70-2HN-S."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras, as for shoptet_get_product."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/products/code/{code}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "shoptet_list_categories",
+      "description": "List the product categories: guid, name, parent guid, visibility and URL. The guid is what categoryGuid takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/categories",
+        "queryParams": {
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "categories": {
+              "$from": "$.data.categories[*]",
+              "$select": {
+                "guid": "guid",
+                "name": "name",
+                "parentGuid": "parentGuid",
+                "visible": "visible",
+                "customerVisibility": "customerVisibility",
+                "url": "url",
+                "indexName": "indexName"
+              }
+            },
+            "paginator": "$.data.paginator"
+          }
+        }
+      }
+    },
+    {
+      "name": "shoptet_list_brands",
+      "description": "List the brands (manufacturers) of the shop: guid, code, name, web and whether they show in the brand list. The code is what brandCode takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/brands",
+        "queryParams": {
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "brands": {
+              "$from": "$.data.brands[*]",
+              "$select": {
+                "guid": "guid",
+                "code": "code",
+                "name": "name",
+                "indexName": "indexName",
+                "brandWeb": "brandWeb",
+                "showInBrandList": "showInBrandList"
+              }
+            },
+            "paginator": "$.data.paginator"
+          }
+        }
+      }
+    },
+    {
+      "name": "shoptet_list_stocks",
+      "description": "List the stocks (warehouses) of the shop with id, title and whether they are a pickup point, plus the default stock id. The id is what stockId takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/stocks"
+      }
+    },
+    {
+      "name": "shoptet_list_stock_supplies",
+      "description": "List the stock levels in one stock: product guid, code, amount in stock, claimed amount (reserved by orders) and storage location. Filter by product, code or claimed items only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stockId": {
+            "type": "integer",
+            "description": "Stock id from shoptet_list_stocks."
+          },
+          "productGuid": {
+            "type": "string",
+            "description": "Only this product."
+          },
+          "code": {
+            "type": "string",
+            "description": "Only this product or variant code."
+          },
+          "onlyWithClaim": {
+            "type": "boolean",
+            "description": "true for items with a claimed (reserved) amount only."
+          },
+          "changedFrom": {
+            "type": "string",
+            "description": "Changed at or after, at most 30 days back. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        },
+        "required": [
+          "stockId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/stocks/{stockId}/supplies",
+        "queryParams": {
+          "productGuid": "$productGuid",
+          "code": "$code",
+          "onlyWithClaim": "$onlyWithClaim",
+          "changedFrom": "$changedFrom",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "shoptet_list_stock_movements",
+      "description": "List stock movements in one stock, oldest first: product code, amount after the change, the change, time and who or what changed it (an order, an import, a user).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stockId": {
+            "type": "integer",
+            "description": "Stock id from shoptet_list_stocks."
+          },
+          "changeTimeFrom": {
+            "type": "string",
+            "description": "Movements at or after. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "orderCode": {
+            "type": "string",
+            "description": "Only movements caused by this order."
+          },
+          "lastId": {
+            "type": "integer",
+            "description": "Only movements after this movement id, to continue where the last call stopped."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        },
+        "required": [
+          "stockId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/stocks/{stockId}/movements",
+        "queryParams": {
+          "changeTimeFrom": "$changeTimeFrom",
+          "orderCode": "$orderCode",
+          "lastId": "$lastId",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "shoptet_list_customers",
+      "description": "List registered customers: guid, billing name and company, creation and change time and admin link. Filter by e-mail, phone or time range. Read addresses and account details with shoptet_get_customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Customer e-mail."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone in international format."
+          },
+          "creationTimeFrom": {
+            "type": "string",
+            "description": "Registered at or after. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "changeTimeFrom": {
+            "type": "string",
+            "description": "Changed at or after. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/customers",
+        "queryParams": {
+          "email": "$email",
+          "phone": "$phone",
+          "creationTimeFrom": "$creationTimeFrom",
+          "changeTimeFrom": "$changeTimeFrom",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "shoptet_get_customer",
+      "description": "Get one registered customer: billing and delivery addresses, company id and VAT id, customer group, price ratio, remark and account e-mails.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "guid": {
+            "type": "string",
+            "description": "Customer guid."
+          }
+        },
+        "required": [
+          "guid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/customers/{guid}"
+      }
+    },
+    {
+      "name": "shoptet_list_customer_groups",
+      "description": "List the customer groups (e.g. retail, wholesale, VIP) with id, name, default price list and maximum discount.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/customers/groups"
+      }
+    },
+    {
+      "name": "shoptet_list_invoices",
+      "description": "List invoices: code, order code, issue, due and tax dates, billing name and company, variable symbol, paid flag and price. Filter by order, customer, variable symbol, validity or date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderCode": {
+            "type": "string",
+            "description": "Only invoices of this order."
+          },
+          "customerGuid": {
+            "type": "string",
+            "description": "Only invoices of this customer."
+          },
+          "varSymbol": {
+            "type": "integer",
+            "description": "Variable symbol."
+          },
+          "isValid": {
+            "type": "boolean",
+            "description": "false for cancelled invoices only, true for valid ones."
+          },
+          "creationTimeFrom": {
+            "type": "string",
+            "description": "Issued at or after. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "creationTimeTo": {
+            "type": "string",
+            "description": "Issued at or before. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "taxDateFrom": {
+            "type": "string",
+            "description": "Tax date on or after, YYYY-MM-DD."
+          },
+          "taxDateTo": {
+            "type": "string",
+            "description": "Tax date on or before, YYYY-MM-DD."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/invoices",
+        "queryParams": {
+          "orderCode": "$orderCode",
+          "customerGuid": "$customerGuid",
+          "varSymbol": "$varSymbol",
+          "isValid": "$isValid",
+          "creationTimeFrom": "$creationTimeFrom",
+          "creationTimeTo": "$creationTimeTo",
+          "taxDateFrom": "$taxDateFrom",
+          "taxDateTo": "$taxDateTo",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "shoptet_get_invoice",
+      "description": "Get one invoice by its code: items, prices and VAT breakdown, billing and delivery address, payment method, due date, paid flag and symbols.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Invoice code."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/invoices/{code}"
+      }
+    },
+    {
+      "name": "shoptet_list_credit_notes",
+      "description": "List credit notes (opravné daňové doklady): code, invoice and order code, date, billing name, reason and price. At most 20 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceCode": {
+            "type": "string",
+            "description": "Only credit notes of this invoice."
+          },
+          "varSymbol": {
+            "type": "integer",
+            "description": "Variable symbol."
+          },
+          "creationTimeFrom": {
+            "type": "string",
+            "description": "Issued at or after. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 20.",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/credit-notes",
+        "queryParams": {
+          "invoiceCode": "$invoiceCode",
+          "varSymbol": "$varSymbol",
+          "creationTimeFrom": "$creationTimeFrom",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "shoptet_list_proforma_invoices",
+      "description": "List proforma invoices (advance invoices): code, order code, date, billing name, paid flag and price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderCode": {
+            "type": "string",
+            "description": "Only proformas of this order."
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "Paid or not."
+          },
+          "creationTimeFrom": {
+            "type": "string",
+            "description": "Issued at or after. ISO 8601 with offset, e.g. 2026-10-20T00:00:00+0200."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/proforma-invoices",
+        "queryParams": {
+          "orderCode": "$orderCode",
+          "paid": "$paid",
+          "creationTimeFrom": "$creationTimeFrom",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "shoptet_list_payment_methods",
+      "description": "List the payment methods of the shop with guid, name, type, visibility and whether they are for wholesale or in-person payment.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/payment-methods"
+      }
+    },
+    {
+      "name": "shoptet_list_shipping_methods",
+      "description": "List the shipping methods of the shop with guid, name, carrier, tracking URL and visibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/shipping-methods"
+      }
+    }
+  ]
+}

@@ -1,8 +1,16 @@
 import { Logger } from '@nestjs/common';
+import { timingSafeEqual } from 'node:crypto';
 
 const logger = new Logger('Secrets');
 
-const MIN_SECRET_LENGTH = 32;
+/** Constant-time string equality, safe for comparing a presented token against a stored secret. */
+export function sameSecret(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+export const MIN_SECRET_LENGTH = 32;
 
 /**
  * Returns a required secret from the environment.

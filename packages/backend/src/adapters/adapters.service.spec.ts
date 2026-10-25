@@ -355,6 +355,93 @@ describe('AdaptersService install — weclapp tenant pasted as an address (#733)
   });
 });
 
+describe('AdaptersService install — a variable the operator provides (Deutsche Bahn)', () => {
+  // 8-22 Oct 2026: every Deutsche Bahn install on Cloud answered 400
+  // "MOTIS_URL is required": the setup form hid MOTIS_URL (the operator
+  // provides it), and the import then no longer counted it as declared, so
+  // the operator's value was never applied.
+  const saved = process.env.MOTIS_INTERNAL_URL;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.MOTIS_INTERNAL_URL;
+    else process.env.MOTIS_INTERNAL_URL = saved;
+  });
+
+  function build(execute = jest.fn()) {
+    const prisma = {
+      connector: {
+        create: jest.fn().mockResolvedValue({ id: 'c1' }),
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      mcpTool: {
+        create: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn(async ({ data }: any) => ({ count: data.length })),
+      },
+    };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, prisma };
+  }
+
+  it('installs with the operator MOTIS and hides the variable from the form', async () => {
+    process.env.MOTIS_INTERNAL_URL = 'http://motis:8080/';
+    const { service, prisma } = build();
+
+    expect(service.describe('deutsche-bahn').requiredEnvVars).toEqual([]);
+    await service.importAdapter('deutsche-bahn', 'u1', 'org1', {});
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.baseUrl).toBe('http://motis:8080');
+    expect(data.envVars).toMatchObject({ MOTIS_URL: 'http://motis:8080' });
+  });
+
+  it('installs with no credentials at all (setup from MCP, one-click)', async () => {
+    process.env.MOTIS_INTERNAL_URL = 'http://motis:8080';
+    const { service, prisma } = build();
+
+    await service.importAdapter('deutsche-bahn', 'u1', 'org1');
+
+    expect(prisma.connector.create.mock.calls[0][0].data.baseUrl).toBe('http://motis:8080');
+  });
+
+  it('ignores a MOTIS_URL posted by the user when the operator provides one', async () => {
+    process.env.MOTIS_INTERNAL_URL = 'http://motis:8080';
+    const { service, prisma } = build();
+
+    await service.importAdapter('deutsche-bahn', 'u1', 'org1', { MOTIS_URL: 'http://169.254.169.254' });
+
+    expect(prisma.connector.create.mock.calls[0][0].data.baseUrl).toBe('http://motis:8080');
+  });
+
+  it('verifies against the operator MOTIS before saving', async () => {
+    process.env.MOTIS_INTERNAL_URL = 'http://motis:8080';
+    const execute = jest.fn().mockResolvedValue([{ name: 'Freiburg Hbf' }]);
+    const { service } = build(execute);
+
+    const out = await service.verifyCredentials('deutsche-bahn', 'org1', {});
+
+    expect(out).toMatchObject({ ok: true });
+    // The adapter's probe (db_search_locations) ran against the operator MOTIS.
+    expect(execute.mock.calls[0][0].baseUrl).toBe('http://motis:8080');
+  });
+
+  it('still asks for MOTIS_URL on a self-host without the bundled MOTIS', async () => {
+    delete process.env.MOTIS_INTERNAL_URL;
+    const { service, prisma } = build();
+
+    expect(service.describe('deutsche-bahn').requiredEnvVars).toEqual(['MOTIS_URL']);
+    await service.importAdapter('deutsche-bahn', 'u1', 'org1', { MOTIS_URL: 'https://motis.example.com' });
+    expect(prisma.connector.create.mock.calls[0][0].data.baseUrl).toBe('https://motis.example.com');
+
+    await expect(service.importAdapter('deutsche-bahn', 'u1', 'org1', {})).rejects.toThrow(
+      /MOTIS_URL is required to install "deutsche-bahn"/,
+    );
+  });
+});
+
 describe('AdaptersService starter pack', () => {
   const { STARTER_PACK } = jest.requireActual('./starter-pack');
   const { getAdapter } = jest.requireActual('./catalog');
@@ -638,6 +725,36 @@ describe('AdaptersService.verifyCredentials on an existing connector', () => {
   });
 });
 
+describe('AdaptersService.verifyCredentials with an optional variable left empty', () => {
+  const sqlLogin = { MSSQL_HOST: 'db.example.com', MSSQL_PORT: '1433', MSSQL_DATABASE: 'erp', MSSQL_USER: 'reader', MSSQL_PASSWORD: '' };
+  function build(stored: Record<string, string>) {
+    const execute = jest.fn().mockResolvedValue({ ok: 1 });
+    const service = new AdaptersService(
+      { connector: { findFirst: jest.fn().mockResolvedValue({ envVars: stored }) } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, execute };
+  }
+
+  it('finishing a connector: an empty MSSQL_DOMAIN is a SQL login, not "still empty"', async () => {
+    // Libredesk #123: the connector was installed from a chat without the
+    // optional variable; the form sent it empty and the check dropped it.
+    const { service } = build({ ...sqlLogin, MSSQL_PASSWORD: 'stored-pw' });
+    const out: any = await service.verifyCredentials('mssql', 'org1', { ...sqlLogin, MSSQL_DOMAIN: '' }, 'c1');
+    expect(out.kind).not.toBe('invalid_input');
+    expect(out.missing).toBeUndefined();
+  });
+
+  it('clearing a domain set earlier switches back to a SQL login', async () => {
+    const { service, execute } = build({ ...sqlLogin, MSSQL_PASSWORD: 'stored-pw', MSSQL_DOMAIN: 'CORP' });
+    const out: any = await service.verifyCredentials('mssql', 'org1', { ...sqlLogin, MSSQL_DOMAIN: '' }, 'c1');
+    expect(out.kind).not.toBe('invalid_input');
+    expect(execute.mock.calls[0][0].envVars).toMatchObject({ MSSQL_DOMAIN: '', MSSQL_PASSWORD: 'stored-pw' });
+  });
+});
+
 describe('AdaptersService unlisted adapters', () => {
   const { getAdapter } = jest.requireActual('./catalog');
 
@@ -727,5 +844,181 @@ describe('AdaptersService popular connectors', () => {
     const items = await svc.popularConnectors('org1');
     expect(items[0].slug).toBe('telegram-bot');
     expect(items.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('AdaptersService install ranking', () => {
+  function service(opts: { rows?: Array<{ slug: string | null }>; fail?: boolean } = {}) {
+    const svc = Object.create(AdaptersService.prototype) as AdaptersService;
+    (svc as any).logger = { warn: jest.fn() };
+    (svc as any).configService = { get: (k: string) => (k === 'DEPLOYMENT_MODE' ? 'cloud' : undefined) };
+    const queryRaw = opts.fail
+      ? jest.fn().mockRejectedValue(new Error('db down'))
+      : jest.fn().mockResolvedValue(opts.rows ?? []);
+    (svc as any).prisma = { $queryRaw: queryRaw };
+    return { svc, queryRaw };
+  }
+  const slugsOf = async (svc: AdaptersService) => JSON.parse((await svc.installRanking()).body).slugs;
+
+  it('keeps the order of the query, which ranks by installing workspaces', async () => {
+    const { svc } = service({ rows: [{ slug: 'telegram-bot' }, { slug: 'etsy' }, { slug: 'odoo' }] });
+    expect(await slugsOf(svc)).toEqual(['telegram-bot', 'etsy', 'odoo']);
+  });
+
+  it('sends only slugs, never a count, and asks for three workspaces that used it', async () => {
+    const { svc, queryRaw } = service({ rows: [{ slug: 'etsy' }] });
+    expect(JSON.parse((await svc.installRanking()).body)).toEqual({ slugs: ['etsy'] });
+    const [sql, ...values] = queryRaw.mock.calls[0];
+    expect(sql.join('?')).toMatch(/ti\.connector_id = c\.id AND ti\.status = 'SUCCESS'/);
+    expect(sql.join('?')).toMatch(/HAVING COUNT\(DISTINCT c\.organization_id\) >= \?/);
+    expect(values).toEqual([3]);
+  });
+
+  it('leaves out adapters that are not listed here (self-host only on the cloud, unknown, null)', async () => {
+    const { svc } = service({ rows: [{ slug: 'etsy' }, { slug: 'no-such-adapter' }, { slug: 'idealista' }, { slug: null }] });
+    expect(await slugsOf(svc)).toEqual(['etsy']);
+  });
+
+  it('ranks once per cache window, not on every request', async () => {
+    const { svc, queryRaw } = service({ rows: [{ slug: 'etsy' }] });
+    await svc.installRanking();
+    await svc.installRanking();
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves the last good ranking when the query fails, and an empty one before any', async () => {
+    const { svc } = service({ fail: true });
+    expect(await slugsOf(svc)).toEqual([]);
+
+    const ok = service({ rows: [{ slug: 'etsy' }] });
+    await ok.svc.installRanking();
+    (ok.svc as any).installRankingCache.at = 0;
+    (ok.svc as any).prisma.$queryRaw = jest.fn().mockRejectedValue(new Error('db down'));
+    expect(await slugsOf(ok.svc)).toEqual(['etsy']);
+  });
+});
+
+describe('sap-s4hana-cloud: token URL and refused client credentials', () => {
+  const adapter = require('./intl/sap-s4hana-cloud.json');
+
+  it('gives one token URL everywhere: the tenant API host, as OAuth 2.0 Details shows it', () => {
+    // The BTP address appears only as the one not to use.
+    const notToUse = /Do not use a BTP URL such as `[^`]+`/;
+    expect(adapter.instructions).toMatch(notToUse);
+    const tokenUrls = [adapter.instructions.replace(notToUse, ''), adapter.envVarMeta.S4_TOKEN_URL.example]
+      .join('\n')
+      .match(/https:\/\/[^\s`"]+\/oauth2?\/token/g);
+    expect(tokenUrls?.length).toBeGreaterThanOrEqual(2);
+    for (const url of tokenUrls!) {
+      expect(url).toMatch(/^https:\/\/my\d+-api\.s4hana\.cloud\.sap\/sap\/bc\/sec\/oauth2\/token$/);
+    }
+    expect(adapter.instructions).toMatch(/https:\/\/my300000-api\.s4hana\.cloud\.sap`/);
+  });
+
+  it('lists the four causes when the token request is refused', async () => {
+    const err: any = new Error(
+      'OAuth2 client_credentials: could not obtain an access token from my123456-api.s4hana.cloud.sap (HTTP 401: invalid_client).',
+    );
+    err.status = 401;
+    const service = new AdaptersService(
+      { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: jest.fn().mockRejectedValue(err) } as any,
+    );
+    const out: any = await service.verifyCredentials('sap-s4hana-cloud', 'org1', {
+      S4_BASE_URL: 'https://my123456-api.s4hana.cloud.sap',
+      S4_TOKEN_URL: 'https://my123456-api.s4hana.cloud.sap/sap/bc/sec/oauth2/token',
+      S4_CLIENT_ID: 'COMM_USER',
+      S4_CLIENT_SECRET: 'secret',
+    });
+    expect(out).toMatchObject({ ok: false, status: 401 });
+    expect(out.message).toMatch(/\(1\) the token URL/);
+    expect(out.message).toMatch(/\(2\) the client ID and secret are those of the communication user/);
+    expect(out.message).toMatch(/\(3\) a communication arrangement exists/);
+    expect(out.message).toMatch(/\(4\) no scope is set/);
+    expect(out.message).toContain('invalid_client');
+  });
+});
+
+describe('AdaptersService.verifyCredentials: Odoo JSON-2 answering 404', () => {
+  // Two stuck users in October 2026 were on Odoo 19 with a wrong database
+  // name: the old hint ("older than 19, or the database name is wrong")
+  // offered the JSON-RPC connector, and they failed there too.
+  const creds = { ODOO_URL: 'https://binikit.odoo.com', ODOO_DB: 'binikit', ODOO_API_KEY: 'k' };
+
+  function build() {
+    const err: any = new Error('404 NOT FOUND: Request failed with status code 404');
+    err.status = 404;
+    return new AdaptersService(
+      { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: jest.fn().mockRejectedValue(err) } as any,
+    );
+  }
+
+  /** Answers Odoo's routes: `version` for /jsonrpc, `databases` for /web/database/list. */
+  function odooAnswers(opts: { version?: unknown[]; serie?: string; databases?: string[]; typo?: boolean }) {
+    outbound.mockReset();
+    outbound.mockImplementation(async (config: any) => {
+      if (opts.typo) {
+        return {
+          status: 404,
+          data: '<html><body><script>window.location = `https://www.odoo.com/typo?domain=binikit.odoo.com&autodbname=binikit`;</script></body></html>',
+        } as any;
+      }
+      if (config.url.endsWith('/jsonrpc')) {
+        return { status: 200, data: { result: { server_version_info: opts.version, server_serie: opts.serie } } } as any;
+      }
+      if (config.url.endsWith('/web/database/list')) {
+        return { status: 200, data: { result: opts.databases ?? [] } } as any;
+      }
+      throw new Error(`unexpected ${config.url}`);
+    });
+  }
+
+  afterEach(() => outbound.mockReset());
+
+  it('offers the JSON-RPC connector only when Odoo says it is older than 19', async () => {
+    odooAnswers({ version: [17, 0, 0, 'final', 0, ''], serie: '17.0' });
+    const out: any = await build().verifyCredentials('odoo', 'org1', creds);
+    expect(out).toMatchObject({ ok: false, suggest: 'odoo-jsonrpc' });
+    expect(out.message).toMatch(/version 17\.0, older than 19/);
+    expect(outbound).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://binikit.odoo.com/jsonrpc',
+        data: expect.objectContaining({ params: { service: 'common', method: 'version', args: [] } }),
+      }),
+    );
+  });
+
+  it('on Odoo 19 says the database name is wrong and names the right one, at the root of the address', async () => {
+    odooAnswers({ version: ['saas~19', 3, 0, 'final', 0, 'e'], serie: 'saas~19.3', databases: ['binikit-main-12245208'] });
+    const out: any = await build().verifyCredentials('odoo', 'org1', creds);
+    expect(out.ok).toBe(false);
+    expect(out.suggest).toBeUndefined();
+    expect(out.message).toMatch(/version saas~19\.3 and has the JSON-2 API, so the database name "binikit" is wrong/);
+    expect(out.message).toContain('"binikit-main-12245208"');
+    const urls = outbound.mock.calls.map(([c]: any) => c.url);
+    expect(urls).toContain('https://binikit.odoo.com/web/database/list');
+    expect(urls.some((u: string) => u.includes('/json/2/'))).toBe(false);
+  });
+
+  it("says the address is not an Odoo database on Odoo Online's typo page", async () => {
+    odooAnswers({ typo: true });
+    const out: any = await build().verifyCredentials('odoo', 'org1', creds);
+    expect(out.ok).toBe(false);
+    expect(out.suggest).toBeUndefined();
+    expect(out.message).toMatch(/This address is not an Odoo database/);
+    expect(out.message).toMatch(/Check the address you open Odoo at/);
+  });
+
+  it('keeps the old hint and suggestion when Odoo does not tell its version', async () => {
+    outbound.mockReset();
+    outbound.mockRejectedValue(new Error('ECONNREFUSED'));
+    const out: any = await build().verifyCredentials('odoo', 'org1', creds);
+    expect(out).toMatchObject({ ok: false, suggest: 'odoo-jsonrpc' });
+    expect(out.message).toMatch(/older than 19, or the database name is wrong/);
   });
 });

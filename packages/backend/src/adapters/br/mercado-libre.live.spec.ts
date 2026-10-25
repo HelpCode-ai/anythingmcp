@@ -110,9 +110,34 @@ describe('mercado-libre adapter: static spec conformance', () => {
 
   it('keeps the read tools and adds the listing tools, all prefixed', () => {
     const names = a.tools.map((t) => t.name);
-    expect(names).toEqual(expect.arrayContaining(['mercado_libre_search_items', 'mercado_libre_get_item', ...LISTING_TOOLS]));
+    expect(names).toEqual(expect.arrayContaining(['mercado_libre_get_item', ...LISTING_TOOLS]));
     expect(new Set(names).size).toBe(names.length);
     for (const n of names) expect(n).toMatch(/^mercado_libre_[a-z_]+$/);
+  });
+
+  it('offers no marketplace search, which Mercado Libre refuses to third-party apps', () => {
+    // mercado_libre_search_items (GET /sites/{site_id}/search) answered 403
+    // "forbidden" on all 26 calls in 11 workspaces (5-22 Oct 2026), while the
+    // same tokens read items fine.
+    expect(a.tools.map((t) => t.name)).not.toContain('mercado_libre_search_items');
+    expect(a.tools.filter((t) => /^\/sites\/\{site_id\}\/search\b/.test(t.endpointMapping.path))).toEqual([]);
+    expect(a.description).not.toMatch(/search items/i);
+  });
+
+  it('tells the model that a validation with only warnings would be accepted', () => {
+    // 21 of 28 validate calls came back 400 with only `type: warning` causes,
+    // and the model reported them as a failed validation.
+    const d = tool('mercado_libre_validate_listing').description;
+    expect(d).toMatch(/type 'warning'/);
+    expect(d).toMatch(/would still be accepted/);
+    expect(a.instructions).toMatch(/all `type: warning` also means it would be accepted/);
+  });
+
+  it('says the notifications URL is not the redirect URI', () => {
+    // 1,238 notification POSTs a day reached /api/mcp-oauth/callback because
+    // an app had the redirect URI in its notifications field too.
+    expect(a.instructions).toMatch(/notifications callback URL empty/);
+    expect((adapter as unknown as { prerequisites: string }).prerequisites).toMatch(/notifications callback URL empty/);
   });
 
   it('never reuses a name workspaces gave their own tools on this connector', () => {

@@ -1,0 +1,196 @@
+{
+  "slug": "idealo",
+  "name": "idealo",
+  "aliases": [
+    "idealo Partner Web Service",
+    "idealo PWS",
+    "idealo Business",
+    "idealo.de"
+  ],
+  "description": "Maintain your shop's offers in the idealo price comparison from an AI agent through idealo's Partner Web Service: read an offer by SKU, and with your approval create or replace offers, change prices, delivery times and titles, or remove offers. For shops listed on idealo.",
+  "region": "de",
+  "category": "e-commerce",
+  "icon": "idealo",
+  "docsUrl": "https://idealo.github.io/partner-web-service/docs/v2/",
+  "prerequisites": "A shop listed on idealo (merchant contract) and an API client with Partner Web Service access created in idealo Business, plus your shop ID. Writes change live offers; there is no test environment.",
+  "instructions": "## idealo (Partner Web Service)\nThis connector uses idealo's **Partner Web Service 2.0** (PWS, `https://import.idealo.com`), the REST interface idealo gives listed shops to maintain their offers in the idealo price comparison (idealo.de, .at, .fr, .it, .es, .co.uk) one by one instead of, or next to, the product feed. It reads an offer by SKU and, once you switch the tools on, creates, replaces, updates (for example a new price) and removes offers.\n\n**Who can use it**: shops listed on idealo (a merchant contract with idealo). idealo's former checkout service (Direktkauf) and its order API were shut down in 2023, so there are no orders here: orders come in through your own shop.\n\n**Setup (about 3 minutes)**\n1. Sign in to **idealo Business** and open **Shop settings > API clients** (https://business.idealo.com/direct/shops/settings/api-clients).\n2. Create an API client with access to the Partner Web Service and copy the **client ID** and **client secret** (the secret is shown only once).\n3. Paste them into `IDEALO_CLIENT_ID` and `IDEALO_CLIENT_SECRET`, and your numeric **shop ID** (shown in idealo Business) into `IDEALO_SHOP_ID`. AnythingMCP exchanges the client credentials for an access token at `api.idealo.com` (valid one hour) and renews it by itself.\n\n**Safety**: there is no test environment: every write changes your live offers on idealo. `idealo_upsert_offer`, `idealo_update_offer` and `idealo_delete_offer` install switched off; turn on only those the assistant may use, and confirm each change with the user. Deleting all offers at once is deliberately not offered.\n\n**Offer format**\n- Prices are strings with exactly two decimals: `\"177.99\"`. `formerPrice` is the price before a reduction.\n- An offer needs at least `sku`, `title`, `price`, `url`, one entry in `deliveryCosts` (e.g. `{\"DHL\": \"4.90\"}`) and one in `paymentCosts` (e.g. `{\"PAYPAL\": \"0.00\"}`). Add `eans`, `hans` (manufacturer numbers) and `brand` so idealo can match the product.\n- `idealo_upsert_offer` (PUT) replaces the whole offer; `idealo_update_offer` (PATCH) changes only the fields sent, but cannot change delivery or payment costs.\n- The SKU is part of the URL: letters, digits, underscores, dots and dashes only.\n\n**Errors**: 401 means the client ID or secret is wrong or the token was refused; 403 that the API client lacks the Partner Web Service right or the shop ID is not yours; 404 that the offer does not exist; 400 lists `fieldErrors` with the field and reason; 429 means the rate limit (shown in `X-RateLimit-Limit`) was reached.",
+  "requiredEnvVars": [
+    "IDEALO_CLIENT_ID",
+    "IDEALO_CLIENT_SECRET",
+    "IDEALO_SHOP_ID"
+  ],
+  "envVarMeta": {
+    "IDEALO_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "idealo Business > Shop settings > API clients: the client ID of an API client with Partner Web Service access.",
+      "link": "https://business.idealo.com/direct/shops/settings/api-clients",
+      "pattern": "^[0-9a-fA-F-]{36}$",
+      "patternMessage": "The client ID is a UUID like 0f8fad5b-d9cb-469f-a165-70867728950e."
+    },
+    "IDEALO_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when you create the API client in idealo Business; create a new client if you no longer have it.",
+      "link": "https://business.idealo.com/direct/shops/settings/api-clients"
+    },
+    "IDEALO_SHOP_ID": {
+      "label": "Shop ID",
+      "kind": "setting",
+      "help": "Your numeric idealo shop ID, shown in idealo Business.",
+      "example": "123456",
+      "pattern": "^[0-9]{1,12}$",
+      "patternMessage": "The shop ID is a number."
+    }
+  },
+  "verifyHints": {
+    "401": "idealo refused the client credentials. Check IDEALO_CLIENT_ID and IDEALO_CLIENT_SECRET in idealo Business > Shop settings > API clients.",
+    "403": "The API client is valid but may not use the Partner Web Service for this shop. Check its rights and IDEALO_SHOP_ID.",
+    "404": "The offer does not exist in this shop (wrong SKU or shop ID)."
+  },
+  "connector": {
+    "name": "idealo Partner Web Service",
+    "type": "REST",
+    "baseUrl": "https://import.idealo.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{IDEALO_CLIENT_ID}}",
+      "clientSecret": "{{IDEALO_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.idealo.com/mer/businessaccount/api/v1/oauth/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "idealo_get_offer",
+      "description": "Read one of your offers on idealo by its SKU, as idealo stores it: title, price and former price, URL, EANs and manufacturer numbers, brand, delivery and payment costs, delivery time, energy labels, condition and the other offer fields. The Partner Web Service has no list call, so ask the user for the SKU. Answers 404 when the offer does not exist in this shop.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your offer SKU, the shop's own unique id of the offer. Letters, digits, underscores, dots and dashes; no spaces.",
+            "pattern": "^[A-Za-z0-9_.\\-]{1,255}$"
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shop/{{IDEALO_SHOP_ID}}/offer/{sku}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "idealo_upsert_offer",
+      "description": "Create an offer on idealo or replace it completely (PUT): every field not sent is removed from the offer. Required for the price comparison: sku (equal to the sku argument), title, price and url, plus at least one entry in deliveryCosts and in paymentCosts; prices as strings with two decimals, e.g. \"177.99\". The offer goes live on idealo, so show the user the offer and get a yes first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your offer SKU, the shop's own unique id of the offer. Letters, digits, underscores, dots and dashes; no spaces.",
+            "pattern": "^[A-Za-z0-9_.\\-]{1,255}$"
+          },
+          "offer": {
+            "type": "object",
+            "description": "The complete offer in idealo's offer format, e.g. {\"sku\": \"ABC-1\", \"title\": \"Sony WH-1000XM5 black\", \"price\": \"299.00\", \"url\": \"https://shop.example/abc-1\", \"eans\": [\"4548736132610\"], \"brand\": \"Sony\", \"deliveryCosts\": {\"DHL\": \"0.00\"}, \"paymentCosts\": {\"PAYPAL\": \"0.00\", \"INVOICE\": \"0.00\"}, \"delivery\": \"1-3 Werktage\"}. Field list: https://idealo.github.io/partner-web-service/docs/v2/"
+          }
+        },
+        "required": [
+          "sku",
+          "offer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/shop/{{IDEALO_SHOP_ID}}/offer/{sku}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__raw": "$offer"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "idealo_update_offer",
+      "description": "Change some fields of an existing idealo offer (PATCH), e.g. the price, former price, delivery time or title, and keep the rest. Prices as strings with two decimals. List fields (eans, imageUrls, categoryPath...) must be sent complete; deliveryCosts, paymentCosts, size, colour, gender, material and dynamicProductAttributes cannot be patched, use idealo_upsert_offer for them. The change goes live on idealo: confirm it with the user first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your offer SKU, the shop's own unique id of the offer. Letters, digits, underscores, dots and dashes; no spaces.",
+            "pattern": "^[A-Za-z0-9_.\\-]{1,255}$"
+          },
+          "fields": {
+            "type": "object",
+            "description": "Only the fields to change, e.g. {\"price\": \"279.00\", \"formerPrice\": \"299.00\", \"delivery\": \"1-2 Werktage\"}."
+          }
+        },
+        "required": [
+          "sku",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/shop/{{IDEALO_SHOP_ID}}/offer/{sku}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__raw": "$fields"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "idealo_delete_offer",
+      "description": "Remove one offer from idealo by its SKU; it disappears from the price comparison. Name the SKU to the user and get a yes first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your offer SKU, the shop's own unique id of the offer. Letters, digits, underscores, dots and dashes; no spaces.",
+            "pattern": "^[A-Za-z0-9_.\\-]{1,255}$"
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/shop/{{IDEALO_SHOP_ID}}/offer/{sku}",
+        "encodePathParams": true
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

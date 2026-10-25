@@ -86,12 +86,20 @@ whole MCP server.
 
 **The loop:**
 
-1. **Capture (optional).** With the per-workspace *intent capture* switch on,
-   every MCP tool gains an optional `_intent` parameter; the agent records *why*
-   it's calling the tool. The value is stripped before the upstream call and
-   stored for analysis (never sent to the API).
+1. **Capture (optional).** For users who contribute to learning (see
+   [Who contributes](#who-contributes-to-skill-learning)), every MCP tool gains
+   an optional `_intent` parameter: one short sentence on what the user wants to
+   achieve, without names or other personal data. Its description tells the
+   model that the workspace's admins turned learning on for this user and that
+   the user can turn it off in their profile; without that reason models tend
+   to leave it empty. The value is stripped before the upstream call and
+   stored for analysis (never sent to the API). Other users' tools do not get
+   the parameter.
 2. **Suggest.** An AI pass over the captured intents proposes skills (title,
-   *when to use*, *instruction*), scoped per connector or per server.
+   *when to use*, *instruction*), scoped per connector or per server. Generating
+   again replaces only the previous AI suggestions that are still pending:
+   skills you created by hand and skills filed by the Agent Skills Finder are
+   kept.
 3. **Review.** On the **Skills** page each suggestion has **Apply / Edit /
    Dismiss / Delete**. The list has status tabs with counts (All / Suggested /
    Active / Dismissed), a search box and pagination, so it stays usable with
@@ -104,27 +112,108 @@ whole MCP server.
 - **Auto-apply (optional).** Turn on *Auto-apply high-confidence skills*
   (Settings → Features) and generated skills at/above **0.90** confidence are
   applied automatically; lower-confidence ones still wait for review.
-- **Consolidate with AI.** The *Consolidate with AI* button merges a scope's
-  **active** skills into the fewest non-redundant ones (same connector/server
-  target selector as Generate). Pending and dismissed skills are left untouched,
-  and a bad/empty model reply never wipes live skills.
+- **Consolidate with AI.** The *Consolidate* button proposes merges of a
+  scope's **active** skills (same connector/server target selector as
+  Generate). Each merged skill is filed as a *Suggested* proposal that lists
+  the skills it replaces; applying it deactivates those (they stay, with their
+  history, and can be activated again). Nothing live changes until you apply a
+  proposal. Skills are merged only within one folder, and skills with a
+  procedure are left alone. A bad or empty model reply changes nothing.
+- **Learn from fixed errors.** *Learn from fixed errors* (and every skill
+  generation) looks at the last 30 days of calls by users who contribute to
+  skill learning. When a call failed and the same person's next call of the
+  same tool, within 10 minutes, worked after an argument changed format (for
+  example a date sent as `99.99.9999` and then as `9999-99-99`), and that
+  happened at least twice, it proposes a skill on the tool's connector. Only
+  argument names and value formats are used, never the values; errors quoted
+  in the proposal are masked. No AI model is needed. Proposals you dismissed
+  are not proposed again.
 
-### Skills are instructions, not extra tools
+### Who contributes to skill learning
 
-> **Important:** applied skills do **not** add tool calls to your MCP surface.
-> All applied skills for a server (its own server-scoped skills plus the
-> connector-scoped ones for its connectors) are concatenated into a single
-> `## Workspace skills` block inside the server's `instructions`. The agent reads
-> them as guidance — the tool list is unchanged.
+Whether a user's requests are captured is decided per user and per workspace:
+
+- **Workspace default:** the *Intent capture* switch (Settings → Organization →
+  Features). Users set to *Default* follow it.
+- **Per user (admins):** Settings → Users → *Skill learning* sets a user to
+  *Default*, *On* or *Off*. Select several users to change them at once; when
+  turning learning off you can also erase the requests already captured from
+  them.
+- **Opt-out (each user):** Settings → Profile → *Skill learning*. A user can
+  always opt out and erase their own captured requests. Removing the opt-out
+  does not turn learning on: the admin's setting applies again.
+
+A caller with no user identity (an instance-level static API key or bearer, a
+client-credentials token) never contributes. Every change is recorded in the
+security event log as `LEARNING_CHANGED`. Settings belong to the workspace
+membership, so the same person can have different settings in two workspaces.
+Cloud and self-hosted behave the same.
+
+### How skills reach the AI client
+
+A server's applied skills (its own server-scoped skills plus the
+connector-scoped ones of the connectors the caller can use) reach the client in
+three ways:
+
+- **In the instructions** sent on connect, as a `## Workspace skills` block.
+  Each MCP server chooses how (MCP server page → *Workspace skills on connect*):
+  - **Automatic** (default): the full text while it fits in about 6,000
+    characters, otherwise an index of ids, titles and *when to use*.
+  - **Always the full text.**
+  - **Always a list** (the index).
+- **On demand**, with two built-in tools that appear on `/mcp/<serverId>` when
+  the caller can see at least one applied skill:
+  - `skills_list(query?)` lists or searches the skills;
+  - `skill_get(skill)` returns one skill in full, by id or exact title.
+
+  Both read the current version at call time and only return skills the caller
+  can see on that server.
+- **In the descriptions of the tools they cover.** Some clients never show a
+  server's instructions to the model: claude.ai keeps them out and loads tool
+  schemas only when it is about to use a tool. So each tool's description also
+  names the skills that cover it (a server-scoped skill covers every tool of
+  the server, a connector-scoped one the tools of that connector): up to three
+  with their *when to use*, rule and a `skill_get` pointer when they have a
+  procedure, or, past three, the number of skills and a pointer to
+  `skills_list`.
+
+Each skill is also offered as an **MCP prompt**, so clients with a prompt
+picker (slash commands) can start one by hand.
+
+A skill has a short **instruction** (up to 2,000 characters) and an optional
+**procedure** (markdown, up to 20,000 characters) for the full steps of a
+workflow. The procedure is never pasted into the instructions: the full-text
+mode mentions it with its id, and `skill_get` returns it. The Agent Skills
+Finder's `skills_save_to_workspace` can file a procedure too.
+
+The shared `/mcp` endpoint keeps its fixed toolset: its workspace guide
+(`anythingmcp_get_workspace_guide`) returns the skills as text, procedures
+included.
+
+**Folders.** Skills can be filed in folders (AI Skills page, left column),
+the same tree the company memory uses; see [Folders](memory.md#folders). With
+folders, the index groups skills by folder, and when it does not fit it lists
+the top-level folders with their description and number of skills;
+`skills_list(folder: "Sales / Quotes")` opens one. A folder limited to roles
+hides its skills from everyone without one of those roles, on every path
+(instructions, `skills_list`, `skill_get`, prompts, `kg_how_to_obtain`, the
+dashboard).
+
+**Versions and usage.** Editing a skill's title, *when to use*, instruction or
+procedure keeps the previous content as a version (see *History* on the skill)
+and increments its version number. Each `skill_get` or prompt use is counted, so
+the Skills page shows how often a skill was opened and when. Consolidate with
+AI leaves skills that have a procedure untouched.
 
 Because composition is dynamic, editing or deleting a skill takes effect on the
-next request — there's no blob to clean up.
+next request (a stateful session keeps the instructions it started with; the
+tools always read the current version).
 
-> **Scaling note.** Applied skills are concatenated verbatim into the server's
-> instruction block, so with many active skills that block grows and consumes
-> context on every session. Keep the applied set tight: scope skills to the
-> right server/connector, dismiss duplicates, and use **Consolidate with AI** to
-> merge overlapping active skills into fewer rules.
+**claude.ai caches the tool list.** After you add the first skill to a server,
+turn on learning or memory for a user, or upgrade AnythingMCP, claude.ai keeps
+offering the tools it listed before. Refresh them under *Customize →
+Connectors →* the connector *→ ⋮ → Refresh tools list*; new chats then get the
+current tools and descriptions.
 
 ---
 
@@ -167,7 +256,7 @@ tiny built-in client (no SDK). Two ways to run them:
 |---|---|
 | Knowledge Graph | Master switch — gates build, serve, cron and the MCP tool. |
 | AI enrichment | Allows the LLM graph pass for this workspace. |
-| Intent capture | Adds the optional `_intent` param to this workspace's tools. |
+| Intent capture | Default for users set to *Default*: adds the optional `_intent` param to their tools. Override per user under Settings → Users. |
 | Scheduled AI extension | Lets the cloud cron extend graph + skills for this workspace. |
 
 **Instance env** (see `.env.example` for the full list):

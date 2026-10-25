@@ -6,6 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/toast';
 
+// True when the identity provider has not called in for over two hours.
+function isStale(lastRequestAt: string): boolean {
+  return Date.now() - new Date(lastRequestAt).getTime() > 2 * 3600_000;
+}
+
 /**
  * Provisioning (SCIM) for one provider.
  *
@@ -124,10 +129,7 @@ export function ScimPanel({
   const labelClass = 'block text-[11.5px] font-medium text-[var(--text-3)] mb-1';
   const codeClass =
     'text-[11.5px] text-[var(--text-2)] bg-[var(--surface-2)] rounded px-1.5 py-0.5 break-all';
-  const stale =
-    status?.enabled && status.lastRequestAt
-      ? Date.now() - new Date(status.lastRequestAt).getTime() > 2 * 3600_000
-      : false;
+  const stale = status?.enabled && status.lastRequestAt ? isStale(status.lastRequestAt) : false;
 
   return (
     <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-3">

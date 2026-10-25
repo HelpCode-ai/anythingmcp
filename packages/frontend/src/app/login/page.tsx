@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ApiError, auth, license, server, sso, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
+import { ApiError, auth, license, server, social, sso, type SocialProviderButton, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/toast';
 import { buildPricingUrl } from '@/lib/marketing';
@@ -15,11 +15,13 @@ import { cn } from '@/lib/utils';
 import { useTrustStats } from '@/lib/trust-stats';
 import { TrustLine, TrustPanel } from '@/components/auth-trust';
 import { safeRedirect } from '@/lib/safe-redirect';
+import { startTrialPath } from '@/lib/checkout-source';
 import { captureSignupAttribution, clearSignupAttribution, getSignupAttribution } from '@/lib/attribution';
 import { pushSignUpVerified } from '@/lib/conversion';
 import {
   cardTrialEligible,
   parsePlanIntent,
+  purchaseDestination,
   readCardTrialPrompt,
   savePlanIntent,
   parsePromoCode,
@@ -98,7 +100,7 @@ function LoginForm() {
   }, [setupStep, authToken]);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const { login, token: sessionToken, user: sessionUser, isLoading: sessionLoading } = useAuth();
   const toast = useToast();
 
   const redirectTo = safeRedirect(searchParams.get('redirect'));
@@ -118,12 +120,30 @@ function LoginForm() {
   const emailVerifiedParam = searchParams.get('emailVerified');
   const modeParam = searchParams.get('mode'); // 'register' or 'login'
   const ssoCode = searchParams.get('sso');
+  const socialCode = searchParams.get('social');
+  // `?continueWith=google`: the AI client's consent page links here after a
+  // sign-in there with that provider, which left this browser without a
+  // dashboard session. Signing in again with it is one redirect, not a form.
+  const continueWith = searchParams.get('continueWith');
   const errorParam = searchParams.get('error');
   const planParam = searchParams.get('plan');
   const periodParam = searchParams.get('period');
   const promoParam = searchParams.get('promo');
   const [ssoProviders, setSsoProviders] = useState<SsoProviderButton[]>([]);
-  const [ssoExchanging, setSsoExchanging] = useState(Boolean(ssoCode));
+  const [ssoExchanging, setSsoExchanging] = useState(Boolean(ssoCode || socialCode || continueWith));
+  const [socialProviders, setSocialProviders] = useState<SocialProviderButton[]>([]);
+  const [socialStarting, setSocialStarting] = useState<string | null>(null);
+  // Sign-up with social providers on offer: the email form stays folded
+  // behind "Continue with email" so the page leads with the one-click options.
+  const [emailFormOpen, setEmailFormOpen] = useState(false);
+    // A plan button on the pricing page (`?plan=cloud_starter`): a sign-up for
+  // a visitor, a purchase for someone who already has a workspace.
+  const hasPlanIntent = parsePlanIntent(planParam, periodParam) !== null;
+  // Set while a signed-in visitor is being sent on to buy, instead of the form.
+  const [handingOff, setHandingOff] = useState(false);
+  // The session found on arrival is looked at once. One this form creates
+  // later (a sign-up, a sign-in) is not: those flows decide for themselves.
+  const arrivalChecked = useRef(false);
 
   useEffect(() => {
     server.info().then((info) => {
@@ -131,6 +151,7 @@ function LoginForm() {
       setIsCloudMode(info.deploymentMode === 'cloud');
       // Empty in cloud by design — see the comment on the backend endpoint.
       setSsoProviders(info.ssoProviders ?? []);
+      setSocialProviders(info.socialProviders ?? []);
       if (!info.hasUsers) {
         setIsRegister(true);
       } else if (modeParam === 'register' && info.registrationEnabled) {
@@ -188,8 +209,65 @@ function LoginForm() {
     });
     if (!eligible || readCardTrialPrompt(u.id) !== null) return false;
     writeCardTrialPrompt(u.id, 'shown');
-    router.push('/start-trial');
+    router.push(startTrialPath('signup_prompt'));
     return true;
+  };
+
+  /**
+   * Cloud only: someone with a workspace who came from a plan button on the
+   * pricing page wants to buy that plan, not a second account or trial. Sends
+   * them where the purchase happens (see purchaseDestination); false when the
+   * licence could not be read, and the caller carries on as before.
+   */
+  const goToPurchase = async (accessToken: string, u: { role?: string } | null | undefined): Promise<boolean> => {
+    try {
+      const status = await license.getStatus(accessToken);
+      const target = purchaseDestination({ role: u?.role, license: status });
+      if (u?.role !== 'ADMIN') {
+        toast.show({
+          title: 'Ask a workspace admin',
+          description: 'Only an admin can choose a plan for this workspace.',
+          tone: 'info',
+          durationMs: 9000,
+        });
+      } else if (target === '/settings/license') {
+        toast.show({
+          title: 'You already have a plan',
+          description: 'Change it here rather than buying a second one.',
+          tone: 'info',
+          durationMs: 9000,
+        });
+      }
+      router.replace(target);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Already signed in when the pricing page's plan button opened sign-up: the
+  // site cannot see the Cloud session, so this is where it is recognised.
+  useEffect(() => {
+    if (sessionLoading || !infoLoaded || arrivalChecked.current) return;
+    arrivalChecked.current = true;
+    if (!isCloudMode || !hasPlanIntent || ssoCode || redirectTo !== '/' || !sessionToken || !sessionUser) return;
+    setHandingOff(true);
+    // A session that no longer works (expired token) signs out on the 401 and
+    // gets the form back.
+    void goToPurchase(sessionToken, sessionUser).then((ok) => {
+      if (!ok) setHandingOff(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionLoading, infoLoaded]);
+
+  /**
+   * After signing in to a workspace that already had its licence: on to the
+   * purchase when the visitor came from a plan button, otherwise where they
+   * were going.
+   */
+  const afterSignIn = async (accessToken: string, u: { role?: string } | null | undefined) => {
+    if (isCloudMode && hasPlanIntent && redirectTo === '/' && (await goToPurchase(accessToken, u))) return;
+    goTo(redirectTo);
   };
 
   // Surface a failure the SSO callback redirected back with.
@@ -228,6 +306,130 @@ function LoginForm() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ssoCode]);
+
+  /**
+   * Everything after the identity is settled, for a password sign-in and a
+   * social one alike: email verification, the cloud licence step (trial or
+   * card trial), then the destination.
+   */
+  const finishSignIn = async (
+    result: { accessToken: string; user: any },
+    needsLicenseSetup: boolean,
+  ) => {
+    // Check if email needs verification
+    if (!result.user.emailVerified) {
+      setAuthToken(result.accessToken);
+      setStoredUser(result.user);
+      setUserEmail(result.user.email);
+      setIsFirstUserFlag(needsLicenseSetup);
+      setResendCooldown(60);
+      setSetupStep('verify-email');
+    } else {
+      login(result.accessToken, result.user);
+      if (isCloudMode && needsLicenseSetup && returningToAuthorization) {
+        await license.activateTrial(result.accessToken).catch(() => undefined);
+        goTo(redirectTo);
+      } else if (isCloudMode && needsLicenseSetup) {
+        // Cloud mode: auto-activate trial for verified users
+        setAuthToken(result.accessToken);
+        try {
+          const trialResult = await license.activateTrial(result.accessToken);
+          if (offerCardTrial(result.user, trialResult)) return;
+          // "Trial Activated!" only for a trial started just now. A workspace
+          // that already holds a licence (a running trial, a paid plan) goes
+          // straight in, instead of being told it has "0 days" left.
+          if (!trialResult.trialStarted) {
+            await afterSignIn(result.accessToken, result.user);
+            return;
+          }
+          setTrialDaysLeft(trialResult.trialDaysLeft);
+          setSetupStep('trial-activated');
+        } catch {
+          goTo(redirectTo);
+        }
+      } else if (needsLicenseSetup) {
+        setAuthToken(result.accessToken);
+        setSetupStep('license-choice');
+      } else {
+        await afterSignIn(result.accessToken, result.user);
+      }
+    }
+  };
+
+  // The same, for a social sign-in (Google, Microsoft, GitHub). Waits for the
+  // server info: the licence step that follows depends on the deployment.
+  const exchangedSocialCode = useRef<string | null>(null);
+  useEffect(() => {
+    if (!socialCode || !infoLoaded || sessionLoading || exchangedSocialCode.current === socialCode) return;
+    exchangedSocialCode.current = socialCode;
+    // The code works once. Take it out of the address bar straight away, so a
+    // reload or the Back button does not spend it again and show "expired" to
+    // someone who is in fact signed in.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('social');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
+    (async () => {
+      try {
+        const result = await social.exchange(socialCode);
+        // A new account's address is verified by the provider: this is the
+        // moment an email sign-up reaches when the code is entered.
+        if (result.isNewUser) pushSignUpVerified(String(result.user?.id ?? socialCode), 'social');
+        await finishSignIn(result, !!result.needsLicenseSetup);
+      } catch (err: any) {
+        // A spent code with a live session: this browser already signed in
+        // with it (an old tab, a bookmark). Carry on rather than alarm.
+        if (sessionToken) {
+          goTo(redirectTo);
+          return;
+        }
+        setError(err.message || 'Sign-in failed');
+        setSsoExchanging(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socialCode, infoLoaded, sessionLoading]);
+
+  /**
+   * "Continue with <provider>": off to the provider, as a full navigation.
+   * False when it could not start (the error is shown).
+   */
+  const startSocial = async (provider: string): Promise<boolean> => {
+    setError('');
+    setSocialStarting(provider);
+    try {
+      if (isCloudMode) captureSignupAttribution();
+      const attribution = isCloudMode ? getSignupAttribution() : undefined;
+      const { authorizationUrl } = await social.start(provider, redirectTo, attribution);
+      window.location.assign(authorizationUrl);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'This sign-in option is not available right now.');
+      setSocialStarting(null);
+      return false;
+    }
+  };
+
+  // Arrived with `?continueWith=<provider>`: already signed in here, go on;
+  // otherwise start that provider's sign-in. Looked at once, after the
+  // session and the server info are known; an unknown provider shows the form.
+  const continueChecked = useRef(false);
+  useEffect(() => {
+    if (!continueWith || socialCode || ssoCode || !infoLoaded || sessionLoading || continueChecked.current) return;
+    continueChecked.current = true;
+    if (sessionToken) {
+      goTo(redirectTo);
+      return;
+    }
+    if (socialProviders.some((p) => p.id === continueWith)) {
+      // Stays on "Signing you in…" while the browser leaves for the provider.
+      void startSocial(continueWith).then((started) => {
+        if (!started) setSsoExchanging(false);
+      });
+      return;
+    }
+    setSsoExchanging(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [continueWith, infoLoaded, sessionLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -308,44 +510,7 @@ function LoginForm() {
         needsLicenseSetup = !!loginResult.needsLicenseSetup;
       }
 
-      // Check if email needs verification
-      if (!result.user.emailVerified) {
-        setAuthToken(result.accessToken);
-        setStoredUser(result.user);
-        setUserEmail(result.user.email);
-        setIsFirstUserFlag(needsLicenseSetup);
-        setResendCooldown(60);
-        setSetupStep('verify-email');
-      } else {
-        login(result.accessToken, result.user);
-        if (isCloudMode && needsLicenseSetup && returningToAuthorization) {
-          await license.activateTrial(result.accessToken).catch(() => undefined);
-          goTo(redirectTo);
-        } else if (isCloudMode && needsLicenseSetup) {
-          // Cloud mode: auto-activate trial for verified users
-          setAuthToken(result.accessToken);
-          try {
-            const trialResult = await license.activateTrial(result.accessToken);
-            if (offerCardTrial(result.user, trialResult)) return;
-            // "Trial Activated!" only for a trial started just now. A workspace
-            // that already holds a licence (a running trial, a paid plan) goes
-            // straight in, instead of being told it has "0 days" left.
-            if (!trialResult.trialStarted) {
-              goTo(redirectTo);
-              return;
-            }
-            setTrialDaysLeft(trialResult.trialDaysLeft);
-            setSetupStep('trial-activated');
-          } catch {
-            goTo(redirectTo);
-          }
-        } else if (needsLicenseSetup) {
-          setAuthToken(result.accessToken);
-          setSetupStep('license-choice');
-        } else {
-          goTo(redirectTo);
-        }
-      }
+      await finishSignIn(result, needsLicenseSetup);
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {
@@ -462,6 +627,14 @@ function LoginForm() {
   };
 
   // ── Email Verification Step ─────────────────────────────────────────────
+
+  if (handingOff) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
+        <div className="text-sm text-[var(--text-2)]">Opening your plan…</div>
+      </div>
+    );
+  }
 
   if (setupStep === 'verify-email') {
     return (
@@ -857,6 +1030,7 @@ function LoginForm() {
   // else (sign-in, self-hosted first-user setup) keeps the single card: a
   // self-hosted instance makes none of the Cloud claims (EU hosting, trial).
   const cloudSignup = isRegister && isCloudMode && !ssoExchanging;
+  const emailFormFolded = isRegister && socialProviders.length > 0 && !emailFormOpen && !recoveryMode;
 
   const formCard = (
     <Card className={cloudSignup ? 'w-full max-w-[400px] p-6 sm:p-8' : 'p-6'}>
@@ -894,6 +1068,55 @@ function LoginForm() {
         </p>
       )}
 
+      {!ssoExchanging && !recoveryMode && socialProviders.length > 0 && (
+        <div className="space-y-2 mb-4" data-testid="social-providers">
+          {socialProviders.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => startSocial(p.id)}
+              disabled={socialStarting !== null}
+              className="flex items-center justify-center gap-2.5 w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text)] hover:border-[var(--brand)] transition-colors disabled:opacity-60"
+            >
+              <ProviderMark type={p.id} />
+              <span>{socialStarting === p.id ? 'Redirecting…' : `Continue with ${p.name}`}</span>
+            </button>
+          ))}
+          {isRegister && (
+            <p className="text-[11.5px] leading-relaxed text-[var(--text-3)] text-center">
+              By continuing you accept the{' '}
+              <a href="https://anythingmcp.com/en/agb" target="_blank" rel="noopener noreferrer" className="underline">
+                Terms of Use
+              </a>{' '}
+              and the{' '}
+              <a href="https://anythingmcp.com/datenschutz" target="_blank" rel="noopener noreferrer" className="underline">
+                Privacy Policy
+              </a>
+              .
+            </p>
+          )}
+          {emailFormFolded ? (
+            <button
+              type="button"
+              onClick={() => setEmailFormOpen(true)}
+              className="flex items-center justify-center gap-2.5 w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text)] hover:border-[var(--brand)] transition-colors"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <path d="m3 7 9 6 9-6" />
+              </svg>
+              <span>Continue with email</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-3 pt-1">
+              <div className="h-px flex-1 bg-[var(--border)]" />
+              <span className="text-[11.5px] text-[var(--text-3)]">or use your email</span>
+              <div className="h-px flex-1 bg-[var(--border)]" />
+            </div>
+          )}
+        </div>
+      )}
+
       {!ssoExchanging && !isRegister && ssoProviders.length > 0 && (
         <div className="space-y-2 mb-4">
           {ssoProviders.map((p) => (
@@ -915,7 +1138,7 @@ function LoginForm() {
       )}
 
       <form
-        className={`space-y-4${ssoExchanging ? ' hidden' : ''}`}
+        className={`space-y-4${ssoExchanging || emailFormFolded ? ' hidden' : ''}`}
         onSubmit={handleSubmit}
       >
         {isRegister && (
@@ -937,7 +1160,7 @@ function LoginForm() {
 
         <div>
           <label htmlFor="auth-email" className="block text-sm font-medium mb-1 text-[var(--text)]">
-            {cloudSignup ? 'Work email' : 'Email'}
+            Email
           </label>
           <input
             id="auth-email"

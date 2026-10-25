@@ -1,65 +1,176 @@
 {
   "slug": "snov",
   "name": "Snov.io",
-  "description": "Drive Snov.io (lead enrichment + email finder + outreach) from any AI agent: email finder, verifier, domain search, prospect lists, drip campaigns. 9 tools, OAuth2 client-credentials auth.",
-  "instructions": "This connector uses the Snov.io API v1 (snov.io/api).\n\n**Setup**:\n1. Sign in to https://app.snov.io → **Account → API**.\n2. Copy the **Client ID** and **Client Secret**.\n3. Run OAuth2 client_credentials flow:\n   ```\n   POST https://api.snov.io/v1/oauth/access_token\n   grant_type=client_credentials&client_id=...&client_secret=...\n   ```\n   to obtain an access_token. Tokens are valid for 1 hour.\n4. Set `SNOV_ACCESS_TOKEN` to the access token. Refresh externally.\n\n**Authentication**: `Authorization: Bearer ${SNOV_ACCESS_TOKEN}`.\n\n**Credit model**: every find/verify/enrich consumes credits per your plan. `/balance` is free.\n\n**Workflow**: domain search → email finder → email verifier → add prospects to a list → drip campaign.\n\n**Out of scope here**: drip campaign content editing, LinkedIn extension, sender management, deals (Snov.io CRM lite).",
+  "description": "Drive Snov.io lead enrichment and outreach from your AI: find a person's email from name and company domain, verify emails, list the emails of a domain, manage prospect lists and see drip campaigns and the credit balance. Signs in with the API client ID and secret.",
+  "instructions": "This connector uses the Snov.io REST API (snov.io/api).\n\n**Setup (about 2 minutes)**:\n1. Sign in to https://app.snov.io and open **Account settings → API** (https://app.snov.io/account/api).\n2. Copy the **API User ID** into `SNOV_CLIENT_ID` and the **API Secret** into `SNOV_CLIENT_SECRET`.\nThe connector exchanges them for an access token at `https://api.snov.io/v1/oauth/access_token` (OAuth 2.0 client credentials) and gets a new one every hour by itself. There is nothing to paste or renew by hand.\n\n**Plans**: the API is fully available on the paid (Sales Suite) plans; on the free plan Snov.io gives test access on request (help@snov.io). A 403 \"you dont have permissions for this action\" on every call means the plan does not include API access; a 401 means the ID or secret is wrong.\n\n**Credits**: `snov_balance`, `snov_get_domain_emails_count`, the prospect lists and the campaigns are free. `snov_email_finder`, `snov_email_verifier`, `snov_email_finder_by_url` and `snov_domain_search` spend credits. Check `snov_balance` before bulk work and do not repeat a search that already returned results.\n\n**Domain search** runs in two steps: `snov_domain_search` starts the search and returns a `task_hash`; `snov_get_domain_search_result` with that hash returns the emails (up to 50 per page). While `status` is `in_progress`, wait a few seconds and ask again. For the next page pass `meta.next` from the result as `next` to `snov_domain_search`. `snov_get_domain_emails_count` tells for free how many emails a domain has before you spend a credit.\n\n**Workflow**: domain emails count → domain search → email finder (name + domain) → email verifier → add the prospect to a list → drip campaign.\n\n**Rate limit**: 60 requests per minute.\n\n**Out of scope here**: editing drip campaign content, the LinkedIn extension, sender accounts, webhooks and deals (Snov.io CRM).",
   "region": "intl",
   "category": "enrichment",
   "icon": "snov",
   "docsUrl": "https://snov.io/api",
-  "requiredEnvVars": ["SNOV_ACCESS_TOKEN"],
+  "requiredEnvVars": [
+    "SNOV_CLIENT_ID",
+    "SNOV_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "SNOV_CLIENT_ID": {
+      "label": "API User ID",
+      "kind": "credential",
+      "help": "Snov.io, Account settings, API tab: the API User ID (used as client_id).",
+      "link": "https://app.snov.io/account/api",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the User ID without spaces."
+    },
+    "SNOV_CLIENT_SECRET": {
+      "label": "API Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same tab: the API Secret (used as client_secret).",
+      "link": "https://app.snov.io/account/api",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the API secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Snov.io did not issue a token: check the API User ID and API Secret under Account settings, API.",
+    "403": "Snov.io refused the call: the plan probably does not include API access (paid plans, or test access on request).",
+    "rate_limited": "Snov.io allows 60 requests per minute. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "snov_balance"
+  },
   "connector": {
-    "name": "Snov.io v1",
+    "name": "Snov.io",
     "type": "REST",
     "baseUrl": "https://api.snov.io/v1",
-    "authType": "BEARER_TOKEN",
+    "authType": "OAUTH2",
     "authConfig": {
-      "token": "{{SNOV_ACCESS_TOKEN}}"
-    }
+      "grant": "client_credentials",
+      "clientId": "{{SNOV_CLIENT_ID}}",
+      "clientSecret": "{{SNOV_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.snov.io/v1/oauth/access_token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/get-balance"
   },
   "tools": [
     {
       "name": "snov_balance",
-      "description": "Return remaining credit balance for the account. Free call — use to monitor before bulk operations.",
-      "parameters": { "type": "object", "properties": {} },
-      "endpointMapping": { "method": "POST", "path": "/get-balance" }
+      "description": "Remaining credit balance of the account, with days until the monthly limit resets and until the subscription ends. Free; use it before bulk lookups.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-balance"
+      }
     },
     {
-      "name": "snov_domain_search",
-      "description": "Find emails associated with a domain. Returns up to 100 emails per call with name, position, type (personal/generic).",
+      "name": "snov_get_domain_emails_count",
+      "description": "How many emails Snov.io knows for a company domain, before spending a credit on snov_domain_search. Free.",
       "parameters": {
         "type": "object",
         "properties": {
-          "domain": { "type": "string", "description": "Domain to search." },
-          "type": { "type": "string", "description": "personal, generic, all." },
-          "limit": { "type": "integer", "description": "Max emails (default 100)." },
-          "lastId": { "type": "integer", "description": "Cursor — return emails after this ID." }
+          "domain": {
+            "type": "string",
+            "description": "Company domain, e.g. snov.io."
+          }
         },
-        "required": ["domain"]
+        "required": [
+          "domain"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/get-domain-emails-with-info",
+        "path": "/get-domain-emails-count",
         "bodyEncoding": "form-urlencoded",
         "bodyMapping": {
+          "domain": "$domain"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "snov_domain_search",
+      "description": "Start a search for the emails of a company domain. Returns a task_hash; read the emails with snov_get_domain_search_result. Costs 1 credit per unique request, so check snov_get_domain_emails_count first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Company domain, e.g. snov.io, without https:// or a path."
+          },
+          "next": {
+            "type": "string",
+            "description": "For the next page: meta.next from the previous snov_get_domain_search_result."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://api.snov.io/v2/domain-search/domain-emails/start",
+        "bodyMapping": {
           "domain": "$domain",
-          "type": "$type",
-          "limit": "$limit",
-          "lastId": "$lastId"
+          "next": "$next"
         }
       }
     },
     {
-      "name": "snov_email_finder",
-      "description": "Find a person's email by first/last name + domain.",
+      "name": "snov_get_domain_search_result",
+      "description": "Read the emails found by snov_domain_search: up to 50 emails per page, total_count, meta.next for the next page and status (completed or in_progress; when in progress wait a few seconds and ask again). The emails are not verified. Free.",
       "parameters": {
         "type": "object",
         "properties": {
-          "domain": { "type": "string", "description": "Company domain." },
-          "firstName": { "type": "string", "description": "First name." },
-          "lastName": { "type": "string", "description": "Last name." }
+          "task_hash": {
+            "type": "string",
+            "description": "task_hash returned by snov_domain_search (meta.task_hash)."
+          }
         },
-        "required": ["domain", "firstName", "lastName"]
+        "required": [
+          "task_hash"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.snov.io/v2/domain-search/domain-emails/result/{task_hash}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "snov_email_finder",
+      "description": "Find a person's email from first name, last name and company domain. Spends credits; the answer lists the emails found with their status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Company domain."
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name."
+          }
+        },
+        "required": [
+          "domain",
+          "firstName",
+          "lastName"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -74,59 +185,86 @@
     },
     {
       "name": "snov_email_verifier",
-      "description": "Verify a single email deliverability. Returns status (valid/invalid/catchAll/disposable/webmail/unknown) + smtp/mx checks.",
+      "description": "Check whether one email address can receive mail: valid, invalid, catch-all, disposable or webmail, with the SMTP and MX checks. Spends a credit.",
       "parameters": {
         "type": "object",
         "properties": {
-          "email": { "type": "string", "description": "Email to verify." }
+          "email": {
+            "type": "string",
+            "description": "Email to verify."
+          }
         },
-        "required": ["email"]
+        "required": [
+          "email"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/get-emails-verification-status",
         "bodyEncoding": "form-urlencoded",
-        "bodyMapping": { "emails[]": "$email" }
+        "bodyMapping": {
+          "emails[]": "$email"
+        }
       }
     },
     {
       "name": "snov_email_finder_by_url",
-      "description": "Find emails from a LinkedIn URL (or other recognized social URL).",
+      "description": "Find the emails of a person from a LinkedIn profile URL. Spends credits.",
       "parameters": {
         "type": "object",
         "properties": {
-          "url": { "type": "string", "description": "LinkedIn profile URL." }
+          "url": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          }
         },
-        "required": ["url"]
+        "required": [
+          "url"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/get-emails-by-url",
         "bodyEncoding": "form-urlencoded",
-        "bodyMapping": { "url": "$url" }
+        "bodyMapping": {
+          "url": "$url"
+        }
       }
     },
     {
       "name": "snov_list_prospect_lists",
-      "description": "List your prospect lists (saved leads).",
-      "parameters": { "type": "object", "properties": {} },
-      "endpointMapping": { "method": "GET", "path": "/get-user-lists" }
+      "description": "List the prospect lists of the account (id, name, number of contacts). Use the id with snov_add_prospect_to_list. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-user-lists"
+      }
     },
     {
       "name": "snov_create_prospect_list",
-      "description": "Create a prospect list.",
+      "description": "Create a new, empty prospect list and return its id for snov_add_prospect_to_list. Free.",
       "parameters": {
         "type": "object",
         "properties": {
-          "name": { "type": "string", "description": "List name." }
+          "name": {
+            "type": "string",
+            "description": "List name."
+          }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/add-user-list",
+        "path": "/lists",
         "bodyEncoding": "form-urlencoded",
-        "bodyMapping": { "name": "$name" }
+        "bodyMapping": {
+          "name": "$name"
+        }
       }
     },
     {
@@ -135,17 +273,47 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "email": { "type": "string", "description": "Prospect email." },
-          "fullName": { "type": "string", "description": "Full name." },
-          "firstName": { "type": "string", "description": "First name." },
-          "lastName": { "type": "string", "description": "Last name." },
-          "position": { "type": "string", "description": "Job title." },
-          "companyName": { "type": "string", "description": "Company name." },
-          "country": { "type": "string", "description": "Country." },
-          "listId": { "type": "integer", "description": "Target list ID." },
-          "customFields": { "type": "object", "description": "Custom fields object." }
+          "email": {
+            "type": "string",
+            "description": "Prospect email."
+          },
+          "fullName": {
+            "type": "string",
+            "description": "Full name."
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "position": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "companyName": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "listId": {
+            "type": "integer",
+            "description": "Target list ID."
+          },
+          "customFields": {
+            "type": "object",
+            "description": "Custom fields object."
+          }
         },
-        "required": ["email", "listId"]
+        "required": [
+          "email",
+          "listId"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -166,9 +334,15 @@
     },
     {
       "name": "snov_list_drip_campaigns",
-      "description": "List your drip (outreach) campaigns.",
-      "parameters": { "type": "object", "properties": {} },
-      "endpointMapping": { "method": "GET", "path": "/get-user-campaigns" }
+      "description": "List the drip (email outreach) campaigns: id, name, the prospect list used, status (Active, Paused, Draft) and dates. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-user-campaigns"
+      }
     }
   ]
 }

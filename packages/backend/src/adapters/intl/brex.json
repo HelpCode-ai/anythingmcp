@@ -1,0 +1,1562 @@
+{
+  "slug": "brex",
+  "name": "Brex",
+  "description": "Let your AI read your Brex account: cards, card and business account transactions, statements, expenses, budgets, spend limits, vendors, users and trips. Read-only API token; it cannot send money. Card lock and expense memo actions are optional and off by default.",
+  "instructions": "## Brex\nThis connector reads one Brex account through the official **Brex API** (`https://api.brex.com`): company, users, departments, locations, cards, card and cash accounts, card and cash transactions, statements, expenses, budgets, spend limits, vendors and Brex Travel trips. Three small admin actions are included and installed switched off: lock a card, unlock a card and set an expense memo.\n\n**It cannot send money, by design.** There is no tool for transfers, payments, payouts, bill payments, ACH, wires, checks, card creation or limit changes, not even a switched-off one. Asking the model to pay someone will not work.\n\n**Setup (about 5 minutes, Brex account admin or card admin)**\n1. Sign in to https://dashboard.brex.com and open **Developer**, then **Settings** (accept the developer API terms if Brex asks).\n2. Click **Create Token**, give it a name such as AnythingMCP and select only the read-only scopes this connector uses: `companies.readonly`, `users.readonly`, `departments.readonly`, `locations.readonly`, `cards.readonly`, `accounts.card.readonly`, `accounts.cash.readonly`, `transactions.card.readonly`, `transactions.cash.readonly`, `statements.card.readonly`, `statements.cash.readonly`, `expenses.card.readonly`, `budgets.readonly`, `vendors.readonly`, `travel.trips.readonly`. Leave out the ones you do not need; the matching tools then answer 403.\n3. Do **not** select `transfers`, `incoming_transfers`, `cards.pan` or any other write scope unless you want the switched-off admin actions below.\n4. Click **Allow Access**, copy the token (it starts with `bxt_`) into `BREX_API_TOKEN` and install. Brex shows it only once.\n5. Run `brex_get_company` to check.\n\n**Read-only by default.** A token with only `.readonly` scopes cannot change anything in Brex. To use the admin actions, create a token that also has `cards` (for `brex_lock_card` and `brex_unlock_card`) or `expenses.card` (for `brex_update_expense_memo`) and switch those tools on in the connector. Brex's `cards` scope would also let other software create cards; this connector has no such tool.\n\n**Financial data is sensitive.** Balances, transactions, expenses, card details and employees are confidential company data. Share this MCP server only with people allowed to see them, read only what the user asks for and do not copy it elsewhere. Card numbers, CVCs and bank account and routing numbers are never returned: the tools only show the last four card digits and drop bank details.\n\n**Writes: confirm first.** Before `brex_lock_card`, `brex_unlock_card` or `brex_update_expense_memo`, show the user what will change (card name and last four digits, or expense and new memo) and wait for a clear yes.\n\n**How to work**\n1. Who and where: `brex_get_company`, `brex_get_current_user`, `brex_list_users`, `brex_get_user`, `brex_list_departments`, `brex_list_locations`.\n2. Cards: `brex_list_cards`, `brex_get_card`; admin actions `brex_lock_card`, `brex_unlock_card`.\n3. Card spend: `brex_list_card_accounts` (balances and limit), `brex_list_card_transactions` (settled card transactions, filter with posted_at_start), `brex_list_card_statements`.\n4. Business account: `brex_list_cash_accounts`, `brex_get_cash_account`, `brex_list_cash_transactions`, `brex_list_cash_statements`.\n5. Expenses: `brex_list_expenses` (use compliance_status DUE or OVERDUE to find missing receipts or memos), `brex_get_expense`, `brex_update_expense_memo`.\n6. Budgets and limits: `brex_list_budgets`, `brex_get_budget`, `brex_list_spend_limits`, `brex_get_spend_limit`.\n7. Vendors and travel: `brex_list_vendors`, `brex_get_vendor`, `brex_list_trips`, `brex_get_trip`.\n\n**Amounts** are objects `{amount, currency}` in the smallest unit of the currency: `{\"amount\": 700, \"currency\": \"USD\"}` is 7.00 USD. Divide by 100 for USD and EUR before showing them.\n\n**Paging**: list tools answer with `next_cursor` and `items`. Pass `cursor` = `next_cursor` for the next page; it is null on the last page. `limit` is up to 1000 (expenses up to 100).\n\n**Limits and tokens**: Brex allows 1,000 requests per 60 seconds per account; a 429 means wait a minute. A token that is not used for 90 days expires, and a token stops working when its user is no longer active. Revoke it any time under Developer, Settings.\n\n**Common errors**\n- 403 \"Invalid or Revoked Token\" (or 401): the token is wrong, revoked or expired. Create a new one.\n- 403 on some tools only: the token lacks the scope of that tool, or the token's user lacks the Brex role (most data needs an account admin).\n- 404: the id does not exist in this Brex account.\n\n**Out of scope**: moving money of any kind, issuing or terminating cards, changing limits or budgets, approving expenses, uploading receipts, managing users and webhooks. There is no sandbox: Brex only offers production.",
+  "region": "intl",
+  "category": "banking",
+  "icon": "brex",
+  "docsUrl": "https://developer.brex.com/",
+  "prerequisites": "A Brex account where you are an account admin or card admin, to create a user token with read-only scopes under Developer, Settings in the Brex dashboard. About 5 minutes.",
+  "appRegistrationUrl": "https://dashboard.brex.com",
+  "requiredEnvVars": [
+    "BREX_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "BREX_API_TOKEN": {
+      "label": "User token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Brex dashboard, Developer, Settings, Create Token. Select only the read-only scopes listed in the setup steps. Brex shows the token once.",
+      "link": "https://dashboard.brex.com",
+      "example": "bxt_...",
+      "pattern": "^bxt_\\S+$",
+      "patternMessage": "Paste the whole token. It starts with bxt_ and has no spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Brex received no valid token. Check that BREX_API_TOKEN holds the whole token, starting with bxt_. Create a new one under Developer, Settings in the Brex dashboard.",
+    "403": "Brex answers 403 \"Invalid or Revoked Token\" to a wrong, revoked or expired token (tokens expire after 90 days without use). Otherwise the token lacks the scope for this call (companies.readonly for the install check) or its user lacks the Brex role. Create a token with the read-only scopes listed in the setup steps.",
+    "404": "Brex does not know this id in your account.",
+    "429": "Brex is rate limiting this account (1,000 requests per 60 seconds). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "brex_get_company"
+  },
+  "connector": {
+    "name": "Brex API",
+    "type": "REST",
+    "baseUrl": "https://api.brex.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{BREX_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v2/company"
+  },
+  "tools": [
+    {
+      "name": "brex_get_company",
+      "description": "Read the Brex company this token belongs to: id, legal name, account type and mailing address. Cheap; use it first to check that the token works. Needs the companies.readonly scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/company"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "legal_name": "$.legal_name",
+            "account_type": "$.accountType",
+            "mailing_address": "$.mailing_address"
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_get_current_user",
+      "description": "Read the Brex user who created the token: id, name, email, status, manager, department and location ids. Needs users.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users/me"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "first_name": "first_name",
+            "last_name": "last_name",
+            "email": "email",
+            "status": "status",
+            "manager_id": "manager_id",
+            "department_id": "department_id",
+            "location_id": "location_id",
+            "title_id": "title_id",
+            "cost_center_id": "cost_center_id",
+            "legal_entity_id": "legal_entity_id",
+            "remote_display_id": "remote_display_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_list_users",
+      "description": "List Brex users (employees and admins) with id, name, email, status, manager, department, location, title, cost center and legal entity ids. Deleted and archived users are left out unless you filter by status. Filter by name (fuzzy), email, status, department or location. Paged with cursor. Personal data: show only what the user asked for. Needs users.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Fuzzy, case-insensitive match on first name, last name and email."
+          },
+          "email": {
+            "type": "string",
+            "description": "Exact email address of one user."
+          },
+          "status": {
+            "type": "array",
+            "description": "Only users with one of these statuses.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "INVITED",
+                "ACTIVE",
+                "DISABLED",
+                "PENDING_ACTIVATION",
+                "INACTIVE",
+                "ARCHIVED"
+              ]
+            }
+          },
+          "department_id": {
+            "type": "array",
+            "description": "Only users in one of these departments (ids from brex_list_departments).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "location_id": {
+            "type": "array",
+            "description": "Only users at one of these locations (ids from brex_list_locations).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Brex default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users",
+        "queryParams": {
+          "name": "$name",
+          "email": "$email",
+          "status[]": "$status",
+          "department_id[]": "$department_id",
+          "location_id[]": "$location_id",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "first_name": "first_name",
+                "last_name": "last_name",
+                "email": "email",
+                "status": "status",
+                "manager_id": "manager_id",
+                "department_id": "department_id",
+                "location_id": "location_id",
+                "title_id": "title_id",
+                "cost_center_id": "cost_center_id",
+                "legal_entity_id": "legal_entity_id",
+                "remote_display_id": "remote_display_id"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "brex_get_user",
+      "description": "Read one Brex user by id: name, email, status, manager, department, location, title, cost center and legal entity ids. Needs users.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id from brex_list_users, a card owner or an expense."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users/{user_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "first_name": "first_name",
+            "last_name": "last_name",
+            "email": "email",
+            "status": "status",
+            "manager_id": "manager_id",
+            "department_id": "department_id",
+            "location_id": "location_id",
+            "title_id": "title_id",
+            "cost_center_id": "cost_center_id",
+            "legal_entity_id": "legal_entity_id",
+            "remote_display_id": "remote_display_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_list_departments",
+      "description": "List the departments set up in Brex (id, name, description). Filter by name. Paged with cursor. Needs departments.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only departments with this name."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Brex default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/departments",
+        "queryParams": {
+          "name": "$name",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_list_locations",
+      "description": "List the office locations set up in Brex (id, name, description). Filter by name. Paged with cursor. Needs locations.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only locations with this name."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Brex default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/locations",
+        "queryParams": {
+          "name": "$name",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_list_cards",
+      "description": "List Brex cards with id, name, status (ACTIVE, SHIPPED, LOCKED, TERMINATED), virtual or physical, last four digits, owner user id, budget id and spend controls (limit, available amount, refresh period). Never returns the card number or CVC. Filter by owner. Paged with cursor. Needs cards.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Only cards owned by this user (id from brex_list_users)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Brex default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/cards",
+        "queryParams": {
+          "user_id": "$user_id",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "card_name": "card_name",
+                "status": "status",
+                "card_type": "card_type",
+                "limit_type": "limit_type",
+                "last_four": "last_four",
+                "owner_user_id": "owner.user_id",
+                "budget_id": "budget_id",
+                "spend_controls": "spend_controls",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "brex_get_card",
+      "description": "Read one Brex card by id: name, status, type, last four digits, owner, budget and spend controls. Never returns the card number, CVC or addresses. Needs cards.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "description": "Card id from brex_list_cards or a card transaction."
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/cards/{card_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "card_name": "card_name",
+            "status": "status",
+            "card_type": "card_type",
+            "limit_type": "limit_type",
+            "last_four": "last_four",
+            "owner_user_id": "owner.user_id",
+            "budget_id": "budget_id",
+            "spend_controls": "spend_controls",
+            "created_at": "created_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_lock_card",
+      "description": "Lock a Brex card so it cannot be used, for example when it is lost or suspected of fraud. The card owner is notified. Reversible with brex_unlock_card. Confirm the card (name and last four digits) and the reason with the user before calling. Installed switched off; needs a token with the cards scope.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "description": "Card id from brex_list_cards."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the card is locked.",
+            "enum": [
+              "CARD_DAMAGED",
+              "CARD_LOST",
+              "CARD_NOT_RECEIVED",
+              "DO_NOT_NEED_PHYSICAL_CARD",
+              "DO_NOT_NEED_VIRTUAL_CARD",
+              "FRAUD",
+              "OTHER"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional free-text note about the lock."
+          }
+        },
+        "required": [
+          "card_id",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/cards/{card_id}/lock",
+        "bodyMapping": {
+          "reason": "$reason",
+          "description": "$description"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "card_name": "$.card_name",
+            "last_four": "$.last_four"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "brex_unlock_card",
+      "description": "Unlock a locked Brex card so it can be used again. Only do this when the user explicitly asks; confirm the card (name and last four digits) with the user before calling. Installed switched off; needs a token with the cards scope.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "description": "Card id from brex_list_cards."
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/cards/{card_id}/unlock"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "card_name": "$.card_name",
+            "last_four": "$.last_four"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "brex_list_card_accounts",
+      "description": "List the Brex card accounts with status, current balance, available balance, account limit and the current statement period. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Needs accounts.card.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/accounts/card"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "accounts": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "current_balance": "current_balance",
+                "available_balance": "available_balance",
+                "account_limit": "account_limit",
+                "current_statement_period": "current_statement_period"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_list_card_transactions",
+      "description": "List settled card transactions for all Brex card accounts: description, amount, initiated and posted dates, type (PURCHASE, REFUND, CHARGEBACK, REWARDS_CREDIT, COLLECTION, BNPL_FEE), merchant (descriptor, MCC, country), card id and expense id. Filter by posted date and user. Pending authorizations are not included. Brex may post late: keep a lookback of a few days when looking for recent spend. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Paged with cursor. Financial data: share only what the user asked for. Needs transactions.card.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "posted_at_start": {
+            "type": "string",
+            "description": "Only transactions posted on or after this date-time (RFC 3339, e.g. 2026-09-01T00:00:00Z)."
+          },
+          "user_ids": {
+            "type": "array",
+            "description": "Only transactions of these users (ids from brex_list_users).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "array",
+            "description": "Pass [\"expense_id\"] to fill in the expense id of each transaction.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "expense_id"
+              ]
+            }
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 50).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/transactions/card/primary",
+        "queryParams": {
+          "posted_at_start": "$posted_at_start",
+          "user_ids": "$user_ids",
+          "expand[]": "$expand",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "description": "description",
+                "amount": "amount",
+                "type": "type",
+                "initiated_at_date": "initiated_at_date",
+                "posted_at_date": "posted_at_date",
+                "merchant": "merchant",
+                "card_id": "card_id",
+                "expense_id": "expense_id"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "brex_list_card_statements",
+      "description": "List finalized statements of the primary Brex card account: statement id, period (start and end date) and start and end balance. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Paged with cursor. Needs statements.card.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Brex default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/accounts/card/primary/statements",
+        "queryParams": {
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "period": "period",
+                "start_balance": "start_balance",
+                "end_balance": "end_balance"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_list_cash_accounts",
+      "description": "List Brex business (cash) accounts with id, name, status, whether it is the primary account, current and available balance. Account and routing numbers are removed on purpose; read them in the Brex dashboard. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Needs accounts.cash.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/accounts/cash"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "items[*].account_number",
+            "items[*].routing_number"
+          ],
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "status": "status",
+                "primary": "primary",
+                "current_balance": "current_balance",
+                "available_balance": "available_balance"
+              }
+            }
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "brex_get_cash_account",
+      "description": "Read one Brex business (cash) account by id: name, status, primary flag, current and available balance. Account and routing numbers are removed on purpose. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Needs accounts.cash.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Cash account id from brex_list_cash_accounts."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/accounts/cash/{account_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "account_number",
+            "routing_number"
+          ],
+          "select": {
+            "id": "id",
+            "name": "name",
+            "status": "status",
+            "primary": "primary",
+            "current_balance": "current_balance",
+            "available_balance": "available_balance"
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "brex_list_cash_transactions",
+      "description": "List transactions of one Brex business (cash) account: description, amount, type (PAYMENT, DIVIDEND, FEE, INTEREST, CARD_COLLECTION and others), initiated and posted dates and transfer id. Filter by posted date. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Paged with cursor. Financial data: share only what the user asked for. Needs transactions.cash.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Cash account id from brex_list_cash_accounts."
+          },
+          "posted_at_start": {
+            "type": "string",
+            "description": "Only transactions posted on or after this date-time (RFC 3339, e.g. 2026-09-01T00:00:00Z)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 50).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/transactions/cash/{account_id}",
+        "queryParams": {
+          "posted_at_start": "$posted_at_start",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "description": "description",
+                "amount": "amount",
+                "type": "type",
+                "initiated_at_date": "initiated_at_date",
+                "posted_at_date": "posted_at_date",
+                "transfer_id": "transfer_id"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "brex_list_cash_statements",
+      "description": "List finalized statements of one Brex business (cash) account: statement id, period and start and end balance. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Paged with cursor. Needs statements.cash.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Cash account id from brex_list_cash_accounts."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Brex default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/accounts/cash/{account_id}/statements",
+        "queryParams": {
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "period": "period",
+                "start_balance": "start_balance",
+                "end_balance": "end_balance"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_list_expenses",
+      "description": "List Brex expenses (card, bill pay and reimbursement) with memo, status, payment status, category, purchase date, amounts, merchant, user, budget, department, receipts and compliance status. Filter by user, type, status, payment status, receipt or memo compliance (DUE and OVERDUE find expenses still missing documentation) and purchase or update dates. Pass expand to fill in merchant, user, budget, receipts.download_uris (links valid 15 minutes) and more. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Paged with cursor, at most 100 per page. Needs expenses.card.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "array",
+            "description": "Only expenses of these users (ids from brex_list_users).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expense_type": {
+            "type": "array",
+            "description": "Only these expense types.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CARD",
+                "BILLPAY",
+                "REIMBURSEMENT",
+                "CLAWBACK",
+                "UNSET"
+              ]
+            }
+          },
+          "status": {
+            "type": "array",
+            "description": "Only expenses in these statuses.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "SUBMITTED",
+                "APPROVED",
+                "OUT_OF_POLICY",
+                "VOID",
+                "CANCELED",
+                "SPLIT",
+                "SETTLED"
+              ]
+            }
+          },
+          "payment_status": {
+            "type": "array",
+            "description": "Only expenses with these payment statuses.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "NOT_STARTED",
+                "PROCESSING",
+                "CANCELED",
+                "DECLINED",
+                "CLEARED",
+                "REFUNDING",
+                "REFUNDED",
+                "CASH_ADVANCE",
+                "CREDITED",
+                "AWAITING_PAYMENT",
+                "SCHEDULED"
+              ]
+            }
+          },
+          "compliance_status": {
+            "type": "array",
+            "description": "Documentation compliance (receipts, memos). DUE and OVERDUE list expenses that still miss something.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "DUE",
+                "OVERDUE",
+                "COMPLETED"
+              ]
+            }
+          },
+          "budget_id": {
+            "type": "array",
+            "description": "Only expenses charged to these budgets or spend limits.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "purchased_at_start": {
+            "type": "string",
+            "description": "Only expenses purchased at or after this date-time (RFC 3339)."
+          },
+          "purchased_at_end": {
+            "type": "string",
+            "description": "Only expenses purchased at or before this date-time (RFC 3339)."
+          },
+          "updated_at_start": {
+            "type": "string",
+            "description": "Only expenses updated at or after this date-time (RFC 3339)."
+          },
+          "updated_at_end": {
+            "type": "string",
+            "description": "Only expenses updated at or before this date-time (RFC 3339)."
+          },
+          "expand": {
+            "type": "array",
+            "description": "Extra details to fill in.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "location",
+                "department",
+                "cost_center",
+                "merchant",
+                "receipts.download_uris",
+                "user",
+                "budget",
+                "payment",
+                "spending_entity",
+                "policy"
+              ]
+            }
+          },
+          "load_custom_fields": {
+            "type": "boolean",
+            "description": "Also return the custom field values."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/expenses",
+        "queryParams": {
+          "user_id[]": "$user_id",
+          "expense_type[]": "$expense_type",
+          "status[]": "$status",
+          "payment_status[]": "$payment_status",
+          "compliance_status[]": "$compliance_status",
+          "budget_id[]": "$budget_id",
+          "purchased_at_start": "$purchased_at_start",
+          "purchased_at_end": "$purchased_at_end",
+          "updated_at_start": "$updated_at_start",
+          "updated_at_end": "$updated_at_end",
+          "expand[]": "$expand",
+          "load_custom_fields": "$load_custom_fields",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "memo": "memo",
+                "expense_type": "expense_type",
+                "status": "status",
+                "payment_status": "payment_status",
+                "category": "category",
+                "purchased_at": "purchased_at",
+                "updated_at": "updated_at",
+                "payment_posted_at": "payment_posted_at",
+                "approved_at": "approved_at",
+                "submitted_at": "submitted_at",
+                "original_amount": "original_amount",
+                "billing_amount": "billing_amount",
+                "purchased_amount": "purchased_amount",
+                "usd_equivalent_amount": "usd_equivalent_amount",
+                "merchant_id": "merchant_id",
+                "merchant": "merchant",
+                "user_id": "user_id",
+                "user": "user",
+                "budget_id": "budget_id",
+                "budget": "budget",
+                "department_id": "department_id",
+                "department": "department",
+                "location_id": "location_id",
+                "location": "location",
+                "cost_center_id": "cost_center_id",
+                "spending_entity_id": "spending_entity_id",
+                "receipts": "receipts",
+                "policy": "policy",
+                "compliance_status": "review.compliance_status",
+                "trip_id": "trip_id",
+                "booking_id": "booking_id",
+                "custom_fields": "custom_fields",
+                "dashboard_url": "dashboard_url"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "brex_get_expense",
+      "description": "Read one Brex expense by id with memo, status, amounts, merchant, user, budget, receipts, policy and compliance status. Pass expand for more detail, e.g. [\"merchant\", \"receipts.download_uris\"]. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Needs expenses.card.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "description": "Expense id from brex_list_expenses or a card transaction's expense_id."
+          },
+          "expand": {
+            "type": "array",
+            "description": "Extra details to fill in.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "location",
+                "department",
+                "cost_center",
+                "merchant",
+                "receipts.download_uris",
+                "user",
+                "budget",
+                "payment",
+                "spending_entity",
+                "policy"
+              ]
+            }
+          },
+          "load_custom_fields": {
+            "type": "boolean",
+            "description": "Also return the custom field values."
+          }
+        },
+        "required": [
+          "expense_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/expenses/{expense_id}",
+        "queryParams": {
+          "expand[]": "$expand",
+          "load_custom_fields": "$load_custom_fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "memo": "memo",
+            "expense_type": "expense_type",
+            "status": "status",
+            "payment_status": "payment_status",
+            "category": "category",
+            "purchased_at": "purchased_at",
+            "updated_at": "updated_at",
+            "payment_posted_at": "payment_posted_at",
+            "approved_at": "approved_at",
+            "submitted_at": "submitted_at",
+            "original_amount": "original_amount",
+            "billing_amount": "billing_amount",
+            "purchased_amount": "purchased_amount",
+            "usd_equivalent_amount": "usd_equivalent_amount",
+            "merchant_id": "merchant_id",
+            "merchant": "merchant",
+            "user_id": "user_id",
+            "user": "user",
+            "budget_id": "budget_id",
+            "budget": "budget",
+            "department_id": "department_id",
+            "department": "department",
+            "location_id": "location_id",
+            "location": "location",
+            "cost_center_id": "cost_center_id",
+            "spending_entity_id": "spending_entity_id",
+            "receipts": "receipts",
+            "policy": "policy",
+            "compliance_status": "review.compliance_status",
+            "trip_id": "trip_id",
+            "booking_id": "booking_id",
+            "custom_fields": "custom_fields",
+            "dashboard_url": "dashboard_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_update_expense_memo",
+      "description": "Set the memo of a Brex card expense, for example the business purpose. Overwrites the existing memo. Show the user the expense and the new memo and confirm before calling. Installed switched off; needs a token with the expenses.card scope.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "description": "Card expense id from brex_list_expenses."
+          },
+          "memo": {
+            "type": "string",
+            "description": "The new memo text."
+          }
+        },
+        "required": [
+          "expense_id",
+          "memo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/expenses/card/{expense_id}",
+        "bodyMapping": {
+          "memo": "$memo"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "memo": "$.memo",
+            "status": "$.status",
+            "updated_at": "$.updated_at"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "brex_list_budgets",
+      "description": "List Brex budgets with name, description, parent budget, owners, period (WEEKLY, MONTHLY, QUARTERLY, YEARLY, ONE_TIME), start and end date, amount, status and limit type. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Paged with cursor. Needs budgets.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Brex default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/budgets",
+        "queryParams": {
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "budget_id": "budget_id",
+                "name": "name",
+                "description": "description",
+                "parent_budget_id": "parent_budget_id",
+                "owner_user_ids": "owner_user_ids",
+                "period_recurrence_type": "period_recurrence_type",
+                "start_date": "start_date",
+                "end_date": "end_date",
+                "amount": "amount",
+                "status": "spend_budget_status",
+                "limit_type": "limit_type"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "brex_get_budget",
+      "description": "Read one Brex budget by id: name, parent, owners, period, dates, amount, status and limit type. Needs budgets.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "budget_id": {
+            "type": "string",
+            "description": "Budget id from brex_list_budgets."
+          }
+        },
+        "required": [
+          "budget_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/budgets/{budget_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "budget_id": "budget_id",
+            "name": "name",
+            "description": "description",
+            "parent_budget_id": "parent_budget_id",
+            "owner_user_ids": "owner_user_ids",
+            "period_recurrence_type": "period_recurrence_type",
+            "start_date": "start_date",
+            "end_date": "end_date",
+            "amount": "amount",
+            "status": "spend_budget_status",
+            "limit_type": "limit_type"
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_list_spend_limits",
+      "description": "List Brex spend limits with name, status, period, dates, authorization settings (base limit and limit with increases), per-transaction limit, the current period balance (amount spent), owners and members. Filter by member. Amounts are objects {amount, currency} in the smallest currency unit (cents for USD). Paged with cursor. Needs budgets.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "member_user_id": {
+            "type": "array",
+            "description": "Only spend limits these users are members of.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Brex default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/spend_limits",
+        "queryParams": {
+          "member_user_id[]": "$member_user_id",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "status": "status",
+                "parent_budget_id": "parent_budget_id",
+                "period_recurrence_type": "period_recurrence_type",
+                "start_date": "start_date",
+                "end_date": "end_date",
+                "authorization_settings": "authorization_settings",
+                "transaction_limit": "transaction_limit",
+                "current_period_balance": "current_period_balance",
+                "spend_type": "spend_type",
+                "owner_user_ids": "owner_user_ids",
+                "member_user_ids": "member_user_ids",
+                "department_id": "department_id",
+                "legal_entity_id": "legal_entity_id"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "brex_get_spend_limit",
+      "description": "Read one Brex spend limit by id: limits, current period balance, owners, members and settings. Needs budgets.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spend_limit_id": {
+            "type": "string",
+            "description": "Spend limit id from brex_list_spend_limits or an expense's budget_id."
+          }
+        },
+        "required": [
+          "spend_limit_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/spend_limits/{spend_limit_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "name": "name",
+            "description": "description",
+            "status": "status",
+            "parent_budget_id": "parent_budget_id",
+            "period_recurrence_type": "period_recurrence_type",
+            "start_date": "start_date",
+            "end_date": "end_date",
+            "authorization_settings": "authorization_settings",
+            "transaction_limit": "transaction_limit",
+            "current_period_balance": "current_period_balance",
+            "spend_type": "spend_type",
+            "owner_user_ids": "owner_user_ids",
+            "member_user_ids": "member_user_ids",
+            "department_id": "department_id",
+            "legal_entity_id": "legal_entity_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "brex_list_vendors",
+      "description": "List the vendors saved in Brex with id, company name, email, phone and the payment methods on file (ACH, DOMESTIC_WIRE, CHEQUE, INTERNATIONAL_WIRE). Bank details are removed on purpose. Filter by name. Paged with cursor. Needs vendors.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only vendors with this name."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Brex default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/vendors",
+        "queryParams": {
+          "name": "$name",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "items[*].payment_accounts[*].details.account_number",
+            "items[*].payment_accounts[*].details.routing_number",
+            "items[*].payment_accounts[*].details.iban",
+            "items[*].payment_accounts[*].details.swift_code"
+          ],
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "company_name": "company_name",
+                "email": "email",
+                "phone": "phone",
+                "payment_account_types": "payment_accounts[*].details.type"
+              }
+            }
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "brex_get_vendor",
+      "description": "Read one Brex vendor by id: company name, email, phone and the payment methods on file. Bank details are removed on purpose. Needs vendors.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_id": {
+            "type": "string",
+            "description": "Vendor id from brex_list_vendors."
+          }
+        },
+        "required": [
+          "vendor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/vendors/{vendor_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "payment_accounts[*].details.account_number",
+            "payment_accounts[*].details.routing_number",
+            "payment_accounts[*].details.iban",
+            "payment_accounts[*].details.swift_code"
+          ],
+          "select": {
+            "id": "id",
+            "company_name": "company_name",
+            "email": "email",
+            "phone": "phone",
+            "payment_account_types": "payment_accounts[*].details.type"
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "brex_list_trips",
+      "description": "List Brex Travel trips with name, status, traveler, booker, start and end time and reference. Filter by last update. Paged with cursor. Needs travel.trips.readonly and Brex Travel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "last_updated_after": {
+            "type": "string",
+            "description": "Only trips updated after this date-time (RFC 3339)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the next_cursor of the previous answer. Leave it out for the first page. next_cursor is null on the last page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Brex default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/trips",
+        "queryParams": {
+          "last_updated_after": "$last_updated_after",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "next_cursor": "$.next_cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "status": "status",
+                "traveler": "traveler",
+                "booker_user_id": "booker_user_id",
+                "starts_at": "starts_at",
+                "ends_at": "ends_at",
+                "billable_at": "billable_at",
+                "trip_reference": "trip_reference",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "brex_get_trip",
+      "description": "Read one Brex Travel trip by id: name, status, traveler, booker, dates and reference. Needs travel.trips.readonly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "description": "Trip id from brex_list_trips or an expense's trip_id."
+          }
+        },
+        "required": [
+          "trip_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/trips/{trip_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "name": "name",
+            "status": "status",
+            "traveler": "traveler",
+            "booker_user_id": "booker_user_id",
+            "starts_at": "starts_at",
+            "ends_at": "ends_at",
+            "billable_at": "billable_at",
+            "trip_reference": "trip_reference",
+            "created_at": "created_at",
+            "updated_at": "updated_at"
+          }
+        }
+      }
+    }
+  ]
+}

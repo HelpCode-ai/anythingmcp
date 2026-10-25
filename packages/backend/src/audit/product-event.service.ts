@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { AttributionClickId, clickIdFromAttribution, sanitizeSignupAttribution } from './signup-attribution';
+import { CHECKOUT_SOURCES } from '../license/license-checkout';
 
 /**
  * Product-usage events the UI reports so the activation funnel can be read
@@ -54,6 +55,13 @@ export const ProductEvents = {
   OAUTH_FAILED: 'oauth_failed',
   SETUP_SAVED_UNVERIFIED: 'setup_saved_unverified',
   /**
+   * A step of a setup guide (adapter `setupGuide`) was shown / left with
+   * Continue. metadata.adapterSlug, metadata.step = the step id,
+   * metadata.index = its position from 1. Answers which step people give up on.
+   */
+  SETUP_STEP_VIEWED: 'setup_step_viewed',
+  SETUP_STEP_COMPLETED: 'setup_step_completed',
+  /**
    * A new cloud account was created; metadata = the first and last touch the
    * visitor arrived through (see signup-attribution.ts). Written by the
    * server on sign-up, never accepted from a client. Answers: which channel
@@ -89,12 +97,22 @@ export const ProductEvents = {
   /**
    * Cloud: the workspace's first successful tool call was handed to the
    * licence site, to be uploaded to Google Ads as an activation conversion
-   * against the sign-up's click id (see ads-activation.service.ts). Once per
-   * workspace; metadata.kind = which click id (gclid, gbraid, wbraid),
+   * against the sign-up's click id (see ads-activation.service.ts), and to
+   * ChatGPT Ads when the sign-up carried an `oppref`. Once per workspace;
+   * metadata.kind = which click id (gclid, gbraid, wbraid, oppref; two
+   * joined by "+" when the sign-up carried both),
    * metadata.status = the site's HTTP answer (2xx queued, 4xx refused for
    * good). Server-only. Its presence is what stops a second report.
    */
   ADS_ACTIVATION_REPORTED: 'ads_activation_reported',
+  /**
+   * Cloud: a user who signed up from a ChatGPT Ads click (an `oppref` stored
+   * with ad consent) verified their email address, and the licence site was
+   * told, to report the verified sign-up to ChatGPT Ads (see
+   * ads-signup.service.ts). Once per user; metadata.kind = 'oppref',
+   * metadata.status = the site's HTTP answer. Server-only.
+   */
+  ADS_SIGNUP_REPORTED: 'ads_signup_reported',
   /**
    * Cloud: a workspace on the no-card trial made its first successful tool
    * call and is offered the card trial in the app and by email (see
@@ -117,11 +135,34 @@ export const ProductEvents = {
    */
   CARD_TRIAL_OFFER_EMAILED: 'card_trial_offer_emailed',
   /**
+   * The card-trial page (/start-trial) was opened, once per page load.
+   * metadata.source = the entry point that led there (CHECKOUT_SOURCES in
+   * license-checkout.ts, e.g. 'first_success_banner', 'first_success_email',
+   * 'trial_banner'), metadata.kind = 'trial' (card trial on offer), 'pay'
+   * (the address had a subscription, the plan is billed today) or 'ending'
+   * (under 48 hours of the free trial left, billed today too). Answers how
+   * many clicks on each entry point, emails included, reach the page.
+   */
+  START_TRIAL_VIEWED: 'start_trial_viewed',
+  /**
+   * Its checkout button was pressed: metadata.source and metadata.kind as
+   * above. Read against start_trial_viewed (who leaves without trying) and
+   * checkout_link_created (who reaches Stripe).
+   */
+  START_TRIAL_CHECKOUT_STARTED: 'start_trial_checkout_started',
+  /**
+   * "Continue without payment details" (or "Try free without payment
+   * details") was pressed: metadata.source and metadata.kind as above. Tells
+   * "chose the no-card trial" apart from "closed the tab", which records
+   * nothing.
+   */
+  START_TRIAL_SKIPPED: 'start_trial_skipped',
+  /**
    * The app minted a Stripe Checkout link (POST /api/license/checkout-link).
-   * metadata.via = where it came from ('first_success', or 'app' for every
-   * other entry point), metadata.kind = 'trial' (card trial) or 'pay'.
-   * Server-only. Answers how many clicks reach Checkout; Stripe says how
-   * many finish (metadata.trial_source).
+   * metadata.via = the entry point it came from (CHECKOUT_SOURCES, 'app' when
+   * the page did not say), metadata.kind = 'trial' (card trial) or 'pay'.
+   * Server-only. Answers how many clicks reach Checkout; Stripe says how many
+   * finish (metadata.checkout_source, the same value).
    */
   CHECKOUT_LINK_CREATED: 'checkout_link_created',
 } as const;
@@ -138,6 +179,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
   ProductEvents.ADS_ACTIVATION_REPORTED,
+  ProductEvents.ADS_SIGNUP_REPORTED,
   ProductEvents.CARD_TRIAL_OFFER_ELIGIBLE,
   ProductEvents.CARD_TRIAL_OFFER_EMAILED,
   ProductEvents.CHECKOUT_LINK_CREATED,
@@ -146,8 +188,11 @@ const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
 );
 const MAX_METADATA_BYTES = 1024;
-/** Two touches of up to fifteen capped fields each, three of them click ids of up to 150 chars. */
-const MAX_ATTRIBUTION_BYTES = 5120;
+/**
+ * Two touches of up to sixteen capped fields each: three Google click ids of
+ * up to 150 chars and an `oppref` of up to 500.
+ */
+const MAX_ATTRIBUTION_BYTES = 6144;
 
 @Injectable()
 export class ProductEventService {
@@ -186,8 +231,8 @@ export class ProductEventService {
   }
 
   /**
-   * The Google Ads click id this user signed up through, if they granted ad
-   * consent: read from their own `signup_attributed` event only, keyed by the
+   * The ad click ids this user signed up through (one Google id, an
+   * `oppref`, or both), if they granted ad consent: read from their own `signup_attributed` event only, keyed by the
    * user id alone. Null when there is none.
    */
   async clickIdForUser(userId: string | null | undefined): Promise<AttributionClickId | null> {
@@ -238,10 +283,16 @@ export class ProductEventService {
 // `status`, `toolName`, `error`: why a setup check or sign-in failed (the
 // provider's message, passed through scrubProviderMessage by the server);
 // `verified`: whether a completed setup made a successful call.
+// `source`: the entry point that led to /start-trial (start_trial_viewed,
+// start_trial_checkout_started); only the CHECKOUT_SOURCES values are kept.
+// `device`: 'mobile' (a touch screen) or 'desktop', on start_trial_viewed;
+// nothing finer, and any other value is dropped.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
-  'status', 'toolName', 'error', 'verified', 'cardTrialOffered',
+  'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device',
 ] as const;
+const DEVICE_KINDS = new Set(['mobile', 'desktop']);
+const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;
 /** The values of `match` (see catalog-search.ts). */
 const SEARCH_MATCH_KINDS = new Set(['direct', 'fuzzy', 'partial']);
@@ -257,7 +308,11 @@ function boundMetadata(
         ? sanitizeSearchQuery(metadata[key])
         : key === 'match'
           ? (SEARCH_MATCH_KINDS.has(metadata[key] as string) ? metadata[key] : null)
-          : metadata[key];
+          : key === 'source'
+            ? (KNOWN_CHECKOUT_SOURCES.has(metadata[key] as string) ? metadata[key] : null)
+            : key === 'device'
+              ? (DEVICE_KINDS.has(metadata[key] as string) ? metadata[key] : null)
+              : metadata[key];
     if (typeof v === 'string') entries.push([key, v.slice(0, 200)]);
     else if (typeof v === 'number' || typeof v === 'boolean') entries.push([key, v]);
   }
@@ -287,13 +342,28 @@ export function sanitizeSearchQuery(value: unknown): string | null {
  * A provider's error message, made safe to keep: query strings dropped from
  * URLs (keys travel there), any of the given secret values masked, long
  * token-like runs masked, and the whole capped at 160 characters.
+ *
+ * The message comes from a vendor or an OAuth callback, so it can be long and
+ * crafted. Secrets are masked on the whole text (a plain split, no regex), then
+ * only the first SCRUB_INPUT_LIMIT characters reach the regexes, and those are
+ * linear: the URL one used to rescan the rest of the input from every
+ * `http://` of `http://http://…` (CodeQL js/polynomial-redos).
  */
+const SCRUB_INPUT_LIMIT = 2000;
+
 export function scrubProviderMessage(message: unknown, secrets: unknown[] = []): string | null {
   if (typeof message !== 'string' || !message.trim()) return null;
-  let out = message.replace(/(https?:\/\/[^\s?#"']+)[?#][^\s"']*/g, '$1');
+  let out = message;
   for (const secret of secrets) {
     if (typeof secret === 'string' && secret.length >= 6) out = out.split(secret).join('***');
   }
+  out = out.slice(0, SCRUB_INPUT_LIMIT);
+  // Each URL is matched once (the match always succeeds and the scan moves on
+  // past it), then cut at its first ? or #.
+  out = out.replace(/https?:\/\/[^\s"']*/g, (url) => {
+    const cut = url.search(/[?#]/);
+    return cut === -1 ? url : url.slice(0, cut);
+  });
   out = out.replace(/[A-Za-z0-9_\-.+/=]{32,}/g, '***');
   out = out.replace(/\s+/g, ' ').trim();
   return out.length > 160 ? `${out.slice(0, 159)}…` : out;

@@ -1,0 +1,1861 @@
+{
+  "slug": "sportmonks",
+  "name": "SportMonks Football",
+  "description": "SportMonks Football API v3: leagues, seasons, fixtures and results, livescores, standings, top scorers, teams, squads, players, venues, pre-match odds and predictions, with SportMonks include and filter syntax. Coverage depends on your SportMonks plan.",
+  "instructions": "## SportMonks Football\nThis connector reads the SportMonks Football API v3 (`https://api.sportmonks.com/v3`): leagues and seasons, fixtures and results, livescores, standings, top scorers, teams and squads, players, venues, pre-match odds and predictions. Every tool only reads.\n\n**Setup.** Sign in at https://my.sportmonks.com, open API, create an API token and paste it into `SPORTMONKS_API_TOKEN`. It is sent in the `Authorization` header. A free plan exists (a few leagues); paid plans add leagues and add-ons such as odds and predictions.\n\n**Plan coverage.** Data outside your plan does not raise an error: the answer is empty with the message \"No result(s) found ... you don't have access to it via your current subscription\". Call `sportmonks_list_my_leagues` first and work with those leagues. Odds and predictions need the matching add-on.\n\n**Includes.** Base answers only carry ids. Ask for related data with `include`, separated by semicolons and nested with dots: `participants;scores;state;events.type;lineups.player`. Ids such as `type_id`, `state_id` or `position_id` are explained by adding `.type` (or `state`, `position`) to the include, or by `sportmonks_list_types`. Each tool lists useful includes. Keep includes to what you need: they make answers much larger.\n\n**Filters, fields and paging.** `filters` takes SportMonks filters separated by semicolons, e.g. `fixtureLeagues:9` on fixture lists, `eventTypes:14,15` on events, `markets:1;bookmakers:2` on odds (`sportmonks_get_prematch_odds`), `seasonTopscorerTypes:208` on top scorers. `select` returns only the fields you list. Lists are paged (`per_page` up to 50); when `pagination.has_more` is true, call again with the next `page`.\n\n**Ids.** League ids: 8 Premier League, 9 Championship, 82 Bundesliga, 384 Serie A, 564 LaLiga, 301 Ligue 1, 2 Champions League. The standings, top scorer and squad tools take a season id: get it from `sportmonks_get_league` with include `currentSeason`. Fixture lists give fixture ids for the match, odds and prediction tools. For one market of a fixture use `sportmonks_get_prematch_odds_by_market` (market ids from `sportmonks_list_odds_markets`), for one bookmaker `sportmonks_get_prematch_odds_by_bookmaker` (ids from `sportmonks_list_bookmakers`); both are smaller than the full odds list. Teams and players: use the search tools.\n\n**Reading the data.** Times are UTC unless you pass `timezone`. `result_info` is a sentence such as \"Arsenal won after full-time.\"; scores are in the `scores` include (`description` CURRENT is the latest score). Odds values are decimal.\n\n**Rate limit.** 3,000 calls per hour per entity (fixtures, teams, players ...). Every answer carries `rate_limit.remaining` and `resets_in_seconds`; on 429 wait until the reset. Prefer one list call with a filter over many single calls.",
+  "region": "intl",
+  "category": "sports",
+  "icon": "sportmonks",
+  "docsUrl": "https://docs.sportmonks.com/v3",
+  "prerequisites": "A SportMonks account with an API token (free plan or paid). The leagues, odds and predictions you can read depend on the plan.",
+  "requiredEnvVars": [
+    "SPORTMONKS_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "SPORTMONKS_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "In my.sportmonks.com open API, then Tokens, create a token and paste it here.",
+      "link": "https://my.sportmonks.com/api/tokens",
+      "pattern": "^[A-Za-z0-9]{20,100}$",
+      "patternMessage": "Paste only the token, without spaces or an api_token= prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "SportMonks refused the token. Create a new one at my.sportmonks.com under API and paste it again.",
+    "403": "The token works but this resource is not in your SportMonks plan.",
+    "429": "SportMonks allows 3,000 calls per hour per entity. Wait for the reset and try again."
+  },
+  "probe": {
+    "tool": "sportmonks_list_my_leagues"
+  },
+  "connector": {
+    "name": "SportMonks Football",
+    "type": "REST",
+    "baseUrl": "https://api.sportmonks.com/v3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{SPORTMONKS_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/my/leagues"
+  },
+  "tools": [
+    {
+      "name": "sportmonks_list_my_leagues",
+      "description": "Leagues your SportMonks plan covers, with id, name, short code, country id, type and when they last played. Call this first: a league outside the plan answers with an empty result, not an error.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/leagues"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_list_leagues",
+      "description": "Football leagues and cups with id, name, short code, country id, type (league, cup ...) and whether they are active. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: country;currentSeason."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/leagues",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_search_leagues",
+      "description": "Find football leagues by name, e.g. Premier or Bundesliga, to get the league id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "description": "Part of the league name."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: country;currentSeason."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/leagues/search/{name}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_league",
+      "description": "One league by id. Include currentSeason for the season id the standings, top scorer and squad tools need, or seasons for every season.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks league id, e.g. 8 (Premier League), 82 (Bundesliga), 384 (Serie A), 564 (LaLiga), 301 (Ligue 1), 9 (Championship). sportmonks_list_my_leagues shows the ones your plan covers."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: currentSeason;seasons;country;stages."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          }
+        },
+        "required": [
+          "league_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/leagues/{league_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_season",
+      "description": "One season by id: name, start and end date, whether it is current or finished. Include stages, rounds or league for structure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "season_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks season id. Get the current one with sportmonks_get_league and include currentSeason, or past ones with include seasons."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: league;stages;rounds;currentStage."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          }
+        },
+        "required": [
+          "season_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/seasons/{season_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_fixture",
+      "description": "One match by id. Use include for detail: participants (teams), scores, state (status), events.type (goals, cards, subs), lineups.player, statistics.type, periods, referees, venue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks fixture id, from the fixture list tools."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: participants;scores;state;league;venue;events.type;lineups.player;statistics.type;periods;referees;odds;predictions;weatherReport."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for the times in the answer, e.g. Europe/London. Default UTC."
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/fixtures/{fixture_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "timezone": "$timezone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_list_fixtures_by_date",
+      "description": "All matches on one day in the leagues your plan covers. Narrow with filters fixtureLeagues:<league ids>. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Day, YYYY-MM-DD."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: participants;scores;state;league. Heavy includes on long lists make big answers."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort order of the list."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for the times in the answer, e.g. Europe/London. Default UTC."
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/fixtures/date/{date}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "page": "$page",
+          "per_page": "$per_page",
+          "order": "$order",
+          "timezone": "$timezone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_list_fixtures_between",
+      "description": "Matches between two dates (at most 100 days apart) in the leagues your plan covers. Narrow with filters fixtureLeagues:<league ids>. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: participants;scores;state;league. Heavy includes on long lists make big answers."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort order of the list."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for the times in the answer, e.g. Europe/London. Default UTC."
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/fixtures/between/{start_date}/{end_date}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "page": "$page",
+          "per_page": "$per_page",
+          "order": "$order",
+          "timezone": "$timezone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_list_team_fixtures_between",
+      "description": "One team's matches between two dates (at most 100 days apart): past results and upcoming fixtures. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "team_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks team id, from sportmonks_search_teams or a fixture's participants."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: participants;scores;state;league. Heavy includes on long lists make big answers."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort order of the list."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for the times in the answer, e.g. Europe/London. Default UTC."
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date",
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/fixtures/between/{start_date}/{end_date}/{team_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "page": "$page",
+          "per_page": "$per_page",
+          "order": "$order",
+          "timezone": "$timezone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_head_to_head",
+      "description": "Past meetings between two teams, newest first with include participants;scores. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_a_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks team id, from sportmonks_search_teams or a fixture's participants."
+          },
+          "team_b_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks id of the other team."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: participants;scores;state;league. Heavy includes on long lists make big answers."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for the times in the answer, e.g. Europe/London. Default UTC."
+          }
+        },
+        "required": [
+          "team_a_id",
+          "team_b_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/fixtures/head-to-head/{team_a_id}/{team_b_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "page": "$page",
+          "per_page": "$per_page",
+          "timezone": "$timezone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_list_livescores",
+      "description": "Matches of today that start within 15 minutes, are being played or ended in the last 15 minutes, in the leagues your plan covers. Include participants;scores;state;events for the live picture.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: participants;scores;state;periods;events.type."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for the times in the answer, e.g. Europe/London. Default UTC."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/livescores",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "timezone": "$timezone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_list_inplay_livescores",
+      "description": "Only the matches being played right now, in the leagues your plan covers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: participants;scores;state;periods;events.type."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for the times in the answer, e.g. Europe/London. Default UTC."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/livescores/inplay",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "timezone": "$timezone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_standings",
+      "description": "League table of a season: position, points, form and the details of each team. Include participant for team names and details.type for played, won, drawn, lost, goals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "season_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks season id. Get the current one with sportmonks_get_league and include currentSeason, or past ones with include seasons."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: participant;details.type;form;rule.type;group."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          }
+        },
+        "required": [
+          "season_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/standings/seasons/{season_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_live_standings",
+      "description": "Live league table of a league, updated while matches are being played.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks league id, e.g. 8 (Premier League), 82 (Bundesliga), 384 (Serie A), 564 (LaLiga), 301 (Ligue 1), 9 (Championship). sportmonks_list_my_leagues shows the ones your plan covers."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: participant;details.type;form."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          }
+        },
+        "required": [
+          "league_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/standings/live/leagues/{league_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_topscorers",
+      "description": "Top scorers of a season. Filter the ranking with filters seasonTopscorerTypes:208 (goals), 209 (assists), 84 (yellow cards), 83 (red cards). Include player;participant for names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "season_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks season id. Get the current one with sportmonks_get_league and include currentSeason, or past ones with include seasons."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: player;participant;type."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort order of the list."
+          }
+        },
+        "required": [
+          "season_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/topscorers/seasons/{season_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "page": "$page",
+          "per_page": "$per_page",
+          "order": "$order"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_search_teams",
+      "description": "Find teams by name: id, name, short code, country and founding year. Use the id for the team, squad and fixture tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "description": "Part of the team name, e.g. arsenal."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: country;venue;activeSeasons."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/teams/search/{name}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_team",
+      "description": "One team by id: name, short code, founded, venue id and country id. Include venue, coaches, activeSeasons, latest or upcoming for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks team id, from sportmonks_search_teams or a fixture's participants."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: venue;country;coaches;activeSeasons;latest;upcoming;statistics.details.type."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/teams/{team_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_list_season_teams",
+      "description": "All teams that play in a season, with id, name, short code and venue id. Use it to get every team id of a league at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "season_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks season id. Get the current one with sportmonks_get_league and include currentSeason, or past ones with include seasons."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: venue;country."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          }
+        },
+        "required": [
+          "season_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/teams/seasons/{season_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_team_squad",
+      "description": "Current domestic squad of a team: player id, jersey number, position id, contract dates. Include player for names and details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks team id, from sportmonks_search_teams or a fixture's participants."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: player;position;detailedPosition."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/squads/teams/{team_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_season_squad",
+      "description": "Squad of a team in one season, including players who left during it. Include player for names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "season_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks season id. Get the current one with sportmonks_get_league and include currentSeason, or past ones with include seasons."
+          },
+          "team_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks team id, from sportmonks_search_teams or a fixture's participants."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: player;position;details.type."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          }
+        },
+        "required": [
+          "season_id",
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/squads/seasons/{season_id}/teams/{team_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_search_players",
+      "description": "Find players by name: id, display name, birth date, height, weight and position id. Use the id for sportmonks_get_player.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "description": "Part of the player name, e.g. saka."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: teams;position;nationality."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/players/search/{name}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_player",
+      "description": "One player by id: name, birth date, height, weight, position, nationality. Include teams, statistics.details.type (filter playerStatisticSeasons:<season id>) or transfers for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks player id, from sportmonks_search_players or a squad."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: teams;position;detailedPosition;nationality;statistics.details.type;transfers."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          }
+        },
+        "required": [
+          "player_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/players/{player_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_search_venues",
+      "description": "Find stadiums by name: id, name, city, address, capacity and surface. Use the id for sportmonks_get_venue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "description": "Part of the stadium name."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: country;city."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/venues/search/{name}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_venue",
+      "description": "One stadium by id: name, city, address, capacity, surface and coordinates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "venue_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks venue id, from a fixture or team."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: country;city."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          }
+        },
+        "required": [
+          "venue_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/venues/{venue_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_prematch_odds",
+      "description": "Pre-match odds of one fixture from the bookmakers in your plan. The full list can be very long: narrow it with filters markets:1 (match winner) and bookmakers:2 (bet365), e.g. markets:1;bookmakers:2. Include market;bookmaker for names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks fixture id, from the fixture list tools."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: market;bookmaker."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/odds/pre-match/fixtures/{fixture_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_prematch_odds_by_market",
+      "description": "Pre-match odds of one fixture in one market (e.g. 1 match winner, 2 double chance, 14 both teams to score; ids from sportmonks_list_odds_markets), from every bookmaker in your plan. Narrow to bookmakers with filters bookmakers:2,9. Not paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks fixture id, from the fixture list tools."
+          },
+          "market_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Odds market id, from sportmonks_list_odds_markets (1 = match winner)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons (one level only): market, bookmaker, fixture."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Static filters: bookmakers:2,9 (bookmaker ids) or winningOdds. Leave out for none."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language code to translate name fields, e.g. es or de. Leave out for English."
+          }
+        },
+        "required": [
+          "fixture_id",
+          "market_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/odds/pre-match/fixtures/{fixture_id}/markets/{market_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "locale": "$locale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_prematch_odds_by_bookmaker",
+      "description": "Pre-match odds of one fixture from one bookmaker (ids from sportmonks_list_bookmakers, e.g. 2 bet365), across all markets in your plan. Narrow to markets with filters markets:1,14. Not paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks fixture id, from the fixture list tools."
+          },
+          "bookmaker_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Bookmaker id, from sportmonks_list_bookmakers (2 = bet365)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons (one level only): market, bookmaker, fixture."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Static filters: markets:1,14 (market ids) or winningOdds. Leave out for none."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language code to translate name fields, e.g. es or de. Leave out for English."
+          }
+        },
+        "required": [
+          "fixture_id",
+          "bookmaker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/odds/pre-match/fixtures/{fixture_id}/bookmakers/{bookmaker_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "locale": "$locale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_list_odds_markets",
+      "description": "Betting markets with id and name, e.g. 1 fulltime result, 2 double chance, 14 both teams to score, 80 goals over/under, for the markets filter of the odds tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. "
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/odds/markets",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_list_bookmakers",
+      "description": "Bookmakers with id and name, for the bookmakers filter of the odds tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. "
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/odds/bookmakers",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_predictions",
+      "description": "SportMonks model probabilities for one fixture: fulltime result, both teams to score, over/under goals, correct score and more. Needs the Predictions add-on in your plan. Include type for the market names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks fixture id, from the fixture list tools."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: type."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "SportMonks filters, separated by semicolons, e.g. fixtureLeagues:9 or eventTypes:14,15. Leave out for none."
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/predictions/probabilities/fixtures/{fixture_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_value_bets",
+      "description": "Value bets SportMonks' model finds for one fixture: bet, bookmaker, odds and fair odds. Needs the Predictions add-on. Information only, not betting advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks fixture id, from the fixture list tools."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. Useful: type."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/predictions/value-bets/fixtures/{fixture_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_list_types",
+      "description": "Type ids and names used across the API (event types, statistic types, positions, standing details ...). Use it to read a type_id, or add .type to an include instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons; nested with dots. "
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for paged lists (see pagination.has_more)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, at most 50 (default 25)."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/core/types",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

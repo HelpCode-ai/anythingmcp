@@ -1,0 +1,801 @@
+{
+  "slug": "bigquery",
+  "name": "Google BigQuery",
+  "aliases": [
+    "BQ",
+    "GCP BigQuery"
+  ],
+  "description": "Let your AI explore and query Google BigQuery: list projects, datasets and tables, read schemas, preview rows for free, estimate a query's cost with a dry run before running it, page through results and check the job history. Signs in with your Google account.",
+  "instructions": "## Google BigQuery\nThis connector works with **Google BigQuery** through the BigQuery REST API v2 (`https://bigquery.googleapis.com/bigquery/v2`): projects, datasets, tables and their schemas, free row previews, SQL queries with a cost estimate first, query results page by page, and the job history. It signs in with your Google account (OAuth), so the AI sees exactly what that account may see in BigQuery.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **BigQuery API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. For your own use, the \"unverified app\" warning can be clicked through.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Google account whose BigQuery data the AI should use. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector. Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once.\n\n**Permissions and scope**\n- The connector asks for `https://www.googleapis.com/auth/bigquery` (view and manage BigQuery data). What the AI can actually read, query or change is decided by the signed-in account's IAM roles. To run queries the account needs **BigQuery Job User** on the project that runs them and **BigQuery Data Viewer** on the data.\n- **Read-only setup**: Google publishes no `bigquery.readonly` scope for this API. Use `https://www.googleapis.com/auth/cloud-platform.read-only` instead (it allows listing, reading and running query jobs) in the connector's OAuth settings, authorize again, and give the account only **BigQuery Data Viewer** and **BigQuery Job User**: without write roles on the data, statements that change data fail with 403. Also disable `bigquery_cancel_job`.\n\n**Exploring (free, no bytes scanned)**: `bigquery_list_projects` → `bigquery_list_datasets` → `bigquery_list_tables` → `bigquery_get_table` (schema, size, partitioning). `bigquery_get_dataset` shows a dataset's location and settings. Always read the schema before writing SQL.\n\n**Queries cost money: dry-run first.** On on-demand pricing BigQuery bills the bytes a query scans, about US$6.25 per TiB in most regions (the first 1 TiB each month is free; at least 10 MB per table referenced). Capacity (editions) pricing bills slots instead.\n1. Before running a query on a table you have not sized, call `bigquery_run_query` with `dryRun: true`. It costs nothing and returns `totalBytesProcessed` (the estimate) and `statementType`.\n2. Tell the user the estimate in GB and the approximate cost. If it is above **10 GB** (about 6 US cents), **ask the user to confirm before running it**, and suggest narrowing it first: select only the needed columns (`SELECT *` reads every column), filter on the partition column, use a smaller date range.\n3. Then run it without `dryRun`. Pass `maximumBytesBilled` slightly above the estimate as a safety net: a query that would bill more fails without charge.\n- `LIMIT` does **not** reduce the bytes scanned. To look at sample rows use `bigquery_preview_table_rows`, which is free.\n- Check `bigquery_get_table` first: `numBytes` shows the table size, `timePartitioning` and `requirePartitionFilter` show whether a partition filter is needed.\n\n**Statements that change data need confirmation.** `bigquery_run_query` runs any GoogleSQL statement the account is allowed to run, including INSERT, UPDATE, DELETE, MERGE, CREATE, ALTER and DROP. Before running anything other than a SELECT, show the user the exact statement and its effect and wait for an explicit yes. A dry run returns the `statementType`, which tells you what a statement does.\n\n**Writing queries**\n- The connector always uses GoogleSQL (`useLegacySql: false`). Qualify tables as `` `project.dataset.table` `` with backticks, e.g. `` `bigquery-public-data.samples.shakespeare` ``, or set `defaultDataset`.\n- Use query parameters for user-supplied values: `@name` in the SQL plus `parameterMode: \"NAMED\"` and `queryParameters`, e.g. `[{\"name\": \"country\", \"parameterType\": {\"type\": \"STRING\"}, \"parameterValue\": {\"value\": \"DE\"}}]`.\n- Run queries in the project the user pays for; data in another project (such as `bigquery-public-data`) is read across projects.\n\n**Reading results**\n- `rows` come back as a list of `{\"values\": [...]}`, one value per column in the order of `schema`. Every value is a string (numbers too), `null` stays null; TIMESTAMP values are seconds since 1970 (e.g. `\"1.7290944E9\"`), RECORD values are nested `{\"f\": [{\"v\": ...}]}`.\n- `bigquery_run_query` returns up to 100 rows by default (`maxResults`, at most 1,000). When `pageToken` is present, more rows exist: call `bigquery_get_query_results` with the `jobId` and `location` from `jobReference` and that `pageToken`. Summarise or aggregate in SQL rather than paging through large results.\n- Long queries: when `jobComplete` is false, the query keeps running. Wait a few seconds and call `bigquery_get_query_results` with the same `jobId` until `jobComplete` is true, or `bigquery_get_job` to see its state. `bigquery_cancel_job` stops it (ask the user first; bytes already scanned may still be billed).\n\n**History**: `bigquery_list_jobs` lists recent jobs of a project (your own by default, `allUsers: true` for everyone's with the right permission) and `bigquery_get_job` shows one job's SQL, state, bytes processed and billed and errors.\n\n**Common errors**\n- 401: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `accessDenied`: the account lacks a role (Job User on the query project, Data Viewer on the data), or a read-only scope was used for a change. 403 `BigQuery API has not been used in project`: enable the BigQuery API in the Cloud project of the OAuth client.\n- 403 `bytesBilledLimitExceeded`: the query would scan more than `maximumBytesBilled`; nothing was charged.\n- 400 `invalidQuery`: SQL error, the message names the position. 404 `notFound`: wrong project, dataset or table id, or a job queried without its `location`.\n- 403 `quotaExceeded` / `rateLimitExceeded`: wait and retry.\n\n**Out of scope here**: loading or exporting data, copying tables, creating or deleting datasets and tables through the API (DDL statements in a query can do it, with confirmation), BigQuery ML model management, scheduled queries and the Storage Read API.",
+  "region": "intl",
+  "category": "database",
+  "icon": "googlebigquery",
+  "docsUrl": "https://cloud.google.com/bigquery/docs/reference/rest",
+  "prerequisites": "A Google Cloud project with the **BigQuery API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. The signing-in account needs BigQuery Job User and BigQuery Data Viewer (or more). About 10 minutes.",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "secret": false,
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The client secret of the same OAuth client (Credentials → your client → Client secrets).",
+      "example": "GOCSPX-...",
+      "pattern": "^\\S{10,}$",
+      "patternMessage": "Paste only the client secret, without spaces.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The BigQuery API is not enabled in the Google Cloud project of the OAuth client, or the signed-in account has no BigQuery access. Enable it under APIs & Services → Library and check the account's IAM roles.",
+    "rate_limited": "BigQuery is throttling this account or project. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "bigquery_list_projects",
+    "params": {
+      "maxResults": 1
+    }
+  },
+  "connector": {
+    "name": "Google BigQuery",
+    "type": "REST",
+    "baseUrl": "https://bigquery.googleapis.com/bigquery/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/bigquery"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/projects?maxResults=1"
+  },
+  "tools": [
+    {
+      "name": "bigquery_list_projects",
+      "description": "List the Google Cloud projects the signed-in account can use in BigQuery, with project id, name and number. Start here to find the project id for every other tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "maxResults": {
+            "type": "integer",
+            "description": "Projects per page, default 50.",
+            "default": 50
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "maxResults": "$maxResults",
+          "pageToken": "$pageToken"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "totalItems": "$.totalItems",
+            "nextPageToken": "$.nextPageToken",
+            "projects": {
+              "$from": "$.projects",
+              "$select": {
+                "id": "id",
+                "name": "friendlyName",
+                "number": "numericId"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "bigquery_list_datasets",
+      "description": "List the datasets of a project with their location and labels. Free: no bytes are scanned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Google Cloud project id that owns the data or runs the job, e.g. 'my-company-analytics'. bigquery_list_projects lists them. For Google's public datasets use 'bigquery-public-data' as the data project and your own project to run queries."
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "Datasets per page, default 100.",
+            "default": 100
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Label filter, e.g. 'labels.department:sales'."
+          },
+          "all": {
+            "type": "boolean",
+            "description": "Also list hidden datasets (names starting with an underscore)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/datasets",
+        "queryParams": {
+          "maxResults": "$maxResults",
+          "pageToken": "$pageToken",
+          "filter": "$filter",
+          "all": "$all"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "nextPageToken": "$.nextPageToken",
+            "unreachable": "$.unreachable",
+            "datasets": {
+              "$from": "$.datasets",
+              "$select": {
+                "datasetId": "datasetReference.datasetId",
+                "projectId": "datasetReference.projectId",
+                "location": "location",
+                "friendlyName": "friendlyName",
+                "labels": "labels",
+                "type": "type"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "bigquery_get_dataset",
+      "description": "Get one dataset: description, location, creation and modification times, default table expiration and labels. Access lists are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Google Cloud project id that owns the data or runs the job, e.g. 'my-company-analytics'. bigquery_list_projects lists them. For Google's public datasets use 'bigquery-public-data' as the data project and your own project to run queries."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Dataset id, e.g. 'sales'. bigquery_list_datasets lists them."
+          }
+        },
+        "required": [
+          "project_id",
+          "dataset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/datasets/{dataset_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "datasetReference": "$.datasetReference",
+            "friendlyName": "$.friendlyName",
+            "description": "$.description",
+            "location": "$.location",
+            "type": "$.type",
+            "creationTime": "$.creationTime",
+            "lastModifiedTime": "$.lastModifiedTime",
+            "defaultTableExpirationMs": "$.defaultTableExpirationMs",
+            "defaultPartitionExpirationMs": "$.defaultPartitionExpirationMs",
+            "storageBillingModel": "$.storageBillingModel",
+            "maxTimeTravelHours": "$.maxTimeTravelHours",
+            "labels": "$.labels"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "bigquery_list_tables",
+      "description": "List the tables, views and materialized views of a dataset with type, partitioning and clustering. Free: no bytes are scanned. Use bigquery_get_table for columns and size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Google Cloud project id that owns the data or runs the job, e.g. 'my-company-analytics'. bigquery_list_projects lists them. For Google's public datasets use 'bigquery-public-data' as the data project and your own project to run queries."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Dataset id, e.g. 'sales'. bigquery_list_datasets lists them."
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "Tables per page, default 100.",
+            "default": 100
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          }
+        },
+        "required": [
+          "project_id",
+          "dataset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/datasets/{dataset_id}/tables",
+        "queryParams": {
+          "maxResults": "$maxResults",
+          "pageToken": "$pageToken"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "totalItems": "$.totalItems",
+            "nextPageToken": "$.nextPageToken",
+            "tables": {
+              "$from": "$.tables",
+              "$select": {
+                "tableId": "tableReference.tableId",
+                "type": "type",
+                "friendlyName": "friendlyName",
+                "creationTime": "creationTime",
+                "timePartitioning": "timePartitioning",
+                "rangePartitioning": "rangePartitioning",
+                "clustering": "clustering",
+                "requirePartitionFilter": "requirePartitionFilter",
+                "labels": "labels"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "bigquery_get_table",
+      "description": "Get a table's schema (column names, types, modes, descriptions, nested fields), row count, size in bytes, partitioning, clustering, whether a partition filter is required, and a view's SQL. Free. Check numBytes here before querying a table.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Google Cloud project id that owns the data or runs the job, e.g. 'my-company-analytics'. bigquery_list_projects lists them. For Google's public datasets use 'bigquery-public-data' as the data project and your own project to run queries."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Dataset id, e.g. 'sales'. bigquery_list_datasets lists them."
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table or view id inside the dataset, e.g. 'orders'."
+          }
+        },
+        "required": [
+          "project_id",
+          "dataset_id",
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/datasets/{dataset_id}/tables/{table_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "tableReference": "$.tableReference",
+            "type": "$.type",
+            "description": "$.description",
+            "location": "$.location",
+            "numRows": "$.numRows",
+            "numBytes": "$.numBytes",
+            "numLongTermBytes": "$.numLongTermBytes",
+            "creationTime": "$.creationTime",
+            "lastModifiedTime": "$.lastModifiedTime",
+            "expirationTime": "$.expirationTime",
+            "timePartitioning": "$.timePartitioning",
+            "rangePartitioning": "$.rangePartitioning",
+            "requirePartitionFilter": "$.requirePartitionFilter",
+            "clustering": "$.clustering",
+            "schema": "$.schema.fields",
+            "viewQuery": "$.view.query",
+            "materializedViewQuery": "$.materializedView.query",
+            "labels": "$.labels"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "bigquery_preview_table_rows",
+      "description": "Read the first rows of a table directly, without running a query: FREE, no bytes are billed. Use it to look at sample data instead of SELECT * ... LIMIT, which scans the whole table. Does not work on views. Returns at most 100 rows per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Google Cloud project id that owns the data or runs the job, e.g. 'my-company-analytics'. bigquery_list_projects lists them. For Google's public datasets use 'bigquery-public-data' as the data project and your own project to run queries."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Dataset id, e.g. 'sales'. bigquery_list_datasets lists them."
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table or view id inside the dataset, e.g. 'orders'."
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "Rows to read, default 10, at most 100.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "startIndex": {
+            "type": "string",
+            "description": "Zero-based row to start from, as a number in a string, e.g. '100'."
+          },
+          "selectedFields": {
+            "type": "string",
+            "description": "Comma-separated columns to return, e.g. 'order_id,amount'. Nested fields as 'address.city'. Default all columns."
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "pageToken from the previous answer, to continue."
+          }
+        },
+        "required": [
+          "project_id",
+          "dataset_id",
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/datasets/{dataset_id}/tables/{table_id}/data",
+        "queryParams": {
+          "maxResults": "$maxResults",
+          "startIndex": "$startIndex",
+          "selectedFields": "$selectedFields",
+          "pageToken": "$pageToken"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "totalRows": "$.totalRows",
+            "pageToken": "$.pageToken",
+            "rows": {
+              "$from": "$.rows",
+              "$limit": 100,
+              "$select": {
+                "values": "f[*].v"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "bigquery_run_query",
+      "description": "Run a GoogleSQL query (jobs.query). With dryRun true it only validates the SQL and returns the estimated bytes (totalBytesProcessed) for FREE: always dry-run first on unknown tables, tell the user the estimate, and ask before running scans above 10 GB, because BigQuery bills scanned bytes (about US$6.25 per TiB on demand). Statements that change data or tables (INSERT, UPDATE, DELETE, MERGE, CREATE, ALTER, DROP) need the user's explicit confirmation first. Returns the schema and up to maxResults rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project that runs and pays for the query (needs BigQuery Job User there). It can read tables of other projects."
+          },
+          "query": {
+            "type": "string",
+            "description": "GoogleSQL statement. Qualify tables as `project.dataset.table` with backticks."
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "true = only validate and estimate bytes, nothing runs and nothing is billed. Default false."
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "Rows returned in this answer, default 100, at most 1000. Page further with bigquery_get_query_results.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "description": "How long to wait for the result, in milliseconds. Default 20000, at most 25000. If the query is not done, jobComplete is false: poll bigquery_get_query_results.",
+            "default": 20000,
+            "minimum": 1000,
+            "maximum": 25000
+          },
+          "maximumBytesBilled": {
+            "type": "string",
+            "description": "Cost cap in bytes as a number in a string, e.g. '10737418240' for 10 GiB. A query that would bill more fails without charge. Recommended: slightly above the dry-run estimate."
+          },
+          "defaultDataset": {
+            "type": "object",
+            "description": "Dataset for unqualified table names: {\"projectId\": \"my-project\", \"datasetId\": \"sales\"}."
+          },
+          "queryParameters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Named parameters for @name placeholders, e.g. [{\"name\": \"country\", \"parameterType\": {\"type\": \"STRING\"}, \"parameterValue\": {\"value\": \"DE\"}}]."
+          },
+          "parameterMode": {
+            "type": "string",
+            "description": "NAMED when queryParameters use @name placeholders, POSITIONAL for ? placeholders. Required together with queryParameters.",
+            "enum": [
+              "NAMED",
+              "POSITIONAL"
+            ]
+          },
+          "location": {
+            "type": "string",
+            "description": "Location to run the job in, e.g. 'EU' or 'europe-west3'. Usually inferred from the tables; set it when the data is outside the US and EU."
+          },
+          "useQueryCache": {
+            "type": "boolean",
+            "description": "Reuse a cached result of the identical query for free. Default true."
+          },
+          "labels": {
+            "type": "object",
+            "description": "Job labels for cost tracking, e.g. {\"source\": \"ai-assistant\"}."
+          }
+        },
+        "required": [
+          "project_id",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/queries",
+        "bodyMapping": {
+          "query": "$query",
+          "useLegacySql": false,
+          "dryRun": "$dryRun",
+          "maxResults": "$maxResults",
+          "timeoutMs": "$timeoutMs",
+          "maximumBytesBilled": "$maximumBytesBilled",
+          "defaultDataset": "$defaultDataset",
+          "queryParameters": "$queryParameters",
+          "parameterMode": "$parameterMode",
+          "location": "$location",
+          "useQueryCache": "$useQueryCache",
+          "labels": "$labels"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "jobComplete": "$.jobComplete",
+            "jobReference": "$.jobReference",
+            "statementType": "$.statementType",
+            "totalBytesProcessed": "$.totalBytesProcessed",
+            "totalBytesBilled": "$.totalBytesBilled",
+            "cacheHit": "$.cacheHit",
+            "numDmlAffectedRows": "$.numDmlAffectedRows",
+            "totalRows": "$.totalRows",
+            "pageToken": "$.pageToken",
+            "errors": "$.errors",
+            "schema": "$.schema.fields",
+            "rows": {
+              "$from": "$.rows",
+              "$limit": 1000,
+              "$select": {
+                "values": "f[*].v"
+              }
+            }
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "bigquery_get_query_results",
+      "description": "Get the result rows of a query job, page by page, or wait for a query that was still running (jobComplete false). Use the jobId and location from the jobReference of bigquery_run_query, and pageToken to continue. Reading results costs nothing extra.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project that ran the job (jobReference.projectId)."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "jobReference.jobId of the query."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location the job ran in, e.g. 'US', 'EU' or 'europe-west3'. Required for jobs outside the US and EU multi-regions; use jobReference.location from the earlier answer."
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "pageToken from the previous answer."
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "Rows per page, default 100, at most 1000.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "startIndex": {
+            "type": "string",
+            "description": "Zero-based row to start from, as a number in a string. Use pageToken instead when paging."
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "description": "How long to wait for a running query, in milliseconds. Default 20000, at most 25000.",
+            "default": 20000,
+            "minimum": 0,
+            "maximum": 25000
+          }
+        },
+        "required": [
+          "project_id",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/queries/{job_id}",
+        "queryParams": {
+          "location": "$location",
+          "pageToken": "$pageToken",
+          "maxResults": "$maxResults",
+          "startIndex": "$startIndex",
+          "timeoutMs": "$timeoutMs"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "jobComplete": "$.jobComplete",
+            "jobReference": "$.jobReference",
+            "totalRows": "$.totalRows",
+            "totalBytesProcessed": "$.totalBytesProcessed",
+            "cacheHit": "$.cacheHit",
+            "numDmlAffectedRows": "$.numDmlAffectedRows",
+            "pageToken": "$.pageToken",
+            "errors": "$.errors",
+            "schema": "$.schema.fields",
+            "rows": {
+              "$from": "$.rows",
+              "$limit": 1000,
+              "$select": {
+                "values": "f[*].v"
+              }
+            }
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "bigquery_list_jobs",
+      "description": "List recent BigQuery jobs of a project (queries, loads, copies, exports), newest first, with state, SQL, bytes processed and errors. Your own jobs by default; allUsers lists everyone's with the right permission. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Google Cloud project id that owns the data or runs the job, e.g. 'my-company-analytics'. bigquery_list_projects lists them. For Google's public datasets use 'bigquery-public-data' as the data project and your own project to run queries."
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "Jobs per page, default 20.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 200
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous page."
+          },
+          "allUsers": {
+            "type": "boolean",
+            "description": "List jobs of all users (needs BigQuery Resource Viewer or Admin). Default false."
+          },
+          "stateFilter": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "done",
+                "pending",
+                "running"
+              ]
+            },
+            "description": "Only jobs in these states: done, pending, running."
+          },
+          "minCreationTime": {
+            "type": "string",
+            "description": "Only jobs created after this time, in milliseconds since 1970, as a string."
+          },
+          "maxCreationTime": {
+            "type": "string",
+            "description": "Only jobs created before this time, in milliseconds since 1970, as a string."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/jobs",
+        "queryParams": {
+          "maxResults": "$maxResults",
+          "pageToken": "$pageToken",
+          "allUsers": "$allUsers",
+          "stateFilter": "$stateFilter",
+          "minCreationTime": "$minCreationTime",
+          "maxCreationTime": "$maxCreationTime",
+          "projection": "full"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "nextPageToken": "$.nextPageToken",
+            "jobs": {
+              "$from": "$.jobs",
+              "$select": {
+                "jobReference": "jobReference",
+                "state": "state",
+                "user_email": "user_email",
+                "jobType": "configuration.jobType",
+                "query": "configuration.query.query",
+                "statementType": "statistics.query.statementType",
+                "creationTime": "statistics.creationTime",
+                "endTime": "statistics.endTime",
+                "totalBytesProcessed": "statistics.totalBytesProcessed",
+                "totalBytesBilled": "statistics.query.totalBytesBilled",
+                "errorResult": "errorResult"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "bigquery_get_job",
+      "description": "Get one job: its SQL, state (PENDING, RUNNING, DONE), errors, start and end times, bytes processed and billed, slot time, cache hit and rows changed by DML. Use it to follow a long query or explain its cost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project that ran the job."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "The job id (jobReference.jobId)."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location the job ran in, e.g. 'US', 'EU' or 'europe-west3'. Required for jobs outside the US and EU multi-regions; use jobReference.location from the earlier answer."
+          }
+        },
+        "required": [
+          "project_id",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/jobs/{job_id}",
+        "queryParams": {
+          "location": "$location"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "jobReference": "$.jobReference",
+            "user_email": "$.user_email",
+            "status": "$.status",
+            "jobType": "$.configuration.jobType",
+            "query": "$.configuration.query.query",
+            "destinationTable": "$.configuration.query.destinationTable",
+            "creationTime": "$.statistics.creationTime",
+            "startTime": "$.statistics.startTime",
+            "endTime": "$.statistics.endTime",
+            "totalBytesProcessed": "$.statistics.totalBytesProcessed",
+            "totalBytesBilled": "$.statistics.query.totalBytesBilled",
+            "totalSlotMs": "$.statistics.totalSlotMs",
+            "cacheHit": "$.statistics.query.cacheHit",
+            "statementType": "$.statistics.query.statementType",
+            "numDmlAffectedRows": "$.statistics.query.numDmlAffectedRows",
+            "billingTier": "$.statistics.query.billingTier"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "bigquery_cancel_job",
+      "description": "Ask BigQuery to cancel a running job. Confirm with the user first. Cancellation is best effort: the job may still finish, and bytes already scanned may be billed. Check the outcome with bigquery_get_job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project that runs the job."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "The job id (jobReference.jobId)."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location the job ran in, e.g. 'US', 'EU' or 'europe-west3'. Required for jobs outside the US and EU multi-regions; use jobReference.location from the earlier answer."
+          }
+        },
+        "required": [
+          "project_id",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/jobs/{job_id}/cancel",
+        "queryParams": {
+          "location": "$location"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "jobReference": "$.job.jobReference",
+            "status": "$.job.status"
+          }
+        }
+      }
+    }
+  ]
+}

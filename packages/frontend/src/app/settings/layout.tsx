@@ -6,53 +6,25 @@ import { useAuth } from '@/lib/auth-context';
 import { AppShell } from '@/components/app-shell';
 import { cn } from '@/lib/utils';
 
-interface SidebarItem {
-  href: string;
-  label: string;
-  description: string;
-  icon: React.ComponentType<{ size?: number }>;
-  exact?: boolean;
-  adminOnly?: boolean;
-  /** Hidden in cloud. The backend answers 404 there regardless. */
-  selfHostedOnly?: boolean;
-}
+import { SIDEBAR_SECTIONS, getVisibleSettingsSections } from '@/lib/navigation';
 
-interface SidebarSection {
-  title?: string;
-  icon?: React.ComponentType<{ size?: number }>;
-  adminOnly?: boolean;
-  items: SidebarItem[];
-}
-
-const SIDEBAR_SECTIONS: SidebarSection[] = [
-  {
-    items: [
-      { href: '/settings', label: 'Profile', description: 'Name, email, password', icon: GearIcon, exact: true },
-      { href: '/settings/connections', label: 'Connections', description: 'What each AI client can reach', icon: PlugIcon },
-    ],
-  },
-  {
-    title: 'Organization',
-    icon: BuildingIcon,
-    items: [
-      { href: '/settings/organization', label: 'General', description: 'Workspace and new orgs', icon: BuildingIcon },
-      { href: '/settings/users', label: 'Users', description: 'Members and invitations', icon: UsersIcon, adminOnly: true },
-      { href: '/settings/roles', label: 'Roles', description: 'MCP tool access control', icon: ShieldIcon, adminOnly: true },
-      // Self-hosted only: SSO assumes the workspace owns its own directory,
-      // tenant and operator. The backend refuses these routes in cloud, so
-      // showing the entry there would lead an admin to a page that 404s.
-      { href: '/settings/identity-providers', label: 'Single sign-on', description: 'Microsoft, Google, Okta', icon: FingerprintIcon, adminOnly: true, selfHostedOnly: true },
-      { href: '/settings/license', label: 'License', description: 'Plan, billing, subscription', icon: KeyIcon, adminOnly: true },
-      { href: '/settings/admin', label: 'Administration', description: 'SMTP, alerts, footer links', icon: WrenchIcon, adminOnly: true },
-    ],
-  },
-];
+const SETTINGS_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
+  '/settings': GearIcon,
+  '/settings/connections': PlugIcon,
+  '/settings/organization': BuildingIcon,
+  '/settings/users': UsersIcon,
+  '/settings/roles': ShieldIcon,
+  '/settings/identity-providers': FingerprintIcon,
+  '/settings/license': KeyIcon,
+  '/settings/admin': WrenchIcon,
+};
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, deploymentMode } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const isCloud = deploymentMode === 'cloud';
+  const visibleSections = getVisibleSettingsSections(SIDEBAR_SECTIONS, { isAdmin, isCloud });
 
   return (
     <AppShell title="Settings">
@@ -61,42 +33,37 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         {/* Below lg this is a scrolling strip. The scrollbar is hidden, so the
             soft trailing edge is what says there is more to the right. */}
         <nav className="scrollbar-none scroll-fade-x -mx-4 flex gap-1 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:sticky lg:top-0 lg:mx-0 lg:flex-col lg:overflow-x-visible lg:px-0 lg:pb-0 lg:[mask-image:none]">
-          {SIDEBAR_SECTIONS.map((section, si) => {
-            if (section.adminOnly && !isAdmin) return null;
-
-            return (
-              <div key={si} className="contents lg:block">
-                {section.title && (
-                  <div className="hidden items-center gap-1.5 px-2.5 pb-1 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-3)] lg:flex">
-                    {section.title}
-                  </div>
-                )}
-                {section.items.map((item) => {
-                  if (item.adminOnly && !isAdmin) return null;
-                  if (item.selfHostedOnly && isCloud) return null;
-                  const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        'flex flex-shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors',
-                        isActive
-                          ? 'bg-[var(--brand-tint)] font-medium text-[var(--brand)]'
-                          : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'
-                      )}
-                    >
-                      <item.icon size={15} />
-                      <div className="min-w-0">
-                        <div className="truncate">{item.label}</div>
-                        <div className="hidden truncate text-[11px] text-[var(--text-3)] lg:block">{item.description}</div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            );
-          })}
+          {visibleSections.map((section, si) => (
+            <div key={si} className="contents lg:block">
+              {section.title && (
+                <div className="hidden items-center gap-1.5 px-2.5 pb-1 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-3)] lg:flex">
+                  {section.title}
+                </div>
+              )}
+              {section.items.map((item) => {
+                const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+                const Icon = SETTINGS_ICONS[item.href];
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex flex-shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors',
+                      isActive
+                        ? 'bg-[var(--brand-tint)] font-medium text-[var(--brand)]'
+                        : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'
+                    )}
+                  >
+                    {Icon && <Icon size={15} />}
+                    <div className="min-w-0">
+                      <div className="truncate">{item.label}</div>
+                      <div className="hidden truncate text-[11px] text-[var(--text-3)] lg:block">{item.description}</div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* Main content */}

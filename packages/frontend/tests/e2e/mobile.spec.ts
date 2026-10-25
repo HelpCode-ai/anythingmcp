@@ -190,6 +190,15 @@ async function fakeSession(page: Page) {
     if (p.includes('/audit/breakdowns'))
       return json({ days: 30, total: 67, errors: 1, proxyCalls: 0, estCostMicros: 0, rates: { callMicros: 0, proxyCallMicros: 0 }, byConnector: [], byServer: [], byUser: [], byClient: [] });
     if (p.includes('/audit/invocations')) return json(LOGS);
+    if (p.includes('/knowledge-folders')) return json({ folders: [], restrictionsAvailable: false });
+    if (p.endsWith('/memory/status'))
+      return json({
+        licensed: true,
+        access: 'contribute',
+        settings: { defaultAccess: 'personal', writeMode: 'approval' },
+        isCurator: true,
+      });
+    if (p.includes('/memory/items')) return json({ items: [], total: 0, pending: 0, take: 25, skip: 0 });
     if (p.includes('/knowledge-graph/skills')) return json({ items: [], total: 0, counts: { pending: 0, applied: 0, dismissed: 0 }, take: 25, skip: 0 });
     if (p.includes('/knowledge-graph/settings')) return json({ enabled: true, llmEnabled: true, captureIntent: false, autoExtend: false, skillAutoApply: false, edgeAutoApply: false });
     if (p.includes('/knowledge-graph')) return json({ nodes: [], edges: [], lastBuiltAt: null, enabled: true });
@@ -232,6 +241,7 @@ const ROUTES = [
   '/mcp-server/s1',
   '/knowledge-graph',
   '/knowledge-graph/skills',
+  '/memory',
   '/settings',
   '/settings/users',
   '/settings/roles',

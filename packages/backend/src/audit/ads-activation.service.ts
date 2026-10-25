@@ -1,15 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import axios from 'axios';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
-import { LICENSE_API_URL, licenseServiceHeaders } from '../license/license.service';
+import { licenseServiceHeaders } from '../license/license.service';
 import { ProductEvents, ProductEventService } from './product-event.service';
-import { CLICK_ID_KEYS } from './signup-attribution';
-
-/** Attempts per report before giving up until a later call (or a restart). */
-const REPORT_ATTEMPTS = 3;
-/** Read at call time so a test can shrink the wait; doubles per attempt. */
-const retryBaseMs = () => Number(process.env.ADS_ACTIVATION_RETRY_BASE_MS ?? 1000);
+import { postAdReport } from './ads-report';
+import { googleClickIdKey } from './signup-attribution';
 /** After a report that failed every attempt, this process leaves the workspace alone this long. */
 const FAILED_COOLDOWN_MS = 10 * 60_000;
 /**
@@ -19,11 +14,12 @@ const FAILED_COOLDOWN_MS = 10 * 60_000;
 const SETTLED_MAX = 50_000;
 
 /**
- * Cloud: a workspace that signed up through a Google Ads click (with ad
- * consent) makes its first successful tool call → the licence site is told,
- * and uploads it to Google Ads as an "activation" offline conversion. A
- * sign-up that never connects anything is worth little to the bidding; one
- * that runs a tool is the signal the campaigns should buy.
+ * Cloud: a workspace that signed up through an ad click (with ad consent)
+ * makes its first successful tool call → the licence site is told, and
+ * reports it as an "activation" conversion: to Google Ads for a Google click
+ * id, to ChatGPT Ads for an `oppref`. A sign-up that never connects anything
+ * is worth little to the bidding; one that runs a tool is the signal the
+ * campaigns should buy.
  *
  * AuditService calls onSuccessfulInvocation after it stored a SUCCESS row.
  * The work happens in the background: the tool call never waits for it and
@@ -31,9 +27,10 @@ const SETTLED_MAX = 50_000;
  * read once; the `ads_activation_reported` event is what makes it once ever.
  *
  * Contract: POST {LICENSE_API_URL}/api/ads/activation with the service token,
- * body { organizationId, activatedAt, one of gclid/gbraid/wbraid, adConsent,
- * email }. The site is idempotent per organizationId. 2xx = done; 401, 429,
- * 5xx and network errors are retried; any other 4xx is a refusal for good.
+ * body { organizationId, activatedAt, at most one of gclid/gbraid/wbraid,
+ * oppref, adConsent, email }. The site is idempotent per organizationId.
+ * 2xx = done; 401, 429, 5xx and network errors are retried; any other 4xx is
+ * a refusal for good (see postAdReport).
  *
  * Inert on self-hosted, and when LICENSE_SERVICE_TOKEN is unset. Never logs
  * the email or the click id.
@@ -67,7 +64,7 @@ export class AdsActivationService {
     if (!licenseServiceHeaders()['x-amcp-service-token']) {
       if (!this.warnedNoToken) {
         this.warnedNoToken = true;
-        this.logger.warn('Google Ads activations are not reported: LICENSE_SERVICE_TOKEN is not set.');
+        this.logger.warn('Ad activations are not reported: LICENSE_SERVICE_TOKEN is not set.');
       }
       return undefined;
     }
@@ -99,8 +96,9 @@ export class AdsActivationService {
     if (!first) return;
 
     const { clickId, userId } = signup;
-    const kind = CLICK_ID_KEYS.find((k) => clickId[k]);
-    if (!kind) return this.settle(organizationId);
+    const google = googleClickIdKey(clickId);
+    const kinds = [google, clickId.oppref ? 'oppref' : undefined].filter((k): k is string => !!k);
+    if (kinds.length === 0) return this.settle(organizationId);
     const consented = clickId.ad_consent === 'granted';
     const email =
       consented && userId
@@ -110,12 +108,13 @@ export class AdsActivationService {
     const body = {
       organizationId,
       activatedAt: first.createdAt.toISOString(),
-      [kind]: clickId[kind],
+      ...(google && { [google]: clickId[google] }),
+      ...(clickId.oppref && { oppref: clickId.oppref }),
       adConsent: clickId.ad_consent,
       ...(consented && email && { email }),
     };
 
-    const status = await this.post(organizationId, body);
+    const status = await postAdReport(this.logger, '/api/ads/activation', body, 'ad activation', organizationId);
     if (status === null) {
       // Retryable and out of attempts: no event, so a later call or a
       // restart tries again once the cooldown is over.
@@ -127,38 +126,9 @@ export class AdsActivationService {
       event: ProductEvents.ADS_ACTIVATION_REPORTED,
       organizationId,
       userId,
-      metadata: { kind, status },
+      metadata: { kind: kinds.join('+'), status },
     });
     this.settle(organizationId);
-  }
-
-  /**
-   * The site's HTTP status once it answered for good (2xx, or a 4xx it will
-   * not change its mind about), or null when every attempt failed.
-   */
-  private async post(organizationId: string, body: Record<string, unknown>): Promise<number | null> {
-    for (let attempt = 1; attempt <= REPORT_ATTEMPTS; attempt++) {
-      try {
-        const res = await axios.post(`${LICENSE_API_URL}/api/ads/activation`, body, {
-          timeout: 10000,
-          headers: licenseServiceHeaders(),
-        });
-        this.logger.log(`Reported the Google Ads activation of ${organizationId} (${res.status}).`);
-        return res.status;
-      } catch (err: any) {
-        const status: number | undefined = err?.response?.status;
-        if (status !== undefined && status >= 400 && status < 500 && status !== 401 && status !== 429) {
-          this.logger.warn(`Licence site refused the Google Ads activation of ${organizationId} (${status}).`);
-          return status;
-        }
-        this.logger.warn(
-          `Reporting the Google Ads activation of ${organizationId} failed ` +
-            `(${status ?? err?.code ?? 'no response'}), attempt ${attempt}/${REPORT_ATTEMPTS}.`,
-        );
-        if (attempt < REPORT_ATTEMPTS) await sleep(retryBaseMs() * 2 ** (attempt - 1));
-      }
-    }
-    return null;
   }
 
   private settle(organizationId: string): void {
@@ -168,5 +138,3 @@ export class AdsActivationService {
     if (this.settled.size > SETTLED_MAX) this.settled.delete(this.settled.values().next().value!);
   }
 }
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

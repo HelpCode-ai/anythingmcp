@@ -4,6 +4,7 @@ import axios from 'axios';
 import { SiteSettingsService } from './site-settings.service';
 import { OrgSettingsService } from './org-settings.service';
 import { PrismaService } from '../common/prisma.service';
+import { findUserByEmail } from '../common/email.util';
 import { DeploymentService } from '../common/deployment.service';
 import { TrustStatsService } from '../public-stats/trust-stats.service';
 import { EMPTY_TRUST_STATS, TrustStats, formatTrustStats } from '../public-stats/trust-stats.format';
@@ -15,6 +16,8 @@ import {
   WinbackOffer,
   activationReminderEmail,
   cardTrialOfferEmail,
+  cloudPageUrl,
+  connectorAuthEmail,
   existingAccountEmail,
   invitationEmail,
   licenseKeyEmail,
@@ -25,6 +28,8 @@ import {
   verificationEmail,
 } from './email-templates';
 import { buildUnsubscribeUrl, unsubscribeSecret } from './unsubscribe-token';
+import { createEmailLinkToken } from '../common/email-link-token';
+import { isSocialProviderId } from '../auth/social/social-providers';
 
 /** The longest an email waits for the trust numbers before going out without fresh ones. */
 const STATS_WAIT_MS = 3000;
@@ -38,6 +43,24 @@ const LICENSE_API_URL =
   process.env.NODE_ENV === 'production'
     ? 'https://anythingmcp.com'
     : process.env.LICENSE_API_URL?.replace(/\/+$/, '') || 'http://localhost:3100';
+
+/**
+ * The sender of the system SMTP. setup.sh and railway.json ask for the sender
+ * address (SMTP_FROM) and its display name (SMTP_FROM_NAME) separately, but
+ * only SMTP_FROM was ever read, so self-hosted mail went out under a bare
+ * address. A SMTP_FROM that already carries a name (`Name <a@b>`) wins.
+ */
+export function systemSmtpFrom(env: NodeJS.ProcessEnv): string {
+  const name = env.SMTP_FROM_NAME?.trim();
+  const address = env.SMTP_FROM?.trim() || env.SMTP_USER?.trim();
+  if (!address) return name || 'AnythingMCP';
+  if (env.SMTP_FROM?.trim() && address.includes('<')) return address;
+  const display = name || (env.SMTP_FROM?.trim() ? '' : 'AnythingMCP');
+  if (!display) return address;
+  // RFC 5322: a display name with specials must be quoted.
+  const quoted = /[",:;<>@()[\]\\.]/.test(display) ? `"${display.replace(/["\\]/g, '\\$&')}"` : display;
+  return `${quoted} <${address}>`;
+}
 
 @Injectable()
 export class EmailService {
@@ -75,6 +98,29 @@ export class EmailService {
   }
 
   /**
+   * The provider the recipient signs in with (Google, Microsoft, GitHub), so
+   * the email's dashboard links sign them in with it (cloudPageUrl). Cloud
+   * only, where social sign-in exists. The most recently used one wins; null
+   * for password accounts, unknown addresses and any lookup error.
+   */
+  private async signInProvider(to: string): Promise<string | null> {
+    if (!this.deployment.isCloud()) return null;
+    const user = await findUserByEmail<{ email: string; socialIdentities?: Array<{ provider: string }> }>(
+      this.prisma,
+      to,
+      {
+        socialIdentities: {
+          select: { provider: true },
+          orderBy: [{ lastLoginAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
+          take: 1,
+        },
+      },
+    ).catch(() => null);
+    const provider = user?.socialIdentities?.[0]?.provider;
+    return isSocialProviderId(provider) ? provider : null;
+  }
+
+  /**
    * Context for a marketing email: the layout's, plus a signed one-click
    * unsubscribe link for this recipient (RFC 8058) and the headers that
    * advertise it. Without a signing secret or a matching account, the footer
@@ -85,9 +131,7 @@ export class EmailService {
     const cloudUrl = this.cloudUrl();
     const secret = unsubscribeSecret();
     const user = secret
-      ? await this.prisma.user
-          .findUnique({ where: { email: to }, select: { id: true } })
-          .catch(() => null)
+      ? await findUserByEmail<{ id: string; email: string }>(this.prisma, to, { id: true }).catch(() => null)
       : null;
     if (secret && user) {
       const url = buildUnsubscribeUrl(cloudUrl, user.id, secret);
@@ -174,9 +218,7 @@ export class EmailService {
       secure: process.env.SMTP_SECURE === 'true' || port === 465,
       user: process.env.SMTP_USER || '',
       pass: process.env.SMTP_PASS || '',
-      from:
-        process.env.SMTP_FROM ||
-        (process.env.SMTP_USER ? `AnythingMCP <${process.env.SMTP_USER}>` : 'AnythingMCP'),
+      from: systemSmtpFrom(process.env),
       replyTo: process.env.SMTP_REPLY_TO,
     });
   }
@@ -507,7 +549,13 @@ export class EmailService {
 
     const { ctx, headers } = await this.marketing(to);
     const email = onboardingReminderEmail(
-      { name, dayNumber, aiClient: opts?.aiClient, cloudUrl: this.cloudUrl() },
+      {
+        name,
+        dayNumber,
+        aiClient: opts?.aiClient,
+        cloudUrl: this.cloudUrl(),
+        signInWith: await this.signInProvider(to),
+      },
       ctx,
     );
 
@@ -550,7 +598,14 @@ export class EmailService {
     }
 
     const email = trialLifecycleEmail(
-      { name, stage, recap, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl() },
+      {
+        name,
+        stage,
+        recap,
+        cloudUrl: this.cloudUrl(),
+        marketingUrl: this.marketingUrl(),
+        emailToken: createEmailLinkToken(to),
+      },
       await this.brand(),
     );
 
@@ -584,10 +639,8 @@ export class EmailService {
     }
 
     const { ctx, headers } = await this.marketing(to);
-    const email = activationReminderEmail(
-      { name, connectorUrl: `${this.cloudUrl()}${connectorPath}`, variant },
-      ctx,
-    );
+    const connectorUrl = cloudPageUrl(this.cloudUrl(), connectorPath, await this.signInProvider(to));
+    const email = activationReminderEmail({ name, connectorUrl, variant }, ctx);
 
     try {
       await transport.transporter.sendMail({
@@ -625,7 +678,7 @@ export class EmailService {
 
     const { ctx, headers } = await this.marketing(to);
     const email = trialWinbackEmail(
-      { name, offer, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl() },
+      { name, offer, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl(), emailToken: createEmailLinkToken(to) },
       ctx,
     );
 
@@ -660,7 +713,8 @@ export class EmailService {
 
     const { ctaPath, ...rest } = input;
     const { ctx, headers } = await this.marketing(to);
-    const email = cardTrialOfferEmail({ ...rest, ctaUrl: `${this.cloudUrl()}${ctaPath}` }, ctx);
+    const ctaUrl = cloudPageUrl(this.cloudUrl(), ctaPath, await this.signInProvider(to));
+    const email = cardTrialOfferEmail({ ...rest, ctaUrl }, ctx);
 
     try {
       await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email, headers) });
@@ -668,6 +722,42 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logger.error(`Failed to send card-trial offer email to ${to}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * A connector whose credential the provider refused for good (see
+   * ConnectorAuthStatusService). Transactional, sent once per incident,
+   * through the workspace's SMTP or the system one. False when none is
+   * configured (self-hosted without SMTP): the dashboard still shows it.
+   */
+  async sendConnectorAuthEmail(
+    to: string,
+    input: { name: string | null; connectorName: string; message: string; connectorPath: string },
+    organizationId?: string,
+  ): Promise<boolean> {
+    const transport = await this.createTransporter(organizationId);
+    if (!transport) {
+      this.logger.warn(`Skipping connector sign-in email to ${to}: no SMTP configured`);
+      return false;
+    }
+    const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '') || this.cloudUrl();
+    const email = connectorAuthEmail(
+      {
+        name: input.name,
+        connectorName: input.connectorName,
+        message: input.message,
+        connectorUrl: `${base}${input.connectorPath}`,
+      },
+      await this.brand(),
+    );
+    try {
+      await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email) });
+      this.logger.log(`Connector sign-in email sent to ${to}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send connector sign-in email to ${to}: ${err}`);
       return false;
     }
   }

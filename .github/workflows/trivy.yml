@@ -7,7 +7,7 @@ on:
     branches: [main]
   schedule:
     # Daily — new CVEs land in the Trivy DB constantly.
-    - cron: '0 5 * * *'
+    - cron: "0 5 * * *"
 
 jobs:
   filesystem:

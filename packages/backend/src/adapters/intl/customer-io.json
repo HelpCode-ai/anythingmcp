@@ -1,0 +1,1274 @@
+{
+  "slug": "customer-io",
+  "name": "Customer.io",
+  "description": "Let your AI work with Customer.io: look up people, their attributes, segments, activity and messages, review automations, broadcasts and one-time sends with their metrics, and send transactional emails or trigger broadcasts after you confirm.",
+  "instructions": "## Customer.io\nThis connector reads and sends with **Customer.io Journeys** (customer messaging) through the Customer.io App API with an App API key: people and their attributes, segments, activity and deliveries; automations (campaigns), broadcasts and one-time sends (newsletters) with their metrics; and it can send transactional email and trigger API broadcasts.\n\n**Setup (about 3 minutes)**\n1. In Customer.io open **Settings, Account Settings, API Credentials, App API Keys** (https://fly.customer.io/settings/api_credentials?keyType=app) and click **Create App API Key**. Pick the workspace and the access you want (full access, or read-only plus sending if you only want reads and sends).\n2. Copy the key: it is shown once. Paste it into `CUSTOMERIO_APP_API_KEY`.\n3. Set `CUSTOMERIO_API_URL` to your account's data center: https://api.customer.io for US accounts, https://api-eu.customer.io for EU accounts (the region is chosen when the account is created).\n\nThe App API key acts for its workspace, not for one person: whoever uses this connector sees every person, segment and message the key can read. Share the MCP server only with people allowed to see that.\n\nThe Track API (identify people, track events, delete people) uses a different credential (Site ID and Track API key, HTTP Basic, on track.customer.io) and is not part of this connector.\n\n**Limits**: the App API allows about 10 requests per second; transactional sends share a soft limit of 3,000 requests per 3 seconds, and broadcast triggers are limited to one every 10 seconds. Customer.io answers 429 when a limit is reached. Lists come in pages: when `next` is in the answer, call the same tool again with `start` = next; when it is empty you have everything.\n\n**How to work**\n1. Check the key and the workspace: `customer_io_list_workspaces`.\n2. Find people: `customer_io_find_customers_by_email` by email, or `customer_io_search_customers` with a segment or attribute filter (POST, but only reads). Then `customer_io_get_customer_attributes`, `customer_io_get_customer_segments`, `customer_io_list_customer_activities` and `customer_io_list_customer_messages` with that customer_id (id_type email, phone or cio_id when you only have those).\n3. Audience: `customer_io_list_segments`, `customer_io_get_segment`, `customer_io_get_segment_customer_count` and `customer_io_list_segment_members`.\n4. Automations: `customer_io_list_campaigns`, `customer_io_get_campaign` and `customer_io_get_campaign_metrics` (start and end as Unix timestamps).\n5. Broadcasts and one-time sends: `customer_io_list_broadcasts`, `customer_io_get_broadcast`, `customer_io_get_broadcast_metrics`, `customer_io_list_newsletters` and `customer_io_get_newsletter_metrics`.\n6. Deliveries and activity: `customer_io_list_messages`, `customer_io_get_message`, `customer_io_list_activities`.\n7. Sending, each only after the user confirms: `customer_io_send_transactional_email` sends one email (find the template with `customer_io_list_transactional_messages`); show recipient, subject and content first. `customer_io_trigger_broadcast` sends to many people at once: show the broadcast and the audience size and wait for an explicit \"yes, send\". Follow it with `customer_io_get_broadcast_trigger`.\n\nTimestamps are Unix seconds. Customer.io calls automations \"campaigns\" and one-time sends \"newsletters\" in the API.\n\n**Common errors**\n- 401 \"unauthorized\": the App API key is wrong or deleted, or it belongs to the other region; check `CUSTOMERIO_API_URL` (US or EU).\n- 403: the key's access does not include this action (for example a read-only key used to send).\n- 404: the id does not exist in this workspace.\n- 400 / 422: a parameter or the filter is invalid; the errors list says which.\n- 429: the rate limit is reached; wait and retry once.\n\n**Out of scope here**: the Track API (identify, events, deletes), the Pipelines API, exports and imports, collections, snippets, reporting webhooks, ESP suppressions, object types, and changing automation or broadcast content.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "customer-io",
+  "docsUrl": "https://docs.customer.io/integrations/api/app/",
+  "prerequisites": "A Customer.io user who can create an App API key under Account Settings, API Credentials, and whether the account is hosted in the US or the EU. About 3 minutes.",
+  "requiredEnvVars": [
+    "CUSTOMERIO_API_URL",
+    "CUSTOMERIO_APP_API_KEY"
+  ],
+  "envVarMeta": {
+    "CUSTOMERIO_API_URL": {
+      "label": "App API URL (region)",
+      "kind": "address",
+      "help": "https://api.customer.io for accounts in the US data center, https://api-eu.customer.io for the EU data center.",
+      "link": "https://docs.customer.io/accounts/settings/data-centers/",
+      "example": "https://api.customer.io",
+      "pattern": "^(https://)?api(-eu)?\\.customer\\.io/?$",
+      "patternMessage": "Use https://api.customer.io (US) or https://api-eu.customer.io (EU), without /v1 or any other path."
+    },
+    "CUSTOMERIO_APP_API_KEY": {
+      "label": "App API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Account Settings, API Credentials, App API Keys, Create App API Key. Shown once; it is not the Track API key.",
+      "link": "https://fly.customer.io/settings/api_credentials?keyType=app",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste the App API key as Customer.io shows it, without spaces or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Customer.io refused the App API key. Check the key (an App API key, not a Track API key) and the region: EU accounts need https://api-eu.customer.io.",
+    "403": "Customer.io refused this key for the request. Check the key's access in API Credentials.",
+    "404": "Nothing answered at this address. Use https://api.customer.io (US) or https://api-eu.customer.io (EU).",
+    "429": "Customer.io's rate limit is reached. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "customer_io_list_workspaces"
+  },
+  "connector": {
+    "name": "Customer.io App API",
+    "type": "REST",
+    "baseUrl": "{{CUSTOMERIO_API_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{CUSTOMERIO_APP_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/workspaces"
+  },
+  "tools": [
+    {
+      "name": "customer_io_list_workspaces",
+      "description": "List the workspaces of the Customer.io account with their id, name and counts of people, objects and messages sent in the billing period (cached up to two hours). Also a quick check that the App API key works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/workspaces"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "workspaces": "$.workspaces"
+          }
+        }
+      }
+    },
+    {
+      "name": "customer_io_find_customers_by_email",
+      "description": "Find the people in the workspace with an email address: returns their id, email and cio_id. Use the id (or cio_id with id_type cio_id) with the other customer tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address to look up, exactly as stored."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers",
+        "queryParams": {
+          "email": "$email"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "results": "$.results"
+          }
+        }
+      }
+    },
+    {
+      "name": "customer_io_search_customers",
+      "description": "Search people in the workspace with a filter on segment membership and attribute values, up to 1000 per page; returns their identifiers (id, email, cio_id). Filter examples: {\"segment\": {\"id\": 4}}, {\"attribute\": {\"field\": \"plan\", \"operator\": \"eq\", \"value\": \"pro\"}}, {\"and\": [{...}, {...}]}, {\"or\": [...]}, {\"not\": {...}}. Sent as a POST but only reads. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "The audience filter: one of and, or, not, segment (by id) or attribute (field, operator eq or exists, value)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "People per page, up to 1000. Default 50."
+          },
+          "start": {
+            "type": "string",
+            "description": "The next value from the previous page, to get the following page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/customers",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start"
+        },
+        "bodyMapping": {
+          "filter": "$filter"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "identifiers": "$.identifiers",
+            "next": "$.next"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "customer_io_get_customer_attributes",
+      "description": "Get a person's profile: all attributes (stored as strings), identifiers, subscription preferences, timestamps and devices. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The person's identifier. By default their id; set id_type to use their email, phone or cio_id instead."
+          },
+          "id_type": {
+            "type": "string",
+            "description": "What customer_id is: id (default), email, phone or cio_id. email and phone work only when they are identifiers in the workspace.",
+            "enum": [
+              "id",
+              "email",
+              "phone",
+              "cio_id"
+            ]
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers/{customer_id}/attributes",
+        "queryParams": {
+          "id_type": "$id_type"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "customer": "$.customer"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "customer_io_get_customer_segments",
+      "description": "List the segments a person currently belongs to (id, name, description). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The person's identifier. By default their id; set id_type to use their email, phone or cio_id instead."
+          },
+          "id_type": {
+            "type": "string",
+            "description": "What customer_id is: id (default), email, phone or cio_id. email and phone work only when they are identifiers in the workspace.",
+            "enum": [
+              "id",
+              "email",
+              "phone",
+              "cio_id"
+            ]
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers/{customer_id}/segments",
+        "queryParams": {
+          "id_type": "$id_type"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "segments": "$.segments"
+          }
+        }
+      }
+    },
+    {
+      "name": "customer_io_list_customer_activities",
+      "description": "List what happened to a person in the last 30 days or more: events, attribute changes, messages attempted, sent, opened, clicked, bounced and more, newest first. Filter by type and by event or attribute name. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The person's identifier. By default their id; set id_type to use their email, phone or cio_id instead."
+          },
+          "id_type": {
+            "type": "string",
+            "description": "What customer_id is: id (default), email, phone or cio_id. email and phone work only when they are identifiers in the workspace.",
+            "enum": [
+              "id",
+              "email",
+              "phone",
+              "cio_id"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this activity type, e.g. event, attribute_change, sent_email, opened_email, clicked_email, bounced_email, failed_email, unsubscribed."
+          },
+          "name": {
+            "type": "string",
+            "description": "For event and attribute_change, the event or attribute name; for consent, opted_in or opted_out."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Activities per page, up to 100. Default 10."
+          },
+          "start": {
+            "type": "string",
+            "description": "The next value from the previous page, to get the following page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers/{customer_id}/activities",
+        "queryParams": {
+          "id_type": "$id_type",
+          "type": "$type",
+          "name": "$name",
+          "limit": "$limit",
+          "start": "$start"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "activities": "$.activities",
+            "next": "$.next"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "customer_io_list_customer_messages",
+      "description": "List the deliveries sent to a person (newest six months unless start_ts and end_ts are given): message id, automation, broadcast or one-time send, template, subject, recipient, sent and delivered times, metrics and failure reason. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The person's identifier. By default their id; set id_type to use their email, phone or cio_id instead."
+          },
+          "id_type": {
+            "type": "string",
+            "description": "What customer_id is: id (default), email, phone or cio_id. email and phone work only when they are identifiers in the workspace.",
+            "enum": [
+              "id",
+              "email",
+              "phone",
+              "cio_id"
+            ]
+          },
+          "start_ts": {
+            "type": "integer",
+            "description": "Only deliveries created at or after this Unix timestamp (seconds)."
+          },
+          "end_ts": {
+            "type": "integer",
+            "description": "Only deliveries created before this Unix timestamp (seconds)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Deliveries per page, up to 1000. Default 50."
+          },
+          "start": {
+            "type": "string",
+            "description": "The next value from the previous page, to get the following page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers/{customer_id}/messages",
+        "queryParams": {
+          "id_type": "$id_type",
+          "start_ts": "$start_ts",
+          "end_ts": "$end_ts",
+          "limit": "$limit",
+          "start": "$start"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "messages": "$.messages",
+            "next": "$.next"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "customer_io_list_campaigns",
+      "description": "List the automations (campaigns) of the workspace: id, name, type of trigger, state, active flag, created and updated times, trigger and filter segments, tags and actions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/campaigns"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "campaigns": {
+              "$from": "$.campaigns[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "type": "type",
+                "state": "state",
+                "active": "active",
+                "created": "created",
+                "updated": "updated",
+                "first_started": "first_started",
+                "event_name": "event_name",
+                "trigger_segment_ids": "trigger_segment_ids",
+                "filter_segment_ids": "filter_segment_ids",
+                "tags": "tags",
+                "actions": "actions"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "customer_io_get_campaign",
+      "description": "Get one automation (campaign) with its trigger, segments, state, tags and actions (messages, delays, branches). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Automation id from customer_io_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/campaigns/{campaign_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "campaign": "$.campaign"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "customer_io_get_campaign_metrics",
+      "description": "Get an automation's message metrics over a window: series of attempted, sent, delivered, opened, clicked, converted, bounced, spammed, unsubscribed, failed and more, per hour, day, week or month. Uses Customer.io's metrics version 2: give start and end as Unix timestamps. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Automation id from customer_io_list_campaigns."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Start of the window, Unix timestamp in seconds."
+          },
+          "end": {
+            "type": "integer",
+            "description": "End of the window, Unix timestamp in seconds."
+          },
+          "res": {
+            "type": "string",
+            "description": "Size of each point: hourly, daily (default), weekly or monthly.",
+            "enum": [
+              "hourly",
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "default": "daily"
+          },
+          "tz": {
+            "type": "string",
+            "description": "Time zone of the window in region format, e.g. Europe/Berlin. Default UTC."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this message type. Leave out for all types.",
+            "enum": [
+              "email",
+              "webhook",
+              "twilio",
+              "whatsapp",
+              "slack",
+              "push",
+              "in_app",
+              "live_notification"
+            ]
+          }
+        },
+        "required": [
+          "campaign_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/campaigns/{campaign_id}/metrics",
+        "queryParams": {
+          "version": "2",
+          "start": "$start",
+          "end": "$end",
+          "res": "$res",
+          "tz": "$tz",
+          "type": "$type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "metric": "$.metric",
+            "start": "$.start",
+            "end": "$.end",
+            "res": "$.res"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "customer_io_list_broadcasts",
+      "description": "List the API-triggered broadcasts of the workspace: id, name, active flag, created and updated times, tags and actions. Use the id with customer_io_trigger_broadcast or customer_io_get_broadcast_metrics. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/broadcasts"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "broadcasts": "$.broadcasts"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "customer_io_get_broadcast",
+      "description": "Get one API-triggered broadcast: name, state, active flag, created, updated and first started times, tags and actions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcast_id": {
+            "type": "integer",
+            "description": "Broadcast id from customer_io_list_broadcasts."
+          }
+        },
+        "required": [
+          "broadcast_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/broadcasts/{broadcast_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "broadcast": "$.broadcast"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "customer_io_get_broadcast_metrics",
+      "description": "Get a broadcast's message metrics per period: series of attempted, sent, delivered, opened, clicked, converted, bounced, unsubscribed, failed and more. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcast_id": {
+            "type": "integer",
+            "description": "Broadcast id from customer_io_list_broadcasts."
+          },
+          "period": {
+            "type": "string",
+            "description": "Unit of each step: hours, days (default), weeks or months.",
+            "enum": [
+              "hours",
+              "days",
+              "weeks",
+              "months"
+            ]
+          },
+          "steps": {
+            "type": "integer",
+            "description": "How many periods to return, counting back from now (max 24 hours, 45 days, 12 weeks or 121 months)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this message type. Leave out for all types.",
+            "enum": [
+              "email",
+              "webhook",
+              "twilio",
+              "whatsapp",
+              "slack",
+              "push",
+              "in_app",
+              "live_notification"
+            ]
+          }
+        },
+        "required": [
+          "broadcast_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/broadcasts/{broadcast_id}/metrics",
+        "queryParams": {
+          "period": "$period",
+          "steps": "$steps",
+          "type": "$type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "metric": "$.metric"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "customer_io_get_broadcast_trigger",
+      "description": "Get the status of one broadcast trigger (as returned by customer_io_trigger_broadcast): created, processed and cancelled times, schedule and send window. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcast_id": {
+            "type": "integer",
+            "description": "Broadcast id."
+          },
+          "trigger_id": {
+            "type": "integer",
+            "description": "Trigger id returned when the broadcast was triggered."
+          }
+        },
+        "required": [
+          "broadcast_id",
+          "trigger_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/campaigns/{broadcast_id}/triggers/{trigger_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "broadcast_id": "$.broadcast_id",
+            "created_at": "$.created_at",
+            "processed_at": "$.processed_at",
+            "cancelled_at": "$.cancelled_at",
+            "scheduled_at": "$.scheduled_at",
+            "expires_after": "$.expires_after"
+          }
+        }
+      }
+    },
+    {
+      "name": "customer_io_list_newsletters",
+      "description": "List the one-time sends (newsletters) of the workspace: id, name, type, sent and created times, recipient segments, tags and variant (content) ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "One-time sends per page."
+          },
+          "sort": {
+            "type": "string",
+            "description": "asc for oldest first, desc for newest first.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start": {
+            "type": "string",
+            "description": "The next value from the previous page, to get the following page. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/newsletters",
+        "queryParams": {
+          "limit": "$limit",
+          "sort": "$sort",
+          "start": "$start"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "newsletters": "$.newsletters",
+            "next": "$.next"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "customer_io_get_newsletter_metrics",
+      "description": "Get a one-time send's message metrics per period: series of attempted, sent, delivered, opened, clicked, converted, bounced, unsubscribed, failed and more. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "newsletter_id": {
+            "type": "integer",
+            "description": "One-time send id from customer_io_list_newsletters."
+          },
+          "period": {
+            "type": "string",
+            "description": "Unit of each step: hours, days (default), weeks or months.",
+            "enum": [
+              "hours",
+              "days",
+              "weeks",
+              "months"
+            ]
+          },
+          "steps": {
+            "type": "integer",
+            "description": "How many periods to return, counting back from now (max 24 hours, 45 days, 12 weeks or 121 months)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this message type. Leave out for all types.",
+            "enum": [
+              "email",
+              "webhook",
+              "twilio",
+              "push",
+              "in_app",
+              "inbox"
+            ]
+          }
+        },
+        "required": [
+          "newsletter_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/newsletters/{newsletter_id}/metrics",
+        "queryParams": {
+          "period": "$period",
+          "steps": "$steps",
+          "type": "$type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "metric": "$.metric"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "customer_io_list_segments",
+      "description": "List the segments of the workspace (not archived ones): id, name, description, type (data-driven or manual), state, progress and tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/segments"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "segments": {
+              "$from": "$.segments[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "type": "type",
+                "state": "state",
+                "progress": "progress",
+                "tags": "tags",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "customer_io_get_segment",
+      "description": "Get one segment with its conditions (for data-driven segments), type, state and tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "segment_id": {
+            "type": "integer",
+            "description": "Segment id from customer_io_list_segments."
+          }
+        },
+        "required": [
+          "segment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/segments/{segment_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "segment": "$.segment"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "customer_io_get_segment_customer_count",
+      "description": "Count the people currently in a segment, for example to size a broadcast audience before sending. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "segment_id": {
+            "type": "integer",
+            "description": "Segment id from customer_io_list_segments."
+          }
+        },
+        "required": [
+          "segment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/segments/{segment_id}/customer_count"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "segment_id": "$.segment_id",
+            "count": "$.count"
+          }
+        }
+      }
+    },
+    {
+      "name": "customer_io_list_segment_members",
+      "description": "List the people in a segment, page by page: their identifiers (id, email, cio_id). Default 100 per page here; call again with start = next while next is present. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "segment_id": {
+            "type": "integer",
+            "description": "Segment id from customer_io_list_segments."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "People per page, up to 30000. Default 100.",
+            "default": 100
+          },
+          "start": {
+            "type": "string",
+            "description": "The next value from the previous page, to get the following page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "segment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/segments/{segment_id}/membership",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "identifiers": "$.identifiers",
+            "next": "$.next"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "customer_io_list_messages",
+      "description": "List deliveries across the workspace, newest first, filtered by message type, metric (sent, delivered, opened, clicked, bounced, failed...), automation, one-time send, action or time range. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Only this message type. Leave out for all types.",
+            "enum": [
+              "email",
+              "webhook",
+              "twilio",
+              "whatsapp",
+              "slack",
+              "push",
+              "in_app",
+              "live_notification"
+            ]
+          },
+          "metric": {
+            "type": "string",
+            "description": "Only deliveries that reached this metric.",
+            "enum": [
+              "attempted",
+              "sent",
+              "delivered",
+              "opened",
+              "clicked",
+              "converted",
+              "bounced",
+              "spammed",
+              "unsubscribed",
+              "dropped",
+              "failed",
+              "undeliverable"
+            ]
+          },
+          "campaign_id": {
+            "type": "integer",
+            "description": "Only deliveries of this automation."
+          },
+          "newsletter_id": {
+            "type": "integer",
+            "description": "Only deliveries of this one-time send."
+          },
+          "action_id": {
+            "type": "integer",
+            "description": "Only deliveries of this action."
+          },
+          "start_ts": {
+            "type": "integer",
+            "description": "Only deliveries created at or after this Unix timestamp (seconds)."
+          },
+          "end_ts": {
+            "type": "integer",
+            "description": "Only deliveries created before this Unix timestamp (seconds)."
+          },
+          "drafts": {
+            "type": "boolean",
+            "description": "true lists drafts instead of sent messages."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Deliveries per page, up to 1000. Default 50."
+          },
+          "start": {
+            "type": "string",
+            "description": "The next value from the previous page, to get the following page. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/messages",
+        "queryParams": {
+          "type": "$type",
+          "metric": "$metric",
+          "campaign_id": "$campaign_id",
+          "newsletter_id": "$newsletter_id",
+          "action_id": "$action_id",
+          "start_ts": "$start_ts",
+          "end_ts": "$end_ts",
+          "drafts": "$drafts",
+          "limit": "$limit",
+          "start": "$start"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "messages": "$.messages",
+            "next": "$.next"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "customer_io_get_message",
+      "description": "Get one delivery by id: recipient, parent automation, broadcast, one-time send or transactional message, subject, template, created, sent and delivered times, metrics and failure reason. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Delivery id, e.g. from customer_io_list_messages or customer_io_list_customer_messages."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/messages/{message_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message"
+          }
+        }
+      }
+    },
+    {
+      "name": "customer_io_list_activities",
+      "description": "List activities across the workspace, newest first: events, attribute changes and message activity, optionally for one person, one type or one event name. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Only this activity type, e.g. event, attribute_change, sent_email, opened_email, clicked_email, bounced_email."
+          },
+          "name": {
+            "type": "string",
+            "description": "For event and attribute_change, the event or attribute name; for consent, opted_in or opted_out."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only this person. By default their id; set id_type for email, phone or cio_id (prefix a cio_id with cio_)."
+          },
+          "id_type": {
+            "type": "string",
+            "description": "What customer_id is: id (default), email, phone or cio_id. email and phone work only when they are identifiers in the workspace.",
+            "enum": [
+              "id",
+              "email",
+              "phone",
+              "cio_id"
+            ]
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true returns activities of deleted people."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Activities per page, up to 100. Default 10."
+          },
+          "start": {
+            "type": "string",
+            "description": "The next value from the previous page, to get the following page. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/activities",
+        "queryParams": {
+          "type": "$type",
+          "name": "$name",
+          "customer_id": "$customer_id",
+          "id_type": "$id_type",
+          "deleted": "$deleted",
+          "limit": "$limit",
+          "start": "$start"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "activities": "$.activities",
+            "next": "$.next"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "customer_io_list_transactional_messages",
+      "description": "List the transactional message templates of the workspace (id, name, description, link tracking, body retention). Their id is the transactional_message_id that customer_io_send_transactional_email uses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/transactional"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "messages": "$.messages"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "customer_io_send_transactional_email",
+      "description": "Send one transactional email (receipts, password resets, notifications) to up to 15 addresses in to, cc and bcc, from a transactional template (transactional_message_id) with message_data, or with your own subject, body and from. This sends a real email. Show the user the recipient, subject and content first and call only after the user confirms. Returns delivery_id and queued_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transactional_message_id": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "The transactional message from customer_io_list_transactional_messages: its numeric id as a number (e.g. 44), or its trigger name as text (e.g. pwdreset)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient address(es), comma-separated; up to 15 across to, cc and bcc."
+          },
+          "identifiers": {
+            "type": "object",
+            "description": "The person the message belongs to, exactly one of {\"id\": \"...\"}, {\"email\": \"...\"} or {\"cio_id\": \"...\"}. Required when the template has no fixed recipient."
+          },
+          "message_data": {
+            "type": "object",
+            "description": "Values for the template's liquid placeholders, used as {{trigger.key}}."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject; overrides the template's."
+          },
+          "body": {
+            "type": "string",
+            "description": "HTML body; overrides the template's."
+          },
+          "body_plain": {
+            "type": "string",
+            "description": "Plain-text body; overrides the template's."
+          },
+          "from": {
+            "type": "string",
+            "description": "Sender, a verified address, e.g. \"Support\" <support@example.com>; overrides the template's."
+          },
+          "reply_to": {
+            "type": "string",
+            "description": "Reply-to address."
+          },
+          "cc": {
+            "type": "string",
+            "description": "Visible copies, comma-separated."
+          },
+          "bcc": {
+            "type": "string",
+            "description": "Blind copies, comma-separated."
+          },
+          "send_at": {
+            "type": "integer",
+            "description": "Unix timestamp (seconds) to schedule the email for later, up to 90 days ahead."
+          },
+          "send_to_unsubscribed": {
+            "type": "boolean",
+            "description": "Send even if the person unsubscribed. Default true for transactional messages; set false for marketing-like content."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of a translated template variant to use."
+          }
+        },
+        "required": [
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/send/email",
+        "bodyMapping": {
+          "transactional_message_id": "$transactional_message_id",
+          "to": "$to",
+          "identifiers": "$identifiers",
+          "message_data": "$message_data",
+          "subject": "$subject",
+          "body": "$body",
+          "body_plain": "$body_plain",
+          "from": "$from",
+          "reply_to": "$reply_to",
+          "cc": "$cc",
+          "bcc": "$bcc",
+          "send_at": "$send_at",
+          "send_to_unsubscribed": "$send_to_unsubscribed",
+          "language": "$language"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "customer_io_trigger_broadcast",
+      "description": "Trigger an API-triggered broadcast: send it to its default audience set in Customer.io, or to listed emails or ids, per-person data, or recipients matching a filter, with data for its placeholders. This sends real messages to many people at once. Before calling, show the user the broadcast, who will receive it (customer_io_get_segment_customer_count helps size the audience) and the data, and call only after the user answers with an explicit \"yes, send\". Returns the trigger id; check progress with customer_io_get_broadcast_trigger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcast_id": {
+            "type": "integer",
+            "description": "Broadcast id from customer_io_list_broadcasts."
+          },
+          "data": {
+            "type": "object",
+            "description": "Values for the broadcast's liquid placeholders, used as {{trigger.key}}."
+          },
+          "recipients": {
+            "type": "object",
+            "description": "Audience filter instead of the default audience: and, or, not, segment {\"id\": 4} or attribute conditions, as in customer_io_search_customers."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Send only to these existing people by email.",
+            "maxItems": 10000
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Send only to these existing people by id.",
+            "maxItems": 10000
+          },
+          "per_user_data": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Per-person data: [{\"id\": \"u1\", \"data\": {...}}] or with \"email\"."
+          },
+          "email_ignore_missing": {
+            "type": "boolean",
+            "description": "Skip listed emails that match nobody instead of failing. Default false."
+          },
+          "id_ignore_missing": {
+            "type": "boolean",
+            "description": "Skip listed ids that match nobody instead of failing. Default false."
+          },
+          "scheduled_at": {
+            "type": "integer",
+            "description": "Unix timestamp (seconds) to send later; leave out to send right away."
+          }
+        },
+        "required": [
+          "broadcast_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/campaigns/{broadcast_id}/triggers",
+        "bodyMapping": {
+          "data": "$data",
+          "recipients": "$recipients",
+          "emails": "$emails",
+          "ids": "$ids",
+          "per_user_data": "$per_user_data",
+          "email_ignore_missing": "$email_ignore_missing",
+          "id_ignore_missing": "$id_ignore_missing",
+          "scheduled_at": "$scheduled_at"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

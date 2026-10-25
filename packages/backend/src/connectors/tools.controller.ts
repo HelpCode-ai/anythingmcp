@@ -39,6 +39,7 @@ import {
 } from './response-transform.util';
 import { validateDecode } from './mime-decode.util';
 import { validateImages } from './response-images.util';
+import { validateBinaryConfig, withoutBinaryData } from './binary-response.util';
 import {
   ToolAnnotations,
   deriveToolAnnotations,
@@ -352,6 +353,10 @@ export class ToolsController {
     const imagesError = validateImages((responseMapping as Record<string, unknown>).images);
     if (imagesError) {
       throw new BadRequestException(`Invalid response mapping: ${imagesError}`);
+    }
+    const binaryError = validateBinaryConfig((responseMapping as Record<string, unknown>).binary);
+    if (binaryError) {
+      throw new BadRequestException(`Invalid response mapping: ${binaryError}`);
     }
     const transform = (responseMapping as Record<string, unknown>).transform;
     if (transform === undefined || transform === null) return;
@@ -942,13 +947,17 @@ export class ToolsController {
 
     const startTime = Date.now();
     try {
-      const result = await this.connectorsService.executeConnectorCall(
-        tool.connector,
-        tool.endpointMapping as any,
-        inputs,
-        tool.name,
-        tool.parameters,
-        { useProxy: tool.useProxy === true },
+      // A file comes back described, without its bytes: the test panel shows
+      // what arrived, and megabytes of base64 would only freeze the editor.
+      const result = withoutBinaryData(
+        await this.connectorsService.executeConnectorCall(
+          tool.connector,
+          tool.endpointMapping as any,
+          inputs,
+          tool.name,
+          tool.parameters,
+          { useProxy: tool.useProxy === true },
+        ),
       );
       const durationMs = Date.now() - startTime;
       const withNote = callerContextNote ? { note: callerContextNote } : {};

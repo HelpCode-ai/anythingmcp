@@ -1,0 +1,724 @@
+{
+  "slug": "checko",
+  "name": "Checko",
+  "aliases": [
+    "Чекко",
+    "Checko.ru",
+    "Checko API ЕГРЮЛ"
+  ],
+  "description": "Checko due diligence on Russian companies and entrepreneurs (EGRUL, EGRIP): company details, directors and founders, contacts, financial statements, reliability score, arbitration cases, enforcement proceedings, public procurement contracts, Fedresurs and bankruptcy messages, inspections, banks and search. Read-only.",
+  "instructions": "## Checko\nThis connector uses the **Checko API v2** (`https://api.checko.ru/v2`), a due-diligence service on Russian official registers: organisations (EGRUL) and entrepreneurs (EGRIP) with directors, founders, contacts, taxes and risk factors, financial statements, reliability scores, arbitration cases, FSSP enforcement proceedings, public procurement contracts, Fedresurs and EFRSB bankruptcy messages, inspections and banks. Everything is read-only.\n\n**Setup (2 minutes)**\n1. Register at https://checko.ru and open the personal account (**Личный кабинет**); the API key is shown there right after registration.\n2. Paste it into `CHECKO_API_KEY`. It is sent as the `key` query parameter.\n3. Run `checko_get_bank` (the install check reads Sberbank, BIC 044525225) to check the key.\n\n**Identifiers**: INN has 10 digits for an organisation and 12 for an entrepreneur or a person; OGRN has 13 digits (organisation), OGRNIP 15 (entrepreneur). Most tools take `inn` or `ogrn`; give one of them. A branch shares the INN of its head organisation, which is what is returned.\n\n**Workflow**\n- Find a company: `checko_search` (`by`=name, `obj`=org, a name of at least 4 characters; also by director, founder, phone, e-mail, OKVED code or registration date), then `checko_get_company` with the INN.\n- Due diligence on a counterparty: `checko_get_company` (status, directors, founders, tax debts, risk factors), `checko_get_reliability`, `checko_get_finances` (revenue line 2110, net profit 2400), `checko_list_legal_cases` (role defendant), `checko_list_enforcements`, `checko_list_bankruptcy_messages`, `checko_list_fedresurs_messages`, `checko_list_inspections`.\n- Entrepreneurs and people: `checko_get_entrepreneur`, `checko_get_person` (companies where a person is director or founder), `checko_get_timeline` for the change history.\n- Public procurement: `checko_list_contracts` with `law` 44, 94 or 223 and `role` customer or supplier.\n- Banks: `checko_get_bank` by BIC.\n\n**Paging**: list tools return up to 100 rows per page (`limit`, `page`); answers carry the total count. Every answer has `meta` with `status`, `today_request_count` and the account `balance` in roubles.\n\n**Costs and limits**: the first 100 requests per day are free on every plan; after that each successful request (HTTP 200) is billed at the plan price (from 0.10 to 0.15 roubles); errors are free. Technical limit 32 requests per second per IP address. Prefer one targeted call over many broad ones.\n\n**Errors**: 401 with `meta.message` means a missing or invalid key. 402 or a balance message means the free daily quota is used and the balance is empty. 404 means nothing found for that INN or OGRN. Error answers carry `meta.status` = error and the reason in `meta.message` (Russian).\n\n**Limitations**: Belarus companies, the raw EGRUL source data and the bulk datasets are not part of this connector.",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "checko",
+  "docsUrl": "https://checko.ru/integration/api",
+  "requiredEnvVars": [
+    "CHECKO_API_KEY"
+  ],
+  "envVarMeta": {
+    "CHECKO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "checko.ru, personal account (Личный кабинет): the API key shown after registration. 100 requests a day are free.",
+      "link": "https://checko.ru/integration/api",
+      "pattern": "^[A-Za-z0-9]{8,64}$",
+      "patternMessage": "Paste only the API key from the Checko personal account."
+    }
+  },
+  "verifyHints": {
+    "401": "Checko refused the API key. Copy it again from the personal account at checko.ru.",
+    "402": "The 100 free requests of today are used and the Checko balance is empty. Top up the balance or wait until tomorrow.",
+    "429": "More than 32 requests per second from this address. Slow down."
+  },
+  "probe": {
+    "tool": "checko_get_bank",
+    "params": {
+      "bic": "044525225"
+    }
+  },
+  "connector": {
+    "name": "Checko API v2",
+    "type": "REST",
+    "baseUrl": "https://api.checko.ru/v2",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "key": "{{CHECKO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "meta.status",
+          "equals": "error",
+          "messagePath": "meta.message",
+          "messageMatches": "API-ключ|ключ",
+          "status": 401
+        },
+        {
+          "path": "meta.status",
+          "equals": "error",
+          "messagePath": "meta.message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "checko_search",
+      "description": "Search Russian organisations or entrepreneurs in the EGRUL / EGRIP registers by name, founder, director, OKVED activity code, registration or update date, phone or e-mail. Returns OGRN, INN, KPP, names, status, region, address and main OKVED per hit, 100 per page. Use it to find the INN, then call the detail tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "by": {
+            "type": "string",
+            "description": "Search type: name (organisation name or entrepreneur full name), founder-name, leader-name, okved, reg-date, upd-date, phone, email. founder-name, leader-name, phone and email work for organisations only.",
+            "enum": [
+              "name",
+              "founder-name",
+              "leader-name",
+              "okved",
+              "reg-date",
+              "upd-date",
+              "phone",
+              "email"
+            ]
+          },
+          "obj": {
+            "type": "string",
+            "description": "org for organisations, ent for individual entrepreneurs.",
+            "enum": [
+              "org",
+              "ent"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "Search text: at least 4 characters for names; YYYY-MM-DD for dates; +7XXXXXXXXXX or 8XXXXXXXXXX for phones; an OKVED code for okved."
+          },
+          "region": {
+            "type": "string",
+            "description": "Two-digit region code, e.g. 77 for Moscow."
+          },
+          "okved": {
+            "type": "string",
+            "description": "Only this main OKVED-2 code (not with by=okved)."
+          },
+          "opf": {
+            "type": "string",
+            "description": "Only this legal form code (OKOPF, 2 or 5 digits); organisations searched by okved, dates, phone or e-mail."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Only active organisations or entrepreneurs."
+          },
+          "all_okved_codes": {
+            "type": "string",
+            "description": "With by=okved, set to all to also match additional activity codes, not only the main one.",
+            "enum": [
+              "all"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, at most 100 (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "by",
+          "obj",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "by": "$by",
+          "obj": "$obj",
+          "query": "$query",
+          "region": "$region",
+          "okved": "$okved",
+          "opf": "$opf",
+          "active": "$active",
+          "codes": "$all_okved_codes",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "checko_get_company",
+      "description": "Get a Russian organisation from EGRUL by INN, OGRN or OKPO: names, status and liquidation, registration, legal address, main and additional OKVED, directors, founders and shares, related companies, licences, branches, contacts (phones, e-mails, website), taxes and tax debts, SME register, risk factors and sanctions. Give one of inn, ogrn or okpo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "Organisation INN, 10 digits, e.g. 7707083893."
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "Organisation OGRN, 13 digits."
+          },
+          "okpo": {
+            "type": "string",
+            "description": "OKPO code, if neither INN nor OGRN is known."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn",
+          "okpo": "$okpo"
+        }
+      }
+    },
+    {
+      "name": "checko_get_entrepreneur",
+      "description": "Get an individual entrepreneur (IP) from EGRIP by INN, OGRNIP or OKPO: full name, status, registration and termination, OKVED codes, region, contacts, SME register, taxes and risk factors. Give one of inn, ogrn or okpo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "Entrepreneur INN, 12 digits."
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "OGRNIP, 15 digits."
+          },
+          "okpo": {
+            "type": "string",
+            "description": "OKPO code, if neither INN nor OGRNIP is known."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entrepreneur",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn",
+          "okpo": "$okpo"
+        }
+      }
+    },
+    {
+      "name": "checko_get_person",
+      "description": "Get the business links of a private person by personal INN: organisations where the person is director or founder, and entrepreneur registrations, each with status, region, address and main OKVED.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "Personal INN, 12 digits.",
+            "pattern": "^[0-9]{12}$"
+          }
+        },
+        "required": [
+          "inn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/person",
+        "queryParams": {
+          "inn": "$inn"
+        }
+      }
+    },
+    {
+      "name": "checko_get_finances",
+      "description": "Get the financial statements (balance sheet and profit and loss lines by code, e.g. 2110 revenue, 2400 net profit, 1600 total assets) of an organisation for 2011 to 2025 from Rosstat and the FNS GIR BO register. extended=true returns the extended version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "INN: 10 digits for an organisation, 12 for an entrepreneur or a person, e.g. 7707083893.",
+            "pattern": "^[0-9]{10}([0-9]{2})?$"
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "OGRN (13 digits) of an organisation or OGRNIP (15 digits) of an entrepreneur; use instead of inn.",
+            "pattern": "^[0-9]{13}([0-9]{2})?$"
+          },
+          "extended": {
+            "type": "boolean",
+            "description": "Return the extended statements."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finances",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn",
+          "extended": "$extended"
+        }
+      }
+    },
+    {
+      "name": "checko_get_reliability",
+      "description": "Get a reliability assessment of an organisation or entrepreneur: business scale, financial risk, positive and negative factors with an overall verdict. A quick due-diligence answer before a contract.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "INN: 10 digits for an organisation, 12 for an entrepreneur or a person, e.g. 7707083893.",
+            "pattern": "^[0-9]{10}([0-9]{2})?$"
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "OGRN (13 digits) of an organisation or OGRNIP (15 digits) of an entrepreneur; use instead of inn.",
+            "pattern": "^[0-9]{13}([0-9]{2})?$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reliability",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn"
+        }
+      }
+    },
+    {
+      "name": "checko_get_timeline",
+      "description": "Get the history of events and register changes of an organisation, entrepreneur or person: registration, changes of directors, founders, addresses, capital, statements filed, bankruptcy messages, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "INN of the organisation (10 digits), entrepreneur or person (12 digits)."
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "OGRN (13 digits) of an organisation or OGRNIP (15 digits) of an entrepreneur; use instead of inn.",
+            "pattern": "^[0-9]{13}([0-9]{2})?$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeline",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn"
+        }
+      }
+    },
+    {
+      "name": "checko_list_legal_cases",
+      "description": "List arbitration court cases (Kartoteka arbitrazhnykh del) of an organisation or entrepreneur: case number, court, date, claim amount, role, parties, status. Filter by role, period, claim amount, only actual or only active cases; 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "INN: 10 digits for an organisation, 12 for an entrepreneur or a person, e.g. 7707083893.",
+            "pattern": "^[0-9]{10}([0-9]{2})?$"
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "OGRN (13 digits) of an organisation or OGRNIP (15 digits) of an entrepreneur; use instead of inn.",
+            "pattern": "^[0-9]{13}([0-9]{2})?$"
+          },
+          "role": {
+            "type": "string",
+            "description": "plaintiff or defendant.",
+            "enum": [
+              "plaintiff",
+              "defendant"
+            ]
+          },
+          "actual": {
+            "type": "boolean",
+            "description": "Only actual cases (without returned or rejected claims, waived or terminated cases)."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Only cases not yet finished."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD."
+          },
+          "claim_amount_from": {
+            "type": "number",
+            "description": "Minimum claim amount, roubles."
+          },
+          "claim_amount_to": {
+            "type": "number",
+            "description": "Maximum claim amount, roubles."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, at most 100 (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "sort": {
+            "type": "string",
+            "description": "date (oldest first) or -date (newest first).",
+            "enum": [
+              "date",
+              "-date"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/legal-cases",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn",
+          "role": "$role",
+          "actual": "$actual",
+          "active": "$active",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "claim_amount_from": "$claim_amount_from",
+          "claim_amount_to": "$claim_amount_to",
+          "limit": "$limit",
+          "page": "$page",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "checko_list_enforcements",
+      "description": "List enforcement proceedings (FSSP bailiff service) opened against an organisation: number, date, subject, amount and remaining debt, bailiff department. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "INN: 10 digits for an organisation, 12 for an entrepreneur or a person, e.g. 7707083893.",
+            "pattern": "^[0-9]{10}([0-9]{2})?$"
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "OGRN (13 digits) of an organisation or OGRNIP (15 digits) of an entrepreneur; use instead of inn.",
+            "pattern": "^[0-9]{13}([0-9]{2})?$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, at most 100 (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "sort": {
+            "type": "string",
+            "description": "date (oldest first) or -date (newest first).",
+            "enum": [
+              "date",
+              "-date"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enforcements",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn",
+          "limit": "$limit",
+          "page": "$page",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "checko_list_contracts",
+      "description": "List public procurement contracts of an organisation or entrepreneur under 44-FZ, 94-FZ or 223-FZ, as customer or supplier: registry number, date, price, subject, counterparty, region. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "INN: 10 digits for an organisation, 12 for an entrepreneur or a person, e.g. 7707083893.",
+            "pattern": "^[0-9]{10}([0-9]{2})?$"
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "OGRN (13 digits) of an organisation or OGRNIP (15 digits) of an entrepreneur; use instead of inn.",
+            "pattern": "^[0-9]{13}([0-9]{2})?$"
+          },
+          "law": {
+            "type": "string",
+            "description": "Procurement law: 44, 94 or 223.",
+            "enum": [
+              "44",
+              "94",
+              "223"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "description": "customer or supplier.",
+            "enum": [
+              "customer",
+              "supplier"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, at most 100 (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "sort": {
+            "type": "string",
+            "description": "date, -date, price or -price.",
+            "enum": [
+              "date",
+              "-date",
+              "price",
+              "-price"
+            ]
+          }
+        },
+        "required": [
+          "law"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contracts",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn",
+          "law": "$law",
+          "role": "$role",
+          "limit": "$limit",
+          "page": "$page",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "checko_list_fedresurs_messages",
+      "description": "List Fedresurs messages about an organisation or entrepreneur (pledges, leasing, intentions to liquidate or reduce capital, net assets and other notices), as publisher or participant. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "INN: 10 digits for an organisation, 12 for an entrepreneur or a person, e.g. 7707083893.",
+            "pattern": "^[0-9]{10}([0-9]{2})?$"
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "OGRN (13 digits) of an organisation or OGRNIP (15 digits) of an entrepreneur; use instead of inn.",
+            "pattern": "^[0-9]{13}([0-9]{2})?$"
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this message type code (see the Checko Fedresurs type reference)."
+          },
+          "role": {
+            "type": "string",
+            "description": "all (default) or publisher.",
+            "enum": [
+              "all",
+              "publisher"
+            ]
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, at most 100 (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "sort": {
+            "type": "string",
+            "description": "date (oldest first) or -date (newest first).",
+            "enum": [
+              "date",
+              "-date"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fedresurs",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn",
+          "type": "$type",
+          "role": "$role",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "limit": "$limit",
+          "page": "$page",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "checko_list_bankruptcy_messages",
+      "description": "List EFRSB bankruptcy register messages about an organisation, entrepreneur or person: message type, date, case number, arbitration manager. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "INN: 10 digits for an organisation, 12 for an entrepreneur or a person, e.g. 7707083893.",
+            "pattern": "^[0-9]{10}([0-9]{2})?$"
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "OGRN (13 digits) of an organisation or OGRNIP (15 digits) of an entrepreneur; use instead of inn.",
+            "pattern": "^[0-9]{13}([0-9]{2})?$"
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, at most 100 (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "sort": {
+            "type": "string",
+            "description": "date (oldest first) or -date (newest first).",
+            "enum": [
+              "date",
+              "-date"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bankruptcy-messages",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "limit": "$limit",
+          "page": "$page",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "checko_list_inspections",
+      "description": "List state inspections and control measures (FGIS ERP / ERKNM of the Prosecutor General) of an organisation or entrepreneur: authority, type, dates, result and violations. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inn": {
+            "type": "string",
+            "description": "INN: 10 digits for an organisation, 12 for an entrepreneur or a person, e.g. 7707083893.",
+            "pattern": "^[0-9]{10}([0-9]{2})?$"
+          },
+          "ogrn": {
+            "type": "string",
+            "description": "OGRN (13 digits) of an organisation or OGRNIP (15 digits) of an entrepreneur; use instead of inn.",
+            "pattern": "^[0-9]{13}([0-9]{2})?$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, at most 100 (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "sort": {
+            "type": "string",
+            "description": "date (oldest first) or -date (newest first).",
+            "enum": [
+              "date",
+              "-date"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inspections",
+        "queryParams": {
+          "inn": "$inn",
+          "ogrn": "$ogrn",
+          "limit": "$limit",
+          "page": "$page",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "checko_get_bank",
+      "description": "Get a Russian bank or credit institution by BIC from the Bank of Russia directory: name, English name, address, type, correspondent account and its other accounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bic": {
+            "type": "string",
+            "description": "Bank BIC, 9 digits, e.g. 044525225.",
+            "pattern": "^[0-9]{9}$"
+          }
+        },
+        "required": [
+          "bic"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bank",
+        "queryParams": {
+          "bic": "$bic"
+        }
+      }
+    }
+  ]
+}

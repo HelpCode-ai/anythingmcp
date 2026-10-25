@@ -178,6 +178,17 @@ curl http://localhost:4000/health
 
 The container runs `prisma migrate deploy` on startup, then launches both backend and frontend.
 
+### Build provenance
+
+When building the image yourself, pass the commit and build date so the UI and startup log show real values instead of `dev`:
+
+```bash
+docker build \
+  --build-arg APP_COMMIT=$(git rev-parse HEAD) \
+  --build-arg APP_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  -t anythingmcp:local .
+```
+
 ### Without Docker
 
 ```bash
@@ -366,6 +377,14 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `DOMAIN` | No | Domain for Caddy SSL certificate (e.g., `example.com`) |
 | `ACME_EMAIL` | No | Email for Let's Encrypt certificate notifications |
 | `APP_BIND_IP` | No | Bind IP for app ports (default: `0.0.0.0`, set `127.0.0.1` behind Caddy) |
+| `METRICS_ENABLED` | No | Start a second, separate `/metrics` listener for Prometheus (default: `false`) — see [observability.md](operations/observability.md) |
+| `METRICS_PORT` | No | Port for the metrics listener (default: `9464`) |
+| `METRICS_HOST` | No | Bind host for the metrics listener (default: `0.0.0.0`) |
+| `METRICS_TOKEN` | **Required when `METRICS_ENABLED=true`** | Bearer token required to scrape `/metrics`, compared with `timingSafeEqual` |
+| `SOCIAL_GOOGLE_CLIENT_ID` / `SOCIAL_GOOGLE_CLIENT_SECRET` | No | Cloud only (ignored on self-hosted): enables "Continue with Google". Redirect URI `<FRONTEND_URL>/auth/social/google/callback` |
+| `SOCIAL_MICROSOFT_CLIENT_ID` / `SOCIAL_MICROSOFT_CLIENT_SECRET` | No | Cloud only: enables "Continue with Microsoft" (personal and work accounts). Redirect URI `<FRONTEND_URL>/auth/social/microsoft/callback`; add the `email` and `xms_edov` optional ID-token claims |
+| `SOCIAL_GITHUB_CLIENT_ID` / `SOCIAL_GITHUB_CLIENT_SECRET` | No | Cloud only: enables "Continue with GitHub". Callback URL `<FRONTEND_URL>/auth/social/github/callback` |
+| `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
 
 ---
 

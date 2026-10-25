@@ -1,0 +1,910 @@
+{
+  "slug": "algolia",
+  "name": "Algolia",
+  "description": "Let your AI search and inspect your Algolia indices: list indices, search and browse records, read settings, synonyms and Rules, see top searches and searches without results and, with your confirmation, add or update records.",
+  "instructions": "## Algolia\nThis connector calls the **Algolia Search API** (v1) and the **Analytics API** (v2) of one Algolia application with the user's own API key: list indices, search and browse records, read records, settings, synonyms and Rules, read search analytics (top searches, searches without results, top hits, search volume) and, when the key allows it, add or update records.\n\n**Setup (about 3 minutes)**\n1. Open the Algolia dashboard: **Settings > API Keys** (https://dashboard.algolia.com/account/api-keys). Copy the **Application ID** into `ALGOLIA_APP_ID`.\n2. Create a dedicated key under **All API keys > New API key** rather than reusing the Admin key, give it a description such as `AnythingMCP`, optionally limit it to some indices, and pick its ACL (below). Paste it into `ALGOLIA_API_KEY`. It is sent as the `X-Algolia-API-Key` header with `X-Algolia-Application-Id`.\n3. Set `ALGOLIA_ANALYTICS_REGION` to `us` or `de`: the analytics region shown at https://dashboard.algolia.com/account/infrastructure/analytics. Most applications use `us`.\n\n**Which key for which tools**\n- Use a **custom read key** with the ACL `search`, `browse`, `listIndexes`, `settings` and `analytics`: it covers every tool here except writes. Recommended.\n- The connection check lists the indices, which needs the `listIndexes` ACL. The default **Search-Only API key** has only `search`, so it fails the check with 403 \"Method not allowed with this API key\" even though `algolia_search` and `algolia_get_object` would work with it. Create the custom read key instead.\n- Writes (`algolia_save_object`, `algolia_partial_update_object`) need `addObject` in addition. Every write asks the user to confirm first.\n- `algolia_delete_object` is installed switched off and needs `deleteObject`. Do not use the **Admin API key**: it can delete indices and manage keys, and none of the tools here need that.\n- To see what a key may do, open **Settings > API Keys > All API keys** in the dashboard: each key lists its ACL, the indices it is limited to and its rate limit; edit the key to change them. Check there when a tool answers 403 \"Method not allowed with this API key\".\n\n**Which tool**\n- `algolia_list_indices` first, for exact (case-sensitive) index names and record counts.\n- `algolia_search` searches like the user's site: query text, `filters` (e.g. `brand:Apple AND price < 500`), facet counts and paging; 10 hits by default, at most 100. It does not count in the user's analytics unless `record_analytics` is true.\n- `algolia_browse` reads records in bulk with a `cursor` (call again until no cursor comes back); use `attributes_to_retrieve` to keep it small.\n- `algolia_get_object`, `algolia_get_settings`, `algolia_search_synonyms`, `algolia_search_rules` explain one record and why results rank as they do.\n- Analytics: `algolia_top_searches`, `algolia_no_result_searches` (what users look for and do not find), `algolia_top_hits`, `algolia_search_count`. Dates are `YYYY-MM-DD`; the default period is the last 8 days. Analytics lag behind by up to a few hours, and an index needs traffic before it has data.\n\n**Writes are asynchronous**: Algolia answers with a `taskID` at once and the change becomes searchable shortly after. Saving replaces the whole record; a partial update changes only the given attributes. Writes go to `<APP_ID>.algolia.net`, reads to `<APP_ID>-dsn.algolia.net`.\n\n**Errors**: 403 \"Invalid Application-ID or API key\" means the application ID or the key is wrong or the key was deleted; 401 \"Invalid credentials\" is the same on the Analytics API. 403 \"Method not allowed with this API key\" names an ACL the key lacks, and \"Index not allowed with this API key\" an index it may not use. 404 \"Index does not exist\" or \"ObjectID does not exist\" is a wrong name. 429 means a rate limit of the key was hit.\n\n**Out of scope here**: creating, copying or deleting indices, changing settings, synonyms or Rules, API key management, Insights events, Recommend, Query Suggestions and the Crawler.",
+  "region": "intl",
+  "category": "database",
+  "icon": "algolia",
+  "docsUrl": "https://www.algolia.com/doc/rest-api/search/",
+  "prerequisites": "An Algolia application, its Application ID and a custom API key with the ACL search, browse, listIndexes, settings and analytics (the default Search-Only key fails the connection check). About 3 minutes.",
+  "requiredEnvVars": [
+    "ALGOLIA_APP_ID",
+    "ALGOLIA_API_KEY",
+    "ALGOLIA_ANALYTICS_REGION"
+  ],
+  "envVarMeta": {
+    "ALGOLIA_APP_ID": {
+      "label": "Application ID",
+      "kind": "setting",
+      "help": "Algolia dashboard > Settings > API Keys: the Application ID at the top.",
+      "link": "https://dashboard.algolia.com/account/api-keys",
+      "example": "ABCD1234EF",
+      "pattern": "^[A-Za-z0-9]{4,20}$",
+      "patternMessage": "Paste the Application ID only, letters and digits, e.g. ABCD1234EF."
+    },
+    "ALGOLIA_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Algolia dashboard > Settings > API Keys > All API keys > New API key, with the ACL search, browse, listIndexes, settings and analytics; add addObject only if the AI may write records. The default Search-Only key fails the connection check (no listIndexes). Avoid the Admin API key.",
+      "link": "https://dashboard.algolia.com/account/api-keys/all",
+      "example": "0123456789abcdef0123456789abcdef",
+      "pattern": "^[A-Za-z0-9+/=]{20,}$",
+      "patternMessage": "Paste the API key only, without spaces or quotes."
+    },
+    "ALGOLIA_ANALYTICS_REGION": {
+      "label": "Analytics region",
+      "kind": "setting",
+      "help": "us or de, as shown in the Algolia dashboard under Settings > Infrastructure > Analytics. Most applications use us.",
+      "link": "https://dashboard.algolia.com/account/infrastructure/analytics",
+      "example": "us",
+      "pattern": "^(us|de)$",
+      "patternMessage": "Enter us or de in lower case."
+    }
+  },
+  "verifyHints": {
+    "401": "The Analytics API refused the key: check ALGOLIA_APP_ID, ALGOLIA_API_KEY and that ALGOLIA_ANALYTICS_REGION matches the application's analytics region.",
+    "403": "Algolia refused the request. \"Invalid Application-ID or API key\" means the Application ID or the key is wrong or deleted. \"Method not allowed with this API key\" means the key lacks an ACL: the check lists indices and needs listIndexes, which the default Search-Only key does not have. Use a key with search, browse, listIndexes, settings and analytics (dashboard: Settings > API Keys > All API keys shows each key's ACL).",
+    "404": "The index or record does not exist. Index names are case-sensitive; check them with algolia_list_indices.",
+    "rate_limited": "The API key hit its rate limit (maxQueriesPerIPPerHour) or the plan's limit. Wait and try again, or raise the key's limit in the dashboard."
+  },
+  "probe": {
+    "tool": "algolia_list_indices",
+    "params": {
+      "hits_per_page": 1
+    }
+  },
+  "connector": {
+    "name": "Algolia",
+    "type": "REST",
+    "baseUrl": "https://{{ALGOLIA_APP_ID}}-dsn.algolia.net",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Algolia-API-Key",
+      "apiKey": "{{ALGOLIA_API_KEY}}",
+      "extraHeaders": {
+        "X-Algolia-Application-Id": "{{ALGOLIA_APP_ID}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/1/indexes?hitsPerPage=1"
+  },
+  "tools": [
+    {
+      "name": "algolia_list_indices",
+      "description": "List the indices of the application: name, number of records (entries), data and file size, last update and build time, and replica relations (primary, replicas, virtual). Needs the listIndexes ACL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, starting at 0."
+          },
+          "hits_per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Indices per page (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/indexes",
+        "queryParams": {
+          "page": "$page",
+          "hitsPerPage": "$hits_per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "indices": {
+              "$from": "$.items[*]",
+              "$select": {
+                "name": "name",
+                "entries": "entries",
+                "dataSize": "dataSize",
+                "fileSize": "fileSize",
+                "updatedAt": "updatedAt",
+                "lastBuildTimeS": "lastBuildTimeS",
+                "numberOfPendingTasks": "numberOfPendingTasks",
+                "primary": "primary",
+                "replicas": "replicas",
+                "virtual": "virtual"
+              }
+            },
+            "nbPages": "$.nbPages"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "algolia_search",
+      "description": "Search one index the way the user's site or app does: full-text query with typo tolerance, filters, facets and paging. Returns hits (the records, without highlight markup), nbHits, page and nbPages, and facet counts when facets are asked for. 10 hits by default and never more than 100 per call. Searches made here are left out of the index's analytics unless record_analytics is true. Needs the search ACL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "query": {
+            "type": "string",
+            "description": "The search text, as a user would type it. Empty string returns all records (filtered)."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Filter expression, e.g. brand:Apple AND price < 500, or (category:shoes OR category:boots) AND NOT status:archived. Attributes must be set as attributesForFaceting (or numeric) in the index settings."
+          },
+          "facet_filters": {
+            "type": "array",
+            "items": {},
+            "description": "Facet filters as arrays, e.g. [\"brand:Apple\", [\"color:red\", \"color:blue\"]] (inner arrays are OR)."
+          },
+          "numeric_filters": {
+            "type": "array",
+            "items": {},
+            "description": "Numeric filters, e.g. [\"price >= 10\", \"price <= 50\"]."
+          },
+          "facets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Return value counts for these facet attributes, e.g. [\"brand\", \"category\"]; [\"*\"] for all."
+          },
+          "attributes_to_retrieve": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only return these attributes of each hit, e.g. [\"name\", \"price\", \"url\"]. objectID is always returned."
+          },
+          "hits_per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Hits per page, 1 to 100 (default 10)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, starting at 0."
+          },
+          "record_analytics": {
+            "type": "boolean",
+            "default": false,
+            "description": "Count this search in the index's Algolia analytics. Default false, so AI searches do not skew the user's reports."
+          }
+        },
+        "required": [
+          "index_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/1/indexes/{index_name}/query",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": "$query",
+          "filters": "$filters",
+          "facetFilters": "$facet_filters",
+          "numericFilters": "$numeric_filters",
+          "facets": "$facets",
+          "attributesToRetrieve": "$attributes_to_retrieve",
+          "hitsPerPage": "$hits_per_page",
+          "page": "$page",
+          "analytics": "$record_analytics",
+          "attributesToHighlight": [],
+          "attributesToSnippet": []
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "exclude": [
+            "hits[*]._highlightResult",
+            "hits[*]._snippetResult",
+            "hits[*]._rankingInfo",
+            "hits[*]._distinctSeqID"
+          ],
+          "expression": "from_items(items({hits: hits[:100], nbHits: nbHits, page: page, nbPages: nbPages, hitsPerPage: hitsPerPage, exhaustiveNbHits: exhaustiveNbHits, facets: facets, facets_stats: facets_stats, query: query, processingTimeMS: processingTimeMS, queryID: queryID, appliedRules: appliedRules, message: message})[?@[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "algolia_browse",
+      "description": "Read many records of an index in bulk, beyond the 1,000-hit limit of a search: returns up to hits_per_page records and a cursor; call again with that cursor until it is missing. Unlike a search it applies no ranking, typo tolerance or analytics. Needs the browse ACL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional search text to narrow the records."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Optional filter expression, e.g. category:shoes AND stock > 0."
+          },
+          "attributes_to_retrieve": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only return these attributes, e.g. [\"name\", \"price\"]. Keeps large exports readable."
+          },
+          "hits_per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50,
+            "description": "Records per call, 1 to 200 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor from the previous call, to get the next batch. When set, the other options are taken from the first call."
+          }
+        },
+        "required": [
+          "index_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/1/indexes/{index_name}/browse",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": "$query",
+          "filters": "$filters",
+          "attributesToRetrieve": "$attributes_to_retrieve",
+          "hitsPerPage": "$hits_per_page",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "hits[*]._highlightResult",
+            "hits[*]._snippetResult",
+            "hits[*]._rankingInfo",
+            "hits[*]._distinctSeqID"
+          ],
+          "select": {
+            "hits": "$.hits",
+            "cursor": "$.cursor",
+            "nbHits": "$.nbHits",
+            "page": "$.page",
+            "nbPages": "$.nbPages"
+          },
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "algolia_get_object",
+      "description": "Get one record by its objectID, optionally only some attributes. Needs the search ACL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "The record's objectID."
+          },
+          "attributes_to_retrieve": {
+            "type": "string",
+            "description": "Comma-separated attributes to return, e.g. name,price. Default: all retrievable attributes."
+          }
+        },
+        "required": [
+          "index_name",
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/indexes/{index_name}/{object_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "attributesToRetrieve": "$attributes_to_retrieve"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "_highlightResult"
+          ],
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "algolia_get_settings",
+      "description": "Get an index's settings: searchable attributes, attributes for faceting, custom ranking, ranking criteria, typo tolerance, replicas, distinct and more. Read them to understand why results rank as they do and which attributes can be filtered. Needs the settings ACL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          }
+        },
+        "required": [
+          "index_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/indexes/{index_name}/settings",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "version"
+          ],
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "algolia_search_synonyms",
+      "description": "Search or list the synonyms of an index: objectID, type (synonym, onewaysynonym, altcorrection1/2, placeholder) and the words. An empty query lists them all, page by page. Needs the settings ACL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "query": {
+            "type": "string",
+            "description": "Text to look for in the synonyms. Empty lists all."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "synonym",
+              "onewaysynonym",
+              "altcorrection1",
+              "altcorrection2",
+              "placeholder"
+            ],
+            "description": "Only synonyms of this type."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, starting at 0."
+          },
+          "hits_per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Synonyms per page (default 20)."
+          }
+        },
+        "required": [
+          "index_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/1/indexes/{index_name}/synonyms/search",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": "$query",
+          "type": "$type",
+          "page": "$page",
+          "hitsPerPage": "$hits_per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "hits[*]._highlightResult"
+          ],
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "algolia_search_rules",
+      "description": "Search or list the Rules of an index (merchandising and query rules): objectID, conditions (pattern, anchoring, context), consequence (promoted or hidden records, query changes, filters), enabled state and validity. An empty query lists them all. Needs the settings ACL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "query": {
+            "type": "string",
+            "description": "Text to look for in rule patterns, descriptions and objectIDs. Empty lists all."
+          },
+          "anchoring": {
+            "type": "string",
+            "enum": [
+              "is",
+              "startsWith",
+              "endsWith",
+              "contains"
+            ],
+            "description": "Only rules whose condition uses this anchoring."
+          },
+          "context": {
+            "type": "string",
+            "description": "Only rules with this context (exact match)."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "true for enabled rules only, false for disabled ones; leave out for all."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, starting at 0."
+          },
+          "hits_per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rules per page (default 20)."
+          }
+        },
+        "required": [
+          "index_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/1/indexes/{index_name}/rules/search",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": "$query",
+          "anchoring": "$anchoring",
+          "context": "$context",
+          "enabled": "$enabled",
+          "page": "$page",
+          "hitsPerPage": "$hits_per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "hits[*]._highlightResult"
+          ],
+          "maxBytes": 100000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "algolia_save_object",
+      "description": "Add a record, or replace an existing one entirely, under a given objectID. Replacing removes every attribute not in the new record. Before calling, show the user the index, the objectID and the record and ask them to confirm; never call it without that confirmation. Indexing is asynchronous: the answer has a taskID and the change is searchable a moment later. Needs the addObject ACL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "The objectID to create or replace."
+          },
+          "record": {
+            "type": "object",
+            "description": "The complete record as a JSON object, e.g. {\"name\": \"Red shoe\", \"price\": 79.9}. objectID is taken from object_id."
+          }
+        },
+        "required": [
+          "index_name",
+          "object_id",
+          "record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "https://{{ALGOLIA_APP_ID}}.algolia.net/1/indexes/{index_name}/{object_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__merge": "$record"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "objectID": "$.objectID",
+            "taskID": "$.taskID",
+            "updatedAt": "$.updatedAt"
+          }
+        }
+      }
+    },
+    {
+      "name": "algolia_partial_update_object",
+      "description": "Change some attributes of a record, leaving the others as they are. Before calling, show the user the index, the objectID and the attributes that will change and ask them to confirm; never call it without that confirmation. By default it does nothing when the record does not exist. Asynchronous: the answer has a taskID. Needs the addObject ACL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "The record's objectID."
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Only the attributes to change, e.g. {\"price\": 69.9, \"stock\": 12}. Built-in operations work too, e.g. {\"stock\": {\"_operation\": \"Decrement\", \"value\": 1}}."
+          },
+          "create_if_not_exists": {
+            "type": "boolean",
+            "default": false,
+            "description": "true creates the record when the objectID does not exist. Default false."
+          }
+        },
+        "required": [
+          "index_name",
+          "object_id",
+          "attributes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://{{ALGOLIA_APP_ID}}.algolia.net/1/indexes/{index_name}/{object_id}/partial",
+        "encodePathParams": true,
+        "queryParams": {
+          "createIfNotExists": "$create_if_not_exists"
+        },
+        "bodyMapping": {
+          "__merge": "$attributes"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "objectID": "$.objectID",
+            "taskID": "$.taskID",
+            "updatedAt": "$.updatedAt"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "algolia_delete_object",
+      "description": "Delete one record by objectID. It cannot be undone. Installed switched off; an admin turns it on deliberately. Before calling, show the user the index and the objectID and ask them to confirm; never call it without that confirmation. Needs the deleteObject ACL.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "The record's objectID."
+          }
+        },
+        "required": [
+          "index_name",
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "https://{{ALGOLIA_APP_ID}}.algolia.net/1/indexes/{index_name}/{object_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "taskID": "$.taskID",
+            "deletedAt": "$.deletedAt"
+          }
+        }
+      }
+    },
+    {
+      "name": "algolia_top_searches",
+      "description": "The most frequent searches on an index over a period, with how often each was made and how many results it returned; with click_analytics also click-through and conversion rates. Needs the analytics ACL; data appears with a delay of up to a few hours. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day of the period, YYYY-MM-DD. Default: 8 days ago."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day of the period, YYYY-MM-DD. Default: yesterday."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Only count searches with these analytics tags, e.g. device:mobile; combine with AND and OR."
+          },
+          "click_analytics": {
+            "type": "boolean",
+            "description": "Add click and conversion metrics (needs click events sent to Algolia)."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "searchCount",
+              "clickThroughRate",
+              "conversionRate",
+              "averageClickPosition"
+            ],
+            "description": "Sort by this metric (anything but searchCount needs click_analytics)."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 10,
+            "description": "Number of rows, 1 to 1000 (default 10)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://analytics.{{ALGOLIA_ANALYTICS_REGION}}.algolia.com/2/searches",
+        "queryParams": {
+          "index": "$index",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "tags": "$tags",
+          "clickAnalytics": "$click_analytics",
+          "orderBy": "$order_by",
+          "direction": "$direction",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "searches": "$.searches"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "algolia_no_result_searches",
+      "description": "The most frequent searches on an index that returned no results, with their count and how many of them had filters applied. The best list of missing products, synonyms or content. Needs the analytics ACL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day of the period, YYYY-MM-DD. Default: 8 days ago."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day of the period, YYYY-MM-DD. Default: yesterday."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Only count searches with these analytics tags, e.g. device:mobile; combine with AND and OR."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 10,
+            "description": "Number of rows, 1 to 1000 (default 10)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://analytics.{{ALGOLIA_ANALYTICS_REGION}}.algolia.com/2/searches/noResults",
+        "queryParams": {
+          "index": "$index",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "tags": "$tags",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "searches": "$.searches"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "algolia_top_hits",
+      "description": "The records that appear most often in search results on an index (objectID and count), overall or for one search query; with click_analytics also clicks and conversions. Needs the analytics ACL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "search": {
+            "type": "string",
+            "description": "Only for this search query, e.g. shoes."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day of the period, YYYY-MM-DD. Default: 8 days ago."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day of the period, YYYY-MM-DD. Default: yesterday."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Only count searches with these analytics tags, e.g. device:mobile; combine with AND and OR."
+          },
+          "click_analytics": {
+            "type": "boolean",
+            "description": "Add click and conversion metrics."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 10,
+            "description": "Number of rows, 1 to 1000 (default 10)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://analytics.{{ALGOLIA_ANALYTICS_REGION}}.algolia.com/2/hits",
+        "queryParams": {
+          "index": "$index",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "tags": "$tags",
+          "search": "$search",
+          "clickAnalytics": "$click_analytics",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "hits": "$.hits"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "algolia_search_count",
+      "description": "The number of searches on an index over a period, in total and per day. Needs the analytics ACL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Index name, exactly as listed by algolia_list_indices (case-sensitive), e.g. prod_products."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day of the period, YYYY-MM-DD. Default: 8 days ago."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day of the period, YYYY-MM-DD. Default: yesterday."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Only count searches with these analytics tags, e.g. device:mobile; combine with AND and OR."
+          }
+        },
+        "required": [
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://analytics.{{ALGOLIA_ANALYTICS_REGION}}.algolia.com/2/searches/count",
+        "queryParams": {
+          "index": "$index",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "tags": "$tags"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "count": "$.count",
+            "dates": "$.dates"
+          },
+          "maxBytes": 40000
+        }
+      }
+    }
+  ]
+}

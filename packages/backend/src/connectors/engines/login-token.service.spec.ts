@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import * as bcrypt from 'bcrypt';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
   LoginTokenService,
   jsonPath,
@@ -9,7 +10,10 @@ import {
   extractAllSetCookies,
   extractLoginRefusal,
   LoginTokenAuthConfig,
+  proactiveRefreshWindowMs,
+  signLoginJwt,
 } from './login-token.service';
+import { generateKeyPairSync, verify } from 'crypto';
 import { injectLoginTokenHeaders } from './rest.engine';
 import signavio from '../../adapters/intl/sap-signavio.json';
 import { encrypt } from '../../common/crypto/encryption.util';
@@ -263,6 +267,45 @@ describe('LoginTokenService', () => {
     expect(bundle.token).toBe('jwt-plain');
   });
 
+  it('sends the login, salt fetch included, through the proxy the tool call uses', async () => {
+    // Playtomic answers logins from our server's IP with a 403 page; through
+    // the connector proxy it answers normally. A proxied tool whose login went
+    // out directly could never get a token.
+    const seen: any[] = [];
+    (mockedAxios as unknown as jest.Mock).mockImplementation(async (config: any) => {
+      seen.push(config);
+      if (config.url.includes('/users/')) {
+        return { data: { salt: bcrypt.genSaltSync(4) } };
+      }
+      return { data: { data: { signIn: { token: 'jwt-proxied', aud: 'x' } } } };
+    });
+
+    const bundle = await service.getToken(baseAuth, 'conn-proxy', {
+      proxyUrl: 'http://key:@proxy.example.com:8011',
+    });
+
+    expect(bundle.token).toBe('jwt-proxied');
+    expect(seen).toHaveLength(2);
+    for (const config of seen) {
+      expect(config.proxy).toBe(false);
+      expect(config.httpsAgent).toBeInstanceOf(HttpsProxyAgent);
+      expect(config.httpsAgent.proxy.host).toBe('proxy.example.com:8011');
+    }
+  });
+
+  it('logs in directly when the call is not proxied', async () => {
+    (mockedAxios as unknown as jest.Mock).mockImplementation(async (config: any) => {
+      expect(config.httpsAgent).not.toBeInstanceOf(HttpsProxyAgent);
+      expect(config.proxy).toBeUndefined();
+      return { data: { data: { signIn: { token: 'jwt-direct', aud: 'x' } } } };
+    });
+
+    const auth: LoginTokenAuthConfig = { ...baseAuth, passwordHashing: { scheme: 'none' } };
+    await expect(service.getToken(auth, 'conn-direct')).resolves.toMatchObject({
+      token: 'jwt-direct',
+    });
+  });
+
   it("surfaces the service's own refusal rather than our json path", async () => {
     // This body is what a rejected sign-in actually looks like: HTTP 200, no
     // token, and the reason in `errors`. Reporting the missing json path here
@@ -292,6 +335,165 @@ describe('LoginTokenService', () => {
     await expect(service.getToken(baseAuth, 'conn-9')).rejects.toThrow(
       /token not found at "data.signIn.token"/,
     );
+  });
+});
+
+describe('proactiveRefreshWindowMs', () => {
+  const HOUR = 60 * 60 * 1000;
+  const DAY = 24 * HOUR;
+  const at = (lifetimeMs: number) => ({ obtainedAt: 1_000, expiresAt: 1_000 + lifetimeMs });
+
+  it('takes a fifth of a one-hour token, not the 24h default', () => {
+    expect(proactiveRefreshWindowMs(at(HOUR))).toBe(12 * 60 * 1000);
+  });
+
+  it('keeps the configured window when it is already shorter', () => {
+    expect(proactiveRefreshWindowMs(at(HOUR), 300)).toBe(300 * 1000);
+  });
+
+  it('caps a configured window as long as the token itself', () => {
+    expect(proactiveRefreshWindowMs(at(HOUR), 3600)).toBe(12 * 60 * 1000);
+  });
+
+  it('keeps the 24h default for tokens that live five days or more', () => {
+    expect(proactiveRefreshWindowMs(at(30 * DAY))).toBe(DAY);
+    expect(proactiveRefreshWindowMs(at(5 * DAY))).toBe(DAY);
+  });
+
+  it('never goes under 30 s, or half the lifetime of a token under a minute', () => {
+    expect(proactiveRefreshWindowMs(at(2 * 60 * 1000))).toBe(30 * 1000);
+    expect(proactiveRefreshWindowMs(at(20 * 1000))).toBe(10 * 1000);
+  });
+
+  it('falls back to the configured window when the lifetime is unknown', () => {
+    expect(proactiveRefreshWindowMs({ expiresAt: 5 * HOUR })).toBe(DAY);
+    expect(proactiveRefreshWindowMs({ expiresAt: 5 * HOUR }, 120)).toBe(120 * 1000);
+  });
+});
+
+/**
+ * Supabase's password grant hands out one-hour access tokens. With the 24h
+ * default refresh window every cached token counted as about to expire, and
+ * the 1885Data connector logged in before each of ~91k calls in 72h; Supabase
+ * answered a third of those logins with 429.
+ */
+describe('LoginTokenService — short-lived tokens (Supabase password grant)', () => {
+  const encryptionKey = 'test-encryption-key-32-chars-ok!';
+  const supabaseAuth: LoginTokenAuthConfig = {
+    loginUrl: 'https://project.supabase.co/auth/v1/token?grant_type=password',
+    loginMethod: 'POST',
+    loginBody: { email: '${username}', password: '${password}' },
+    username: 'mcp@example.com',
+    password: 'pw',
+    tokenJsonPath: 'access_token',
+    tokenTTLSeconds: 3600,
+    refreshOn401: true,
+  };
+
+  let service: LoginTokenService;
+  let mockPrisma: any;
+  let now: number;
+  let logins: number;
+  let loginMock: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    now = Date.UTC(2026, 9, 18, 8, 0, 0);
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    mockPrisma = {
+      connectorAuthCache: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const config = { get: jest.fn().mockReturnValue(encryptionKey) } as any;
+    service = new LoginTokenService(mockPrisma, config);
+    logins = 0;
+    loginMock = mockedAxios as unknown as jest.Mock;
+    loginMock.mockImplementation(async () => {
+      logins++;
+      // Let concurrent callers pile up while the login is on the wire.
+      await new Promise((r) => setImmediate(r));
+      return { data: { access_token: `jwt-${logins}`, expires_in: 3600 } };
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('reuses a one-hour token across many calls', async () => {
+    for (let i = 0; i < 200; i++) {
+      const bundle = await service.getToken(supabaseAuth, 'conn-supabase');
+      expect(bundle.token).toBe('jwt-1');
+      now += 10 * 1000; // a call every 10 s: 200 calls span 33 minutes
+    }
+    expect(logins).toBe(1);
+  });
+
+  it('logs in again once the token is near expiry, and keeps the new one', async () => {
+    await service.getToken(supabaseAuth, 'conn-supabase');
+    now += 47 * 60 * 1000; // 13 min left: outside the 12 min window
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-1');
+    now += 2 * 60 * 1000; // 11 min left: inside it
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-2');
+    now += 60 * 1000;
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-2');
+    expect(logins).toBe(2);
+  });
+
+  it('logs in once for a burst of parallel calls on a cold cache', async () => {
+    const bundles = await Promise.all(
+      Array.from({ length: 25 }, () => service.getToken(supabaseAuth, 'conn-supabase')),
+    );
+    expect(new Set(bundles.map((b) => b.token))).toEqual(new Set(['jwt-1']));
+    expect(logins).toBe(1);
+    expect(mockPrisma.connectorAuthCache.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs in once for a burst of parallel calls on a token due for renewal', async () => {
+    await service.getToken(supabaseAuth, 'conn-supabase');
+    now += 55 * 60 * 1000;
+    const bundles = await Promise.all(
+      Array.from({ length: 25 }, () => service.getToken(supabaseAuth, 'conn-supabase')),
+    );
+    expect(new Set(bundles.map((b) => b.token))).toEqual(new Set(['jwt-2']));
+    expect(logins).toBe(2);
+  });
+
+  it('reuses a one-hour token loaded from the DB after a restart', async () => {
+    mockPrisma.connectorAuthCache.findUnique.mockResolvedValue({
+      token: encrypt('persisted-jwt', encryptionKey),
+      metadata: null,
+      expiresAt: new Date(now + 50 * 60 * 1000),
+      updatedAt: new Date(now - 10 * 60 * 1000),
+    });
+    for (let i = 0; i < 5; i++) {
+      expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('persisted-jwt');
+    }
+    expect(logins).toBe(0);
+  });
+
+  it('keeps serving the current token when the early re-login is refused, and backs off', async () => {
+    await service.getToken(supabaseAuth, 'conn-supabase');
+    now += 55 * 60 * 1000; // due for renewal, 5 min still valid
+    loginMock.mockImplementation(async () => {
+      logins++;
+      throw new Error('Request failed with status code 429');
+    });
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-1');
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-1');
+    expect(logins).toBe(2); // the first login plus one refused retry, not one per call
+    now += 31 * 1000; // backoff over: try again
+    expect((await service.getToken(supabaseAuth, 'conn-supabase')).token).toBe('jwt-1');
+    expect(logins).toBe(3);
+  });
+
+  it('fails once the token has actually expired and the login is still refused', async () => {
+    await service.getToken(supabaseAuth, 'conn-supabase');
+    now += 61 * 60 * 1000;
+    loginMock.mockRejectedValue(new Error('Request failed with status code 429'));
+    await expect(service.getToken(supabaseAuth, 'conn-supabase')).rejects.toThrow(/429/);
   });
 });
 
@@ -531,6 +733,104 @@ describe('LoginTokenService — cookieMode=all (SAP Signavio pattern)', () => {
       'conn-s4',
     );
     expect(bundle.token).toBe('sess-1');
+  });
+});
+
+describe('LoginTokenService — signedJwt login (noon Partner API pattern)', () => {
+  let service: LoginTokenService;
+  const encryptionKey = 'test-encryption-key-32-chars!!!!';
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+
+  const decode = (jwt: string) => {
+    const [h, p, sig] = jwt.split('.');
+    const parse = (part: string) => JSON.parse(Buffer.from(part, 'base64url').toString());
+    return {
+      header: parse(h),
+      payload: parse(p),
+      valid: verify('sha256', Buffer.from(`${h}.${p}`), publicKey, Buffer.from(sig, 'base64url')),
+    };
+  };
+
+  const noonAuth = {
+    loginUrl: 'https://noon-api-gateway.noon.partners/identity/public/v1/api/login',
+    loginMethod: 'POST',
+    loginHeaders: { 'User-Agent': 'AnythingMCP/1.0' },
+    loginBody: { token: '${signedJwt}', default_project_code: 'PRJ1' },
+    signedJwt: { privateKey: pem, algorithm: 'RS256', claims: { sub: 'key-abc' } },
+    tokenSource: 'cookie',
+    cookieMode: 'all',
+    headerName: 'Cookie',
+    headerTemplate: '${token}',
+  } as unknown as LoginTokenAuthConfig;
+
+  beforeEach(() => {
+    const mockPrisma = { connector: { findUnique: jest.fn(), update: jest.fn() } } as any;
+    const mockConfigService = { get: jest.fn().mockReturnValue(encryptionKey) } as any;
+    service = new LoginTokenService(mockPrisma, mockConfigService);
+    jest.clearAllMocks();
+  });
+
+  it('logs in with a freshly signed RS256 token instead of a username and password', async () => {
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({
+      data: {},
+      headers: { 'set-cookie': ['session=s1; Path=/; HttpOnly', 'route=r2; Path=/'] },
+    });
+    const before = Math.floor(Date.now() / 1000);
+    const bundle = await service.getToken(noonAuth, 'conn-noon');
+    expect(bundle.token).toBe('session=s1; route=r2');
+
+    const call = (mockedAxios as unknown as jest.Mock).mock.calls[0][0];
+    expect(call.headers['User-Agent']).toBe('AnythingMCP/1.0');
+    expect(call.data.default_project_code).toBe('PRJ1');
+    const jwt = decode(call.data.token);
+    expect(jwt.valid).toBe(true);
+    expect(jwt.header).toEqual({ alg: 'RS256', typ: 'JWT' });
+    expect(jwt.payload.sub).toBe('key-abc');
+    expect(jwt.payload.iat).toBeGreaterThanOrEqual(before);
+    expect(Number.isInteger(jwt.payload.iat)).toBe(true);
+    expect(jwt.payload.jti).toMatch(/^[0-9a-f-]{36}$/);
+    expect(jwt.payload.exp).toBeUndefined();
+  });
+
+  it('signs a new token, with a new jti, for every login', async () => {
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({ data: {}, headers: { 'set-cookie': 'session=s1' } });
+    await service.forceRelogin(noonAuth, 'conn-noon-2');
+    await service.forceRelogin(noonAuth, 'conn-noon-2');
+    const calls = (mockedAxios as unknown as jest.Mock).mock.calls;
+    expect(decode(calls[0][0].data.token).payload.jti).not.toBe(decode(calls[1][0].data.token).payload.jti);
+  });
+
+  it('adds exp only when a lifetime is configured, and a kid when a key id is', () => {
+    const jwt = decode(
+      signLoginJwt({ privateKey: pem, keyId: 'k1', ttlSeconds: 120, claims: { sub: 'key-abc' } }, 1_700_000_000_500),
+    );
+    expect(jwt.header.kid).toBe('k1');
+    expect(jwt.payload.iat).toBe(1_700_000_000);
+    expect(jwt.payload.exp).toBe(1_700_000_120);
+  });
+
+  it('names an empty claim variable instead of signing a token the API will refuse', () => {
+    expect(() => signLoginJwt({ privateKey: pem, claims: { sub: '{{NOON_KEY_ID}}' } })).toThrow(
+      'LOGIN_TOKEN: signedJwt: the "sub" claim is not set ({{NOON_KEY_ID}} has no value)',
+    );
+  });
+
+  it('explains a bad key without quoting it', () => {
+    const notPem = 'MIIEowIBAAKCAQEAsecretmaterial';
+    let message = '';
+    try {
+      signLoginJwt({ privateKey: notPem, claims: { sub: 'k' } });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toMatch(/^LOGIN_TOKEN: signedJwt: the private key is not a PEM key/);
+    expect(message).not.toContain('secretmaterial');
+  });
+
+  it('still asks for username and password when there is no signedJwt', async () => {
+    const { signedJwt: _omit, ...withoutJwt } = noonAuth as LoginTokenAuthConfig & { signedJwt?: unknown };
+    await expect(service.getToken(withoutJwt as LoginTokenAuthConfig, 'conn-noon-3')).rejects.toThrow(/username/);
   });
 });
 

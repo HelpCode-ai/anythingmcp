@@ -23,6 +23,12 @@ import { OrganizationsModule } from '../organizations/organizations.module';
 import { LicenseModule } from '../license/license.module';
 import { getRequiredSecret } from '../common/secrets.util';
 import { IdentityProvidersModule } from '../identity-providers/identity-providers.module';
+import * as openidClient from 'openid-client';
+import { OIDC_LIB, SocialProviderRegistry } from './social/social-providers';
+import { CloudAccountService } from './social/cloud-account.service';
+import { SocialAuthService } from './social/social-auth.service';
+import { SocialAuthController } from './social/social-auth.controller';
+import { CloudOnlyGuard } from '../common/cloud-only.guard';
 
 @Global()
 @Module({
@@ -48,8 +54,14 @@ import { IdentityProvidersModule } from '../identity-providers/identity-provider
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController, LoginController, UserInfoController],
+  controllers: [AuthController, LoginController, UserInfoController, SocialAuthController],
   providers: [
+    // Cloud social sign-in (Google, Microsoft, GitHub).
+    { provide: OIDC_LIB, useValue: openidClient },
+    SocialProviderRegistry,
+    CloudAccountService,
+    SocialAuthService,
+    CloudOnlyGuard,
     AuthService,
     RecoveryCodesService,
     SsoEnforcementService,
@@ -73,6 +85,7 @@ import { IdentityProvidersModule } from '../identity-providers/identity-provider
     PrismaOAuthStore,
     ClientCredentialsMiddleware,
     RefreshTokenRevocationMiddleware,
+    SocialProviderRegistry,
     JwtModule,
   ],
 })

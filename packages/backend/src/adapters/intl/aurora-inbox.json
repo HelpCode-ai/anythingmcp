@@ -1,0 +1,595 @@
+{
+  "slug": "aurora-inbox",
+  "name": "Aurora Inbox",
+  "aliases": [
+    "AuroraInbox",
+    "Aurora Inbox CRM",
+    "Aurora WhatsApp CRM"
+  ],
+  "description": "Aurora Inbox WhatsApp CRM and shared inbox (Latin America), read-only: sales funnel and pipeline stages per team, chats with tags and opportunities, contacts and companies, users, WhatsApp channels and templates, calendar events and appointment bookings.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "aurora-inbox",
+  "docsUrl": "https://developers.aurorainbox.com/scalar",
+  "instructions": "## Aurora Inbox\nThis connector reads **Aurora Inbox**, the WhatsApp CRM and shared inbox for sales and support teams (Latin America), through its Platform API v1: teams and pipeline stages, the sales funnel per team, chats and their tags and opportunities, contacts and companies, users, WhatsApp channels and templates, the calendar and appointment bookings. It is read-only: it sends no messages.\n\n**Setup**\n1. Get an API key for your Aurora Inbox account (it starts with `ak_live_`) from your Aurora Inbox administrator or Aurora support. It reaches the whole account.\n2. Paste it into `AURORA_INBOX_API_KEY`. It is sent in the `X-Api-Key` header.\n3. Install and run `aurora_inbox_list_teams` to check the key.\n\n**Workflow**\n- Sales pipeline: `aurora_inbox_list_teams`, `aurora_inbox_list_team_stages`, then `aurora_inbox_get_funnel_report` for opportunities and deal amount per stage (filter by creation date and by user); `aurora_inbox_list_chat_opportunities` for the deals of one chat.\n- Conversations: `aurora_inbox_search_chats` (25 per page; text, team, channel, unread, unanswered), `aurora_inbox_get_chat`, `aurora_inbox_list_chat_tags`, `aurora_inbox_list_tags`.\n- People: `aurora_inbox_list_contacts`, `aurora_inbox_get_contact`, `aurora_inbox_list_companies`, `aurora_inbox_list_custom_properties`, `aurora_inbox_list_users`.\n- Channels: `aurora_inbox_list_channels` (WhatsApp Business, WhatsApp Cloud API, Messenger) and `aurora_inbox_list_whatsapp_templates`.\n- Appointments: `aurora_inbox_list_scheduling_setup` (services, locations, providers), `aurora_inbox_list_bookings`, `aurora_inbox_list_calendar_events`.\n\n**Ids and dates**: ids are UUIDs; take them from the list tools rather than guessing. Date filters take ISO 8601 (e.g. `2026-10-01T00:00:00Z`); times come back in UTC unless a `timezone` is given where offered. Convert to the user's local time (e.g. Bogotá UTC-5, Mexico City UTC-6, São Paulo UTC-3) before quoting.\n\n**Limits and errors**: Aurora allows bursts of 20 requests and 10 per second per account; above that it answers 429 with `Retry-After`. 401 means a missing or wrong API key. 404 means an id that does not exist in this account.",
+  "prerequisites": "An Aurora Inbox account and its API key (ak_live_...).",
+  "requiredEnvVars": [
+    "AURORA_INBOX_API_KEY"
+  ],
+  "envVarMeta": {
+    "AURORA_INBOX_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Aurora Inbox API key of your account, starting with ak_live_. Ask your Aurora Inbox administrator or Aurora support for it.",
+      "link": "https://developers.aurorainbox.com/scalar",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Aurora Inbox refused the API key. Check AURORA_INBOX_API_KEY (it starts with ak_live_).",
+    "403": "The key works, but it may not read this.",
+    "rate_limited": "Aurora Inbox allows about 10 requests per second per account. Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "aurora_inbox_list_teams"
+  },
+  "connector": {
+    "name": "Aurora Inbox Platform API",
+    "type": "REST",
+    "baseUrl": "https://developers.aurorainbox.com/Platform/V1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{AURORA_INBOX_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "aurora_inbox_list_teams",
+      "description": "List the teams (sales or support pipelines) with id, name, whether deal amounts are on and the members (id, name, role, assignable). The id is what the funnel, stages and chat filters take. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Teams"
+      }
+    },
+    {
+      "name": "aurora_inbox_list_team_stages",
+      "description": "List the pipeline stages of a team in order: id, name, description, position and status (open, won, lost).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (UUID) from aurora_inbox_list_teams."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Teams/{team_id}/Stages"
+      }
+    },
+    {
+      "name": "aurora_inbox_get_funnel_report",
+      "description": "Get the sales funnel of a team: total opportunities and deal amount, and per stage the number of opportunities, deal amount and share. Filter by opportunity creation date and by one assigned user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (UUID)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Opportunities created at or after. ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "to": {
+            "type": "string",
+            "description": "Opportunities created at or before. ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Only opportunities assigned to this user (UUID from aurora_inbox_list_users)."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Teams/{team_id}/FunnelReport",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "userId": "$user_id"
+        }
+      }
+    },
+    {
+      "name": "aurora_inbox_list_users",
+      "description": "List the users (agents) of the account with id, name and e-mail.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Users"
+      }
+    },
+    {
+      "name": "aurora_inbox_list_tags",
+      "description": "List the chat tags of the account with id and name, optionally with the number of chats carrying each tag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_room_count": {
+            "type": "boolean",
+            "description": "true to add the number of chats per tag."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Tags",
+        "queryParams": {
+          "includeRoomCount": "$include_room_count"
+        }
+      }
+    },
+    {
+      "name": "aurora_inbox_search_chats",
+      "description": "Search chats (WhatsApp, Messenger and other conversations), 25 per page, latest activity first: id, name, contact, phone, e-mail, company, last message and time, unread count, unanswered flag. Filter by text, channel, team, unread or unanswered. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_term": {
+            "type": "string",
+            "description": "Text to look for in names, phone numbers and messages."
+          },
+          "team_id": {
+            "type": "string",
+            "description": "Only chats of this team (UUID)."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Only chats of this channel (UUID from aurora_inbox_list_channels)."
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "true for chats with unread messages only."
+          },
+          "unanswered": {
+            "type": "boolean",
+            "description": "true for chats waiting for an answer only."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Chats/Search",
+        "bodyMapping": {
+          "page": "$page",
+          "searchTerm": "$search_term",
+          "teamId": "$team_id",
+          "channelId": "$channel_id",
+          "unread": "$unread",
+          "unanswered": "$unanswered"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "aurora_inbox_get_chat",
+      "description": "Get one chat: contact, channel, assigned agents and team, status and latest activity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (UUID) from aurora_inbox_search_chats."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Chats/{chat_id}"
+      }
+    },
+    {
+      "name": "aurora_inbox_list_chat_tags",
+      "description": "List the tags on one chat (id and name), to see how the team classified the conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (UUID)."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Chats/{chat_id}/Tags"
+      }
+    },
+    {
+      "name": "aurora_inbox_list_chat_opportunities",
+      "description": "List the sales opportunities (deals) linked to one chat: team, stage, amount, assigned user and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (UUID)."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Chats/{chat_id}/Opportunities"
+      }
+    },
+    {
+      "name": "aurora_inbox_list_contacts",
+      "description": "List contacts, up to 100 per page: id, name, e-mail, phone, company and creation date. Search by keyword and filter by creation date. totalCount and totalPages tell how many there are.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Name, phone or e-mail to look for."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Created at or after. ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Created at or before. ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Contacts per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Contacts",
+        "queryParams": {
+          "search": "$search",
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "aurora_inbox_get_contact",
+      "description": "Get one contact with its details and custom property values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (UUID)."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Contacts/{contact_id}"
+      }
+    },
+    {
+      "name": "aurora_inbox_list_custom_properties",
+      "description": "List the custom property definitions for contacts or sales products: id, name, key (nameId), type (text, number, boolean, datetime, choice) and the options of choice fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Which entity.",
+            "enum": [
+              "Contact",
+              "SalesProduct"
+            ],
+            "default": "Contact"
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/CustomProperties",
+        "queryParams": {
+          "entity": "$entity"
+        }
+      }
+    },
+    {
+      "name": "aurora_inbox_list_companies",
+      "description": "List companies, up to 100 per page, with id, name and details; search by keyword.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Company name to look for."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Companies per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Companies",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "aurora_inbox_list_channels",
+      "description": "List the connected channels of one kind: WhatsApp Business (app), WhatsApp Cloud API or Messenger, with id, name and number or page. The id is what channel_id takes in aurora_inbox_search_chats.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_type": {
+            "type": "string",
+            "description": "Kind of channel.",
+            "enum": [
+              "WhatsAppBusiness",
+              "WhatsAppCloudAPI",
+              "Messenger"
+            ]
+          }
+        },
+        "required": [
+          "channel_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Channels/{channel_type}"
+      }
+    },
+    {
+      "name": "aurora_inbox_list_whatsapp_templates",
+      "description": "List the WhatsApp message templates of the account, up to 100 per page: name, category (MARKETING, UTILITY, AUTHENTICATION), language, status and content. Status reflects the last sync with Meta.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Template category.",
+            "enum": [
+              "MARKETING",
+              "UTILITY",
+              "AUTHENTICATION"
+            ]
+          },
+          "language": {
+            "type": "string",
+            "description": "Language code, e.g. es, pt_BR."
+          },
+          "status": {
+            "type": "string",
+            "description": "Template status, e.g. APPROVED."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Templates per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Channels/Whatsapp/Templates",
+        "queryParams": {
+          "category": "$category",
+          "language": "$language",
+          "status": "$status",
+          "search": "$search",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "aurora_inbox_list_calendar_events",
+      "description": "List events of the Aurora calendar (including synced external calendars): either every event of one chat (chat_id), or the events between from and to, optionally of one user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the range. ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the range. ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Only this user's events (UUID)."
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Every event attached to this chat (UUID); no date range needed."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Calendar/Events",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "userId": "$user_id",
+          "roomId": "$chat_id"
+        }
+      }
+    },
+    {
+      "name": "aurora_inbox_list_bookings",
+      "description": "List appointment bookings of the scheduling module: service, location, provider, customer chat, start and end, status (0 pending, 1 confirmed, 2 completed, 3 cancelled, 4 no-show, 5 rescheduled). Filter by start window, service, location, provider, chat or status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Bookings starting at or after. ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "to": {
+            "type": "string",
+            "description": "Bookings starting at or before. ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID)."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Location id (UUID)."
+          },
+          "service_provider_id": {
+            "type": "string",
+            "description": "Service provider id (UUID)."
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (UUID)."
+          },
+          "status": {
+            "type": "integer",
+            "description": "0 pending, 1 confirmed, 2 completed, 3 cancelled, 4 no-show, 5 rescheduled.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for the returned times, e.g. America/Bogota."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Scheduling/Bookings",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "serviceId": "$service_id",
+          "locationId": "$location_id",
+          "serviceProviderId": "$service_provider_id",
+          "roomId": "$chat_id",
+          "status": "$status",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "aurora_inbox_list_scheduling_setup",
+      "description": "List the scheduling set-up: Services (duration, buffers, capacity, price), Locations or Providers (the people or resources that can be booked), with ids for aurora_inbox_list_bookings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string",
+            "description": "What to list.",
+            "enum": [
+              "Services",
+              "Locations",
+              "Providers"
+            ]
+          }
+        },
+        "required": [
+          "resource"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Scheduling/{resource}"
+      }
+    }
+  ]
+}

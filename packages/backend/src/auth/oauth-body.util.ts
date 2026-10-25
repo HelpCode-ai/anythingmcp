@@ -20,12 +20,9 @@ export function parseOAuthBody(req: Request): Record<string, any> {
     return req.body as Record<string, any>;
   }
   if (typeof req.body === 'string') {
-    const params = new URLSearchParams(req.body);
-    const result: Record<string, string> = {};
-    for (const [key, value] of params.entries()) {
-      result[key] = value;
-    }
-    return result;
+    // Object.fromEntries defines own properties, so a `__proto__` key in the
+    // body cannot reach the prototype the way a plain assignment would.
+    return Object.fromEntries(new URLSearchParams(req.body).entries());
   }
   return {};
 }

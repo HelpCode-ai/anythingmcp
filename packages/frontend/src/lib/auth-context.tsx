@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import { useRouter, usePathname } from 'next/navigation';
 import { users, server, organizations, AUTH_EXPIRED_EVENT, ApiError } from './api';
 import { storage } from './storage';
+import { clearCommandPaletteCache } from './command-palette-cache';
 
 interface User {
   id: string;
@@ -76,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    clearCommandPaletteCache();
     setToken(null);
     setUser(null);
     setOrgName(null);
@@ -105,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refresh().catch((err) => {
         if (err instanceof ApiError && err.status < 500) {
           // The backend answered and rejected the session.
+          clearCommandPaletteCache();
           setToken(null);
           setUser(null);
           storage.remove('amcp_token');
@@ -159,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const switchOrg = async (organizationId: string) => {
     if (!token) return;
     try {
+      clearCommandPaletteCache();
       const result = await organizations.switchOrg(organizationId, token);
       // Store new token and user from the switch response
       setToken(result.accessToken);
@@ -177,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const replaceSession = (newToken: string, newUser: User, newOrgName?: string | null) => {
+    clearCommandPaletteCache();
     setToken(newToken);
     setUser(newUser);
     storage.set('amcp_token', newToken);

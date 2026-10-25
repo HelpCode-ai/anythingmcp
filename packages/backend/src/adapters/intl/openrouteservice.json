@@ -1,0 +1,640 @@
+{
+  "slug": "openrouteservice",
+  "name": "openrouteservice",
+  "aliases": [
+    "ORS",
+    "HeiGIT",
+    "openrouteservice.org",
+    "Open Route Service"
+  ],
+  "description": "openrouteservice (HeiGIT) routing on OpenStreetMap: geocoding and reverse geocoding, directions with turn-by-turn steps for car, truck, bike, foot and wheelchair, travel time matrices, isochrones (reachable areas), multi-vehicle route optimisation and points of interest. Free API key.",
+  "region": "intl",
+  "category": "maps",
+  "icon": "openrouteservice",
+  "docsUrl": "https://giscience.github.io/openrouteservice/api-reference/",
+  "instructions": "## openrouteservice\nThis connector uses **openrouteservice** by HeiGIT (Heidelberg Institute for Geoinformation Technology), the routing and geocoding service built on OpenStreetMap, at its current address `https://api.heigit.org`: geocoding and reverse geocoding, routes with turn-by-turn directions for car, truck, bicycle, foot and wheelchair, travel-time matrices, reachability areas (isochrones), route optimisation for several vehicles, and points of interest.\n\n**Setup (about 2 minutes)**\n1. Sign up for free at https://account.heigit.org and create an API key (the free plan covers testing and small production use).\n2. Paste the key into `OPENROUTESERVICE_API_KEY`. It is sent as is in the `Authorization` header (no Bearer). Keys made for the old api.openrouteservice.org work here too; that old address is being shut down in November 2026.\n3. Install and run `openrouteservice_geocode` to check the key.\n\n**Coordinates are [longitude, latitude]**, longitude first, in every routing tool (e.g. `[7.8421, 47.9990]` for Freiburg). Geocoding results also return `coordinates` as [longitude, latitude]. Swapping them is the usual cause of \"point not found\" (error 2010) or of a route in the ocean.\n\n**Workflow**\n- Addresses to points: `openrouteservice_geocode` (`country` narrows, e.g. `DE`), `openrouteservice_autocomplete`, `openrouteservice_reverse_geocode`.\n- Routes: `openrouteservice_directions` returns distance, duration and steps; set `profile` (`driving-car`, `driving-hgv` for trucks, `cycling-regular`, `foot-walking`, `wheelchair`...), `language` for the instructions and `options.avoid_features` to avoid highways, tolls or ferries.\n- Many-to-many: `openrouteservice_matrix` (durations in seconds, distances in the chosen unit).\n- Catchment areas: `openrouteservice_isochrones` with `range` in seconds (or metres with `range_type` distance).\n- Tours for a fleet: `openrouteservice_optimize_routes` with jobs and vehicles (VROOM format; times in seconds since midnight or Unix time).\n- Places around: `openrouteservice_find_pois` with a point and a `buffer` in metres.\n\n**Units**: durations are seconds; distances follow `units` (km by default here). Convert seconds to hours and minutes before quoting.\n\n**Limits and errors**: the free plan allows about 2,000 directions and 40 per minute, with smaller daily quotas for matrix, isochrones, optimisation and POIs; answers carry `x-ratelimit-remaining`. 403 means the daily quota is used up (or a wrong key), 429 the per-minute limit, 401 a missing key. Error 2004 means the request exceeds a limit (too many points or too long a route), 2010 a point not near a road.",
+  "prerequisites": "A free HeiGIT account and API key from https://account.heigit.org.",
+  "requiredEnvVars": [
+    "OPENROUTESERVICE_API_KEY"
+  ],
+  "envVarMeta": {
+    "OPENROUTESERVICE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Create a free key at https://account.heigit.org (Dashboard, tokens). Paste it without Bearer.",
+      "link": "https://account.heigit.org",
+      "pattern": "^(?![Bb]earer )\\S{20,}$",
+      "patternMessage": "Paste only the key, without Bearer, spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "openrouteservice did not get a key. Check OPENROUTESERVICE_API_KEY.",
+    "403": "openrouteservice refused the key, or its daily quota is used up. Check the key and the quota at https://account.heigit.org.",
+    "rate_limited": "The per-minute limit of the openrouteservice plan was reached. Wait a minute."
+  },
+  "probe": {
+    "tool": "openrouteservice_geocode",
+    "params": {
+      "text": "Berlin",
+      "size": 1
+    }
+  },
+  "connector": {
+    "name": "openrouteservice (HeiGIT)",
+    "type": "REST",
+    "baseUrl": "https://api.heigit.org",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{OPENROUTESERVICE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "openrouteservice_geocode",
+      "description": "Turn an address or place name into coordinates (forward geocoding, OpenStreetMap and open address data): label, [longitude, latitude], street, house number, postcode, locality, region, country and a confidence score. Use it before routing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Address or place, e.g. \"Bertoldstraße 1, Freiburg\" or \"Freiburg Hauptbahnhof\"."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Number of results, 1 to 40.",
+            "minimum": 1,
+            "maximum": 40,
+            "default": 5
+          },
+          "country": {
+            "type": "string",
+            "description": "Only results in these countries, ISO 3166 alpha-2 or alpha-3, comma-separated, e.g. DE or DE,AT,CH."
+          },
+          "focus_lat": {
+            "type": "number",
+            "description": "Prefer results near this latitude (with focus_lon)."
+          },
+          "focus_lon": {
+            "type": "number",
+            "description": "Prefer results near this longitude (with focus_lat)."
+          },
+          "layers": {
+            "type": "string",
+            "description": "Only these kinds, comma-separated: address, venue, street, locality, county, region, country, postalcode, neighbourhood."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pelias/v1/search",
+        "queryParams": {
+          "text": "$text",
+          "size": "$size",
+          "boundary.country": "$country",
+          "focus.point.lat": "$focus_lat",
+          "focus.point.lon": "$focus_lon",
+          "layers": "$layers"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "places": {
+              "$from": "$.features[*]",
+              "$select": {
+                "label": "properties.label",
+                "name": "properties.name",
+                "coordinates": "geometry.coordinates",
+                "layer": "properties.layer",
+                "street": "properties.street",
+                "housenumber": "properties.housenumber",
+                "postalcode": "properties.postalcode",
+                "locality": "properties.locality",
+                "region": "properties.region",
+                "country": "properties.country",
+                "country_code": "properties.country_code",
+                "confidence": "properties.confidence",
+                "distance_km": "properties.distance",
+                "gid": "properties.gid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "openrouteservice_autocomplete",
+      "description": "Suggest places for a partly typed address or name (as-you-type geocoding), with the same fields as openrouteservice_geocode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text typed so far, e.g. \"Freiburg Haupt\"."
+          },
+          "country": {
+            "type": "string",
+            "description": "Only results in these countries, ISO 3166 alpha-2 or alpha-3, comma-separated, e.g. DE or DE,AT,CH."
+          },
+          "focus_lat": {
+            "type": "number",
+            "description": "Prefer results near this latitude (with focus_lon)."
+          },
+          "focus_lon": {
+            "type": "number",
+            "description": "Prefer results near this longitude (with focus_lat)."
+          },
+          "layers": {
+            "type": "string",
+            "description": "Only these kinds, comma-separated: address, venue, street, locality, county, region, country, postalcode, neighbourhood."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pelias/v1/autocomplete",
+        "queryParams": {
+          "text": "$text",
+          "boundary.country": "$country",
+          "focus.point.lat": "$focus_lat",
+          "focus.point.lon": "$focus_lon",
+          "layers": "$layers"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "places": {
+              "$from": "$.features[*]",
+              "$select": {
+                "label": "properties.label",
+                "name": "properties.name",
+                "coordinates": "geometry.coordinates",
+                "layer": "properties.layer",
+                "street": "properties.street",
+                "housenumber": "properties.housenumber",
+                "postalcode": "properties.postalcode",
+                "locality": "properties.locality",
+                "region": "properties.region",
+                "country": "properties.country",
+                "country_code": "properties.country_code",
+                "confidence": "properties.confidence",
+                "distance_km": "properties.distance",
+                "gid": "properties.gid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "openrouteservice_reverse_geocode",
+      "description": "Find the address or place at a point (reverse geocoding): nearest addresses, venues or streets with their distance in km.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "Latitude, e.g. 47.9977."
+          },
+          "lon": {
+            "type": "number",
+            "description": "Longitude, e.g. 7.8418."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Number of results, 1 to 40.",
+            "minimum": 1,
+            "maximum": 40,
+            "default": 3
+          },
+          "layers": {
+            "type": "string",
+            "description": "Only these kinds, comma-separated: address, venue, street, locality."
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pelias/v1/reverse",
+        "queryParams": {
+          "point.lat": "$lat",
+          "point.lon": "$lon",
+          "size": "$size",
+          "layers": "$layers"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "places": {
+              "$from": "$.features[*]",
+              "$select": {
+                "label": "properties.label",
+                "name": "properties.name",
+                "coordinates": "geometry.coordinates",
+                "layer": "properties.layer",
+                "street": "properties.street",
+                "housenumber": "properties.housenumber",
+                "postalcode": "properties.postalcode",
+                "locality": "properties.locality",
+                "region": "properties.region",
+                "country": "properties.country",
+                "country_code": "properties.country_code",
+                "confidence": "properties.confidence",
+                "distance_km": "properties.distance",
+                "gid": "properties.gid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "openrouteservice_directions",
+      "description": "Plan a route through two or more points for a car, truck, bicycle, on foot or by wheelchair: total distance and duration, and per leg the turn-by-turn steps (instruction, distance, duration, street name). Read-only, although it is a POST. Coordinates are [longitude, latitude] (longitude first), e.g. [7.8421, 47.9990] for Freiburg.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "description": "Means of transport: driving-car, driving-hgv (truck), cycling-regular, cycling-road, cycling-mountain, cycling-electric, foot-walking, foot-hiking, wheelchair.",
+            "enum": [
+              "driving-car",
+              "driving-hgv",
+              "cycling-regular",
+              "cycling-road",
+              "cycling-mountain",
+              "cycling-electric",
+              "foot-walking",
+              "foot-hiking",
+              "wheelchair"
+            ],
+            "default": "driving-car"
+          },
+          "coordinates": {
+            "type": "array",
+            "description": "Start, optional via points and destination as [[lon, lat], ...], at most 50, e.g. [[7.8421,47.9990],[7.8494,47.9959]].",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "preference": {
+            "type": "string",
+            "description": "fastest (default), shortest or recommended.",
+            "enum": [
+              "fastest",
+              "shortest",
+              "recommended"
+            ]
+          },
+          "units": {
+            "type": "string",
+            "description": "Distance unit.",
+            "enum": [
+              "m",
+              "km",
+              "mi"
+            ],
+            "default": "km"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the instructions, e.g. en, de, fr, es, it, pt.",
+            "default": "en"
+          },
+          "instructions": {
+            "type": "boolean",
+            "description": "Include turn-by-turn steps.",
+            "default": true
+          },
+          "geometry": {
+            "type": "boolean",
+            "description": "Include the encoded route line (large; only to draw the route).",
+            "default": false
+          },
+          "options": {
+            "type": "object",
+            "description": "Optional routing options, e.g. {\"avoid_features\":[\"highways\",\"tollways\",\"ferries\"]} or {\"avoid_countries\":[...]}."
+          }
+        },
+        "required": [
+          "profile",
+          "coordinates"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openrouteservice/v2/directions/{profile}",
+        "bodyMapping": {
+          "coordinates": "$coordinates",
+          "preference": "$preference",
+          "units": "$units",
+          "language": "$language",
+          "instructions": "$instructions",
+          "geometry": "$geometry",
+          "options": "$options"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openrouteservice_matrix",
+      "description": "Compute travel durations (seconds) and optionally distances between many points at once: a matrix from every source to every destination, e.g. which of 10 technicians is closest to each of 20 customers. Read-only, although it is a POST. Coordinates are [longitude, latitude] (longitude first), e.g. [7.8421, 47.9990] for Freiburg.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "description": "Means of transport: driving-car, driving-hgv (truck), cycling-regular, cycling-road, cycling-mountain, cycling-electric, foot-walking, foot-hiking, wheelchair.",
+            "enum": [
+              "driving-car",
+              "driving-hgv",
+              "cycling-regular",
+              "cycling-road",
+              "cycling-mountain",
+              "cycling-electric",
+              "foot-walking",
+              "foot-hiking",
+              "wheelchair"
+            ],
+            "default": "driving-car"
+          },
+          "locations": {
+            "type": "array",
+            "description": "All points as [[lon, lat], ...].",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "sources": {
+            "type": "array",
+            "description": "Indexes into locations used as origins; default all.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "destinations": {
+            "type": "array",
+            "description": "Indexes into locations used as destinations; default all.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "metrics": {
+            "type": "array",
+            "description": "duration and/or distance; default [\"duration\"].",
+            "items": {
+              "type": "string",
+              "enum": [
+                "duration",
+                "distance"
+              ]
+            }
+          },
+          "units": {
+            "type": "string",
+            "description": "Distance unit when distance is asked for.",
+            "enum": [
+              "m",
+              "km",
+              "mi"
+            ],
+            "default": "km"
+          }
+        },
+        "required": [
+          "profile",
+          "locations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openrouteservice/v2/matrix/{profile}",
+        "bodyMapping": {
+          "locations": "$locations",
+          "sources": "$sources",
+          "destinations": "$destinations",
+          "metrics": "$metrics",
+          "units": "$units"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openrouteservice_isochrones",
+      "description": "Compute the area reachable from one or more points within given travel times (seconds) or distances (metres): GeoJSON polygons with their area, e.g. everything within 15 minutes by car of a shop. Read-only, although it is a POST. Coordinates are [longitude, latitude] (longitude first), e.g. [7.8421, 47.9990] for Freiburg.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "description": "Means of transport: driving-car, driving-hgv (truck), cycling-regular, cycling-road, cycling-mountain, cycling-electric, foot-walking, foot-hiking, wheelchair.",
+            "enum": [
+              "driving-car",
+              "driving-hgv",
+              "cycling-regular",
+              "cycling-road",
+              "cycling-mountain",
+              "cycling-electric",
+              "foot-walking",
+              "foot-hiking",
+              "wheelchair"
+            ],
+            "default": "driving-car"
+          },
+          "locations": {
+            "type": "array",
+            "description": "Centre points as [[lon, lat], ...], at most 5.",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "range": {
+            "type": "array",
+            "description": "Travel times in seconds (range_type time) or distances in metres, e.g. [600, 1200].",
+            "items": {
+              "type": "number"
+            }
+          },
+          "range_type": {
+            "type": "string",
+            "description": "time (default) or distance.",
+            "enum": [
+              "time",
+              "distance"
+            ]
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Extra values per polygon, e.g. [\"area\",\"reachfactor\",\"total_pop\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "area_units": {
+            "type": "string",
+            "description": "Unit of area.",
+            "enum": [
+              "m",
+              "km",
+              "mi"
+            ],
+            "default": "km"
+          }
+        },
+        "required": [
+          "profile",
+          "locations",
+          "range"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openrouteservice/v2/isochrones/{profile}",
+        "bodyMapping": {
+          "locations": "$locations",
+          "range": "$range",
+          "range_type": "$range_type",
+          "attributes": "$attributes",
+          "area_units": "$area_units"
+        },
+        "headers": {
+          "Accept": "application/geo+json, application/json"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 300000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openrouteservice_optimize_routes",
+      "description": "Solve a vehicle routing problem (VROOM): assign jobs (stops) to vehicles and order them to minimise total travel, respecting time windows, capacities and skills. Returns per vehicle the ordered steps with arrival times and the unassigned jobs. Read-only, although it is a POST. Coordinates are [longitude, latitude] (longitude first), e.g. [7.8421, 47.9990] for Freiburg.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "description": "Stops, e.g. [{\"id\":1,\"location\":[7.8494,47.9959],\"service\":300,\"time_windows\":[[28800,43200]]}]. service and time windows in seconds.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "vehicles": {
+            "type": "array",
+            "description": "Vehicles, e.g. [{\"id\":1,\"profile\":\"driving-car\",\"start\":[7.8421,47.9990],\"end\":[7.8421,47.9990],\"capacity\":[10],\"time_window\":[28800,61200]}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "shipments": {
+            "type": "array",
+            "description": "Optional pickup-and-delivery pairs, as in VROOM.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "options": {
+            "type": "object",
+            "description": "Optional, e.g. {\"g\":true} to return route geometry."
+          }
+        },
+        "required": [
+          "jobs",
+          "vehicles"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vroom/v0",
+        "bodyMapping": {
+          "jobs": "$jobs",
+          "vehicles": "$vehicles",
+          "shipments": "$shipments",
+          "options": "$options"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openrouteservice_find_pois",
+      "description": "Find points of interest from OpenStreetMap (shops, restaurants, fuel, pharmacies, charging stations...) within a radius of a point or in a box: name, category, OSM tags and distance. Read-only, although it is a POST. Coordinates are [longitude, latitude] (longitude first), e.g. [7.8421, 47.9990] for Freiburg.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "geometry": {
+            "type": "object",
+            "description": "Search area, e.g. {\"geojson\":{\"type\":\"Point\",\"coordinates\":[7.8421,47.9990]},\"buffer\":500} for 500 m around a point, or {\"bbox\":[[minLon,minLat],[maxLon,maxLat]]}."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional filters, e.g. {\"category_group_ids\":[560]} or {\"category_ids\":[564]} or {\"name\":[\"Aldi\"]}."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results, up to 2000.",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 50
+          }
+        },
+        "required": [
+          "geometry"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openpoiservice/v0/pois",
+        "bodyMapping": {
+          "request": "pois",
+          "geometry": "$geometry",
+          "filters": "$filters",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

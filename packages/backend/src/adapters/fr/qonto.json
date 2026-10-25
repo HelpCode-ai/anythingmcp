@@ -1,0 +1,356 @@
+{
+  "slug": "qonto",
+  "unlisted": true,
+  "name": "Qonto",
+  "description": "Qonto — French business account for SMBs and freelancers: organization and bank accounts, transactions, client and supplier invoices, clients and quotes. Official Business API v2, read-only, login:secret-key API key. 7 tools.",
+  "instructions": "This connector reads your **Qonto** business account through the official Business API: organization and bank accounts, transactions, client invoices, supplier invoices, clients and quotes. It is **read-only**: every tool is a GET, so it cannot send transfers, add beneficiaries, touch cards or create, edit or delete invoices.\n\n**Getting the credentials**\n1. Sign in to the Qonto web app (https://app.qonto.com) and, if you have several organizations, pick the one to connect.\n2. Open **Integrations & Partnerships → API key** and click **Generate** if no secret key exists yet.\n3. Put the **login** (sign-in, e.g. `pied-piper-7132`) in `QONTO_LOGIN` and the **secret key** in `QONTO_SECRET_KEY`.\n\n**How authentication works**: Qonto expects `Authorization: <login>:<secret-key>`. This looks like HTTP Basic but is not: no Base64 and no `Bearer` prefix. A 401 almost always means a wrong login or secret.\n\n**Bank data is sensitive.** The connector sees every bank account of the organization. Assign it only to MCP servers whose users are allowed to see the company's bank accounts and transactions.\n\n**Workflow**: call `qonto_get_organization` first to get the bank account `id` (or IBAN); `qonto_list_transactions` lists one account at a time; passing `bank_account_id` or `iban` is recommended (whether Qonto rejects a call without them is pending verification).\n\n**Pagination**: list tools take `page` and `per_page` (1 to 100, default 100); responses carry `meta.next_page` and `meta.total_pages`.\n\n**Amounts**: transactions expose `amount` and `amount_cents`; prefer the cents for arithmetic.\n\n**Unverified.** This adapter has not been exercised against a live Qonto account yet. Two points still need confirming with a real account: the exact `Authorization: <login>:<secret-key>` header format, and whether `/transactions` requires `bank_account_id` or `iban`. A correction from anyone running it against a real organization is welcome.\n\n**Sandbox**: create an application on the Qonto Developer Portal (https://developers.qonto.com) to get a sandbox organization and a personal staging token. After install, edit the connector: set the base URL to `https://thirdparty-sandbox.staging.qonto.co/v2` and add the header `X-Qonto-Staging-Token: <your token>` (case-sensitive). Without it, sandbox calls return a OneLogin HTML page instead of JSON. The staging token is not accepted in production.\n\n**Cloud reachability**: thirdparty.qonto.com is public with a valid certificate.",
+  "region": "fr",
+  "category": "banking",
+  "icon": "qonto",
+  "docsUrl": "https://docs.qonto.com/",
+  "requiredEnvVars": [
+    "QONTO_LOGIN",
+    "QONTO_SECRET_KEY"
+  ],
+  "probe": {
+    "tool": "qonto_get_organization"
+  },
+  "connector": {
+    "name": "Qonto Business API v2",
+    "type": "REST",
+    "baseUrl": "https://thirdparty.qonto.com/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{QONTO_LOGIN}}:{{QONTO_SECRET_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "qonto_get_organization",
+      "description": "Get the Qonto organization: legal name, slug and every bank account with its id, IBAN, BIC, currency, balance and status. Call this first: qonto_list_transactions needs a bank account id or IBAN from here.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organization"
+      }
+    },
+    {
+      "name": "qonto_list_transactions",
+      "description": "List transactions of one bank account. Pass bank_account_id or iban (recommended; call qonto_get_organization first to get them, a call without them is pending verification). Without a status filter Qonto returns only completed transactions. Filter by date range, side, status and operation type; paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bank_account_id": {
+            "type": "string",
+            "description": "Bank account id from qonto_get_organization. Takes precedence over iban when both are set."
+          },
+          "iban": {
+            "type": "string",
+            "description": "IBAN of the bank account, from qonto_get_organization."
+          },
+          "settled_at_from": {
+            "type": "string",
+            "description": "ISO 8601 timestamp; only transactions settled at or after it."
+          },
+          "settled_at_to": {
+            "type": "string",
+            "description": "ISO 8601 timestamp; only transactions settled at or before it."
+          },
+          "emitted_at_from": {
+            "type": "string",
+            "description": "ISO 8601 timestamp; only transactions emitted at or after it."
+          },
+          "emitted_at_to": {
+            "type": "string",
+            "description": "ISO 8601 timestamp; only transactions emitted at or before it."
+          },
+          "side": {
+            "type": "string",
+            "description": "credit (money in) or debit (money out)."
+          },
+          "status": {
+            "type": "string",
+            "description": "One status per call: pending, declined, completed or reversed (sent as status[]). When omitted, Qonto returns only completed transactions, so set it to see pending or declined ones."
+          },
+          "operation_type": {
+            "type": "string",
+            "description": "Operation type, e.g. card, transfer, direct_debit, income (sent as operation_type[])."
+          },
+          "with_attachments": {
+            "type": "boolean",
+            "description": "true to keep only transactions with attachments, false for those without."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort order, e.g. settled_at:desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (Qonto default 1)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Qonto default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions",
+        "queryParams": {
+          "bank_account_id": "$bank_account_id",
+          "iban": "$iban",
+          "settled_at_from": "$settled_at_from",
+          "settled_at_to": "$settled_at_to",
+          "emitted_at_from": "$emitted_at_from",
+          "emitted_at_to": "$emitted_at_to",
+          "side": "$side",
+          "status[]": "$status",
+          "operation_type[]": "$operation_type",
+          "with_attachments": "$with_attachments",
+          "sort_by": "$sort_by",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "qonto_get_transaction",
+      "description": "Get one transaction by its id: amount, currency, side, counterparty, label, status, operation type, dates, category and attachment ids. Use ids returned by qonto_list_transactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Transaction id (UUID) from qonto_list_transactions."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "qonto_list_client_invoices",
+      "description": "List the client invoices the organization issued from Qonto, filtered by status and by due date, creation or update date ranges. Answers questions like unpaid invoices due this week.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Invoice status, e.g. draft, unpaid, paid, canceled (filter[status])."
+          },
+          "due_date_from": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD; due on or after (filter[due_date_from])."
+          },
+          "due_date_to": {
+            "type": "string",
+            "description": "Date YYYY-MM-DD; due on or before (filter[due_date_to])."
+          },
+          "created_at_from": {
+            "type": "string",
+            "description": "ISO 8601; created on or after (filter[created_at_from])."
+          },
+          "created_at_to": {
+            "type": "string",
+            "description": "ISO 8601; created on or before (filter[created_at_to])."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort order, e.g. created_at:desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (Qonto default 1)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Qonto default 100)."
+          },
+          "updated_at_from": {
+            "type": "string",
+            "description": "ISO 8601; updated on or after (filter[updated_at_from])."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "ISO 8601; updated on or before (filter[updated_at_to])."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/client_invoices",
+        "queryParams": {
+          "filter[status]": "$status",
+          "filter[due_date_from]": "$due_date_from",
+          "filter[due_date_to]": "$due_date_to",
+          "filter[created_at_from]": "$created_at_from",
+          "filter[created_at_to]": "$created_at_to",
+          "filter[updated_at_from]": "$updated_at_from",
+          "filter[updated_at_to]": "$updated_at_to",
+          "sort_by": "$sort_by",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "qonto_list_supplier_invoices",
+      "description": "List supplier invoices received in Qonto, filtered by status, creation date and a free-text query over the fields named in query_fields. Useful to find bills to review or pay, or missing documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Supplier invoice status, e.g. to_review, to_approve, awaiting_payment, pending, paid (filter[status]). to_pay is deprecated by Qonto; use to_review."
+          },
+          "created_at_from": {
+            "type": "string",
+            "description": "ISO 8601; created on or after (filter[created_at_from])."
+          },
+          "created_at_to": {
+            "type": "string",
+            "description": "ISO 8601; created on or before (filter[created_at_to])."
+          },
+          "query": {
+            "type": "string",
+            "description": "Free-text search; Qonto applies it to the fields listed in query_fields."
+          },
+          "query_fields": {
+            "type": "string",
+            "description": "Comma-separated fields searched by query, e.g. supplier_name,amount,file_name,invoice_number."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort order, e.g. created_at:desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (Qonto default 1)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Qonto default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supplier_invoices",
+        "queryParams": {
+          "filter[status]": "$status",
+          "filter[created_at_from]": "$created_at_from",
+          "filter[created_at_to]": "$created_at_to",
+          "query": "$query",
+          "query_fields": "$query_fields",
+          "sort_by": "$sort_by",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "qonto_list_clients",
+      "description": "List the clients (customers) in the Qonto invoicing address book, optionally filtered by name, VAT number or email. Returns ids, contact data and billing addresses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Filter by client name (filter[name])."
+          },
+          "vat_number": {
+            "type": "string",
+            "description": "Filter by VAT number (filter[vat_number])."
+          },
+          "email": {
+            "type": "string",
+            "description": "Filter by email (filter[email])."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort order, e.g. name:asc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (Qonto default 1)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Qonto default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients",
+        "queryParams": {
+          "filter[name]": "$name",
+          "filter[vat_number]": "$vat_number",
+          "filter[email]": "$email",
+          "sort_by": "$sort_by",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "qonto_list_quotes",
+      "description": "List the quotes (devis) created in Qonto, filtered by status and creation date range, with client, amounts, validity and status. Read-only: it cannot create or send quotes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Quote status, e.g. pending_approval, approved, canceled (filter[status])."
+          },
+          "created_at_from": {
+            "type": "string",
+            "description": "ISO 8601; created on or after (filter[created_at_from])."
+          },
+          "created_at_to": {
+            "type": "string",
+            "description": "ISO 8601; created on or before (filter[created_at_to])."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort order, e.g. created_at:desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (Qonto default 1)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Qonto default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quotes",
+        "queryParams": {
+          "filter[status]": "$status",
+          "filter[created_at_from]": "$created_at_from",
+          "filter[created_at_to]": "$created_at_to",
+          "sort_by": "$sort_by",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    }
+  ]
+}

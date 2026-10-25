@@ -1,12 +1,12 @@
 {
   "slug": "sellsy",
   "name": "Sellsy",
-  "description": "Sellsy — French CRM and invoicing: companies, contacts, opportunities, invoices, estimates, items and payments. REST API v2, OAuth 2.0 client credentials.",
+  "description": "Sellsy — French CRM and invoicing: companies, contacts, opportunities, invoices, estimates, items and payments, plus contact and company edits. REST API v2, OAuth 2.0 client credentials.",
   "region": "fr",
   "category": "crm",
   "icon": "sellsy",
   "docsUrl": "https://api.sellsy.com/doc/v2/",
-  "instructions": "**Getting credentials**\n1. Sign in to Sellsy, open **Paramètres → API** and create an **application** in the developer area.\n2. Choose the *client credentials* flow — it authorises the application against your own account with no browser consent step. You receive a **client id** and **client secret**.\n3. Set `SELLSY_CLIENT_ID` and `SELLSY_CLIENT_SECRET`. AnythingMCP mints and refreshes the access token on its own.\n\n**This is API v2**, at `https://api.sellsy.com/v2`. Sellsy's v1 was an entirely different, single-endpoint RPC API — if you find an example that POSTs everything to one URL with a `request` parameter, that is v1 and it does not apply here.\n\n**Searching is a POST.** Sellsy's v2 list endpoints have a sibling `/search` that takes a JSON body of `{\"filters\": {...}}`. It is far more expressive than the query parameters on the plain list, which is why the search tools below are POSTs that read.\n\n**Sellsy validates every argument against its spec.** `order`, `direction` and `embed` accept only the listed values, and the search filters reject unknown keys (`ids`, `updated` on companies) and bare dates where a date-time is expected (`created.start` must be `2026-01-01T00:00:00+00:00`, not `2026-01-01`). A 400 \"invalid arguments\" almost always means one of these.\n\n**`embed` resolves relationships.** A document returns its `related` parties as ids; `embed[]=contact` and similar bring them back inline and save a round of calls. Each endpoint has its own list of allowed embeds.\n\n**Paging**: `limit` (max 100) and `offset`, where `offset` is the opaque `pagination.offset` token of the previous response.\n\n**Amounts are strings in the document's currency**, with the tax detail in a separate `amounts` object. `total_amount_without_taxes` and `total_amount` are both present, and confusing them is how a revenue figure ends up 20% wrong.\n\n**Cloud reachability**: api.sellsy.com is public with a valid certificate.",
+  "instructions": "**Getting credentials**\n1. Sign in to Sellsy, open **Paramètres → API** and create an **application** in the developer area.\n2. Choose the *client credentials* flow — it authorises the application against your own account with no browser consent step. You receive a **client id** and **client secret**.\n3. Set `SELLSY_CLIENT_ID` and `SELLSY_CLIENT_SECRET`. AnythingMCP mints and refreshes the access token on its own.\n\n**This is API v2**, at `https://api.sellsy.com/v2`. Sellsy's v1 was an entirely different, single-endpoint RPC API — if you find an example that POSTs everything to one URL with a `request` parameter, that is v1 and it does not apply here.\n\n**Searching is a POST.** Sellsy's v2 list endpoints have a sibling `/search` that takes a JSON body of `{\"filters\": {...}}`. It is far more expressive than the query parameters on the plain list, which is why the search tools below are POSTs that read.\n\n**Sellsy validates every argument against its spec.** `order`, `direction` and `embed` accept only the listed values, and the search filters reject unknown keys (`ids`, `updated` on companies) and bare dates where a date-time is expected (`created.start` must be `2026-01-01T00:00:00+00:00`, not `2026-01-01`). A 400 \"invalid arguments\" almost always means one of these.\n\n**`embed` resolves relationships.** A document returns its `related` parties as ids; `embed[]=contact` and similar bring them back inline and save a round of calls. Each endpoint has its own list of allowed embeds.\n\n**Paging**: `limit` (max 100) and `offset`, where `offset` is the opaque `pagination.offset` token of the previous response.\n\n**Amounts are strings in the document's currency**, with the tax detail in a separate `amounts` object. `total_amount_without_taxes` and `total_amount` are both present, and confusing them is how a revenue figure ends up 20% wrong.\n\n**Writes**: `sellsy_edit_contact` and `sellsy_edit_company` change records in the live CRM; send only the fields that change. The Sellsy API application needs write access to contacts and companies; with read-only rights they answer 403.\n\n**Cloud reachability**: api.sellsy.com is public with a valid certificate.",
   "requiredEnvVars": [
     "SELLSY_CLIENT_ID",
     "SELLSY_CLIENT_SECRET"
@@ -490,6 +490,98 @@
           "order": "$order",
           "direction": "$direction"
         }
+      }
+    },
+    {
+      "name": "sellsy_get_contact",
+      "description": "Read one contact (person) in full: name, email and phone numbers, position, note, addresses, owner, archive state and custom fields. Read it before sellsy_edit_contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "number",
+            "description": "Numeric Sellsy contact id."
+          }
+        },
+        "required": [
+          "contactId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contactId}"
+      }
+    },
+    {
+      "name": "sellsy_list_contact_companies",
+      "description": "List the companies a contact is linked to. Check this before merging, archiving or moving a contact, since one person can belong to several companies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "number",
+            "description": "Numeric Sellsy contact id."
+          }
+        },
+        "required": [
+          "contactId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contactId}/companies"
+      }
+    },
+    {
+      "name": "sellsy_edit_contact",
+      "description": "Change fields of a contact. Send only the fields that change, e.g. {\"email\": \"...\", \"mobile_number\": \"...\", \"position\": \"...\", \"note\": \"...\", \"is_archived\": false}; the others stay as they are. Field names are those returned by sellsy_get_contact. Writes to the live CRM: confirm the change with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "number",
+            "description": "Numeric Sellsy contact id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "The fields to change, as a JSON object."
+          }
+        },
+        "required": [
+          "contactId",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{contactId}",
+        "bodyTemplate": "${fields}"
+      }
+    },
+    {
+      "name": "sellsy_edit_company",
+      "description": "Change fields of a company. Send only the fields that change, e.g. {\"name\": \"...\"} or {\"is_archived\": true} to archive it (false restores it); the others stay as they are. Field names are those returned by sellsy_get_company. Writes to the live CRM: confirm the change with the user first, one company at a time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "number",
+            "description": "Numeric Sellsy company id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "The fields to change, as a JSON object."
+          }
+        },
+        "required": [
+          "companyId",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/companies/{companyId}",
+        "bodyTemplate": "${fields}"
       }
     }
   ]

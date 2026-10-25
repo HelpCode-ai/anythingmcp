@@ -25,10 +25,12 @@ import { CheckoutLinkDto, LicenseController } from './license.controller';
 import { LicenseService } from './license.service';
 import {
   CHECKOUT_PLANS,
+  CHECKOUT_SOURCES,
   CheckoutUnavailableError,
   cardTrialEnd,
   checkoutAdMetadata,
   cloudFrontendOrigin,
+  withSourceParam,
 } from './license-checkout';
 
 jest.mock('axios');
@@ -78,6 +80,15 @@ describe('checkoutAdMetadata', () => {
     expect(
       checkoutAdMetadata({ gclid: 'abc', ad_consent: 'granted', captured_at: '2026-09-01T00:00:00Z' }),
     ).toEqual({ ad_consent: 'granted', gclid: 'abc' });
+  });
+
+  it('passes a consented ChatGPT Ads oppref, alone or next to a Google click id', () => {
+    expect(checkoutAdMetadata({ oppref: 'op-1', ad_consent: 'granted' })).toEqual({ ad_consent: 'granted', oppref: 'op-1' });
+    expect(checkoutAdMetadata({ gclid: 'abc', oppref: 'op-1', ad_consent: 'granted' })).toEqual({
+      ad_consent: 'granted',
+      gclid: 'abc',
+      oppref: 'op-1',
+    });
   });
 
   it('sends nothing without consent or without an id', () => {
@@ -214,10 +225,18 @@ describe('LicenseController.checkoutLink', () => {
   };
 
   function makeController(
-    opts: { isCloud?: boolean; license?: any; click?: any; fail?: boolean; hadSubscription?: boolean | null } = {},
+    opts: {
+      isCloud?: boolean;
+      license?: any;
+      click?: any;
+      fail?: boolean;
+      hadSubscription?: boolean | null;
+      paymentFailed?: any;
+    } = {},
   ) {
     const licenseService = {
       getCurrentLicense: jest.fn(async () => (opts.license === undefined ? trialLicense() : opts.license)),
+      getPaymentFailedLicense: jest.fn(async () => opts.paymentFailed ?? null),
       createCheckoutIntent: jest.fn(async () => {
         if (opts.fail) throw new CheckoutUnavailableError('Checkout intent failed: HTTP 500', 500);
         return { url: 'https://anythingmcp.com/api/stripe/checkout/start?intent=i1' };
@@ -279,6 +298,7 @@ describe('LicenseController.checkoutLink', () => {
       returnUrl: 'https://cloud.example.com/settings/license/activate',
       organizationId: 'org-1',
       adMetadata: { ad_consent: 'granted', gclid: 'g-1' },
+      source: 'app',
     });
   });
 
@@ -422,21 +442,23 @@ describe('LicenseController.checkoutLink', () => {
       plan: 'starter',
       billingPeriod: 'monthly',
       trial: true,
-      source: 'first_success',
+      source: 'first_success_banner',
     });
     const [payload] = licenseService.createCheckoutIntent.mock.calls[0] as any[];
-    expect(payload.source).toBe('first_success');
+    expect(payload.source).toBe('first_success_banner');
     expect(productEvents.log).toHaveBeenCalledWith({
       event: 'checkout_link_created',
       userId: 'u1',
       organizationId: 'org-1',
-      metadata: { via: 'first_success', kind: 'trial' },
+      metadata: { via: 'first_success_banner', kind: 'trial' },
     });
+  });
 
+  it('sends a source with every checkout: "app" when the page does not name one', async () => {
     const plain = makeController();
     await plain.controller.checkoutLink(adminReq, { plan: 'team', billingPeriod: 'monthly', trial: false });
     const [plainPayload] = plain.licenseService.createCheckoutIntent.mock.calls[0] as any[];
-    expect(plainPayload).not.toHaveProperty('source');
+    expect(plainPayload.source).toBe('app');
     expect(plain.productEvents.log).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: { via: 'app', kind: 'pay' } }),
     );
@@ -452,14 +474,25 @@ describe('LicenseController.checkoutLink', () => {
 
   it('accepts only known sources: the value ends up in Stripe metadata', async () => {
     const base = { plan: 'starter', billingPeriod: 'monthly', trial: true };
-    const ok = await validate(plainToInstance(CheckoutLinkDto, { ...base, source: 'first_success' }));
-    expect(ok).toHaveLength(0);
+    for (const source of CHECKOUT_SOURCES) {
+      const ok = await validate(plainToInstance(CheckoutLinkDto, { ...base, source }));
+      expect(ok).toHaveLength(0);
+    }
     const none = await validate(plainToInstance(CheckoutLinkDto, base));
     expect(none).toHaveLength(0);
     for (const source of ['newsletter', 'first_success; drop', '', 42]) {
       const errors = await validate(plainToInstance(CheckoutLinkDto, { ...base, source }));
       expect(errors.map((e) => e.property)).toContain('source');
     }
+  });
+
+  it('refuses a second subscription while a declined card is being retried', async () => {
+    const { controller, licenseService } = makeController({
+      license: null,
+      paymentFailed: { plan: 'starter', status: 'revoked', billing: { status: 'past_due', cancelling: false } },
+    });
+    await expect(controller.checkoutLink(adminReq, { plan: 'starter' } as any)).rejects.toThrow(/Update your payment method/);
+    expect(licenseService.createCheckoutIntent).not.toHaveBeenCalled();
   });
 
   it('maps any licence-site failure to a generic 502', async () => {
@@ -469,5 +502,16 @@ describe('LicenseController.checkoutLink', () => {
       .catch((e) => e);
     expect(err).toBeInstanceOf(BadGatewayException);
     expect(err.message).not.toMatch(/HTTP 500/);
+  });
+});
+
+describe('withSourceParam', () => {
+  it('adds the source to the query, ahead of any fragment', () => {
+    expect(withSourceParam('https://anythingmcp.com/pricing', 'email_winback')).toBe(
+      'https://anythingmcp.com/pricing?source=email_winback',
+    );
+    expect(withSourceParam('https://anythingmcp.com/pricing?promo=X#t=tok', 'email_trial_warn1')).toBe(
+      'https://anythingmcp.com/pricing?promo=X&source=email_trial_warn1#t=tok',
+    );
   });
 });

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, tools, withSecretsNotice, isMachineGrant, type ToolTestResult, type CatalogDiff, type OAuthGrant } from '@/lib/api';
+import { connectors, tools, withSecretsNotice, withImportNotice, isMachineGrant, type ToolTestResult, type CatalogDiff, type OAuthGrant } from '@/lib/api';
 import { findDemoByTool } from '@/lib/demo-connectors';
 import { ToolEditor } from '@/components/tool-editor';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -11,10 +11,12 @@ import { AppSelect } from '@/components/ui/select';
 import { HeadersEditor, headerRowsToObject, objectToHeaderRows, type HeaderRow } from '@/components/headers-editor';
 import { AppShell } from '@/components/app-shell';
 import * as Dialog from '@radix-ui/react-dialog';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
 import { SetupStatusBanner, SetupStatusPill } from '@/components/setup-status';
+import { AuthStatusBanner, AuthStatusPill } from '@/components/auth-status';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { authTypeLabel, cn } from '@/lib/utils';
@@ -24,6 +26,7 @@ const IMPORT_SOURCES = [
   { id: 'openapi', label: 'OpenAPI / Swagger', placeholder: 'Paste OpenAPI JSON/YAML or enter URL...' },
   { id: 'postman', label: 'Postman Collection', placeholder: 'Paste Postman Collection JSON or enter URL...' },
   { id: 'curl', label: 'cURL Command', placeholder: 'curl -X GET https://api.example.com/users -H "Authorization: Bearer {{token}}"' },
+  { id: 'har', label: 'HAR file (browser capture)', placeholder: '' },
   { id: 'graphql', label: 'GraphQL Introspection', placeholder: 'Enter GraphQL endpoint URL...' },
   { id: 'wsdl', label: 'WSDL', placeholder: 'Enter WSDL URL...' },
   { id: 'json', label: 'JSON Definition', placeholder: '[\n  {\n    "name": "get_users",\n    "description": "Fetch users",\n    "parameters": { "type": "object", "properties": { "limit": { "type": "number" } } },\n    "endpointMapping": { "method": "GET", "path": "/users", "queryParams": { "limit": "$limit" } }\n  }\n]' },
@@ -42,6 +45,115 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Field names a HAR entry carries that hold a credential by themselves. */
+const HAR_CREDENTIAL_HEADER_RE = /(token|secret|password|passwd|api[-_]?key|session|csrf|xsrf|auth|signature|sig)/i;
+const HAR_EXPLICIT_CREDENTIAL_HEADERS = new Set(['cookie', 'set-cookie', 'authorization', 'proxy-authorization']);
+const HAR_MAX_UPLOAD_BYTES = 7 * 1024 * 1024;
+
+function isHarCredentialHeader(name: string): boolean {
+  const n = name.toLowerCase();
+  return HAR_EXPLICIT_CREDENTIAL_HEADERS.has(n) || n.startsWith(':') || HAR_CREDENTIAL_HEADER_RE.test(n);
+}
+
+function slimHarHeaders(headers: unknown): any[] {
+  if (!Array.isArray(headers)) return [];
+  return headers.filter((h: any) => h && typeof h.name === 'string' && !isHarCredentialHeader(h.name));
+}
+
+function slimHarQueryString(qs: unknown): any[] {
+  if (!Array.isArray(qs)) return [];
+  return qs.filter((q: any) => q && typeof q.name === 'string' && !HAR_CREDENTIAL_HEADER_RE.test(q.name));
+}
+
+/** `{"user":{"password":"…"}}` → the same shape with every credential-named key's value removed, at any depth. */
+function scrubJsonCredentials(value: any, depth = 0): any {
+  if (depth > 10 || value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((v) => scrubJsonCredentials(v, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value)) {
+    out[key] = HAR_CREDENTIAL_HEADER_RE.test(key) ? '[removed before upload]' : scrubJsonCredentials(v, depth + 1);
+  }
+  return out;
+}
+
+function slimHarPostData(postData: unknown): any {
+  if (!postData || typeof postData !== 'object') return postData;
+  const pd = postData as any;
+  if (Array.isArray(pd.params)) {
+    return { ...pd, params: pd.params.filter((p: any) => !(p && typeof p.name === 'string' && HAR_CREDENTIAL_HEADER_RE.test(p.name))) };
+  }
+  if (typeof pd.text === 'string' && typeof pd.mimeType === 'string' && pd.mimeType.includes('application/json')) {
+    try {
+      const parsed = JSON.parse(pd.text);
+      if (parsed && typeof parsed === 'object') {
+        return { ...pd, text: JSON.stringify(scrubJsonCredentials(parsed)) };
+      }
+    } catch {
+      // Not parseable JSON — leave it for the backend, which drops anything it can't scrub.
+    }
+  }
+  return pd;
+}
+
+/** Same origin as the connector's base URL, treating `wss:`/`ws:` as `https:`/`http:` like the backend parser does. */
+function matchesHarOrigin(urlStr: string, base: URL | null): boolean {
+  if (!base) return true;
+  try {
+    const u = new URL(urlStr);
+    const scheme = (p: string) => (p === 'wss:' ? 'https:' : p === 'ws:' ? 'http:' : p);
+    return scheme(u.protocol) === scheme(base.protocol) && u.host === base.host;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Strips response data, cookies and credential headers/query/body fields
+ * from a HAR before it ever leaves the browser, and drops entries outside
+ * the connector's own origin — a raw capture carries full response bodies,
+ * session cookies and requests to other sites that must never be uploaded at
+ * all, on top of the credential fields the backend parser also scrubs.
+ */
+function slimHarForUpload(rawText: string, baseUrl?: string): { json: string; byteLength: number; droppedOtherOrigin: number } {
+  const har = JSON.parse(rawText);
+  const entries = har?.log?.entries;
+  if (!Array.isArray(entries)) {
+    throw new Error('Not a valid HAR file (expected a log.entries array)');
+  }
+  let base: URL | null = null;
+  try {
+    base = baseUrl ? new URL(baseUrl) : null;
+  } catch {
+    base = null;
+  }
+  const inScope = entries.filter((entry: any) => matchesHarOrigin(entry?.request?.url ?? '', base));
+  const slimmed = {
+    log: {
+      version: har.log.version,
+      entries: inScope.map((entry: any) => ({
+        _resourceType: entry?._resourceType,
+        request: entry?.request
+          ? {
+              method: entry.request.method,
+              url: entry.request.url,
+              httpVersion: entry.request.httpVersion,
+              headers: slimHarHeaders(entry.request.headers),
+              queryString: slimHarQueryString(entry.request.queryString),
+              postData: slimHarPostData(entry.request.postData),
+            }
+          : undefined,
+        // The backend never reads response data — dropped entirely, not just its body.
+      })),
+    },
+  };
+  const json = JSON.stringify(slimmed);
+  return {
+    json,
+    byteLength: new TextEncoder().encode(json).length,
+    droppedOtherOrigin: entries.length - inScope.length,
+  };
 }
 
 export default function ConnectorDetailPage() {
@@ -162,6 +274,11 @@ export default function ConnectorDetailPage() {
   const [importUrl, setImportUrl] = useState('');
   const [importing, setImporting] = useState(false);
 
+  // HAR import: the file is slimmed (response bodies, cookies, credential
+  // headers stripped) in the browser before its JSON lands in importContent.
+  const [harFileName, setHarFileName] = useState('');
+  const [harError, setHarError] = useState('');
+
   // MCP assign modal — shown when tools are added and connector is not yet assigned
   const [showMcpAssign, setShowMcpAssign] = useState(false);
 
@@ -173,6 +290,13 @@ export default function ConnectorDetailPage() {
     { key: string; value: string; masked?: boolean }[]
   >([]);
   const [savingEnvVars, setSavingEnvVars] = useState(false);
+
+  const resetOauth1Fields = () => {
+    setEditOauth1Key('');
+    setEditOauth1Secret('');
+    setEditOauth1Token('');
+    setEditOauth1TokenSecret('');
+  };
 
   const fetchConnector = async () => {
     if (!token) return;
@@ -287,13 +411,6 @@ export default function ConnectorDetailPage() {
 
     fetchConnector();
   }, [token, id]);
-
-  const resetOauth1Fields = () => {
-    setEditOauth1Key('');
-    setEditOauth1Secret('');
-    setEditOauth1Token('');
-    setEditOauth1TokenSecret('');
-  };
 
   const buildAuthConfig = () => {
     // Only send authConfig if the user filled in credential fields;
@@ -473,6 +590,27 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  const handleExport = async (format: 'json' | 'yaml') => {
+    if (!token) return;
+    try {
+      const file = await connectors.exportConnector(id, format, token);
+      const url = URL.createObjectURL(new Blob([file.text], { type: file.contentType }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.filename;
+      a.click();
+      // Revoke later: some browsers start the download after click() returns.
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setMsg(
+        file.secretsIncluded
+          ? `Exported as ${format.toUpperCase()}. The file contains secret values in plain text: store it safely. OAuth credentials are not exported.`
+          : `Exported as ${format.toUpperCase()} without secret values (only admins can export them). OAuth credentials are not exported.`,
+      );
+    } catch (err: any) {
+      setMsg(`Export failed: ${err.message}`);
+    }
+  };
+
   const handleTest = async () => {
     if (!token) return;
     setTestResult(null);
@@ -502,11 +640,38 @@ export default function ConnectorDetailPage() {
     setMsg('Importing specification...');
     try {
       const result = await connectors.importSpec(id, token);
-      setMsg(withSecretsNotice(result.message, result));
+      setMsg(withImportNotice(result.message, result));
       fetchConnector();
       promptMcpAssignIfNeeded();
     } catch (err: any) {
       setMsg(`Import failed: ${err.message}`);
+    }
+  };
+
+  const handleHarFileChange = async (file: File | null) => {
+    setHarError('');
+    setImportContent('');
+    setHarFileName('');
+    if (!file) return;
+    setHarFileName(file.name);
+    try {
+      const text = await file.text();
+      const { json, byteLength, droppedOtherOrigin } = slimHarForUpload(text, connector?.baseUrl);
+      if (byteLength > HAR_MAX_UPLOAD_BYTES) {
+        setHarError(
+          `This capture is still ${formatBytes(byteLength)} after removing response bodies and cookies, which is over what the server accepts. Re-capture a smaller session (fewer requests) and try again.`,
+        );
+        return;
+      }
+      if (droppedOtherOrigin > 0 && JSON.parse(json).log.entries.length === 0) {
+        setHarError(
+          `None of the ${droppedOtherOrigin} request(s) in this capture were made to ${connector?.baseUrl ?? 'the connector\'s base URL'}. Capture a session against that host and try again.`,
+        );
+        return;
+      }
+      setImportContent(json);
+    } catch (err: any) {
+      setHarError(`Could not read this file: ${err.message}`);
     }
   };
 
@@ -522,7 +687,7 @@ export default function ConnectorDetailPage() {
         if (importContent.trim()) data.content = importContent;
         const sets = importEntitySets.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
         if (sets.length) data.entitySets = sets;
-      } else if (importSource === 'curl' || importSource === 'json') {
+      } else if (importSource === 'curl' || importSource === 'json' || importSource === 'har') {
         data.content = importContent;
       } else if (importUrl) {
         data.url = importUrl;
@@ -533,10 +698,12 @@ export default function ConnectorDetailPage() {
       if (result.error) {
         setMsg(result.error);
       } else {
-        setMsg(withSecretsNotice(result.message, result));
+        setMsg(withImportNotice(result.message, result));
         setShowImport(false);
         setImportContent('');
         setImportUrl('');
+        setHarFileName('');
+        setHarError('');
         fetchConnector();
         promptMcpAssignIfNeeded();
       }
@@ -749,6 +916,24 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  // Shopee shops are authorized through Shopee's own signed link, not OAuth2.
+  const handleShopeeAuthorize = async () => {
+    if (!token) return;
+    setAuthorizing(true);
+    try {
+      const result = await connectors.shopeeAuthorize(id, token);
+      if (result.authorizationUrl) {
+        window.location.href = result.authorizationUrl;
+      } else if (result.error) {
+        setMsg(result.error);
+      }
+    } catch (err: any) {
+      setMsg(`Authorization failed: ${err.message}`);
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
   const handleDiscoverTools = async () => {
     if (!token) return;
     setDiscovering(true);
@@ -757,7 +942,7 @@ export default function ConnectorDetailPage() {
       if (result.error) {
         setMsg(result.error);
       } else {
-        setMsg(withSecretsNotice(result.message, result));
+        setMsg(withImportNotice(result.message, result));
         fetchConnector();
       }
     } catch (err: any) {
@@ -821,6 +1006,31 @@ export default function ConnectorDetailPage() {
           <Button variant="secondary" size="md" onClick={() => setEditing(!editing)}>
             {editing ? 'Cancel' : 'Edit'}
           </Button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button variant="secondary" size="md" title="Export this connector as a file">
+                Export
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="end"
+                sideOffset={6}
+                collisionPadding={8}
+                className="z-50 min-w-[160px] overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-1 shadow-[var(--shadow)]"
+              >
+                {(['json', 'yaml'] as const).map((format) => (
+                  <DropdownMenu.Item
+                    key={format}
+                    onSelect={() => handleExport(format)}
+                    className="flex cursor-pointer select-none items-center rounded-[7px] px-2.5 py-2 text-[13px] text-[var(--text-2)] outline-none data-[highlighted]:bg-[var(--surface-2)] data-[highlighted]:text-[var(--text)]"
+                  >
+                    Export as {format.toUpperCase()}
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
           <Button variant="outlineDanger" size="md" onClick={handleDelete}>
             Delete
           </Button>
@@ -878,6 +1088,7 @@ export default function ConnectorDetailPage() {
                 {connector.isActive ? 'Active' : 'Inactive'}
               </StatusPill>
               <SetupStatusPill status={connector.setupStatus} />
+              <AuthStatusPill connector={connector} />
             </div>
             <div className="mt-0.5 break-all font-mono text-[12.5px] text-[var(--text-3)]">
               {connector.baseUrl}
@@ -886,6 +1097,7 @@ export default function ConnectorDetailPage() {
         </div>
 
         <SetupStatusBanner connector={connector} />
+        <AuthStatusBanner connector={connector} />
 
         {msg && (
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
@@ -1558,6 +1770,20 @@ export default function ConnectorDetailPage() {
           </Card>
         )}
 
+        {/* Shopee shop authorization (HMAC-signed, Shopee's own flow) */}
+        {connector.authType === 'HMAC' && (connector.config as any)?.adapterSlug === 'shopee' && (
+          <Card className="p-[22px]">
+            <h3 className="text-sm font-semibold mb-2">Shopee shop authorization</h3>
+            <p className="text-sm text-[var(--text-3)] mb-4">
+              Sign in with the shop account and approve this app. The tokens are stored encrypted and renewed
+              automatically. Authorize again when the authorization expires or the connector asks for it.
+            </p>
+            <Button variant="primary" size="lg" onClick={handleShopeeAuthorize} disabled={authorizing}>
+              {authorizing ? 'Redirecting...' : 'Authorize with Provider'}
+            </Button>
+          </Card>
+        )}
+
         {/* Environment Variables */}
         <Card className="p-[22px]">
           <div className="flex items-center justify-between mb-4">
@@ -1672,7 +1898,7 @@ export default function ConnectorDetailPage() {
                 {IMPORT_SOURCES.filter((src) => src.id !== 'odata' || hasOData(connector)).map((src) => (
                   <button
                     key={src.id}
-                    onClick={() => { setImportSource(src.id); setImportContent(''); setImportUrl(''); }}
+                    onClick={() => { setImportSource(src.id); setImportContent(''); setImportUrl(''); setHarFileName(''); setHarError(''); }}
                     className={`px-3 py-1.5 rounded-[8px] text-xs border transition-colors ${
                       importSource === src.id
                         ? 'border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)] font-semibold'
@@ -1716,7 +1942,7 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
 
-              {importSource !== 'curl' && importSource !== 'json' && importSource !== 'odata' && (
+              {importSource !== 'curl' && importSource !== 'json' && importSource !== 'odata' && importSource !== 'har' && (
                 <div>
                   <label className="block text-xs font-medium mb-1">URL (fetch spec from URL)</label>
                   <input
@@ -1729,18 +1955,41 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-medium mb-1">
-                  {importSource === 'curl' ? 'cURL Command(s)' : importSource === 'json' ? 'JSON Tool Definitions' : 'Or paste content directly'}
-                </label>
-                <textarea
-                  value={importContent}
-                  onChange={(e) => setImportContent(e.target.value)}
-                  rows={6}
-                  placeholder={IMPORT_SOURCES.find((s) => s.id === importSource)?.placeholder}
-                  className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
-                />
-              </div>
+              {importSource === 'har' ? (
+                <div>
+                  <label className="block text-xs font-medium mb-1">HAR file</label>
+                  <input
+                    type="file"
+                    accept=".har,application/json"
+                    onChange={(e) => handleHarFileChange(e.target.files?.[0] ?? null)}
+                    className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                  />
+                  <p className="text-[11.5px] text-[var(--text-3)] mt-1">
+                    From your browser&apos;s DevTools: Network tab → right-click → &quot;Save all as HAR&quot;. HAR files contain
+                    session cookies and tokens — response bodies, cookies and credential headers are removed in your
+                    browser before anything is uploaded.
+                  </p>
+                  {harFileName && !harError && (
+                    <p className="text-[11.5px] text-[var(--text-3)] mt-1">
+                      {importContent ? `${harFileName} — ready to import.` : `Reading ${harFileName}...`}
+                    </p>
+                  )}
+                  {harError && <p className="text-[11.5px] text-[var(--danger)] mt-1">{harError}</p>}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium mb-1">
+                    {importSource === 'curl' ? 'cURL Command(s)' : importSource === 'json' ? 'JSON Tool Definitions' : 'Or paste content directly'}
+                  </label>
+                  <textarea
+                    value={importContent}
+                    onChange={(e) => setImportContent(e.target.value)}
+                    rows={6}
+                    placeholder={IMPORT_SOURCES.find((s) => s.id === importSource)?.placeholder}
+                    className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
+                  />
+                </div>
+              )}
 
               <Button
                 variant="primary"

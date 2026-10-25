@@ -8,6 +8,7 @@ import { usePricingUrl } from '@/lib/use-pricing-url';
 import { useCardCheckout } from '@/lib/use-card-checkout';
 import { useCardTrialKind } from '@/lib/use-card-trial-eligibility';
 import { useFirstSuccessOfferVisible } from '@/lib/first-success-offer-visibility';
+import { startTrialPath } from '@/lib/checkout-source';
 import {
   cardTrialDisplayEnd,
   cardTrialEligible,
@@ -18,7 +19,7 @@ import {
 export function TrialBanner() {
   const { token, user, deploymentMode } = useAuth();
   const router = useRouter();
-  const pricingUrl = usePricingUrl();
+  const pricingUrl = usePricingUrl(undefined, 'trial_banner');
   const checkout = useCardCheckout();
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
   const [plan, setPlan] = useState<string | null>(null);
@@ -89,11 +90,11 @@ export function TrialBanner() {
     // otherwise (or when it would charge today) to the plan picker first.
     const intent = readPlanIntent();
     if (!intent || paysToday) {
-      router.push('/start-trial');
+      router.push(startTrialPath('trial_banner'));
       return;
     }
-    const outcome = await checkout.start(intent, true);
-    if (outcome === 'charges_today') router.push('/start-trial');
+    const outcome = await checkout.start(intent, true, 'trial_banner');
+    if (outcome === 'charges_today') router.push(startTrialPath('trial_banner'));
     else if (outcome === 'failed') window.location.assign(pricingUrl);
   };
 

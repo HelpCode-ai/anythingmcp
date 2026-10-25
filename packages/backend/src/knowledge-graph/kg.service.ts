@@ -9,6 +9,11 @@ import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { RolesService } from '../roles/roles.service';
 import { KgStaticService } from './kg-static.service';
+import { memberContributes } from './kg-learning.service';
+import {
+  folderVisibility,
+  type FolderAccess,
+} from '../knowledge-folders/knowledge-folders.service';
 import { KgObservationalService } from './kg-observational.service';
 import { KgLlmService } from './kg-llm.service';
 
@@ -128,9 +133,13 @@ export class KgService {
     }
   }
 
-  /** Whether intent capture is on for this org (used by the MCP path). */
-  captureIntentEnabled(organizationId: string): Promise<boolean> {
-    return this.staticSvc.getFlag(organizationId, 'kg_capture_intent', false);
+  /**
+   * Whether this caller's tool calls capture intent (used by the MCP path):
+   * the workspace switch, overridden per member by an admin and by the
+   * member's own opt-out. A caller without a member identity never does.
+   */
+  captureIntentEnabled(organizationId: string, userId?: string | null): Promise<boolean> {
+    return memberContributes(this.prisma, this.staticSvc, organizationId, userId);
   }
 
   /**
@@ -489,7 +498,7 @@ export class KgService {
   async lookup(
     organizationId: string,
     query: string,
-    opts?: { connectorIds?: string[]; mcpServerId?: string },
+    opts?: { connectorIds?: string[]; mcpServerId?: string; folders?: FolderAccess | null },
   ) {
     const scope = opts?.connectorIds
       ? { connectorId: { in: opts.connectorIds.length ? opts.connectorIds : ['__none__'] } }
@@ -578,7 +587,12 @@ export class KgService {
    */
   async describeForResource(
     organizationId: string,
-    opts: { connectorIds: string[]; mcpServerId?: string; serverName?: string },
+    opts: {
+      connectorIds: string[];
+      mcpServerId?: string;
+      serverName?: string;
+      folders?: FolderAccess | null;
+    },
   ): Promise<string> {
     const MAX_ENTITIES = 150;
     const MAX_RELATIONS = 250;
@@ -611,6 +625,7 @@ export class KgService {
       this.scopedSkills(organizationId, {
         connectorIds: opts.connectorIds,
         mcpServerId: opts.mcpServerId,
+        folders: opts.folders,
       }),
     ]);
 
@@ -685,8 +700,9 @@ export class KgService {
     if (skills.length) {
       out.push('', `## Workspace skills (${skills.length})`, '');
       for (const sk of skills) {
-        out.push(`- **${sk.title}**${sk.whenToUse ? `: ${oneLine(sk.whenToUse)}` : ''}`);
+        out.push(`- **${sk.title}** (\`${sk.id}\`)${sk.whenToUse ? `: ${oneLine(sk.whenToUse)}` : ''}`);
       }
+      out.push('', 'Read a skill in full with `skill_get` and its id.');
     }
     return out.join('\n');
   }
@@ -694,7 +710,7 @@ export class KgService {
   /** Applied skills for the scope (server-wide skills + assigned connectors'). */
   private async scopedSkills(
     organizationId: string,
-    opts?: { connectorIds?: string[]; mcpServerId?: string },
+    opts?: { connectorIds?: string[]; mcpServerId?: string; folders?: FolderAccess | null },
   ) {
     const or: any[] = [];
     if (opts?.mcpServerId) or.push({ mcpServerId: opts.mcpServerId });
@@ -704,11 +720,13 @@ export class KgService {
         organizationId,
         status: 'applied',
         ...(or.length ? { OR: or } : {}),
+        // Skills in folders limited to roles the caller lacks stay out.
+        AND: [folderVisibility(opts?.folders)],
       },
-      select: { title: true, whenToUse: true },
+      select: { id: true, title: true, whenToUse: true },
       take: 25,
     });
-    return rows.map((r) => ({ title: r.title, whenToUse: r.whenToUse }));
+    return rows.map((r) => ({ id: r.id, title: r.title, whenToUse: r.whenToUse }));
   }
 
   async deleteEdge(organizationId: string, edgeId: string) {

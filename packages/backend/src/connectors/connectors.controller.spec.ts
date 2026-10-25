@@ -51,6 +51,7 @@ function buildController(overrides: {
     {} as any, // graphqlParser
     {} as any, // postmanParser
     {} as any, // curlParser
+    {} as any, // harParser
     {} as any, // mcpClientEngine
     (overrides.mcpOAuthService ?? {}) as any, // mcpOAuthService
     {} as any, // catalogResync
@@ -1772,5 +1773,152 @@ describe('POST :id/import — JSON definitions are additive', () => {
     const guideUpdate = prisma.mcpTool.update.mock.calls.find((c: any) => c[0].where.id === 't1');
     expect(guideUpdate[0].data).toMatchObject({ deprecatedAt: null, isEnabled: true });
     expect(prisma.mcpTool.update.mock.calls.find((c: any) => c[0].where.id === 't2')).toBeUndefined();
+  });
+});
+
+describe('re-import never renames a tool onto a name in use (ANYTHINGMCP-CLOUD-BACKEND-9)', () => {
+  type Row = {
+    id: string;
+    connectorId: string;
+    name: string;
+    operationId: string | null;
+    endpointMapping: any;
+    description?: string;
+    deprecatedAt: Date | null;
+    isEnabled: boolean;
+  };
+
+  /** In-memory mcpTool table with the (connectorId, name) unique key enforced like Postgres. */
+  function build(rows: Row[]) {
+    let seq = 0;
+    const unique = (connectorId: string, name: string, id?: string) => {
+      if (rows.some((r) => r.connectorId === connectorId && r.name === name && r.id !== id)) {
+        throw Object.assign(new Error('Unique constraint failed on mcp_tools_connector_id_name_key'), { code: 'P2002' });
+      }
+    };
+    const prisma = {
+      mcpTool: {
+        findMany: jest.fn(async () => rows.map((r) => ({ ...r }))),
+        update: jest.fn(async ({ where, data }: any) => {
+          const target = rows.find((r) => r.id === where.id)!;
+          if (data.name !== undefined) unique(target.connectorId, data.name, target.id);
+          Object.assign(target, data);
+          return { ...target };
+        }),
+        create: jest.fn(async ({ data }: any) => {
+          unique(data.connectorId, data.name);
+          const created = { id: `new${++seq}`, deprecatedAt: null, isEnabled: true, ...data };
+          rows.push(created);
+          return { ...created };
+        }),
+      },
+    };
+    const { controller } = buildController({ prisma, connectorsService: { addEnvVars: jest.fn() } });
+    const connector = { id: 'c1', name: 'Shop', type: 'REST', envVars: null };
+    const run = (parsedTools: any[]): Promise<any> => (controller as any).createToolsFromParsed(connector, parsedTools);
+    return { run, rows };
+  }
+
+  const row = (id: string, name: string, method: string, path: string, operationId: string | null = null): Row => ({
+    id,
+    connectorId: 'c1',
+    name,
+    operationId,
+    endpointMapping: { method, path },
+    deprecatedAt: null,
+    isEnabled: true,
+  });
+  const parsed = (name: string, method: string, path: string, extra: Record<string, unknown> = {}) => ({
+    name,
+    description: `${name} v2`,
+    parameters: { type: 'object', properties: {} },
+    endpointMapping: { method, path },
+    ...extra,
+  });
+
+  it('two endpoints that swapped names keep their names, refresh the rest and report both', async () => {
+    const { run, rows } = build([row('a', 'list_orders', 'GET', '/orders'), row('b', 'list_items', 'GET', '/items')]);
+    const out = await run([parsed('list_items', 'GET', '/orders'), parsed('list_orders', 'GET', '/items')]);
+
+    expect(out.updated).toBe(2);
+    expect(out.created).toBe(0);
+    expect(out.renameConflicts).toEqual([
+      { toolId: 'a', kept: 'list_orders', wanted: 'list_items' },
+      { toolId: 'b', kept: 'list_items', wanted: 'list_orders' },
+    ]);
+    expect(rows.find((r) => r.id === 'a')).toMatchObject({ name: 'list_orders', description: 'list_items v2' });
+    expect(rows.find((r) => r.id === 'b')).toMatchObject({ name: 'list_items', description: 'list_orders v2' });
+  });
+
+  it('a rename onto the name of another existing tool keeps the old name instead of failing', async () => {
+    const { run, rows } = build([
+      row('a', 'get_customer', 'GET', '/customers/{id}', 'getCustomer'),
+      row('b', 'get_customer_v2', 'GET', '/v2/customers/{id}'),
+    ]);
+    const out = await run([
+      parsed('get_customer_v2', 'GET', '/customers/{id}', { operationId: 'getCustomer' }),
+      parsed('get_customer_v2', 'GET', '/v2/customers/{id}'),
+    ]);
+
+    expect(out.renameConflicts).toEqual([{ toolId: 'a', kept: 'get_customer', wanted: 'get_customer_v2' }]);
+    expect(out.deprecated).toEqual([]);
+    expect(rows.find((r) => r.id === 'a')).toMatchObject({ name: 'get_customer', description: 'get_customer_v2 v2' });
+    expect(rows.find((r) => r.id === 'b')).toMatchObject({ name: 'get_customer_v2', description: 'get_customer_v2 v2' });
+  });
+
+  it('a rename onto the name of a retired tool keeps the old name', async () => {
+    const { run, rows } = build([row('a', 'orders', 'GET', '/orders'), row('b', 'list_orders', 'GET', '/legacy/orders')]);
+    const out = await run([parsed('list_orders', 'GET', '/orders')]);
+
+    expect(out.renameConflicts).toEqual([{ toolId: 'a', kept: 'orders', wanted: 'list_orders' }]);
+    expect(out.deprecated).toEqual(['list_orders']);
+    expect(rows.find((r) => r.id === 'a')!.name).toBe('orders');
+  });
+
+  it('applies a rename once a later entry of the same import frees the name', async () => {
+    const { run, rows } = build([row('a', 'orders', 'GET', '/orders'), row('b', 'list_orders', 'GET', '/v1/orders')]);
+    const out = await run([parsed('list_orders', 'GET', '/orders'), parsed('list_orders_v1', 'GET', '/v1/orders')]);
+
+    expect(out.renameConflicts).toEqual([]);
+    expect(rows.map((r) => r.name).sort()).toEqual(['list_orders', 'list_orders_v1']);
+    expect(out.tools.find((t: any) => t.id === 'a').name).toBe('list_orders');
+  });
+
+  it('two parsed tools with the same name: the first is created, the second skipped and reported', async () => {
+    const { run, rows } = build([]);
+    const out = await run([parsed('search', 'GET', '/search'), parsed('search', 'POST', '/search')]);
+
+    expect(out.created).toBe(1);
+    expect(out.skipped).toEqual(['search']);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].endpointMapping).toEqual({ method: 'GET', path: '/search' });
+  });
+
+  it('a duplicate name does not overwrite the existing tool the first entry matched', async () => {
+    const { run, rows } = build([row('a', 'search', 'GET', '/search')]);
+    const out = await run([parsed('search', 'GET', '/search'), parsed('search', 'POST', '/search')]);
+
+    expect(out.updated).toBe(1);
+    expect(out.skipped).toEqual(['search']);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].endpointMapping).toEqual({ method: 'GET', path: '/search' });
+  });
+
+  it('a normal re-import updates in place, renames freely and reports nothing', async () => {
+    const { run, rows } = build([
+      row('a', 'list_orders', 'GET', '/orders', 'listOrders'),
+      row('b', 'get_order', 'GET', '/orders/{id}'),
+      row('c', 'old_tool', 'GET', '/gone'),
+    ]);
+    const out = await run([
+      parsed('orders_list', 'GET', '/orders', { operationId: 'listOrders' }),
+      parsed('get_order', 'GET', '/orders/{id}'),
+      parsed('create_order', 'POST', '/orders'),
+    ]);
+
+    expect(out).toMatchObject({ created: 1, updated: 2, deprecated: ['old_tool'], skipped: [], renameConflicts: [] });
+    expect(out.message).toBe('Imported tools: created 1, updated 2, deprecated 1');
+    expect(rows.find((r) => r.id === 'a')!.name).toBe('orders_list');
+    expect(rows.find((r) => r.id === 'c')).toMatchObject({ isEnabled: false });
   });
 });

@@ -1,0 +1,800 @@
+{
+  "slug": "yandex-disk",
+  "name": "Yandex Disk",
+  "aliases": [
+    "Yandex.Disk",
+    "Яндекс Диск",
+    "Яндекс.Диск"
+  ],
+  "description": "Let your AI work in Yandex Disk: browse folders, list all files or recent uploads, read file details, get download links, create folders, copy, move, publish or unpublish files, save a file from a URL and restore from the Trash. Signed in with your Yandex account.",
+  "instructions": "## Yandex Disk\nThis connector works with one Yandex Disk (Яндекс Диск) through the **Yandex Disk REST API** (`https://cloud-api.yandex.net/v1/disk`), signed in with the user's Yandex account: Disk totals, folder listings, a flat list of all files, recent uploads, file details, download links, folders, copy, move, public links, saving a file from a URL, the Trash and background operations.\n\n**Paths** look like `disk:/folder/file.txt`; `disk:/` is the root, and Trash entries are `trash:/...`. Use forward slashes and the exact names, including the extension.\n\n**Setup (about 5 minutes)**\n1. Sign in with the Yandex account whose Disk you want to use, open https://oauth.yandex.ru/client/new (or oauth.yandex.com) and create an app.\n2. Platform: **Web services**. Redirect URI: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself.\n3. Data access: add the Yandex Disk REST API permissions `cloud_api:disk.read` (read all of the Disk), `cloud_api:disk.write` (write anywhere on the Disk) and `cloud_api:disk.info` (Disk information). Do not choose `cloud_api:disk.app_folder` alone: it limits the app to its own folder.\n4. Create the app, copy **ClientID** into `YANDEX_DISK_CLIENT_ID` and **Client secret** into `YANDEX_DISK_CLIENT_SECRET`, and install.\n5. On the connector page click **Authorize with Provider**, pick the Yandex account and allow access. Run `yandex_disk_get_disk_info` to check.\n\n**Scopes**: the authorization request names no scope, so Yandex grants exactly the permissions ticked in the app (step 3). For a read-only setup, register the app with `cloud_api:disk.read` and `cloud_api:disk.info` only and switch off the write tools.\n\n**Tokens**: Yandex sends the token as `Authorization: OAuth <token>` (the word OAuth, not Bearer); the connector does this for you. Yandex tokens last about a year and come with a refresh token, which AnythingMCP uses to renew them. Revoking the app at https://id.yandex.ru/security (or changing its permissions) means authorizing again.\n\n**Writes: confirm first.** Creating folders, copying, moving, publishing, unpublishing, uploading from a URL and restoring change the Disk. Say what will happen and wait for the user's yes. `yandex_disk_publish` makes a file readable by anyone with the link. `yandex_disk_delete` is installed switched off; when enabled it moves to the Trash by default (`permanently` false) and only deletes for good with `permanently` true.\n\n**Background operations**: copy, move, restore and delete of large folders, and every upload from a URL, run in the background. Yandex then answers 202 with `href` ending in `/operations/<id>`; poll `yandex_disk_get_operation_status` with that id until `status` is `success` or `failed`.\n\n**No search**: the Yandex Disk REST API has no full-text or file-name search. List a folder with `yandex_disk_list_folder`, or page through `yandex_disk_list_files` (all files, filter by `media_type`) and compare names.\n\n**File contents**: this connector does not read or upload file bytes. `yandex_disk_get_download_link` returns a temporary URL the user can open; `yandex_disk_upload_from_url` saves a file that is already on the internet.\n\n**Common errors** (`error`, an English `description` and a Russian `message` in the body)\n- 401 `UnauthorizedError`: the sign-in is missing, revoked or expired; authorize again.\n- 403: the app lacks the permission (e.g. no `cloud_api:disk.write` for a write), the Disk is over its quota, or it is in read-only mode.\n- 404: the path does not exist; check the spelling, the extension and the `disk:/` prefix.\n- 409: the target already exists (use overwrite only with the user's consent), or the parent folder of the target is missing.\n- 423: the resource is locked by another operation, or uploads are paused; retry later.\n- 507: not enough free space on the Disk.\n- 429: too many requests; wait and retry once.\n\n**Out of scope here**: uploading or reading file bytes, custom properties, emptying the Trash, sharing folders with specific people, and Yandex 360 admin settings.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "yandex-disk",
+  "docsUrl": "https://yandex.com/dev/disk-api/doc/en/",
+  "requiredEnvVars": [
+    "YANDEX_DISK_CLIENT_ID",
+    "YANDEX_DISK_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://oauth.yandex.ru/client/new",
+  "envVarMeta": {
+    "YANDEX_DISK_CLIENT_ID": {
+      "label": "ClientID",
+      "kind": "credential",
+      "help": "oauth.yandex.ru, your app, ClientID. The app needs the Yandex Disk REST API permissions cloud_api:disk.read, cloud_api:disk.write and cloud_api:disk.info.",
+      "link": "https://oauth.yandex.ru/",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "patternMessage": "Paste the ClientID as Yandex shows it: letters and digits, no spaces."
+    },
+    "YANDEX_DISK_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same app page: Client secret.",
+      "link": "https://oauth.yandex.ru/",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "patternMessage": "Paste the client secret as Yandex shows it: letters and digits, no spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Yandex refused the sign-in. Click Authorize with Provider again with the Yandex account that owns the Disk.",
+    "403": "The Yandex app lacks a Disk permission. Add cloud_api:disk.read, cloud_api:disk.write and cloud_api:disk.info to the app at oauth.yandex.ru, then authorize again.",
+    "rate_limited": "Yandex Disk is throttling requests. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "yandex_disk_get_disk_info"
+  },
+  "prerequisites": "A Yandex account with Yandex Disk and an app registered at oauth.yandex.ru (platform Web services) with the redirect URI below and the Disk permissions cloud_api:disk.read, cloud_api:disk.write and cloud_api:disk.info. About 5 minutes.",
+  "connector": {
+    "name": "Yandex Disk REST API",
+    "type": "REST",
+    "baseUrl": "https://cloud-api.yandex.net/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{YANDEX_DISK_CLIENT_ID}}",
+      "clientSecret": "{{YANDEX_DISK_CLIENT_SECRET}}",
+      "authorizationUrl": "https://oauth.yandex.ru/authorize?force_confirm=yes",
+      "tokenUrl": "https://oauth.yandex.ru/token",
+      "tokenPrefix": "OAuth"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/disk"
+  },
+  "tools": [
+    {
+      "name": "yandex_disk_get_disk_info",
+      "description": "Get the Disk's totals: total_space, used_space and trash_size in bytes, the owner (login, display_name), whether the account is paid, the upload size limit (max_file_size) and the paths of the system folders (system_folders, e.g. downloads, photostream). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disk"
+      }
+    },
+    {
+      "name": "yandex_disk_list_folder",
+      "description": "List what is inside one folder of the Disk (files and subfolders), one page at a time. Paths look like disk:/folder/file. Returns path, total, limit, offset and items (name, path, type file or dir, size, mime_type, media_type, created, modified, public_url when published). There is no search endpoint in the Yandex Disk API: to find a file by name, list its folder, or use yandex_disk_list_files and compare names. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "disk:/",
+            "description": "The folder to list, e.g. disk:/Documents/Contracts. Default disk:/ (the root)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "How many entries to return, 1 to 1000 (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many entries to skip, for the next page: previous offset plus limit."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "name",
+              "-name",
+              "path",
+              "-path",
+              "created",
+              "-created",
+              "modified",
+              "-modified",
+              "size",
+              "-size"
+            ],
+            "description": "Sort by this field; a leading minus sorts descending (e.g. -modified for newest first). Default: by name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disk/resources",
+        "queryParams": {
+          "path": "$path",
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort": "$sort"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "path": "$.path",
+            "type": "$.type",
+            "total": "$._embedded.total",
+            "limit": "$._embedded.limit",
+            "offset": "$._embedded.offset",
+            "items": {
+              "$from": "$._embedded.items[*]",
+              "$select": {
+                "name": "name",
+                "path": "path",
+                "type": "type",
+                "size": "size",
+                "mime_type": "mime_type",
+                "media_type": "media_type",
+                "created": "created",
+                "modified": "modified",
+                "public_url": "public_url",
+                "resource_id": "resource_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_get_resource",
+      "description": "Get the details of one file or folder by its path (disk:/folder/file): name, type, size, mime_type, media_type, md5 and sha256, created and modified, public_key and public_url when it is published, custom_properties, and preview URLs. The folder's contents are left out here; use yandex_disk_list_folder for those. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path on the Disk, written as disk:/folder/file.txt (disk:/ is the root). A path without the disk:/ prefix is read from the root too."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disk/resources",
+        "queryParams": {
+          "path": "$path"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "_embedded",
+            "sizes"
+          ]
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_list_files",
+      "description": "List every file on the Disk as one flat list, across all folders (folders themselves are not listed), optionally only certain kinds such as images or documents. Paths look like disk:/folder/file. Returns limit, offset and items (name, path, size, mime_type, media_type, created, modified, public_url). Useful to look for a file when you do not know its folder: page through and compare names, since the API has no search. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_type": {
+            "type": "string",
+            "description": "Only files of these kinds, comma-separated, e.g. image,video or document,spreadsheet. Kinds: audio, backup, book, compressed, data, development, diskimage, document, encoded, executable, flash, font, image, settings, spreadsheet, text, unknown, video, web."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "How many entries to return, 1 to 1000 (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many entries to skip, for the next page: previous offset plus limit."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "name",
+              "-name",
+              "path",
+              "-path",
+              "created",
+              "-created",
+              "modified",
+              "-modified",
+              "size",
+              "-size"
+            ],
+            "description": "Sort by this field; a leading minus sorts descending. Default: by name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disk/resources/files",
+        "queryParams": {
+          "media_type": "$media_type",
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort": "$sort"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "name": "name",
+                "path": "path",
+                "type": "type",
+                "size": "size",
+                "mime_type": "mime_type",
+                "media_type": "media_type",
+                "created": "created",
+                "modified": "modified",
+                "public_url": "public_url",
+                "resource_id": "resource_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_list_last_uploaded",
+      "description": "List the files uploaded most recently, newest first, optionally only certain kinds such as images. Paths look like disk:/folder/file. Returns limit and items (name, path, size, mime_type, media_type, created, modified). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_type": {
+            "type": "string",
+            "description": "Only files of these kinds, comma-separated, e.g. image,video or document,spreadsheet. Kinds: audio, backup, book, compressed, data, development, diskimage, document, encoded, executable, flash, font, image, settings, spreadsheet, text, unknown, video, web."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "How many entries to return, 1 to 1000 (default 20)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disk/resources/last-uploaded",
+        "queryParams": {
+          "media_type": "$media_type",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "limit": "$.limit",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "name": "name",
+                "path": "path",
+                "type": "type",
+                "size": "size",
+                "mime_type": "mime_type",
+                "media_type": "media_type",
+                "created": "created",
+                "modified": "modified",
+                "public_url": "public_url",
+                "resource_id": "resource_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_get_download_link",
+      "description": "Get a temporary download URL for a file or folder (a folder downloads as a zip archive). Returns href, the link to open or fetch, valid for a few hours; it does not return the file's content. Paths look like disk:/folder/file. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path on the Disk, written as disk:/folder/file.txt (disk:/ is the root). A path without the disk:/ prefix is read from the root too."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disk/resources/download",
+        "queryParams": {
+          "path": "$path"
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_list_public",
+      "description": "List the files and folders the user has published (shared by public link). Returns limit, offset and items with name, path (disk:/...), type and public_url. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "dir"
+            ],
+            "description": "Only files (file) or only folders (dir)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "How many entries to return, 1 to 1000 (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many entries to skip, for the next page: previous offset plus limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disk/resources/public",
+        "queryParams": {
+          "type": "$type",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "limit": "$.limit",
+            "offset": "$.offset",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "name": "name",
+                "path": "path",
+                "type": "type",
+                "size": "size",
+                "mime_type": "mime_type",
+                "media_type": "media_type",
+                "created": "created",
+                "modified": "modified",
+                "public_url": "public_url",
+                "resource_id": "resource_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_get_public_resource",
+      "description": "Read the details of a public Yandex Disk link, the user's own or anyone's: name, type, size, owner and, for a folder, its contents (_embedded.items). Pass the public URL (https://disk.yandex.ru/d/...) or the public_key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "public_key": {
+            "type": "string",
+            "description": "The public link (e.g. https://disk.yandex.ru/d/AbCdEf123) or its public_key."
+          },
+          "path": {
+            "type": "string",
+            "description": "Inside a public folder: the path of an entry relative to it, e.g. /photos/1.jpg."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "How many entries to return, 1 to 1000 (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many entries to skip, for the next page: previous offset plus limit."
+          }
+        },
+        "required": [
+          "public_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disk/public/resources",
+        "queryParams": {
+          "public_key": "$public_key",
+          "path": "$path",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_create_folder",
+      "description": "Create a folder. The parent folder must exist (create nested folders one level at a time). Paths look like disk:/folder/new-folder. Returns href of the new folder; 409 means it already exists or the parent is missing. Confirm the path with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The folder to create, e.g. disk:/Projects/2026."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/disk/resources",
+        "queryParams": {
+          "path": "$path"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "yandex_disk_copy",
+      "description": "Copy a file or folder to a new path. Paths look like disk:/folder/file. With overwrite true an existing file at the target is replaced, so ask the user first. Returns 201 with href to the copy, or 202 for a large copy: When Yandex runs it in the background the answer is 202 with href ending in /operations/<operation_id>: pass that id to yandex_disk_get_operation_status until status is success or failed. Confirm source and target with the user before copying.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "What to copy, e.g. disk:/Reports/q3.xlsx."
+          },
+          "path": {
+            "type": "string",
+            "description": "The new path including the name, e.g. disk:/Archive/q3.xlsx."
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false,
+            "description": "Replace an existing file or folder at the target (default false: 409 instead)."
+          },
+          "force_async": {
+            "type": "boolean",
+            "description": "Always run in the background and return an operation."
+          }
+        },
+        "required": [
+          "from",
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/disk/resources/copy",
+        "queryParams": {
+          "from": "$from",
+          "path": "$path",
+          "overwrite": "$overwrite",
+          "force_async": "$force_async"
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_move",
+      "description": "Move or rename a file or folder. Paths look like disk:/folder/file; to rename, keep the folder and change the name. With overwrite true an existing file at the target is replaced, so ask the user first. Returns 201 with href to the new location, or 202 for a large move: When Yandex runs it in the background the answer is 202 with href ending in /operations/<operation_id>: pass that id to yandex_disk_get_operation_status until status is success or failed. Confirm source and target with the user before moving.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "What to move, e.g. disk:/Inbox/scan.pdf."
+          },
+          "path": {
+            "type": "string",
+            "description": "The new path including the name, e.g. disk:/Invoices/2026/scan.pdf."
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false,
+            "description": "Replace an existing file or folder at the target (default false: 409 instead)."
+          },
+          "force_async": {
+            "type": "boolean",
+            "description": "Always run in the background and return an operation."
+          }
+        },
+        "required": [
+          "from",
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/disk/resources/move",
+        "queryParams": {
+          "from": "$from",
+          "path": "$path",
+          "overwrite": "$overwrite",
+          "force_async": "$force_async"
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_publish",
+      "description": "Publish a file or folder: anyone with the link can then open and download it. Returns href to the resource; call yandex_disk_get_resource on the same path to read the public_url to share. Paths look like disk:/folder/file. This makes the content public, so confirm with the user before publishing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path on the Disk, written as disk:/folder/file.txt (disk:/ is the root). A path without the disk:/ prefix is read from the root too."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/disk/resources/publish",
+        "queryParams": {
+          "path": "$path"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yandex_disk_unpublish",
+      "description": "Stop sharing a published file or folder: its public link stops working (publishing again creates a new link). Paths look like disk:/folder/file. Confirm with the user first, since people holding the link lose access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path on the Disk, written as disk:/folder/file.txt (disk:/ is the root). A path without the disk:/ prefix is read from the root too."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/disk/resources/unpublish",
+        "queryParams": {
+          "path": "$path"
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_upload_from_url",
+      "description": "Save a file from a public internet URL onto the Disk. Yandex downloads it in the background: the answer is 202 with href ending in /operations/<operation_id>; call yandex_disk_get_operation_status with that id until status is success (the file is there) or failed. The target folder must exist and the target path must not (409 otherwise). Paths look like disk:/folder/file. Confirm the URL and target with the user before uploading.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The file's address on the internet, http or https."
+          },
+          "path": {
+            "type": "string",
+            "description": "Where to save it, including the file name, e.g. disk:/Downloads/report.pdf."
+          },
+          "disable_redirects": {
+            "type": "boolean",
+            "description": "Do not follow redirects of the URL."
+          }
+        },
+        "required": [
+          "url",
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/disk/resources/upload",
+        "queryParams": {
+          "url": "$url",
+          "path": "$path",
+          "disable_redirects": "$disable_redirects"
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_get_operation_status",
+      "description": "Check a background operation started by upload from URL, copy, move, restore or delete: status is in-progress, success or failed. The operation_id is the last part of the href those tools return (…/v1/disk/operations/<operation_id>). Poll every few seconds, not in a tight loop. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "description": "The id at the end of the operation href."
+          }
+        },
+        "required": [
+          "operation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disk/operations/{operation_id}"
+      }
+    },
+    {
+      "name": "yandex_disk_list_trash",
+      "description": "List what is in the Trash. Entries have trash paths (trash:/name_with_suffix); deleted is when they were removed and origin_path where they came from. Returns total, limit, offset and items. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "default": "trash:/",
+            "description": "trash:/ for the whole Trash (default), or a deleted folder inside it."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "How many entries to return, 1 to 1000 (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many entries to skip, for the next page: previous offset plus limit."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "deleted",
+              "-deleted",
+              "created",
+              "-created"
+            ],
+            "description": "Sort by deletion or creation date; a leading minus sorts descending (-deleted: most recently deleted first)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disk/trash/resources",
+        "queryParams": {
+          "path": "$path",
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort": "$sort"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "total": "$._embedded.total",
+            "limit": "$._embedded.limit",
+            "offset": "$._embedded.offset",
+            "items": {
+              "$from": "$._embedded.items[*]",
+              "$select": {
+                "name": "name",
+                "path": "path",
+                "type": "type",
+                "size": "size",
+                "mime_type": "mime_type",
+                "deleted": "deleted",
+                "origin_path": "origin_path",
+                "created": "created"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_restore_from_trash",
+      "description": "Restore an entry from the Trash to where it was deleted from (origin_path), optionally under a new name. Pass its trash path (trash:/...) from yandex_disk_list_trash. With overwrite true an existing file of the same name is replaced, so ask first. Returns 201 with href, or 202 for a large folder: When Yandex runs it in the background the answer is 202 with href ending in /operations/<operation_id>: pass that id to yandex_disk_get_operation_status until status is success or failed. Confirm with the user before restoring.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The entry's path in the Trash, e.g. trash:/report.pdf_6a8c1f..."
+          },
+          "name": {
+            "type": "string",
+            "description": "Restore under this name instead of the original one."
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false,
+            "description": "Replace an existing file with the same name (default false: 409 instead)."
+          },
+          "force_async": {
+            "type": "boolean",
+            "description": "Always run in the background and return an operation."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/disk/trash/resources/restore",
+        "queryParams": {
+          "path": "$path",
+          "name": "$name",
+          "overwrite": "$overwrite",
+          "force_async": "$force_async"
+        }
+      }
+    },
+    {
+      "name": "yandex_disk_delete",
+      "description": "Delete a file or folder. By default (permanently false) it goes to the Trash and can be brought back with yandex_disk_restore_from_trash; permanently true deletes it for good. Paths look like disk:/folder/file. Returns 204 when done, or 202 for a large folder: When Yandex runs it in the background the answer is 202 with href ending in /operations/<operation_id>: pass that id to yandex_disk_get_operation_status until status is success or failed. Installed switched off. Always confirm the exact path with the user before deleting, and never set permanently without an explicit request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path on the Disk, written as disk:/folder/file.txt (disk:/ is the root). A path without the disk:/ prefix is read from the root too."
+          },
+          "permanently": {
+            "type": "boolean",
+            "default": false,
+            "description": "Delete without moving to the Trash. Default false: the entry goes to the Trash."
+          },
+          "md5": {
+            "type": "string",
+            "description": "Only delete the file if its MD5 still equals this (protects against deleting a changed file)."
+          },
+          "force_async": {
+            "type": "boolean",
+            "description": "Always run in the background and return an operation."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/disk/resources",
+        "queryParams": {
+          "path": "$path",
+          "permanently": "$permanently",
+          "md5": "$md5",
+          "force_async": "$force_async"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

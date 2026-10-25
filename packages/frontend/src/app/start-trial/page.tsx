@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { license } from '@/lib/api';
+import { license, productEvents } from '@/lib/api';
 import { LogoIcon } from '@/components/logo-icon';
 import { PlanPicker } from '@/components/plan-picker';
 import { Button } from '@/components/ui/button';
@@ -20,12 +20,14 @@ import {
   readPlanIntent,
   readPromoCode,
   takeAuthorizationReturn,
+  trialRunning,
   writeCardTrialPrompt,
   type PlanSelection,
 } from '@/lib/card-trial';
 import { useCardCheckout } from '@/lib/use-card-checkout';
+import { formatLocal, useLocalPricing } from '@/lib/local-currency';
 import { fetchCardTrialKind } from '@/lib/use-card-trial-eligibility';
-import { parseCheckoutSource, type CheckoutSource } from '@/lib/first-success-offer';
+import { parseCheckoutSource, type CheckoutSource } from '@/lib/checkout-source';
 
 /**
  * Cloud only: the card-trial offer shown once after sign-up (see
@@ -40,11 +42,36 @@ import { parseCheckoutSource, type CheckoutSource } from '@/lib/first-success-of
  * plan's price, instead of "€0 today". If the site still refuses the trial at
  * checkout, the page switches to the same wording before sending anyone on.
  *
- * Anyone it does not apply to (self-hosted, non-admins, no live trial) is
+ * With under 48 hours of the free trial left, Stripe cannot take a trial
+ * ending then: the page sells the plan billed today instead, and says so
+ * (someone who clicked "Buy" on the pricing page in their trial's last day
+ * lands here). The same wording as for a returning subscriber, with its own
+ * reason.
+ *
+ * Anyone it does not apply to (self-hosted, non-admins, no running trial) is
  * sent to the dashboard.
+ *
+ * `?source=` names the entry point that led here (lib/checkout-source.ts). It
+ * goes with the checkout into Stripe metadata, and with the page's two
+ * product events: start_trial_viewed (once per load) and
+ * start_trial_checkout_started (the button), so each entry point's clicks,
+ * emails included, can be read against the checkouts it produced.
  */
+/**
+ * 'mobile' on a touch screen, otherwise 'desktop': all start_trial_viewed
+ * records of the device, so the card-trial page can be read per device.
+ */
+function deviceKind(): 'mobile' | 'desktop' {
+  try {
+    return window.matchMedia('(pointer: coarse)').matches ? 'mobile' : 'desktop';
+  } catch {
+    return 'desktop';
+  }
+}
+
 export default function StartTrialPage() {
   const { token, user, isLoading, deploymentMode, deploymentModeLoaded } = useAuth();
+  const localPricing = useLocalPricing(deploymentMode === 'cloud');
   const router = useRouter();
   const checkout = useCardCheckout();
   const [trialEnd, setTrialEnd] = useState<string | null>(null);
@@ -52,9 +79,14 @@ export default function StartTrialPage() {
   const [selection, setSelection] = useState<PlanSelection>(DEFAULT_SELECTION);
   const [promo, setPromo] = useState<string | null>(null);
   // 'pay': this address had a subscription, so the plan starts and is billed today.
-  const [kind, setKind] = useState<'trial' | 'pay'>('trial');
-  // Which in-app offer sent the user here (?source=first_success), for Stripe.
-  const [source, setSource] = useState<CheckoutSource | null>(null);
+  // 'ending': under 48 hours of the free trial left, too late for a card trial;
+  // billed today as well.
+  const [kind, setKind] = useState<'trial' | 'pay' | 'ending'>('trial');
+  // When the free trial ends, also when it is too near for a card trial.
+  const [freeTrialEnd, setFreeTrialEnd] = useState<string | null>(null);
+  // Which entry point sent the user here (?source=…), for Stripe and the events.
+  const [source, setSource] = useState<CheckoutSource>('start_trial');
+  const viewReported = useRef(false);
   // Set when the user came from "Connect" in an AI client: every way out of
   // this page goes back to that authorization.
   const [authorizationReturn, setAuthorizationReturn] = useState<string | null>(null);
@@ -84,17 +116,27 @@ export default function StartTrialPage() {
     Promise.all([license.getStatus(token), fetchCardTrialKind(token)])
       .then(([lic, trialKind]) => {
         if (!live) return;
-        if (!cardTrialEligible({ isCloud: true, role: user.role, license: lic }) || trialKind === 'none') {
+        if (!trialRunning(lic)) {
           leave('/');
           return;
         }
-        setKind(trialKind);
+        // The card trial needs 48 hours of the free trial left; with less,
+        // the plan is sold billed today.
+        const cardTrial = cardTrialEligible({ isCloud: true, role: user.role, license: lic });
+        const pageKind = cardTrial && trialKind !== 'none' ? trialKind : 'ending';
+        setKind(pageKind);
+        setFreeTrialEnd(lic.expiresAt ?? null);
         setAuthorizationReturn(readAuthorizationReturn());
         setTrialEnd(cardTrialDisplayEnd(lic.expiresAt));
         setSelection(readPlanIntent() ?? DEFAULT_SELECTION);
         setPromo(readPromoCode());
-        setSource(parseCheckoutSource(new URLSearchParams(window.location.search).get('source')));
+        const from = parseCheckoutSource(new URLSearchParams(window.location.search).get('source')) ?? 'start_trial';
+        setSource(from);
         setReady(true);
+        if (!viewReported.current) {
+          viewReported.current = true;
+          productEvents.track('start_trial_viewed', token, { source: from, kind: pageKind, device: deviceKind() });
+        }
       })
       .catch(() => {
         if (live) leave('/');
@@ -105,7 +147,7 @@ export default function StartTrialPage() {
   }, [isLoading, deploymentModeLoaded, deploymentMode, token, user, router, leave]);
 
   // The licence site refused the trial at checkout: say so before sending anyone on.
-  const paysToday = kind === 'pay' || !!checkout.chargesTodayUrl;
+  const paysToday = kind !== 'trial' || !!checkout.chargesTodayUrl;
 
   const handleStart = async () => {
     if (!user) return;
@@ -114,12 +156,14 @@ export default function StartTrialPage() {
       window.location.assign(checkout.chargesTodayUrl);
       return;
     }
+    if (token) productEvents.track('start_trial_checkout_started', token, { source, kind: paysToday ? 'pay' : 'trial' });
     const outcome = await checkout.start(selection, !paysToday, source);
     if (outcome === 'redirected') writeCardTrialPrompt(user.id, 'checkout');
   };
 
   const handleSkip = () => {
     if (user) writeCardTrialPrompt(user.id, 'skipped');
+    if (token) productEvents.track('start_trial_skipped', token, { source, kind: paysToday ? 'pay' : 'trial' });
     // Back to the AI client's authorization if one is waiting; otherwise the
     // dashboard decides what comes next (usually the /welcome wizard).
     leave('/');
@@ -134,9 +178,15 @@ export default function StartTrialPage() {
   }
 
   const endLong = formatTrialEnd(trialEnd, 'long');
+  const freeTrialEndLong = formatTrialEnd(freeTrialEnd, 'long');
   const plan = planById(selection.plan);
-  const price = formatPlanPrice(plan, selection.period);
-  const dueToday = formatEur(selection.period === 'yearly' ? plan.yearly : plan.monthly);
+  // Outside the euro area Stripe charges in the visitor's currency: say
+  // roughly how much, next to the exact euro price.
+  const euros = selection.period === 'yearly' ? plan.yearly : plan.monthly;
+  const local = formatLocal(euros, localPricing);
+  const exactPrice = formatPlanPrice(plan, selection.period);
+  const price = local ? `≈ ${local}/${selection.period === 'yearly' ? 'year' : 'month'} (${exactPrice})` : exactPrice;
+  const dueToday = local ? `≈ ${local} (${formatEur(euros)})` : formatEur(euros);
   const startLabel = checkout.loading
     ? 'Opening checkout…'
     : checkout.error
@@ -174,7 +224,14 @@ export default function StartTrialPage() {
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
             {paysToday ? 'Keep your workspace running' : 'Your free trial'}
           </h1>
-          {paysToday ? (
+          {kind === 'ending' ? (
+            <p className="text-[var(--text-2)] max-w-xl mx-auto">
+              Your free trial ends{freeTrialEndLong ? <> on <strong className="text-[var(--text)]">{freeTrialEndLong}</strong></> : ' soon'},
+              too soon to carry on with a card trial.{' '}
+              <strong className="text-[var(--text)]">Your plan starts today and is billed today.</strong> Your
+              workspace, connectors and settings stay exactly as they are.
+            </p>
+          ) : paysToday ? (
             <p className="text-[var(--text-2)] max-w-xl mx-auto">
               This email address has had an AnythingMCP subscription before, so a new free trial is
               not available with a card. <strong className="text-[var(--text)]">Your plan starts today

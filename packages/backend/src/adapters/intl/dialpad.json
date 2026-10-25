@@ -1,0 +1,1384 @@
+{
+  "slug": "dialpad",
+  "name": "Dialpad",
+  "description": "Let your AI work with Dialpad: look up users, offices and call centers, review calls, recordings and Dialpad Ai transcripts, check queues live, start calls, send text messages, manage contacts and export call statistics.",
+  "instructions": "## Dialpad\nThis connector works with one Dialpad company through the **Dialpad API v2** (`https://dialpad.com/api/v2`) with an API key sent as a Bearer token. It reads users, offices, call centers, departments, numbers, calls with recordings and Dialpad Ai transcripts, contacts and statistics, and it can start calls, send text messages, create contacts and share recordings.\n\n**Setup (about 3 minutes, Dialpad company admin needed)**\n1. Sign in to Dialpad as a company admin and open **Admin Settings**.\n2. Under **My Company**, open **Authentication**, then **API Keys**, and click **Add key**. Name it, choose when it expires and tick the additional scope `calls:list` (needed by `dialpad_list_calls`); add `recordings_export` too if recording URLs stay empty. Save and copy the key; it is shown only once.\n3. Paste it into `DIALPAD_API_KEY` and install. Check the setup with `dialpad_list_offices` and `dialpad_get_company`.\n\nA company admin key reaches every user, call and contact of the company: share this MCP server only with people allowed to see them. Some tools (`dialpad_get_company`, `dialpad_list_numbers`, `dialpad_list_calls`) answer 403 to keys of non-admins. The Dialpad sandbox (sandbox.dialpad.com) is not supported here.\n\n**Personal data.** Calls, phone numbers, contacts, call recordings, voicemails, transcripts and statistics exports are personal data of callers and staff. Read only what the user asks for, and do not create public recording links without a clear reason.\n\n**Calls and texts reach real people and can cost money: confirm first.** `dialpad_initiate_call` rings the user's devices and then dials the number; `dialpad_send_sms` texts up to 10 numbers. International and premium destinations are billed on top of the plan. Before calling them, show the user sender, recipient and content and wait for a yes. `dialpad_create_contact` and `dialpad_create_recording_share_link` also need a yes first.\n\n**How to work**\n1. Organisation: `dialpad_get_company`, `dialpad_list_offices`, `dialpad_get_office`, `dialpad_list_users`, `dialpad_get_user`, `dialpad_list_departments`, `dialpad_get_department`, `dialpad_list_call_centers`, `dialpad_get_call_center`, `dialpad_get_call_center_status`, `dialpad_list_numbers`.\n2. Calls: `dialpad_list_calls` lists ended calls (filter by started_after and started_before in Unix milliseconds and by one target), `dialpad_get_call` gives recording details, share links and the transcription text. Durations are in milliseconds.\n3. Dialpad Ai transcripts: `dialpad_get_call_transcript` for the lines and Ai moments, `dialpad_get_call_transcript_url` for a link to the call review page. Calls without Dialpad Ai have no transcript (404).\n4. Recordings: the URLs in recording_details need a Dialpad login; `dialpad_create_recording_share_link` makes a share link with a chosen privacy, `dialpad_get_recording_share_link` reads it again.\n5. Calling and texting: `dialpad_initiate_call`, `dialpad_send_sms`.\n6. Contacts: `dialpad_list_contacts`, `dialpad_get_contact`, `dialpad_create_contact`.\n7. Statistics: `dialpad_start_stats_export` starts an export and returns request_id; poll `dialpad_get_stats_export` every few seconds until status is complete, then give the user the download_url (a CSV file).\n\n**Paging**: lists answer with `items` and a `cursor`; pass the cursor back for the next page. The last page has no cursor. Pages hold up to 100 items.\n\n**Rate limits** (per company): most reads 1200 per minute, `dialpad_get_call` only 10 per minute, `dialpad_initiate_call` 5 per minute, `dialpad_send_sms` 100 per minute (800 on higher tiers), creating contacts 100 per minute, statistics exports 200 per hour. A 429 means wait and try again.\n\n**Common errors**\n- 401: the API key is wrong, deleted or pasted with a Bearer prefix.\n- 403: the key belongs to a non-admin, lacks access to this office or resource, or lacks the scope (calls:list for the call list).\n- 404: no such id, or no transcript for that call.\n- 400 on a text: a number is not in E.164 format or the sender may not use from_number.\n\n**Out of scope here**: hanging up or transferring live calls, changing users, offices, numbers and routing, webhooks and event subscriptions, meetings and faxes. Dialpad Ai call summaries (recaps) are only delivered through call event webhooks, not through this API.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "dialpad",
+  "docsUrl": "https://developers.dialpad.com/reference",
+  "requiredEnvVars": [
+    "DIALPAD_API_KEY"
+  ],
+  "appRegistrationUrl": "https://help.dialpad.com/docs/create-an-api-key",
+  "envVarMeta": {
+    "DIALPAD_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Dialpad Admin Settings, My Company, Authentication, API Keys, Add key (company admin). The key is shown only once. Paste it without the Bearer prefix.",
+      "link": "https://help.dialpad.com/docs/create-an-api-key",
+      "pattern": "^(?!Bearer )\\S{16,}$",
+      "patternMessage": "Paste the API key as Dialpad shows it, without spaces or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Dialpad refused the API key: it is wrong, deleted or was pasted with a Bearer prefix. Create a new key under Admin Settings, My Company, Authentication, API Keys.",
+    "403": "Dialpad accepted the key but refused this request: the key was not created by a company admin or has no access to this office.",
+    "404": "Dialpad does not know this id, or the call has no transcript.",
+    "429": "Dialpad is rate limiting this company. Some endpoints allow only a few requests per minute; wait a minute and try again."
+  },
+  "probe": {
+    "tool": "dialpad_list_offices"
+  },
+  "prerequisites": "A Dialpad Pro or Enterprise plan where you are a company admin, to create an API key under Admin Settings. Transcripts need Dialpad Ai on the lines. About 3 minutes.",
+  "connector": {
+    "name": "Dialpad API v2",
+    "type": "REST",
+    "baseUrl": "https://dialpad.com/api/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{DIALPAD_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/offices"
+  },
+  "tools": [
+    {
+      "name": "dialpad_get_company",
+      "description": "Read the Dialpad company: name, domain, country, pricing tier (account_type), admin email, state and number of offices. Needs an API key created by a company admin.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "domain": "$.domain",
+            "country": "$.country",
+            "state": "$.state",
+            "account_type": "$.account_type",
+            "admin_email": "$.admin_email",
+            "office_count": "$.office_count"
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_list_users",
+      "description": "List Dialpad users with id, names, emails, phone numbers, extension, office, license, admin flag and live presence (online, available, on duty, do not disturb). Filter by email, phone number, state or admin role. Paged with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Only the user with this email address."
+          },
+          "number": {
+            "type": "string",
+            "description": "Only the user with this phone number (E.164, e.g. +14155550123)."
+          },
+          "state": {
+            "type": "string",
+            "description": "User state, e.g. active (default all non-deleted users when left out).",
+            "enum": [
+              "active",
+              "all",
+              "cancelled",
+              "deleted",
+              "pending",
+              "suspended"
+            ]
+          },
+          "company_admin": {
+            "type": "boolean",
+            "description": "true for company admins only, false for everyone else."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor from the previous answer, for the next page. The last page has no cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "email": "$email",
+          "number": "$number",
+          "state": "$state",
+          "company_admin": "$company_admin",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "cursor": "$.cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "display_name": "display_name",
+                "first_name": "first_name",
+                "last_name": "last_name",
+                "emails": "emails",
+                "phone_numbers": "phone_numbers",
+                "extension": "extension",
+                "job_title": "job_title",
+                "office_id": "office_id",
+                "state": "state",
+                "is_admin": "is_admin",
+                "license": "license",
+                "is_online": "is_online",
+                "is_available": "is_available",
+                "is_on_duty": "is_on_duty",
+                "do_not_disturb": "do_not_disturb",
+                "status_message": "status_message",
+                "timezone": "timezone",
+                "language": "language",
+                "country": "country",
+                "date_active": "date_active"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "dialpad_get_user",
+      "description": "Read one Dialpad user by id: names, emails, phone numbers, extension, office, job title, license, time zone and live presence. Use \"me\" with a user-level API key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The user id from dialpad_list_users, or \"me\" for the owner of a user-level key."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "display_name": "$.display_name",
+            "first_name": "$.first_name",
+            "last_name": "$.last_name",
+            "emails": "$.emails",
+            "phone_numbers": "$.phone_numbers",
+            "extension": "$.extension",
+            "job_title": "$.job_title",
+            "office_id": "$.office_id",
+            "state": "$.state",
+            "is_admin": "$.is_admin",
+            "license": "$.license",
+            "is_online": "$.is_online",
+            "is_available": "$.is_available",
+            "is_on_duty": "$.is_on_duty",
+            "do_not_disturb": "$.do_not_disturb",
+            "status_message": "$.status_message",
+            "timezone": "$.timezone",
+            "language": "$.language",
+            "country": "$.country",
+            "date_active": "$.date_active"
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_list_offices",
+      "description": "List the Dialpad offices this API key can reach with id, name, country, time zone, main phone numbers and whether the office is open. Paged with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "active_only": {
+            "type": "boolean",
+            "description": "true to list only active offices."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor from the previous answer, for the next page. The last page has no cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offices",
+        "queryParams": {
+          "active_only": "$active_only",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "cursor": "$.cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "state": "state",
+                "country": "country",
+                "timezone": "timezone",
+                "is_primary_office": "is_primary_office",
+                "phone_numbers": "phone_numbers",
+                "availability_status": "availability_status",
+                "ring_seconds": "ring_seconds"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_get_office",
+      "description": "Read one office by id: name, country, time zone, phone numbers, availability, ring time and routing basics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "office_id": {
+            "type": "string",
+            "description": "The office id from dialpad_list_offices."
+          }
+        },
+        "required": [
+          "office_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offices/{office_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "state": "$.state",
+            "country": "$.country",
+            "timezone": "$.timezone",
+            "is_primary_office": "$.is_primary_office",
+            "phone_numbers": "$.phone_numbers",
+            "availability_status": "$.availability_status",
+            "ring_seconds": "$.ring_seconds"
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_list_call_centers",
+      "description": "List the call centers (support and sales queues) of the company with id, name, office, phone numbers, time zone and availability. Filter by office or by part of the name. Paged with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "office_id": {
+            "type": "integer",
+            "description": "Only call centers of this office."
+          },
+          "name_search": {
+            "type": "string",
+            "description": "Only call centers whose name contains this text."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor from the previous answer, for the next page. The last page has no cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/callcenters",
+        "queryParams": {
+          "office_id": "$office_id",
+          "name_search": "$name_search",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "cursor": "$.cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "office_id": "office_id",
+                "state": "state",
+                "country": "country",
+                "timezone": "timezone",
+                "phone_numbers": "phone_numbers",
+                "availability_status": "availability_status",
+                "hours_on": "hours_on",
+                "ring_seconds": "ring_seconds",
+                "group_description": "group_description"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_get_call_center",
+      "description": "Read one call center by id: name, office, phone numbers, time zone, opening hours flag, ring time and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_center_id": {
+            "type": "string",
+            "description": "The call center id from dialpad_list_call_centers."
+          }
+        },
+        "required": [
+          "call_center_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/callcenters/{call_center_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "office_id": "$.office_id",
+            "state": "$.state",
+            "country": "$.country",
+            "timezone": "$.timezone",
+            "phone_numbers": "$.phone_numbers",
+            "availability_status": "$.availability_status",
+            "hours_on": "$.hours_on",
+            "ring_seconds": "$.ring_seconds",
+            "group_description": "$.group_description"
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_get_call_center_status",
+      "description": "Read the live state of a call center queue: availability, capacity, operators on duty, calls waiting (pending) and the longest current wait time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_center_id": {
+            "type": "string",
+            "description": "The call center id from dialpad_list_call_centers."
+          }
+        },
+        "required": [
+          "call_center_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/callcenters/{call_center_id}/status"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "availability": "$.availability",
+            "capacity": "$.capacity",
+            "on_duty_operators": "$.on_duty_operators",
+            "pending": "$.pending",
+            "longest_call_wait_time": "$.longest_call_wait_time"
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_list_departments",
+      "description": "List the departments of the company with id, name, office, phone numbers, time zone and availability. Filter by office or by part of the name. Paged with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "office_id": {
+            "type": "integer",
+            "description": "Only departments of this office."
+          },
+          "name_search": {
+            "type": "string",
+            "description": "Only departments whose name contains this text."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor from the previous answer, for the next page. The last page has no cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments",
+        "queryParams": {
+          "office_id": "$office_id",
+          "name_search": "$name_search",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "cursor": "$.cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "office_id": "office_id",
+                "state": "state",
+                "country": "country",
+                "timezone": "timezone",
+                "phone_numbers": "phone_numbers",
+                "availability_status": "availability_status",
+                "hours_on": "hours_on",
+                "ring_seconds": "ring_seconds",
+                "group_description": "group_description"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_get_department",
+      "description": "Read one department by id: name, office, phone numbers, time zone, opening hours flag, ring time and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "department_id": {
+            "type": "string",
+            "description": "The department id from dialpad_list_departments."
+          }
+        },
+        "required": [
+          "department_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments/{department_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "office_id": "$.office_id",
+            "state": "$.state",
+            "country": "$.country",
+            "timezone": "$.timezone",
+            "phone_numbers": "$.phone_numbers",
+            "availability_status": "$.availability_status",
+            "hours_on": "$.hours_on",
+            "ring_seconds": "$.ring_seconds",
+            "group_description": "$.group_description"
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_list_numbers",
+      "description": "List the company's Dialpad phone numbers: number, area code, type, status and the user, office, department or call center it is assigned to. Needs a company admin API key. Paged with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only numbers with this assignment status, e.g. assigned or available."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor from the previous answer, for the next page. The last page has no cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/numbers",
+        "queryParams": {
+          "status": "$status",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "cursor": "$.cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "number": "number",
+                "area_code": "area_code",
+                "type": "type",
+                "status": "status",
+                "target_type": "target_type",
+                "target_id": "target_id",
+                "office_id": "office_id",
+                "deleted": "deleted"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_list_calls",
+      "description": "List ended calls, newest first, with direction, state, start, connect and end times (Unix milliseconds), duration in milliseconds, the external and internal number, contact and target, labels and recording links. Filter by time and by one user, office, department or call center. Needs a company admin API key with the calls:list scope. Calls and recordings are personal data. Paged with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "started_after": {
+            "type": "integer",
+            "description": "Only calls that started after this time, as Unix milliseconds (e.g. 1760486400000)."
+          },
+          "started_before": {
+            "type": "integer",
+            "description": "Only calls that started before this time, as Unix milliseconds."
+          },
+          "target_id": {
+            "type": "integer",
+            "description": "Only calls of this user, office, department or call center id (set target_type too)."
+          },
+          "target_type": {
+            "type": "string",
+            "description": "Type of target_id.",
+            "enum": [
+              "callcenter",
+              "callrouter",
+              "channel",
+              "coachinggroup",
+              "coachingteam",
+              "department",
+              "office",
+              "room",
+              "staffgroup",
+              "unknown",
+              "user"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor from the previous answer, for the next page. The last page has no cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/call",
+        "queryParams": {
+          "started_after": "$started_after",
+          "started_before": "$started_before",
+          "target_id": "$target_id",
+          "target_type": "$target_type",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "cursor": "$.cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "call_id": "call_id",
+                "direction": "direction",
+                "state": "state",
+                "date_started": "date_started",
+                "date_rang": "date_rang",
+                "date_connected": "date_connected",
+                "date_ended": "date_ended",
+                "duration": "duration",
+                "total_duration": "total_duration",
+                "external_number": "external_number",
+                "internal_number": "internal_number",
+                "contact": {
+                  "id": "contact.id",
+                  "name": "contact.name",
+                  "phone": "contact.phone",
+                  "email": "contact.email",
+                  "type": "contact.type"
+                },
+                "target": {
+                  "id": "target.id",
+                  "name": "target.name",
+                  "phone": "target.phone",
+                  "email": "target.email",
+                  "type": "target.type"
+                },
+                "is_transferred": "is_transferred",
+                "labels": "labels",
+                "csat_score": "csat_score",
+                "mos_score": "mos_score",
+                "was_recorded": "was_recorded",
+                "recording_details": {
+                  "$from": "recording_details[*]",
+                  "$select": {
+                    "id": "id",
+                    "recording_type": "recording_type",
+                    "duration": "duration",
+                    "start_time": "start_time",
+                    "url": "url"
+                  }
+                },
+                "call_recording_share_links": "call_recording_share_links",
+                "voicemail_share_link": "voicemail_share_link",
+                "transcription_text": "transcription_text",
+                "entry_point_call_id": "entry_point_call_id",
+                "master_call_id": "master_call_id",
+                "custom_data": "custom_data"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "dialpad_get_call",
+      "description": "Read one call by id: state, direction, times, duration, contact and target, labels, CSAT, the recording details with their URLs, recording and voicemail share links and the transcription text when Dialpad Ai transcribed it. Limited by Dialpad to 10 requests per minute. Recordings and transcripts are personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "description": "The call id (call_id from dialpad_list_calls), e.g. 6219523485581312."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/call/{call_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_id": "$.call_id",
+            "direction": "$.direction",
+            "state": "$.state",
+            "date_started": "$.date_started",
+            "date_rang": "$.date_rang",
+            "date_connected": "$.date_connected",
+            "date_ended": "$.date_ended",
+            "duration": "$.duration",
+            "total_duration": "$.total_duration",
+            "external_number": "$.external_number",
+            "internal_number": "$.internal_number",
+            "contact": {
+              "id": "$.contact.id",
+              "name": "$.contact.name",
+              "phone": "$.contact.phone",
+              "email": "$.contact.email",
+              "type": "$.contact.type"
+            },
+            "target": {
+              "id": "$.target.id",
+              "name": "$.target.name",
+              "phone": "$.target.phone",
+              "email": "$.target.email",
+              "type": "$.target.type"
+            },
+            "is_transferred": "$.is_transferred",
+            "labels": "$.labels",
+            "csat_score": "$.csat_score",
+            "mos_score": "$.mos_score",
+            "was_recorded": "$.was_recorded",
+            "recording_details": {
+              "$from": "$.recording_details[*]",
+              "$select": {
+                "id": "id",
+                "recording_type": "recording_type",
+                "duration": "duration",
+                "start_time": "start_time",
+                "url": "url"
+              }
+            },
+            "call_recording_share_links": "$.call_recording_share_links",
+            "voicemail_share_link": "$.voicemail_share_link",
+            "transcription_text": "$.transcription_text",
+            "entry_point_call_id": "$.entry_point_call_id",
+            "master_call_id": "$.master_call_id",
+            "custom_data": "$.custom_data"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "dialpad_get_call_transcript",
+      "description": "Read the Dialpad Ai transcript of a call: each line with speaker name, user_id or contact_id, time and text, plus Ai moments (type moment) such as action items or questions. Needs Dialpad Ai on the call's line. Transcripts are personal data: read them only when the user needs them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "description": "The call id (call_id from dialpad_list_calls), e.g. 6219523485581312."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transcripts/{call_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_id": "$.call_id",
+            "lines": {
+              "$from": "$.lines[*]",
+              "$select": {
+                "type": "type",
+                "time": "time",
+                "name": "name",
+                "user_id": "user_id",
+                "contact_id": "contact_id",
+                "content": "content"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "dialpad_get_call_transcript_url",
+      "description": "Get the link to a call's transcript page in Dialpad (the Dialpad Ai call review), to open it in a browser instead of reading the whole text here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "description": "The call id (call_id from dialpad_list_calls), e.g. 6219523485581312."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transcripts/{call_id}/url"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_id": "$.call_id",
+            "url": "$.url"
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_initiate_call",
+      "description": "Start a real outbound phone call for a Dialpad user: all of the user's devices ring (or only device_id) and, when the user picks up, Dialpad dials the number. This reaches a real person and can cost money (international and premium destinations are billed), so show the user who calls whom with which caller id and call only after the user confirms. Limited to 5 requests per minute. Returns call_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "The Dialpad user who makes the call (id from dialpad_list_users)."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "The number to call in E.164 format, e.g. +14155550123."
+          },
+          "outbound_caller_id": {
+            "type": "string",
+            "description": "Number shown to the person called (E.164, one the user may use), or \"blocked\" to hide it."
+          },
+          "group_id": {
+            "type": "integer",
+            "description": "Call on behalf of this office, department or call center id (set group_type too)."
+          },
+          "group_type": {
+            "type": "string",
+            "description": "Type of the group in group_id: office, department or callcenter.",
+            "enum": [
+              "callcenter",
+              "department",
+              "office"
+            ]
+          },
+          "device_id": {
+            "type": "string",
+            "description": "Ring only this one device of the user instead of all of them."
+          },
+          "custom_data": {
+            "type": "string",
+            "description": "Your own text attached to the call and passed to call event subscriptions."
+          }
+        },
+        "required": [
+          "user_id",
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/call",
+        "bodyMapping": {
+          "user_id": "$user_id",
+          "phone_number": "$phone_number",
+          "outbound_caller_id": "$outbound_caller_id",
+          "group_id": "$group_id",
+          "group_type": "$group_type",
+          "device_id": "$device_id",
+          "custom_data": "$custom_data"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_id": "$.call_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "dialpad_send_sms",
+      "description": "Send a text message (SMS) on behalf of a Dialpad user to up to 10 phone numbers. This reaches real people and can cost money (international texts are billed per message), and US recipients must have agreed to texts, so show the user the sender, recipients and exact text and call only after the user confirms. Returns the message with id, message_status and message_delivery_result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "The Dialpad user who sends the message (id from dialpad_list_users)."
+          },
+          "to_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Recipients in E.164 format, at most 10, e.g. [\"+14155550123\"]."
+          },
+          "text": {
+            "type": "string",
+            "description": "The message text."
+          },
+          "from_number": {
+            "type": "string",
+            "description": "Send from this number (E.164) assigned to the user or a group, instead of the user's default."
+          },
+          "sender_group_id": {
+            "type": "integer",
+            "description": "Send on behalf of this office, department or call center id (set sender_group_type too)."
+          },
+          "sender_group_type": {
+            "type": "string",
+            "description": "Type of the group in group_id: office, department or callcenter.",
+            "enum": [
+              "callcenter",
+              "department",
+              "office"
+            ]
+          },
+          "infer_country_code": {
+            "type": "boolean",
+            "description": "true to accept numbers without country code, read in the user's country."
+          }
+        },
+        "required": [
+          "user_id",
+          "to_numbers",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sms",
+        "bodyMapping": {
+          "user_id": "$user_id",
+          "to_numbers": "$to_numbers",
+          "text": "$text",
+          "from_number": "$from_number",
+          "sender_group_id": "$sender_group_id",
+          "sender_group_type": "$sender_group_type",
+          "infer_country_code": "$infer_country_code"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "message_status": "$.message_status",
+            "message_delivery_result": "$.message_delivery_result",
+            "direction": "$.direction",
+            "from_number": "$.from_number",
+            "to_numbers": "$.to_numbers",
+            "user_id": "$.user_id",
+            "contact_id": "$.contact_id",
+            "created_date": "$.created_date"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "dialpad_list_contacts",
+      "description": "List the company's shared Dialpad contacts, or the local contacts of one user with owner_id: names, company, job title, phone numbers and email addresses. Contacts are personal data. Paged with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "description": "Only the local contacts of this user id."
+          },
+          "include_local": {
+            "type": "boolean",
+            "description": "true to include users' local contacts in the company list."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor from the previous answer, for the next page. The last page has no cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "owner_id": "$owner_id",
+          "include_local": "$include_local",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "cursor": "$.cursor",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "display_name": "display_name",
+                "first_name": "first_name",
+                "last_name": "last_name",
+                "company_name": "company_name",
+                "job_title": "job_title",
+                "phones": "phones",
+                "primary_phone": "primary_phone",
+                "emails": "emails",
+                "primary_email": "primary_email",
+                "extension": "extension",
+                "urls": "urls",
+                "owner_id": "owner_id"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "dialpad_get_contact",
+      "description": "Read one shared or local contact by id: names, company, job title, phone numbers, email addresses, websites and owner.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id from dialpad_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "type": "$.type",
+            "display_name": "$.display_name",
+            "first_name": "$.first_name",
+            "last_name": "$.last_name",
+            "company_name": "$.company_name",
+            "job_title": "$.job_title",
+            "phones": "$.phones",
+            "primary_phone": "$.primary_phone",
+            "emails": "$.emails",
+            "primary_email": "$.primary_email",
+            "extension": "$.extension",
+            "urls": "$.urls",
+            "owner_id": "$.owner_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_create_contact",
+      "description": "Create a contact shared with the company, or a local contact of one user when owner_id is set. First and last name are required. Show the user the contact and create it only after the user confirms; check with dialpad_list_contacts first to avoid duplicates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "phones": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Phone numbers in E.164 format; the first is the primary one."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Email addresses; the first is the primary one."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "extension": {
+            "type": "string",
+            "description": "Extension number."
+          },
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Websites of the contact."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Create a local contact for this user id instead of a shared one."
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "phones": "$phones",
+          "emails": "$emails",
+          "company_name": "$company_name",
+          "job_title": "$job_title",
+          "extension": "$extension",
+          "urls": "$urls",
+          "owner_id": "$owner_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "type": "$.type",
+            "display_name": "$.display_name",
+            "first_name": "$.first_name",
+            "last_name": "$.last_name",
+            "company_name": "$.company_name",
+            "job_title": "$.job_title",
+            "phones": "$.phones",
+            "primary_phone": "$.primary_phone",
+            "emails": "$.emails",
+            "primary_email": "$.primary_email",
+            "extension": "$.extension",
+            "urls": "$.urls",
+            "owner_id": "$.owner_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "dialpad_start_stats_export",
+      "description": "Start a statistics export (calls, texts, voicemails, recordings, on-duty time, CSAT or dispositions) for the company, one office or one target over the last days. It only reads data, but runs in the background: it returns request_id; then call dialpad_get_stats_export until status is complete and read the CSV at download_url. Limited to 200 per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stat_type": {
+            "type": "string",
+            "description": "What to export.",
+            "enum": [
+              "calls",
+              "csat",
+              "dispositions",
+              "onduty",
+              "recordings",
+              "screenshare",
+              "texts",
+              "voicemails"
+            ]
+          },
+          "export_type": {
+            "type": "string",
+            "description": "stats for totals, records for one row per call or message (csat and dispositions only support records).",
+            "enum": [
+              "records",
+              "stats"
+            ]
+          },
+          "days_ago_start": {
+            "type": "integer",
+            "description": "Start of the range in days before today, e.g. 7."
+          },
+          "days_ago_end": {
+            "type": "integer",
+            "description": "End of the range in days before today, e.g. 0 for today."
+          },
+          "is_today": {
+            "type": "boolean",
+            "description": "true for today only (days_ago_start and days_ago_end are then ignored)."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone of the day boundaries, a tz name such as Europe/Berlin."
+          },
+          "office_id": {
+            "type": "integer",
+            "description": "Only this office."
+          },
+          "target_id": {
+            "type": "integer",
+            "description": "Only this target id (set target_type too; required for csat and dispositions)."
+          },
+          "target_type": {
+            "type": "string",
+            "description": "Type of target_id.",
+            "enum": [
+              "callcenter",
+              "coachinggroup",
+              "coachingteam",
+              "department",
+              "office",
+              "room",
+              "staffgroup",
+              "unknown",
+              "user"
+            ]
+          },
+          "group_by": {
+            "type": "string",
+            "description": "For calls with export_type stats: per user and day (default), per date, or per group.",
+            "enum": [
+              "date",
+              "group",
+              "user"
+            ]
+          }
+        },
+        "required": [
+          "stat_type",
+          "export_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stats",
+        "bodyMapping": {
+          "stat_type": "$stat_type",
+          "export_type": "$export_type",
+          "days_ago_start": "$days_ago_start",
+          "days_ago_end": "$days_ago_end",
+          "is_today": "$is_today",
+          "timezone": "$timezone",
+          "office_id": "$office_id",
+          "target_id": "$target_id",
+          "target_type": "$target_type",
+          "group_by": "$group_by"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "request_id": "$.request_id",
+            "already_started": "$.already_started"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "dialpad_get_stats_export",
+      "description": "Check a statistics export started with dialpad_start_stats_export: status (processing or complete), file_type and download_url of the finished CSV file. The file can hold personal data such as phone numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "The request_id returned by dialpad_start_stats_export."
+          }
+        },
+        "required": [
+          "request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stats/{request_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "status": "$.status",
+            "file_type": "$.file_type",
+            "download_url": "$.download_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "dialpad_create_recording_share_link",
+      "description": "Create a share link for a call recording or voicemail (recording id from dialpad_get_call recording_details). Recordings are personal data: a public link lets anyone with it listen, so ask the user which privacy to use (owner, company, admin or public) and call only after the user confirms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recording_id": {
+            "type": "string",
+            "description": "The recording id (recording_details[].id from dialpad_get_call)."
+          },
+          "recording_type": {
+            "type": "string",
+            "description": "callrecording for a user's recording, admincallrecording for an admin recording, voicemail for a voicemail.",
+            "enum": [
+              "admincallrecording",
+              "callrecording",
+              "voicemail"
+            ]
+          },
+          "privacy": {
+            "type": "string",
+            "description": "Who can open the link: owner, company, admin or public.",
+            "enum": [
+              "admin",
+              "company",
+              "owner",
+              "public"
+            ]
+          }
+        },
+        "required": [
+          "recording_id",
+          "recording_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/recordingsharelink",
+        "bodyMapping": {
+          "recording_id": "$recording_id",
+          "recording_type": "$recording_type",
+          "privacy": "$privacy"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "access_link": "$.access_link",
+            "privacy": "$.privacy",
+            "type": "$.type",
+            "item_id": "$.item_id",
+            "call_id": "$.call_id",
+            "created_by_id": "$.created_by_id",
+            "date_added": "$.date_added"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "dialpad_get_recording_share_link",
+      "description": "Read a recording share link by id: the access link, its privacy, the recording type and id, the call id and who created it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "link_id": {
+            "type": "string",
+            "description": "The share link id returned by dialpad_create_recording_share_link."
+          }
+        },
+        "required": [
+          "link_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recordingsharelink/{link_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "access_link": "$.access_link",
+            "privacy": "$.privacy",
+            "type": "$.type",
+            "item_id": "$.item_id",
+            "call_id": "$.call_id",
+            "created_by_id": "$.created_by_id",
+            "date_added": "$.date_added"
+          }
+        }
+      }
+    }
+  ]
+}

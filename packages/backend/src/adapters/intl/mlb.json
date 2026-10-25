@@ -1,0 +1,787 @@
+{
+  "slug": "mlb",
+  "name": "MLB Stats API",
+  "description": "Official MLB Stats API data, no API key: schedules and live games, box scores, line scores, play by play, teams, rosters, standings, players, stats, league leaders and transactions for MLB and the minor leagues. Personal, non-commercial use under MLB's terms.",
+  "instructions": "## MLB Stats API\nThis connector reads the MLB Stats API (`https://statsapi.mlb.com`), the public data feed behind MLB.com and the MLB app: schedules and live games, box scores, line scores, play by play, teams, rosters, standings, players, stats, league leaders and transactions. MLB and the minor leagues are covered. No API key is needed and every tool only reads.\n\n**Terms of use.** The data belongs to MLB Advanced Media; every answer carries MLB's copyright notice (http://gdx.mlb.com/components/copyright.txt). MLB allows individual, non-commercial, non-bulk use. Do not build a commercial product or a bulk export on this connector: license the data from MLB or a sports data provider for that. MLB publishes no SLA or rate limit, so keep calls few and do not poll a live game every few seconds.\n\n**Network.** MLB's servers refuse many requests from datacenter addresses with HTTP 406 Not Acceptable, while the same request from a home or office connection works. Every tool here therefore goes through the instance proxy when one is configured (on AnythingMCP Cloud it is, with an hourly cap per workspace). A self-hosted instance without a proxy works when its server is not in a datacenter; otherwise a 406 means \"blocked from this network\", not a wrong parameter.\n\n**Ids.**\n- Games are identified by `gamePk` (`game_pk` here), from `mlb_get_schedule`.\n- Teams by `team_id` (147 Yankees, 119 Dodgers ...), from `mlb_list_teams`.\n- Players by `person_id`, from `mlb_search_people` or a roster.\n- `sport_id` picks the level: 1 MLB (default), 11 Triple-A, 12 Double-A, 13 High-A, 14 Single-A, 16 Rookie, 17 winter leagues. Leagues: 103 American League, 104 National League.\n\n**Typical flow.**\n1. `mlb_get_schedule` for a day or range (dates `YYYY-MM-DD`) to get each `gamePk`, status and probable pitchers.\n2. `mlb_get_game` for the game summary, `mlb_get_boxscore` for player lines, `mlb_get_linescore` for the innings, `mlb_get_play_by_play` for every plate appearance.\n3. `mlb_get_standings`, `mlb_get_stat_leaders`, `mlb_get_team_roster`.\n4. Player questions: `mlb_search_people`, then `mlb_get_person` or `mlb_get_player_stats` (season, career, gameLog, statSplits, vsTeam).\n\n**Reading the data.** `gameDate` is UTC; `officialDate` is the local game date. Game types: R regular season, F wild card, D division series, L league championship, W World Series, S spring training. Averages and rates (avg, obp, ops, era) are strings such as \".305\". The live feed is large: `mlb_get_game` keeps the summary, use the other game tools for detail.",
+  "region": "intl",
+  "category": "sports",
+  "icon": "mlb",
+  "docsUrl": "https://docs.statsapi.mlb.com/",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "mlb_list_teams"
+  },
+  "connector": {
+    "name": "MLB Stats API",
+    "type": "REST",
+    "baseUrl": "https://statsapi.mlb.com",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "mlb_get_schedule",
+      "description": "Games for a date or a date range: game id (gamePk), start time in UTC, status, teams, score, winner, records, probable pitchers, venue and series. Filter by team, sport level or game type. Leave out every date for today's games.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "One day, YYYY-MM-DD."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Start of a range, YYYY-MM-DD; use with end_date."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "End of a range, YYYY-MM-DD, inclusive."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "MLB team id, e.g. 147 (New York Yankees), 119 (Los Angeles Dodgers). Ids come from mlb_list_teams."
+          },
+          "sport_id": {
+            "type": "integer",
+            "default": 1,
+            "description": "1 MLB (default), 11 Triple-A, 12 Double-A, 13 High-A, 14 Single-A, 16 Rookie, 17 Winter Leagues."
+          },
+          "game_type": {
+            "type": "string",
+            "description": "R regular season, P postseason (all rounds), F wild card, D division series, L league championship, W World Series, S spring training, A All-Star game. Comma separated for several."
+          },
+          "hydrate": {
+            "type": "string",
+            "default": "probablePitcher,linescore",
+            "description": "Extra data to attach. Default probablePitcher,linescore."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/schedule",
+        "queryParams": {
+          "sportId": "$sport_id",
+          "date": "$date",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "teamId": "$team_id",
+          "gameType": "$game_type",
+          "hydrate": "$hydrate"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{totalGames: totalGames, dates: dates[].{date: date, games: games[].{gamePk: gamePk, gameDate: gameDate, officialDate: officialDate, gameType: gameType, status: status.detailedState, away: teams.away.{team: team.name, id: team.id, score: score, isWinner: isWinner, record: leagueRecord && join('-', [to_string(leagueRecord.wins), to_string(leagueRecord.losses)]), probablePitcher: probablePitcher.fullName}, home: teams.home.{team: team.name, id: team.id, score: score, isWinner: isWinner, record: leagueRecord && join('-', [to_string(leagueRecord.wins), to_string(leagueRecord.losses)]), probablePitcher: probablePitcher.fullName}, venue: venue.name, series: seriesDescription, seriesGame: seriesGameNumber, gamesInSeries: gamesInSeries, doubleHeader: doubleHeader, inning: linescore.currentInningOrdinal, inningState: linescore.inningState}}}",
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_game",
+      "description": "One game from the live feed: status, teams, venue, weather, probable pitchers, inning by inning runs with totals, the winning, losing and save pitchers, every scoring play and the current at-bat while it is live.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "game_pk": {
+            "type": "integer",
+            "description": "MLB game id (gamePk), e.g. 849817. It comes from mlb_get_schedule."
+          }
+        },
+        "required": [
+          "game_pk"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.1/game/{game_pk}/feed/live"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{gamePk: gamePk, status: gameData.status.detailedState, gameType: gameData.game.type, dateTime: gameData.datetime.dateTime, dayNight: gameData.datetime.dayNight, away: gameData.teams.away.{id: id, name: name}, home: gameData.teams.home.{id: id, name: name}, venue: gameData.venue.name, weather: gameData.weather, probablePitchers: {away: gameData.probablePitchers.away.fullName, home: gameData.probablePitchers.home.fullName}, linescore: liveData.linescore.{inning: currentInningOrdinal, inningState: inningState, outs: outs, balls: balls, strikes: strikes, innings: innings[].{inning: num, away: away.runs, home: home.runs}, totals: teams}, decisions: {winner: liveData.decisions.winner.fullName, loser: liveData.decisions.loser.fullName, save: liveData.decisions.save.fullName}, scoringPlays: liveData.plays.allPlays[?about.isScoringPlay].{inning: about.inning, half: about.halfInning, description: result.description, awayScore: result.awayScore, homeScore: result.homeScore}, currentPlay: liveData.plays.currentPlay.{batter: matchup.batter.fullName, pitcher: matchup.pitcher.fullName, count: count, result: result.description}}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_boxscore",
+      "description": "Box score of a game: team batting and pitching totals, each batter's line in batting order and each pitcher's line with pitch count, umpires and the game notes (pitches-strikes, weather, attendance, time).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "game_pk": {
+            "type": "integer",
+            "description": "MLB game id (gamePk), e.g. 849817. It comes from mlb_get_schedule."
+          }
+        },
+        "required": [
+          "game_pk"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/game/{game_pk}/boxscore"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{away: teams.away.{team: team.name, batting: teamStats.batting.{runs: runs, hits: hits, homeRuns: homeRuns, strikeOuts: strikeOuts, baseOnBalls: baseOnBalls, leftOnBase: leftOnBase, avg: avg, ops: ops}, pitching: teamStats.pitching.{inningsPitched: inningsPitched, hits: hits, runs: runs, earnedRuns: earnedRuns, baseOnBalls: baseOnBalls, strikeOuts: strikeOuts, homeRuns: homeRuns, pitches: numberOfPitches}, batters: sort_by(values(players)[?stats.batting.summary && battingOrder], &battingOrder)[].{id: person.id, name: person.fullName, position: position.abbreviation, battingOrder: battingOrder, line: stats.batting.summary, avg: seasonStats.batting.avg, ops: seasonStats.batting.ops}, pitchers: values(players)[?stats.pitching.summary].{id: person.id, name: person.fullName, line: stats.pitching.summary, pitches: stats.pitching.numberOfPitches, era: seasonStats.pitching.era, note: stats.pitching.note}, notes: info[].{title: title, items: fieldList[].[label, value]}}, home: teams.home.{team: team.name, batting: teamStats.batting.{runs: runs, hits: hits, homeRuns: homeRuns, strikeOuts: strikeOuts, baseOnBalls: baseOnBalls, leftOnBase: leftOnBase, avg: avg, ops: ops}, pitching: teamStats.pitching.{inningsPitched: inningsPitched, hits: hits, runs: runs, earnedRuns: earnedRuns, baseOnBalls: baseOnBalls, strikeOuts: strikeOuts, homeRuns: homeRuns, pitches: numberOfPitches}, batters: sort_by(values(players)[?stats.batting.summary && battingOrder], &battingOrder)[].{id: person.id, name: person.fullName, position: position.abbreviation, battingOrder: battingOrder, line: stats.batting.summary, avg: seasonStats.batting.avg, ops: seasonStats.batting.ops}, pitchers: values(players)[?stats.pitching.summary].{id: person.id, name: person.fullName, line: stats.pitching.summary, pitches: stats.pitching.numberOfPitches, era: seasonStats.pitching.era, note: stats.pitching.note}, notes: info[].{title: title, items: fieldList[].[label, value]}}, officials: officials[].{type: officialType, name: official.fullName}, info: info[?value].[label, value]}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_linescore",
+      "description": "Line score of a game: runs, hits and errors by inning and in total, the current inning, count and outs, and while it is live the pitcher, batter, on-deck batter and runners on base.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "game_pk": {
+            "type": "integer",
+            "description": "MLB game id (gamePk), e.g. 849817. It comes from mlb_get_schedule."
+          }
+        },
+        "required": [
+          "game_pk"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/game/{game_pk}/linescore"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{inning: currentInningOrdinal, inningState: inningState, scheduledInnings: scheduledInnings, outs: outs, balls: balls, strikes: strikes, innings: innings[].{inning: num, away: away, home: home}, totals: teams, pitcher: defense.pitcher.fullName, batter: offense.batter.fullName, onDeck: offense.onDeck.fullName, runners: {first: offense.first.fullName, second: offense.second.fullName, third: offense.third.fullName}}",
+          "maxBytes": 20000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_play_by_play",
+      "description": "Every plate appearance of a game in order: inning, top or bottom, batter, pitcher, result and description, RBI and the score after the play. Large for long games.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "game_pk": {
+            "type": "integer",
+            "description": "MLB game id (gamePk), e.g. 849817. It comes from mlb_get_schedule."
+          }
+        },
+        "required": [
+          "game_pk"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/game/{game_pk}/playByPlay"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "allPlays[].{inning: about.inning, half: about.halfInning, batter: matchup.batter.fullName, pitcher: matchup.pitcher.fullName, event: result.event, description: result.description, rbi: result.rbi, awayScore: result.awayScore, homeScore: result.homeScore, scoring: about.isScoringPlay}",
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_list_teams",
+      "description": "Teams of a level (MLB by default) with id, name, abbreviation, league, division, ballpark and first year of play.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport_id": {
+            "type": "integer",
+            "default": 1,
+            "description": "1 MLB (default), 11 Triple-A, 12 Double-A, 13 High-A, 14 Single-A, 16 Rookie, 17 Winter Leagues."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season year, e.g. 2026. Leave out for the current season."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/teams",
+        "queryParams": {
+          "sportId": "$sport_id",
+          "season": "$season"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "teams[].{id: id, name: name, abbreviation: abbreviation, teamName: teamName, location: locationName, league: league.name, division: division.name, venue: venue.name, firstYearOfPlay: firstYearOfPlay, active: active}",
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_team_roster",
+      "description": "Roster of a team with person id, name, jersey number, position and status. rosterType active is the 26-man roster; 40Man, fullSeason and depthChart are also available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "MLB team id, e.g. 147 (New York Yankees), 119 (Los Angeles Dodgers). Ids come from mlb_list_teams."
+          },
+          "roster_type": {
+            "type": "string",
+            "enum": [
+              "active",
+              "40Man",
+              "fullSeason",
+              "fullRoster",
+              "depthChart",
+              "coach"
+            ],
+            "default": "active",
+            "description": "Which roster, default active."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season year, e.g. 2026. Leave out for the current season."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Roster as of this date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/teams/{team_id}/roster",
+        "queryParams": {
+          "rosterType": "$roster_type",
+          "season": "$season",
+          "date": "$date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{teamId: teamId, rosterType: rosterType, roster: roster[].{id: person.id, name: person.fullName, jersey: jerseyNumber, position: position.abbreviation, status: status.description}}",
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_standings",
+      "description": "Standings by division: wins, losses, winning percentage, games back, wild card games back, division and wild card rank, run differential, streak, home, away and last ten records, clinch status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league_id": {
+            "type": "string",
+            "default": "103,104",
+            "description": "103 American League, 104 National League; default both."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season year, e.g. 2026. Leave out for the current season."
+          },
+          "standings_types": {
+            "type": "string",
+            "description": "regularSeason (default), wildCard, divisionLeaders, springTraining, firstHalf, secondHalf."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Standings as of this date, YYYY-MM-DD."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/standings",
+        "queryParams": {
+          "leagueId": "$league_id",
+          "season": "$season",
+          "standingsTypes": "$standings_types",
+          "date": "$date",
+          "hydrate": "team,division,league"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "records[].{league: league.name || league.id, division: division.name, standingsType: standingsType, teams: teamRecords[].{id: team.id, team: team.name, wins: wins, losses: losses, pct: winningPercentage, gamesBack: gamesBack, wildCardGamesBack: wildCardGamesBack, divisionRank: divisionRank, leagueRank: leagueRank, wildCardRank: wildCardRank, runDifferential: runDifferential, streak: streak.streakCode, clinched: clinched, eliminationNumber: eliminationNumber, home: records.splitRecords[?type == 'home'] | [0].join('-', [to_string(wins), to_string(losses)]), away: records.splitRecords[?type == 'away'] | [0].join('-', [to_string(wins), to_string(losses)]), lastTen: records.splitRecords[?type == 'lastTen'] | [0].join('-', [to_string(wins), to_string(losses)])}}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_search_people",
+      "description": "Find players (and coaches or umpires) by name: id, position, number, current team, birth date, bats and throws, MLB debut. Use the id for mlb_get_person and mlb_get_player_stats.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "string",
+            "description": "Name or part of it, e.g. judge or shohei ohtani."
+          },
+          "sport_id": {
+            "type": "integer",
+            "default": 1,
+            "description": "1 MLB (default), 11 Triple-A, 12 Double-A, 13 High-A, 14 Single-A, 16 Rookie, 17 Winter Leagues."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true for active players only."
+          }
+        },
+        "required": [
+          "names"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/people/search",
+        "queryParams": {
+          "names": "$names",
+          "sportIds": "$sport_id",
+          "active": "$active",
+          "hydrate": "currentTeam"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "people[].{id: id, name: fullName, position: primaryPosition.abbreviation, number: primaryNumber, team: currentTeam.name, birthDate: birthDate, age: currentAge, bats: batSide.code, throws: pitchHand.code, debut: mlbDebutDate, active: active}",
+          "maxBytes": 30000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_person",
+      "description": "Profile of one player: position, number, team, birth date and place, height, weight, bats and throws, debut and draft year. Set hydrate to attach stats in the same call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "integer",
+            "description": "MLB person id, e.g. 592450 (Aaron Judge). Ids come from mlb_search_people or a roster."
+          },
+          "hydrate": {
+            "type": "string",
+            "default": "currentTeam",
+            "description": "Extra data to attach. Default currentTeam; add stats with e.g. currentTeam,stats(group=[hitting],type=[season,career])."
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/people/{person_id}",
+        "queryParams": {
+          "hydrate": "$hydrate"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "people[0].{id: id, name: fullName, position: primaryPosition.name, number: primaryNumber, team: currentTeam.name, birthDate: birthDate, age: currentAge, birthPlace: join(', ', [birthCity, birthStateProvince, birthCountry][?@]), height: height, weight: weight, bats: batSide.description, throws: pitchHand.description, debut: mlbDebutDate, draftYear: draftYear, active: active, stats: stats[].{type: type.displayName, group: group.displayName, splits: splits[].{season: season, team: team.name, stat: stat}}}",
+          "maxBytes": 30000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_player_stats",
+      "description": "Statistics of a player. stats picks the kind: season, career, yearByYear, gameLog, lastXGames, statSplits (with sit_codes such as vl,vr for vs left and right), vsTeam (with opposing_team_id) or sabermetrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "integer",
+            "description": "MLB person id, e.g. 592450 (Aaron Judge). Ids come from mlb_search_people or a roster."
+          },
+          "stats": {
+            "type": "string",
+            "default": "season",
+            "description": "season (default), career, yearByYear, gameLog, lastXGames, statSplits, vsTeam, sabermetrics. Comma separated for several."
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "hitting",
+              "pitching",
+              "fielding"
+            ],
+            "description": "Stat group.",
+            "default": "hitting"
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season year, e.g. 2026. Leave out for the current season."
+          },
+          "game_type": {
+            "type": "string",
+            "description": "R regular season, P postseason (all rounds), F wild card, D division series, L league championship, W World Series, S spring training, A All-Star game. Comma separated for several."
+          },
+          "sit_codes": {
+            "type": "string",
+            "description": "Situation codes for statSplits, e.g. vl,vr (vs left or right), h,a (home, away), risp."
+          },
+          "opposing_team_id": {
+            "type": "integer",
+            "description": "Opponent team id for vsTeam."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of games for lastXGames."
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/people/{person_id}/stats",
+        "queryParams": {
+          "stats": "$stats",
+          "group": "$group",
+          "season": "$season",
+          "gameType": "$game_type",
+          "sitCodes": "$sit_codes",
+          "opposingTeamId": "$opposing_team_id",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "stats[].{type: type.displayName, group: group.displayName, splits: splits[].{season: season, date: date, team: team.name, opponent: opponent.name, split: split.description, gameType: gameType, stat: stat}}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_team_stats",
+      "description": "Team statistics: season totals, statSplits by situation or byMonth for hitting, pitching or fielding.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "MLB team id, e.g. 147 (New York Yankees), 119 (Los Angeles Dodgers). Ids come from mlb_list_teams."
+          },
+          "stats": {
+            "type": "string",
+            "default": "season",
+            "description": "season (default), statSplits, byMonth, byDateRange, gameLog."
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "hitting",
+              "pitching",
+              "fielding"
+            ],
+            "description": "Stat group.",
+            "default": "hitting"
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season year, e.g. 2026. Leave out for the current season."
+          },
+          "game_type": {
+            "type": "string",
+            "description": "R regular season, P postseason (all rounds), F wild card, D division series, L league championship, W World Series, S spring training, A All-Star game. Comma separated for several."
+          },
+          "sit_codes": {
+            "type": "string",
+            "description": "Situation codes for statSplits, e.g. vl,vr or h,a."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/teams/{team_id}/stats",
+        "queryParams": {
+          "stats": "$stats",
+          "group": "$group",
+          "season": "$season",
+          "gameType": "$game_type",
+          "sitCodes": "$sit_codes"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "stats[].{type: type.displayName, group: group.displayName, splits: splits[].{season: season, date: date, team: team.name, opponent: opponent.name, split: split.description, gameType: gameType, stat: stat}}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_stat_leaders",
+      "description": "League leaders in one or more categories, such as homeRuns, battingAverage, onBasePlusSlugging, stolenBases, earnedRunAverage, strikeouts, wins or saves: rank, value, player and team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "leader_categories": {
+            "type": "string",
+            "description": "Comma separated, e.g. homeRuns,battingAverage or earnedRunAverage,strikeouts."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season year, e.g. 2026. Leave out for the current season."
+          },
+          "stat_group": {
+            "type": "string",
+            "enum": [
+              "hitting",
+              "pitching",
+              "fielding"
+            ],
+            "description": "Needed for categories that exist in more than one group, such as strikeouts (pitching) or hits."
+          },
+          "league_id": {
+            "type": "integer",
+            "description": "103 American League or 104 National League; leave out for both."
+          },
+          "game_type": {
+            "type": "string",
+            "description": "R regular season, P postseason (all rounds), F wild card, D division series, L league championship, W World Series, S spring training, A All-Star game. Comma separated for several."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Leaders per category, default 10."
+          }
+        },
+        "required": [
+          "leader_categories"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/stats/leaders",
+        "queryParams": {
+          "leaderCategories": "$leader_categories",
+          "season": "$season",
+          "statGroup": "$stat_group",
+          "leagueId": "$league_id",
+          "gameType": "$game_type",
+          "limit": "$limit",
+          "sportId": "1"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "leagueLeaders[].{category: leaderCategory, statGroup: statGroup, season: season, leaders: leaders[].{rank: rank, value: value, id: person.id, name: person.fullName, team: team.name, league: league.name}}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_list_transactions",
+      "description": "Roster moves in a date range: trades, signings, injured list placements and activations, call-ups, options and releases, with player, teams and the official description. Filter by team to keep it short.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "End date, YYYY-MM-DD, inclusive."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "MLB team id, e.g. 147 (New York Yankees), 119 (Los Angeles Dodgers). Ids come from mlb_list_teams."
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/transactions",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "teamId": "$team_id",
+          "sportId": "1"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "transactions[].{date: date, effectiveDate: effectiveDate, type: typeDesc, person: person.fullName, personId: person.id, fromTeam: fromTeam.name, toTeam: toTeam.name, description: description}",
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    },
+    {
+      "name": "mlb_get_season",
+      "description": "Key dates of a season: spring training, regular season start and end, All-Star game, postseason start and end.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "season": {
+            "type": "integer",
+            "description": "Season year, e.g. 2026."
+          },
+          "sport_id": {
+            "type": "integer",
+            "default": 1,
+            "description": "1 MLB (default), 11 Triple-A, 12 Double-A, 13 High-A, 14 Single-A, 16 Rookie, 17 Winter Leagues."
+          }
+        },
+        "required": [
+          "season"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/seasons/{season}",
+        "queryParams": {
+          "sportId": "$sport_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "seasons[0]",
+          "maxBytes": 10000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "useProxy": true
+    }
+  ]
+}

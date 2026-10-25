@@ -1,0 +1,348 @@
+{
+  "slug": "payhip",
+  "name": "Payhip",
+  "aliases": [
+    "Payhip store",
+    "Payhip license keys"
+  ],
+  "description": "Manage your Payhip store's coupon codes and check software license keys from an AI agent: list and read coupons, create new ones with your approval, verify a buyer's license key and, when you allow it, disable, re-enable or count its activations.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "payhip",
+  "docsUrl": "https://payhip.com/api-reference",
+  "prerequisites": "A Payhip store and its API key from Settings > Developer. For license keys, the product secret key of a product with license keys switched on (one product per install).",
+  "instructions": "## Payhip\nThis connector calls the **Payhip API** (`https://payhip.com/api/v2`) for your Payhip store: list, read and create **coupon codes**, and check and manage the **software license keys** of a product. Payhip's API covers only these two areas today: products, sales, customers and payouts are not available through it.\n\n**Setup (about 2 minutes)**\n1. In Payhip open **Settings > Developer** and copy the **API key** into `PAYHIP_API_KEY`. It is sent in the `payhip-api-key` header and is needed for coupons.\n2. Optional, for license keys: open the product in Payhip, tick **Generate unique license keys** if it is not on yet, and copy the **product secret key** shown below that checkbox into `PAYHIP_PRODUCT_SECRET_KEY`. It is sent in the `product-secret-key` header. Each key belongs to one product: install the connector once per licensed product you want to manage, and give each install the product's name.\n\n**Safety**: creating coupons and disabling, enabling or changing the usage count of license keys install switched off. A new coupon works at checkout immediately, and a disabled key locks the buyer out of the software, so confirm each change with the user. Refunds disable a key automatically.\n\n**Reading the data**\n- Coupon amounts (`amount_off`, `minimum_purchase_amount`) are in cents; `percent_off` is a percentage. `coupon_type` is single (one product, `product_key`), multi (all products) or collection (`collection_id`).\n- Dates are RFC 3339. A license key's `uses` is the counter you raise and lower with the usage tools; Payhip does not enforce a limit, your software does.\n- Payhip's firewall challenges coupon calls from datacenter addresses, so the three coupon tools go out through AnythingMCP's outbound proxy where one is configured (as on AnythingMCP Cloud); license calls go direct. On a self-hosted server without `CONNECTOR_PROXY_URL`, coupon calls may answer 403 with an HTML page.\n- Every answer wraps the result in `data`. 401 `authentication_fail` means the API key or product secret key is wrong or missing.",
+  "requiredEnvVars": [
+    "PAYHIP_API_KEY"
+  ],
+  "optionalEnvVars": [
+    "PAYHIP_PRODUCT_SECRET_KEY"
+  ],
+  "envVarMeta": {
+    "PAYHIP_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Payhip > Settings > Developer: the API key. Used for coupons.",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the API key alone, without spaces."
+    },
+    "PAYHIP_PRODUCT_SECRET_KEY": {
+      "label": "Product secret key (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Only for license keys: open the product in Payhip; the secret key is shown under the Generate unique license keys checkbox. It works for that one product.",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the product secret key alone, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Payhip refused the key (authentication_fail). Copy PAYHIP_API_KEY again from Settings > Developer; for license tools check PAYHIP_PRODUCT_SECRET_KEY on the product page."
+  },
+  "connector": {
+    "name": "Payhip",
+    "type": "REST",
+    "baseUrl": "https://payhip.com/api/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "payhip-api-key",
+      "apiKey": "{{PAYHIP_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "probe": {
+    "tool": "payhip_list_coupons",
+    "params": {
+      "limit": 1
+    }
+  },
+  "tools": [
+    {
+      "name": "payhip_list_coupons",
+      "useProxy": true,
+      "description": "List the store's coupon codes with their type (single product, all products or one collection), percent or amount off (amounts in cents), start and end dates, usage limit and notes. Pages with limit (1 to 100) and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Coupons per page, 1 to 100.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Coupons to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coupons",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "payhip_get_coupon",
+      "useProxy": true,
+      "description": "Read one coupon by its numeric id: code, type, percent or amount off (cents), product key or collection, dates, minimum purchase, usage limit and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Coupon id from payhip_list_coupons."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coupons/{id}"
+      }
+    },
+    {
+      "name": "payhip_create_coupon",
+      "useProxy": true,
+      "description": "Create a coupon code buyers can enter at checkout: either percent_off (above 0, up to 100) or amount_off in cents, for one product (coupon_type single with product_key), all products (multi) or one collection (collection with collection_id). Subscription products cannot get coupons through the API. It is usable as soon as it exists, so confirm the code, the discount and the scope with the user first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code buyers type, e.g. AUTUMN20."
+          },
+          "coupon_type": {
+            "type": "string",
+            "description": "single (one product), multi (all products) or collection.",
+            "enum": [
+              "single",
+              "multi",
+              "collection"
+            ]
+          },
+          "percent_off": {
+            "type": "number",
+            "description": "Percent discount, above 0 and up to 100. Use this or amount_off."
+          },
+          "amount_off": {
+            "type": "integer",
+            "description": "Fixed discount in cents, e.g. 500 for 5.00. Use this or percent_off."
+          },
+          "product_key": {
+            "type": "string",
+            "description": "Product key (the code in the product's Payhip link) when coupon_type is single."
+          },
+          "collection_id": {
+            "type": "string",
+            "description": "Collection id when coupon_type is collection."
+          },
+          "usage_limit": {
+            "type": "integer",
+            "description": "How many times the coupon can be used in total."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal note, not shown to buyers."
+          }
+        },
+        "required": [
+          "code",
+          "coupon_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/coupons",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "code": "$code",
+          "coupon_type": "$coupon_type",
+          "percent_off": "$percent_off",
+          "amount_off": "$amount_off",
+          "product_key": "$product_key",
+          "collection_id": "$collection_id",
+          "usage_limit": "$usage_limit",
+          "notes": "$notes"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "payhip_verify_license",
+      "description": "Check a software license key of the product whose secret key is configured: whether it is enabled (keys are disabled automatically on a refund), the buyer's email, the product and variant, how often it has been used and when it was issued. An empty answer means the key does not exist for this product. Needs PAYHIP_PRODUCT_SECRET_KEY.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "license_key": {
+            "type": "string",
+            "description": "The license key as the buyer has it, e.g. 9Q2KX-ZP7RM-4HVN8-T6WJC."
+          }
+        },
+        "required": [
+          "license_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/license/verify",
+        "headers": {
+          "product-secret-key": "${PAYHIP_PRODUCT_SECRET_KEY}"
+        },
+        "queryParams": {
+          "license_key": "$license_key"
+        }
+      }
+    },
+    {
+      "name": "payhip_disable_license",
+      "description": "Disable a license key so it no longer verifies, e.g. after a terms violation or a chargeback. The buyer loses access until it is enabled again; confirm with the user first. Needs PAYHIP_PRODUCT_SECRET_KEY. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "license_key": {
+            "type": "string",
+            "description": "The license key as the buyer has it, e.g. 9Q2KX-ZP7RM-4HVN8-T6WJC."
+          }
+        },
+        "required": [
+          "license_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/license/disable",
+        "headers": {
+          "product-secret-key": "${PAYHIP_PRODUCT_SECRET_KEY}"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "license_key": "$license_key"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "payhip_enable_license",
+      "description": "Enable a disabled license key again so it verifies. Needs PAYHIP_PRODUCT_SECRET_KEY. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "license_key": {
+            "type": "string",
+            "description": "The license key as the buyer has it, e.g. 9Q2KX-ZP7RM-4HVN8-T6WJC."
+          }
+        },
+        "required": [
+          "license_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/license/enable",
+        "headers": {
+          "product-secret-key": "${PAYHIP_PRODUCT_SECRET_KEY}"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "license_key": "$license_key"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "payhip_increase_license_usage",
+      "description": "Add one to the usage counter of a license key, e.g. when the buyer activates another device. Needs PAYHIP_PRODUCT_SECRET_KEY. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "license_key": {
+            "type": "string",
+            "description": "The license key as the buyer has it, e.g. 9Q2KX-ZP7RM-4HVN8-T6WJC."
+          }
+        },
+        "required": [
+          "license_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/license/usage",
+        "headers": {
+          "product-secret-key": "${PAYHIP_PRODUCT_SECRET_KEY}"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "license_key": "$license_key"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "payhip_decrease_license_usage",
+      "description": "Subtract one from the usage counter of a license key, e.g. when the buyer deactivates a device. Needs PAYHIP_PRODUCT_SECRET_KEY. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "license_key": {
+            "type": "string",
+            "description": "The license key as the buyer has it, e.g. 9Q2KX-ZP7RM-4HVN8-T6WJC."
+          }
+        },
+        "required": [
+          "license_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/license/decrease",
+        "headers": {
+          "product-secret-key": "${PAYHIP_PRODUCT_SECRET_KEY}"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "license_key": "$license_key"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

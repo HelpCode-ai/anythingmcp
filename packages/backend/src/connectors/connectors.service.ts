@@ -14,6 +14,7 @@ import { RestEngine } from './engines/rest.engine';
 import { attachResponseMeta } from './engines/response-headers.util';
 import { SoapEngine, WsdlReadError } from './engines/soap.engine';
 import { wsdlUrlForLog } from './parsers/wsdl.parser';
+import { connectorSecretValues } from './connector-secrets.util';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
@@ -36,6 +37,8 @@ import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
+import { ConnectorAuthStatusService, authCredentialRef } from './engines/connector-auth-status.service';
+import { BearerTokenRenewalService, withTokenRenewal } from './engines/bearer-token-renewal.service';
 import { connectorErrorWhen } from './error-when.util';
 import { ResponseBodyError } from './engines/response-error.util';
 
@@ -63,6 +66,8 @@ export class ConnectorsService {
     private readonly mcpClientEngine: McpClientEngine,
     @Optional() private readonly odataEngine?: ODataEngine,
     @Optional() private readonly oauth2TokenService?: OAuth2TokenService,
+    @Optional() private readonly authStatus?: ConnectorAuthStatusService,
+    @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -195,7 +200,26 @@ export class ConnectorsService {
       data: updateData,
     });
     if (data.authConfig) this.oauth2TokenService?.forget(id);
+    // A new app id or secret is a variable, not authConfig: start the
+    // renewal state over on any edit.
+    this.bearerTokens?.forget(id);
+    // A status recorded against a credential the connector no longer holds
+    // is over; one against the credential it still holds stays (clearing it
+    // would let the same refused token start a new incident, and a second
+    // email).
+    await this.authStatus?.clear(id, {
+      exceptRef: authCredentialRef(data.authConfig ?? this.readAuthConfig(existing.authConfig)),
+    });
     return updated;
+  }
+
+  private readAuthConfig(value: unknown): Record<string, unknown> {
+    if (typeof value !== 'string' || !value) return {};
+    try {
+      return JSON.parse(decrypt(value, this.encryptionKey)) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
   }
 
   /**
@@ -224,6 +248,7 @@ export class ConnectorsService {
     // A new authorization or new client settings: a token cached from the
     // old ones, or the error the old refresh token got, no longer applies.
     this.oauth2TokenService?.forget(id);
+    await this.authStatus?.clear(id, { exceptRef: authCredentialRef(merged) });
     return updated;
   }
 
@@ -312,17 +337,24 @@ export class ConnectorsService {
       // credentials the workspace actually has rather than the placeholders the
       // adapter shipped with.
       const envVars = (connector.envVars as Record<string, string> | null) || {};
-      const authConfig = connector.authConfig
-        ? interpolateDeep(
-            JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
-            envVars,
-          )
-        : undefined;
+      const authConfig = withTokenRenewal(
+        connector.authType,
+        connector.authConfig
+          ? interpolateDeep(
+              JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
+              envVars,
+            )
+          : undefined,
+        connector.config,
+        envVars,
+      );
       const baseUrl = interpolateDeep(connector.baseUrl, envVars);
       const headers = interpolateDeep(
         (connector.headers as Record<string, string>) || undefined,
         envVars,
       );
+      // Masked in the engines' log lines.
+      const logSecrets = connectorSecretValues(connector);
 
       // A connector whose credentials were never filled in would otherwise send
       // "{{MY_TOKEN}}" upstream and report the vendor's complaint about it,
@@ -360,6 +392,7 @@ export class ConnectorsService {
               // spent one, and its next refresh was refused as revoked.
               connectorId: connector.id,
               errorWhen: connectorErrorWhen(connector.config),
+              logSecrets,
             },
             { method: 'GET', path },
             {},
@@ -374,6 +407,7 @@ export class ConnectorsService {
               authConfig,
               headers,
               connectorId: connector.id,
+              logSecrets,
             },
             { method: 'query', path: '{ __typename }' },
             {},
@@ -418,6 +452,7 @@ export class ConnectorsService {
             headers,
             connectorId: connector.id,
             mcpPath: mcpPathOf(connector.config),
+            logSecrets,
           });
           return {
             ok: true,
@@ -475,6 +510,7 @@ export class ConnectorsService {
       headers,
       connectorId: connector.id,
       mcpPath,
+      logSecrets: connectorSecretValues(connector),
     });
     return remote.map((rt) => ({
       name: rt.name,
@@ -781,11 +817,12 @@ export class ConnectorsService {
     const config = {
       baseUrl: resolved.baseUrl,
       authType: connector.authType,
-      authConfig,
+      authConfig: withTokenRenewal(connector.authType, authConfig, connector.config, envVars),
       headers: resolved.headers as Record<string, string>,
       specUrl: connector.specUrl ?? undefined,
       connectorId: connector.id,
       errorWhen: connectorErrorWhen(connector.config),
+      logSecrets: connectorSecretValues(connector),
       ...(options.useProxy && process.env.CONNECTOR_PROXY_URL
         ? { proxyUrl: process.env.CONNECTOR_PROXY_URL }
         : {}),

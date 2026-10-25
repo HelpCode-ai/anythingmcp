@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AuthController, NEUTRAL_PASSWORD_RESET, NEUTRAL_REGISTRATION } from './auth.controller';
 import { ProductEventService } from '../audit/product-event.service';
+import { findUserByEmail, normalizeEmail } from '../common/email.util';
 
 /**
  * Sign-up, password reset and login must not say — by their answer or by how
@@ -51,13 +52,18 @@ function makeController({
       throw new Error('invalid token');
     }),
   };
+  // Looks up and stores addresses the way UsersService does: in any case, and
+  // normalised on write.
   const usersService = {
-    findByEmail: jest.fn(async (email: string) => users.find((u) => u.email === email) ?? null),
+    findByEmail: jest.fn(async (email: string) =>
+      findUserByEmail<Account>({ user: { findMany: async () => users } }, email),
+    ),
+    findById: jest.fn(async (id: string) => users.find((u) => u.id === id) ?? null),
     count: jest.fn(async () => users.length),
     create: jest.fn(async (data: any) => {
       const u: Account = {
         id: `u${users.length + 1}`,
-        email: data.email,
+        email: normalizeEmail(data.email),
         name: data.name,
         role: data.role,
         organizationId: data.organizationId,
@@ -93,6 +99,11 @@ function makeController({
     invitationToken: {
       findUnique: jest.fn(async ({ where }: any) => invites.find((i) => i.token === where.token) ?? null),
       findFirst: jest.fn(async () => null),
+      // Returns the organisation's pending invitations; the controller picks
+      // the one for the address.
+      findMany: jest.fn(async ({ where }: any) =>
+        invites.filter((i) => i.organizationId === where.organizationId && !i.usedAt),
+      ),
       create: jest.fn(async ({ data }: any) => {
         invites.push({ ...data });
         return data;
@@ -122,6 +133,10 @@ function makeController({
     sendPasswordResetEmail: jest.fn(async (to: string) => {
       sent.push(`reset ${to}`);
       return true;
+    }),
+    sendInvitationEmail: jest.fn(async (to: string) => {
+      sent.push(`invite ${to}`);
+      return { sent: true };
     }),
   };
   const configService = {
@@ -525,5 +540,178 @@ describe('AuthController — accept-invite ownership check', () => {
     a.invites.push(makeInvite({ id: 'inv2', token: 't2', email: 'fresh@example.com' }));
     expect(await a.controller.verifyInvite('invite-token')).toMatchObject({ exists: true });
     expect(await a.controller.verifyInvite('t2')).toMatchObject({ exists: false });
+  });
+});
+
+describe('AuthController — verified sign-up reported for ChatGPT Ads', () => {
+  function makeVerifyController() {
+    const token = { id: 't-1', userId: 'u-1', token: 'link-token', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
+    const prisma = {
+      emailVerificationToken: {
+        findFirst: jest.fn(async () => token),
+        findUnique: jest.fn(async () => token),
+        update: jest.fn(async () => token),
+      },
+    };
+    const usersService = { update: jest.fn(async () => undefined) };
+    const configService = { get: jest.fn(() => undefined) };
+    const adsSignup = { onEmailVerified: jest.fn(() => undefined) };
+    const controller = new AuthController(
+      {} as any,
+      usersService as any,
+      {} as any,
+      prisma as any,
+      {} as any,
+      configService as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      adsSignup as any,
+    );
+    return { controller, adsSignup };
+  }
+
+  it('hands a code verification to the sign-up report', async () => {
+    const { controller, adsSignup } = makeVerifyController();
+    await controller.verifyEmail({ user: { sub: 'u-1' } }, { code: '123456' } as any);
+    expect(adsSignup.onEmailVerified).toHaveBeenCalledWith('u-1');
+  });
+
+  it('hands a link verification to the sign-up report', async () => {
+    const { controller, adsSignup } = makeVerifyController();
+    const res = { redirect: jest.fn() };
+    await controller.verifyEmailLink({}, 'link-token', res as any);
+    expect(adsSignup.onEmailVerified).toHaveBeenCalledWith('u-1');
+    expect(res.redirect).toHaveBeenCalled();
+  });
+});
+
+/**
+ * An address is one account whatever its case: a user who registered with
+ * capitals and later typed the address in lower case could not sign in, signed
+ * up again and got a second, empty workspace.
+ */
+describe('AuthController — email addresses ignore case', () => {
+  const OLD_FLOOR = process.env.AUTH_NEUTRAL_FLOOR_MS;
+  beforeEach(() => {
+    process.env.AUTH_NEUTRAL_FLOOR_MS = '0';
+  });
+  afterAll(() => {
+    process.env.AUTH_NEUTRAL_FLOOR_MS = OLD_FLOOR;
+  });
+
+  /** An account written before addresses were normalised. */
+  const LEGACY: Account = { ...EXISTING, id: 'u-legacy', email: 'Legacy.User@Example.COM' };
+
+  it('cloud sign-up refuses a case variant of an existing address, with the usual neutral answer', async () => {
+    const { controller, users, sent } = makeController({ mode: 'cloud', accounts: [EXISTING, LEGACY] });
+    await expect(controller.register({}, signup('TAKEN@Example.com'))).resolves.toEqual(NEUTRAL_REGISTRATION);
+    await expect(controller.register({}, signup('legacy.user@example.com'))).resolves.toEqual(NEUTRAL_REGISTRATION);
+    await flush();
+
+    expect(users.map((u) => u.id)).toEqual(['u-existing', 'u-legacy']);
+    // The notice goes to the account's own address.
+    expect(sent).toEqual(['existing taken@example.com', 'existing Legacy.User@Example.COM']);
+  });
+
+  it('cloud sign-up stores a new address normalised', async () => {
+    const { controller, users, sent } = makeController({ mode: 'cloud' });
+    await controller.register({}, signup('New.Person@Example.com'));
+    await flush();
+    expect(users.map((u) => u.email)).toEqual(['new.person@example.com']);
+    expect(sent).toEqual(['verify new.person@example.com']);
+  });
+
+  it('self-hosted sign-up answers a conflict for a case variant, as for the exact address', async () => {
+    const { controller, users } = makeController({ mode: 'self-hosted', accounts: [EXISTING, LEGACY] });
+    await expect(controller.register({}, signup('Taken@Example.com'))).rejects.toBeInstanceOf(ConflictException);
+    await expect(controller.register({}, signup('legacy.user@example.com'))).rejects.toBeInstanceOf(ConflictException);
+    expect(users).toHaveLength(2);
+  });
+
+  it('signs in with the address typed in another case', async () => {
+    const { controller } = makeController({ mode: 'self-hosted', accounts: [EXISTING, LEGACY] });
+    await expect(
+      controller.login({}, { email: 'TAKEN@example.com', password: 'Correct#Horse1' }),
+    ).resolves.toMatchObject({ user: { id: 'u-existing' } });
+    await expect(
+      controller.login({}, { email: 'legacy.user@example.com', password: 'Correct#Horse1' }),
+    ).resolves.toMatchObject({ user: { id: 'u-legacy', email: 'Legacy.User@Example.COM' } });
+  });
+
+  it('signs in to the exact spelling when legacy duplicates exist, and creates no third account', async () => {
+    const upper: Account = { ...EXISTING, id: 'u-upper', email: 'DUP@example.com', passwordHash: 'hash:Upper#Pass1' };
+    const lower: Account = { ...EXISTING, id: 'u-lower', email: 'dup@example.com', passwordHash: 'hash:Lower#Pass1' };
+    const { controller, users } = makeController({ mode: 'cloud', accounts: [upper, lower] });
+
+    await expect(
+      controller.login({}, { email: 'DUP@example.com', password: 'Upper#Pass1' }),
+    ).resolves.toMatchObject({ user: { id: 'u-upper' } });
+    await expect(
+      controller.login({}, { email: 'dup@example.com', password: 'Lower#Pass1' }),
+    ).resolves.toMatchObject({ user: { id: 'u-lower' } });
+
+    await expect(controller.register({}, signup('Dup@Example.com'))).resolves.toEqual(NEUTRAL_REGISTRATION);
+    expect(users).toHaveLength(2);
+  });
+
+  it('sends a password reset for the address typed in another case', async () => {
+    const { controller, sent } = makeController({ mode: 'cloud', accounts: [LEGACY] });
+    await expect(controller.forgotPassword({}, { email: 'legacy.user@example.com' })).resolves.toEqual(
+      NEUTRAL_PASSWORD_RESET,
+    );
+    await flush();
+    expect(sent).toEqual(['reset Legacy.User@Example.COM']);
+  });
+
+  it('accepts an invitation for an account stored with capitals, proven by a session in any case', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [LEGACY] });
+    a.invites.push({
+      id: 'inv1',
+      token: 'invite-token',
+      email: 'legacy.user@example.com',
+      role: 'EDITOR',
+      mcpRoleId: null,
+      mcpRoleIds: [],
+      organizationId: 'org-new',
+      expiresAt: new Date(Date.now() + 3600_000),
+      usedAt: null,
+    });
+    expect(await a.controller.verifyInvite('invite-token')).toMatchObject({ exists: true });
+    const res = await a.controller.acceptInvite(
+      { headers: { authorization: 'Bearer sess:LEGACY.user@example.com' } },
+      { token: 'invite-token' },
+    );
+    expect(res.accessToken).toBe('jwt');
+    expect(a.organizationsService.addMember).toHaveBeenCalledWith('u-legacy', 'org-new', 'EDITOR');
+    expect(a.users).toHaveLength(1);
+  });
+
+  it('stores an invitation normalised and reuses a pending one whatever its case', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    const req = { user: { sub: 'u-existing', organizationId: 'org-x' } };
+    a.invites.push({
+      id: 'inv-old',
+      token: 'old-token',
+      email: 'Invitee@Example.com',
+      organizationId: 'org-x',
+      expiresAt: new Date(Date.now() + 3600_000),
+      usedAt: null,
+    });
+
+    const reused = await a.controller.inviteUser(req, { email: 'INVITEE@example.com', role: 'EDITOR' as any });
+    expect(reused.inviteUrl).toContain('token=old-token');
+    expect(a.invites).toHaveLength(1);
+
+    const created = await a.controller.inviteUser(req, { email: 'Other.Person@Example.com', role: 'EDITOR' as any });
+    expect(created.inviteUrl).not.toContain('old-token');
+    expect(a.invites.map((i) => i.email)).toEqual(['Invitee@Example.com', 'other.person@example.com']);
+    expect(a.sent).toContain('invite other.person@example.com');
   });
 });

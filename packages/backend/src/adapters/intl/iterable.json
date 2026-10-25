@@ -1,0 +1,1032 @@
+{
+  "slug": "iterable",
+  "name": "Iterable",
+  "description": "Let your AI work with Iterable: look up users, their events and messages, review lists, campaigns and campaign metrics, templates and catalogs, update profiles, track events, manage list membership and send a triggered email after you confirm.",
+  "instructions": "## Iterable\nThis connector reads and writes **Iterable** (cross-channel marketing) through the Iterable API with a server-side API key: lists, users and their events and sent messages, campaigns and their metrics, templates, channels, message types and catalogs; it can also update profiles, track events, change list membership and send a triggered email to one user.\n\n**Setup (about 3 minutes)**\n1. In Iterable open **Integrations, API Keys** (project settings) and click **New API Key**. Choose a **Server-side** key for reads and writes, or a **Read-only** key if the connector should only read. JavaScript and Mobile keys do not work here.\n2. Copy the key and paste it into `ITERABLE_API_KEY`. Keys belong to one project.\n3. Set `ITERABLE_API_URL` to the project's data center: https://api.iterable.com for US projects, https://api.eu.iterable.com for EU projects (app.eu.iterable.com).\n\nThe key acts for the whole project, not for one person: whoever uses this connector sees every user and campaign the key can read. Share the MCP server only with people allowed to see that.\n\n**Limits** (per project): most reads 100 calls a second; campaign metrics 10 a minute; list users and list size 5 a minute; sent messages 3 a second. Iterable answers 429 when a limit is reached.\n\n**How to work**\n1. People: `iterable_get_user_by_email` or `iterable_get_user_by_id` for the profile, `iterable_get_user_events_by_email` or `iterable_get_user_events_by_user_id` for what they did and received, `iterable_get_sent_messages` for the messages sent to them.\n2. Lists: `iterable_list_lists`, `iterable_get_list_size` and `iterable_list_list_users` (plain text, one user per line, cut at about 100 KB).\n3. Campaigns: `iterable_list_campaigns` (page by page, filter by state), `iterable_get_campaign`, then `iterable_get_campaign_metrics` for one or more campaign ids. The metrics come back as CSV text: the first line holds the column names, each further line one campaign.\n4. Content and setup: `iterable_list_templates`, `iterable_list_channels`, `iterable_list_message_types`, `iterable_list_catalogs` and `iterable_list_catalog_items`.\n5. Writes, each only after the user confirms: `iterable_update_user` merges profile fields, `iterable_track_event` records an event, `iterable_subscribe_to_list` and `iterable_unsubscribe_from_list` change list membership (they can start journeys or stop messages). `iterable_send_email` sends a real email from a triggered campaign to one person: show the campaign, the recipient and the data first.\n6. `iterable_delete_user_by_email` and `iterable_delete_user_by_user_id` delete profiles for good and are installed switched off; an administrator turns them on deliberately.\n\nIdentify a user by `email` or by `user_id`, not both, depending on whether the project is email-based, userID-based or hybrid. Iterable times are epoch milliseconds in answers; filters take the formats named in each parameter.\n\n**Common errors**\n- 401 \"Invalid API key\": the key is wrong, deleted, of the wrong type (JavaScript or Mobile), or from the other data center; check `ITERABLE_API_URL`.\n- 400 with a code such as BadParams or RequestFieldsTypesMismatched: a parameter or a field type is wrong; msg says which.\n- 404 / NotFound: the user, list or campaign does not exist in this project.\n- 429: the rate limit is reached; wait and retry once.\n\n**Out of scope here**: export jobs, bulk endpoints, template and snippet editing, experiments, journeys (workflows), in-app, push, SMS and web push sends, subscriptions per message type, and catalog changes.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "iterable",
+  "docsUrl": "https://api.iterable.com/api/docs",
+  "prerequisites": "An Iterable user who can create a server-side or read-only API key under Integrations, API Keys, and whether the project is hosted in the US or the EU. About 3 minutes.",
+  "requiredEnvVars": [
+    "ITERABLE_API_URL",
+    "ITERABLE_API_KEY"
+  ],
+  "envVarMeta": {
+    "ITERABLE_API_URL": {
+      "label": "API URL (data center)",
+      "kind": "address",
+      "help": "https://api.iterable.com for US projects, https://api.eu.iterable.com for EU projects (those sign in at app.eu.iterable.com).",
+      "link": "https://api.eu.iterable.com/api/docs",
+      "example": "https://api.iterable.com",
+      "pattern": "^(https://)?api(\\.eu)?\\.iterable\\.com/?$",
+      "patternMessage": "Use https://api.iterable.com (US) or https://api.eu.iterable.com (EU), without /api or any other path."
+    },
+    "ITERABLE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Integrations, API Keys, New API Key: a Server-side key (reads and writes) or a Read-only key. JavaScript and Mobile keys are refused.",
+      "link": "https://support.iterable.com/hc/articles/360043464871",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the API key as Iterable shows it, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Iterable refused the API key. Check that it is a Server-side or Read-only key of this project, and that the data center is right (EU projects need https://api.eu.iterable.com).",
+    "403": "Iterable refused this key for the request. A Read-only key cannot write; check the key type.",
+    "404": "Nothing answered at this address. Use https://api.iterable.com (US) or https://api.eu.iterable.com (EU).",
+    "429": "Iterable's rate limit is reached. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "iterable_list_channels"
+  },
+  "connector": {
+    "name": "Iterable API",
+    "type": "REST",
+    "baseUrl": "{{ITERABLE_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Api-Key",
+      "apiKey": "{{ITERABLE_API_KEY}}"
+    },
+    "headers": {
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/channels"
+  },
+  "tools": [
+    {
+      "name": "iterable_list_lists",
+      "description": "List the user lists of the Iterable project: id, name, type (Standard, Dynamic, Suppression, Internal), description and creation time (epoch milliseconds). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/lists"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "lists": "$.lists"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "iterable_get_list_size",
+      "description": "Count the users in one Iterable list. Iterable allows only 5 calls a minute per project. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "List id from iterable_list_lists."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/lists/{list_id}/size"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 2000
+        }
+      }
+    },
+    {
+      "name": "iterable_list_list_users",
+      "description": "Get the users of one Iterable list as plain text, one email (or userId) per line. Large lists are cut at about 100 KB; use iterable_get_list_size first. Iterable allows only 5 calls a minute per project. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "List id from iterable_list_lists."
+          },
+          "prefer_user_id": {
+            "type": "boolean",
+            "description": "In hybrid projects, return the userId instead of the email when a profile has both."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/lists/getUsers",
+        "queryParams": {
+          "listId": "$list_id",
+          "preferUserId": "$prefer_user_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "iterable_get_user_by_email",
+      "description": "Get an Iterable user profile by email: email, userId and all dataFields (profile fields, subscription and channel settings, signup date and custom fields). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The user's email address."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/users/getByEmail",
+        "queryParams": {
+          "email": "$email"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "user": "$.user"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "iterable_get_user_by_id",
+      "description": "Get an Iterable user profile by userId: email, userId and all dataFields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The user's userId."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/users/byUserId",
+        "queryParams": {
+          "userId": "$user_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "user": "$.user"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "iterable_get_user_events_by_email",
+      "description": "Get the latest events of an Iterable user by email, newest first: custom events, purchases, email sends, opens, clicks, bounces, unsubscribes, push and in-app events with their data. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The user's email address."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many events, up to 200. Default 30."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/events/{email}",
+        "queryParams": {
+          "limit": "$limit"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "events": "$.events"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "iterable_get_user_events_by_user_id",
+      "description": "Get the latest events of an Iterable user by userId, newest first: custom events, purchases, message sends, opens, clicks, bounces and unsubscribes with their data. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The user's userId."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many events, up to 200. Default 30."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/events/byUserId/{user_id}",
+        "queryParams": {
+          "limit": "$limit"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "events": "$.events"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "iterable_get_sent_messages",
+      "description": "List the messages Iterable sent to a user (by email or userId): message id, campaign id, template id and time, optionally filtered by campaign, medium and date range. Iterable allows 3 calls a second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The user's email address. Give email or user_id (not both), depending on how the project identifies users."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user's userId. Give email or user_id (not both)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many messages, up to 1000. Default 10."
+          },
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only messages from these campaign ids."
+          },
+          "message_medium": {
+            "type": "string",
+            "description": "Only this channel.",
+            "enum": [
+              "Email",
+              "Push",
+              "InApp",
+              "SMS"
+            ]
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Only messages from this time on, yyyy-MM-dd HH:mm:ss ZZ."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "Only messages before this time, yyyy-MM-dd HH:mm:ss ZZ."
+          },
+          "exclude_blast_campaigns": {
+            "type": "boolean",
+            "description": "Leave out blast (one-time) campaigns. Ignored when campaign_ids is set."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/users/getSentMessages",
+        "queryParams": {
+          "email": "$email",
+          "userId": "$user_id",
+          "limit": "$limit",
+          "campaignIds": "$campaign_ids",
+          "messageMedium": "$message_medium",
+          "startDateTime": "$start_date_time",
+          "endDateTime": "$end_date_time",
+          "excludeBlastCampaigns": "$exclude_blast_campaigns"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "messages": "$.messages"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "iterable_list_campaigns",
+      "description": "List the campaigns of the Iterable project, a page at a time: id, name, type (Blast or Triggered), state, message medium, template, lists, labels, created, updated, start and end times. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Campaigns per page, up to 1000. Default 50.",
+            "default": 50
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with optional - for descending: id, name, createdAt, updatedAt or startAt, e.g. -createdAt."
+          },
+          "campaign_state": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only campaigns in these states: Draft, Ready, Scheduled, Running, Finished, Starting, Aborted, Recurring, Archived."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/campaigns",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "sort": "$sort",
+          "campaignState": "$campaign_state"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "campaigns": "$.campaigns",
+            "totalCampaignsCount": "$.totalCampaignsCount",
+            "nextPageUrl": "$.nextPageUrl",
+            "previousPageUrl": "$.previousPageUrl"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "iterable_get_campaign",
+      "description": "Get one Iterable campaign by id: name, type, state, message medium, template id, send size, lists and suppression lists, labels, workflow, created, updated, start and end times. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from iterable_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/campaigns/{campaign_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "iterable_get_campaign_metrics",
+      "description": "Get campaign metrics from Iterable as CSV text: one row per campaign with columns such as total sends, deliveries, unique opens and clicks, bounces, complaints, unsubscribes, purchases and revenue (the columns depend on the medium). Iterable allows only 10 calls a minute per project. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Campaign ids to report on.",
+            "minItems": 1
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Only activity from this time on, YYYY-MM-DD or ISO 8601."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "Only activity before this time, YYYY-MM-DD or ISO 8601."
+          }
+        },
+        "required": [
+          "campaign_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/campaigns/metrics",
+        "queryParams": {
+          "campaignId": "$campaign_ids",
+          "startDateTime": "$start_date_time",
+          "endDateTime": "$end_date_time"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "iterable_list_templates",
+      "description": "List the message templates of the Iterable project, a page at a time: template id, name, message type, campaign, creator, created and updated times. Filter by template type and message medium. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_type": {
+            "type": "string",
+            "description": "Only this template type.",
+            "enum": [
+              "Base",
+              "Blast",
+              "Triggered",
+              "Workflow"
+            ]
+          },
+          "message_medium": {
+            "type": "string",
+            "description": "Only this channel.",
+            "enum": [
+              "Email",
+              "Push",
+              "InApp",
+              "SMS"
+            ]
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Templates created at or after this time, yyyy-MM-dd HH:mm:ss."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "Templates created before this time, yyyy-MM-dd HH:mm:ss."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Templates per page, up to 1000. Default 50.",
+            "default": 50
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with optional - for descending: id, name, createdAt or updatedAt."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/templates",
+        "queryParams": {
+          "templateType": "$template_type",
+          "messageMedium": "$message_medium",
+          "startDateTime": "$start_date_time",
+          "endDateTime": "$end_date_time",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "sort": "$sort"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "templates": "$.templates",
+            "totalTemplatesCount": "$.totalTemplatesCount",
+            "nextPageUrl": "$.nextPageUrl",
+            "previousPageUrl": "$.previousPageUrl"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "iterable_list_channels",
+      "description": "List the message channels of the Iterable project: id, name, channel type (Marketing or Transactional) and medium (Email, Push, SMS). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/channels"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "channels": "$.channels"
+          }
+        }
+      }
+    },
+    {
+      "name": "iterable_list_message_types",
+      "description": "List the message types of the Iterable project: id, name, channel id, subscription policy (opt-in or opt-out), frequency cap and rate limit. Users subscribe and unsubscribe per message type. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/messageTypes"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "messageTypes": "$.messageTypes"
+          }
+        }
+      }
+    },
+    {
+      "name": "iterable_list_catalogs",
+      "description": "List the catalog names of the Iterable project (catalogs hold products, articles or other items used for personalization). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Catalogs per page. Default 10."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalogs",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "params || @",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "iterable_list_catalog_items",
+      "description": "List the items of one Iterable catalog, a page at a time: item id, last modified time and the item's fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_name": {
+            "type": "string",
+            "description": "Catalog name from iterable_list_catalogs."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 10."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to order by (it needs a defined type to sort ascending)."
+          },
+          "sort_ascending": {
+            "type": "boolean",
+            "description": "Sort ascending instead of descending."
+          }
+        },
+        "required": [
+          "catalog_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalogs/{catalog_name}/items",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "orderBy": "$order_by",
+          "sortAscending": "$sort_ascending"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "params || @",
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "iterable_update_user",
+      "description": "Create or update an Iterable user profile by email or userId: the dataFields given are merged into the profile, missing fields are kept. Changed fields can move the user into dynamic lists and start journeys, so show the user what will be written and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The user's email address. Give email or user_id (not both), depending on how the project identifies users."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user's userId. Give email or user_id (not both)."
+          },
+          "data_fields": {
+            "type": "object",
+            "description": "Fields to set on the profile, e.g. {\"firstName\": \"Ada\", \"plan\": \"pro\"}. Types must match the project's existing fields."
+          },
+          "prefer_user_id": {
+            "type": "boolean",
+            "description": "With a userId that does not exist yet, create a new user with it. Default false."
+          },
+          "merge_nested_objects": {
+            "type": "boolean",
+            "description": "Merge nested objects instead of replacing them. Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/users/update",
+        "bodyMapping": {
+          "email": "$email",
+          "userId": "$user_id",
+          "dataFields": "$data_fields",
+          "preferUserId": "$prefer_user_id",
+          "mergeNestedObjects": "$merge_nested_objects"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "code": "$.code",
+            "msg": "$.msg",
+            "params": "$.params"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "iterable_track_event",
+      "description": "Record a custom event for an Iterable user (by email or userId), such as a signup, a booking or a page view, with its data. Events can trigger journeys that send messages, so confirm the event name, the user and the data with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "description": "Name of the event, e.g. trial_started."
+          },
+          "email": {
+            "type": "string",
+            "description": "The user's email address. Give email or user_id (not both), depending on how the project identifies users."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user's userId. Give email or user_id (not both)."
+          },
+          "data_fields": {
+            "type": "object",
+            "description": "Data of the event; same-named fields must keep the same type across events."
+          },
+          "created_at": {
+            "type": "integer",
+            "description": "When it happened, Unix timestamp in seconds. Default: now."
+          },
+          "id": {
+            "type": "string",
+            "description": "Optional event id; sending the same id again updates that event instead of adding one."
+          },
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign the event is attributed to, for conversions."
+          },
+          "template_id": {
+            "type": "integer",
+            "description": "Template the event is attributed to."
+          }
+        },
+        "required": [
+          "event_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/events/track",
+        "bodyMapping": {
+          "eventName": "$event_name",
+          "email": "$email",
+          "userId": "$user_id",
+          "dataFields": "$data_fields",
+          "createdAt": "$created_at",
+          "id": "$id",
+          "campaignId": "$campaign_id",
+          "templateId": "$template_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "code": "$.code",
+            "msg": "$.msg",
+            "params": "$.params"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "iterable_subscribe_to_list",
+      "description": "Add users to a static Iterable list (by email or userId), creating profiles that do not exist unless update_existing_users_only is true. Lists drive who receives blast campaigns, so confirm the list and the users with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "Id of a Standard list from iterable_list_lists."
+          },
+          "subscribers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Users to add: [{\"email\": \"ada@example.com\", \"dataFields\": {...}}] or with \"userId\".",
+            "minItems": 1
+          },
+          "update_existing_users_only": {
+            "type": "boolean",
+            "description": "Skip users that do not exist yet instead of creating them. Default false."
+          }
+        },
+        "required": [
+          "list_id",
+          "subscribers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/lists/subscribe",
+        "bodyMapping": {
+          "listId": "$list_id",
+          "subscribers": "$subscribers",
+          "updateExistingUsersOnly": "$update_existing_users_only"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "successCount": "$.successCount",
+            "failCount": "$.failCount",
+            "invalidEmails": "$.invalidEmails",
+            "invalidUserIds": "$.invalidUserIds",
+            "failedUpdates": "$.failedUpdates"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "iterable_unsubscribe_from_list",
+      "description": "Remove users from a static Iterable list (by email or userId). With channel_unsubscribe true they are also unsubscribed from the list's channel, which works like a global unsubscribe. Confirm the list, the users and the channel option with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "Id of a Standard list from iterable_list_lists."
+          },
+          "subscribers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Users to remove: [{\"email\": \"ada@example.com\"}] or [{\"userId\": \"u1\"}].",
+            "minItems": 1
+          },
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign to attribute the unsubscribe to."
+          },
+          "channel_unsubscribe": {
+            "type": "boolean",
+            "description": "Also unsubscribe them from the list's channel (a global unsubscribe for that channel). Default false."
+          }
+        },
+        "required": [
+          "list_id",
+          "subscribers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/lists/unsubscribe",
+        "bodyMapping": {
+          "listId": "$list_id",
+          "subscribers": "$subscribers",
+          "campaignId": "$campaign_id",
+          "channelUnsubscribe": "$channel_unsubscribe"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "successCount": "$.successCount",
+            "failCount": "$.failCount",
+            "invalidEmails": "$.invalidEmails",
+            "invalidUserIds": "$.invalidUserIds",
+            "failedUpdates": "$.failedUpdates"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "iterable_send_email",
+      "description": "Send the email of a triggered Iterable campaign to one user (by email or userId), now or at send_at, with dataFields for the template. This sends a real email. Show the user the campaign, the recipient and the data first, and call only after the user confirms. Sending to many people is done with campaigns in Iterable, not with this tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Id of a triggered email campaign from iterable_list_campaigns."
+          },
+          "recipient_email": {
+            "type": "string",
+            "description": "Recipient's email. Give this or recipient_user_id."
+          },
+          "recipient_user_id": {
+            "type": "string",
+            "description": "Recipient's userId. Give this or recipient_email."
+          },
+          "data_fields": {
+            "type": "object",
+            "description": "Values merged into the email template; they override profile fields of the same name."
+          },
+          "send_at": {
+            "type": "string",
+            "description": "Schedule for later, YYYY-MM-DD HH:MM:SS in UTC, up to 365 days ahead. Leave out to send now."
+          },
+          "allow_repeat_marketing_sends": {
+            "type": "boolean",
+            "description": "Allow sending a marketing message to someone who already got it. Default true."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Data passed back in webhooks, not used for rendering."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/email/target",
+        "bodyMapping": {
+          "campaignId": "$campaign_id",
+          "recipientEmail": "$recipient_email",
+          "recipientUserId": "$recipient_user_id",
+          "dataFields": "$data_fields",
+          "sendAt": "$send_at",
+          "allowRepeatMarketingSends": "$allow_repeat_marketing_sends",
+          "metadata": "$metadata"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "code": "$.code",
+            "msg": "$.msg",
+            "params": "$.params"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "iterable_delete_user_by_email",
+      "description": "Delete an Iterable user by email, asynchronously (email-based and hybrid projects). The profile and its data are removed for good, and future data about the user is still collected. Installed switched off: an administrator turns it on deliberately. Show the profile with iterable_get_user_by_email first and only call this after the user confirms the exact address.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email of the user to delete, exactly as confirmed by the user."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/users/{email}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "code": "$.code",
+            "msg": "$.msg"
+          }
+        }
+      }
+    },
+    {
+      "name": "iterable_delete_user_by_user_id",
+      "description": "Delete Iterable users by userId, asynchronously; every profile with that userId is removed for good. Installed switched off: an administrator turns it on deliberately. Show the profile with iterable_get_user_by_id first and only call this after the user confirms the exact userId.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "userId of the user to delete, exactly as confirmed by the user."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/users/byUserId/{user_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "code": "$.code",
+            "msg": "$.msg"
+          }
+        }
+      }
+    }
+  ]
+}

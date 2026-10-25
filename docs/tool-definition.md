@@ -237,6 +237,55 @@ of the REST rules simply do not apply to it:
 }
 ```
 
+### Setup guide
+
+`setupGuide` turns the setup page into a step-by-step guide: an intro (what
+the AI can do with the app, what to have ready, why the setup works the way it
+does), then one step at a time, then the connector link and the steps to use
+it in Claude, ChatGPT or Copilot. Add one where the plain form is not enough:
+an app of the user's own (Etsy), a bot to create (Telegram), keys found three
+menus deep. Adapters without one keep the form.
+
+```json
+"setupGuide": {
+  "effort": "own_app",
+  "minutes": 10,
+  "examples": ["Which orders have not shipped yet?"],
+  "needs": ["Your Etsy seller account"],
+  "why": "Etsy lets other tools reach a shop only through an app its owner registers.",
+  "steps": [
+    {
+      "id": "callback",
+      "title": "Add the callback URL",
+      "body": "Open your app and add this address under **Callback URLs**.",
+      "action": { "label": "Open your Etsy apps", "url": "https://www.etsy.com/developers/your-apps" },
+      "values": [{ "label": "Callback URL", "value": "{{redirectUri}}" }],
+      "confirm": "I added the callback URL and saved",
+      "problems": [{ "q": "Etsy says the redirect URI is wrong", "a": "Paste it again, exactly." }]
+    },
+    { "id": "keys", "title": "Copy your keys", "fields": ["ETSY_CLIENT_ID", "ETSY_CLIENT_SECRET"] }
+  ]
+}
+```
+
+- `effort`: `none`, `one_click`, `api_key`, `own_app` or `admin_needed`; with
+  `minutes` it is the badge on the marketplace card. Without a guide the
+  badge is derived from how the adapter signs in.
+- `values`: what to type or pick on the provider's page, each with a copy
+  button (`"pick": true` for an option to select, without one). Only
+  `{{redirectUri}}` is filled in: the OAuth callback URL of the instance.
+- `fields`: the variables entered in that step. Every required variable that
+  is not `advanced` is asked for in exactly one step; the last step checks
+  them against the API and installs (or sends the user to the provider's
+  sign-in), so put the fields there or before it.
+- `image`: a real screenshot under `packages/frontend/public`, with `alt` and
+  `capturedAt`. Leave it out rather than add a mock-up.
+- `confirm`: a checkbox the user ticks before continuing, for a step that
+  happens at the provider.
+
+The guide is not part of the catalog fingerprint: rewording it does not mark
+installed connectors as out of date. Progress is kept in the browser only.
+
 ### Adapter file errors
 
 If an adapter file cannot be read, check that its path exists and that the
@@ -498,7 +547,7 @@ Every adapter with `connector.type === "GRAPHQL"` is automatically extended with
 - `<slug>_graphql_mutation` — execute an arbitrary `mutation`
 - `<slug>_graphql_subscription` — execute an arbitrary `subscription` (transport availability depends on the upstream API)
 
-Adapter authors don't need to declare them.
+Adapter authors don't need to declare them. To install some of them switched off, list their suffixes in `connector.config.graphqlBuiltinsOff`, e.g. `["mutation", "subscription"]` when the token can reach destructive mutations the curated tools leave out. Admins can still switch them on per connector.
 
 ### GraphQL variables
 
@@ -608,6 +657,7 @@ the API actually returned.
 | `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap |
 | `cacheTtl` | Seconds to cache the **raw** upstream response; shaping happens on read |
 | `images` | Paths to base64 images in the response, returned to the client as MCP image content (see below) |
+| `binary` | How a file the API returns as raw bytes is handed over: `{ "as": "auto" \| "base64", "maxBytes": n }` (see below) |
 
 ### Images in the response (`images`)
 
@@ -635,6 +685,46 @@ text of the result:
   together at 12 MiB. An image over a limit is replaced by a placeholder that
   says why.
 - Tools without `images` are not affected.
+
+### Files in the response (`binary`)
+
+A REST tool that downloads a file gets its bytes, not text: an image, a PDF,
+an archive. Before October 2026 every body was decoded as UTF-8, which
+corrupted a file (a Telegram download from
+`https://api.telegram.org/file/bot<token>/<file_path>`, an invoice PDF).
+
+The engine decides from the response itself:
+
+- A text content type (`text/*`, JSON, XML, `image/svg+xml`, form data, CSV,
+  YAML) is decoded and parsed as before: JSON when it parses, the string
+  otherwise.
+- `application/octet-stream`, or no content type at all, is treated as text
+  when the bytes are valid UTF-8 without control characters, and as a file
+  otherwise.
+- Anything else is a file.
+
+A file is handed to the client after the text of the result:
+
+- A PNG, JPEG, GIF or WebP becomes MCP `image` content. The type is
+  recognised from the first bytes, so an image sent as
+  `application/octet-stream` still counts.
+- Any other file becomes an embedded `resource` with a `blob`, its content
+  type and its file name (from `Content-Disposition`).
+- The text describes the file (`contentType`, `bytes`, `size`, `filename`)
+  and never contains the bytes.
+
+A response mapping (`transform`, `images`, `decode`) does not apply to a
+file. Neither the call log nor the dashboard's tool test stores the bytes.
+
+```json
+{ "binary": { "as": "base64", "maxBytes": 2097152 } }
+```
+
+- `maxBytes` per file: 4 MiB by default, at most 10 MiB. A larger file is
+  described and not attached.
+- `as: "base64"` puts the base64 into the text (`file.base64`) instead of
+  attaching it, for a workflow that hands the file on to another tool.
+- Both keys are optional. A tool without `binary` gets the defaults.
 
 ### `select` leaf syntax
 
@@ -851,7 +941,7 @@ to every connector type, not just REST.
 
 ## Authentication: `LOGIN_TOKEN`
 
-In addition to the standard `NONE` / `API_KEY` / `BEARER_TOKEN` / `BASIC_AUTH` / `OAUTH2` / `QUERY_AUTH` / `WS_SECURITY` / `CERTIFICATE` / `CONNECTION_STRING` schemes, the connector spec supports `LOGIN_TOKEN` for APIs that issue a long-lived bearer **in exchange for a credentials POST** — optionally requiring the password to be **bcrypt-hashed with a salt fetched from the remote service** (Sorare-style).
+In addition to the standard `NONE` / `API_KEY` / `BEARER_TOKEN` / `BASIC_AUTH` / `OAUTH2` / `QUERY_AUTH` / `WS_SECURITY` / `CERTIFICATE` / `CONNECTION_STRING` schemes, the connector spec supports `LOGIN_TOKEN` for APIs that issue a long-lived bearer **in exchange for a credentials POST** — optionally requiring the password to be **bcrypt-hashed with a salt fetched from the remote service** (Sorare-style). APIs that log in with a JWT the client signs with its own private key instead of a password (noon's Partner API) use `signedJwt`.
 
 The engine handles salt fetch → bcrypt → login → token cache → proactive refresh → re-login-on-401 automatically. Adapter authors declare the full flow as JSON:
 

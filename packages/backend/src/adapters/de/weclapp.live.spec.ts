@@ -112,3 +112,29 @@ maybe('weclapp adapter — live edge reachability', () => {
     expect(sentHeaders.Authorization).toBeUndefined();
   }, 30000);
 });
+
+const byName = (name: string) => {
+  const found = (adapter as unknown as { tools: Array<{ name: string; parameters: { required?: string[] }; endpointMapping: Record<string, unknown> }> }).tools.find((x) => x.name === name);
+  if (!found) throw new Error(`no tool ${name}`);
+  return found;
+};
+
+describe('weclapp adapter: responsible-user shortcuts and purchasing master data', () => {
+  const t = (name: string) => byName(name);
+  it('sets only responsibleUserId with a partial PUT', () => {
+    for (const [name, path] of [
+      ['weclapp_set_sales_invoice_responsible', '/salesInvoice/id/{salesInvoiceId}'],
+      ['weclapp_set_sales_order_responsible', '/salesOrder/id/{salesOrderId}'],
+      ['weclapp_set_party_responsible', '/party/id/{partyId}'],
+    ]) {
+      const m = t(name).endpointMapping;
+      expect(m).toMatchObject({ method: 'PUT', path, bodyMapping: { responsibleUserId: '$responsibleUserId' } });
+      expect((m.queryParams as Record<string, string>).ignoreMissingProperties).toBe('true');
+    }
+  });
+  it('creates supply sources, manufacturers and item groups', () => {
+    expect(t('weclapp_add_supply_source').endpointMapping).toMatchObject({ method: 'POST', path: '/articleSupplySource' });
+    expect(t('weclapp_add_manufacturer').endpointMapping).toMatchObject({ method: 'POST', path: '/manufacturer' });
+    expect(t('weclapp_add_article_item_group').endpointMapping).toMatchObject({ method: 'POST', path: '/articleItemGroup' });
+  });
+});

@@ -1,0 +1,736 @@
+{
+  "slug": "lusha",
+  "name": "Lusha",
+  "description": "Give your AI Lusha B2B data: find contacts and companies by name, email, LinkedIn URL or domain, prospect by job title, seniority, industry, size and location, check your credits, and reveal emails, phone numbers and firmographics only for the records you pick. Also reads job change and company signals.",
+  "instructions": "## Lusha\nThis connector calls the **Lusha API v3** (`https://api.lusha.com`) with the user's own API key: contact and company search by identifier, prospecting with ICP filters, enrichment of chosen records, contact and company signals, enrichment jobs and account usage. It never changes data in Lusha.\n\n**Personal data: B2B use only.** Contact records describe real people: names, job titles, employers, work and private email addresses and mobile or direct phone numbers. Use them only for a legitimate business purpose the user can justify (for example B2B sales or recruiting under legitimate interest), in line with the GDPR, CAN-SPAM and similar laws, and with Lusha's terms. Keep only what is needed, respect `doNotCall` on phone numbers and `isEuContact`, and never pull contact data in bulk or build a mass mailing list. Do not look up private individuals. Lusha itself withholds some records for legal reasons (`COMPLIANCE_RESTRICTED`, HTTP 451).\n\n**Credits: look first, reveal only what the user picked.** Every Lusha call that returns records spends credits from the account's pool; only the helpers are free. Prices depend on the plan: `lusha_get_account_usage` returns the balance and a `pricing` map (credits per action, for example `api_search`, `reveal_company`, `email`, `phone`).\n- Free: `lusha_get_account_usage` (at most 5 calls a minute), `lusha_list_filters`, `lusha_get_filter_values`, `lusha_list_signal_types`, `lusha_get_enrich_job`.\n- Small charge per result found (`api_search`, nothing for NOT_FOUND): `lusha_search_contacts`, `lusha_search_companies`, `lusha_prospect_contacts`, `lusha_prospect_companies`. They return previews without emails or phones, plus `canReveal` with the credit cost of each field. Keep `size` small.\n- Costs more credits: `lusha_enrich_contacts` (per revealed email and per revealed phone; a phone is usually the most expensive), `lusha_enrich_companies` (per company), `lusha_get_contact_signals` and `lusha_get_company_signals` (per matched signal).\nBefore any call that costs credits, tell the user what you will run, for how many records, and what it can cost, and wait for their yes. Reveal only the fields the user needs (`reveal: [\"emails\"]` is cheaper than emails and phones).\n\n**Setup (about 2 minutes)**\n1. Sign in to Lusha with an account that has API access. Only account admins and managers with API access can see the API page.\n2. Open **API, Manage API Keys** (https://dashboard.lusha.com/api/manage-api-keys) and create or copy a key.\n3. Paste it into `LUSHA_API_KEY`. It is sent as the `api_key` header and only to api.lusha.com.\n\n**Workflow**\n- Known people: `lusha_search_contacts` with ids, LinkedIn URLs, emails or first name, last name and company; known companies: `lusha_search_companies` with names or domains.\n- New prospects: `lusha_list_filters` and `lusha_get_filter_values` for valid values (seniority ids, departments, industries, sizes, locations, technologies), then `lusha_prospect_contacts` or `lusha_prospect_companies`.\n- After the user picks records: `lusha_enrich_contacts` or `lusha_enrich_companies` with the Lusha `id` values (up to 100). If an enrichment returns a `job`, wait `job.retryAfter` seconds and read it with `lusha_get_enrich_job`.\n- Timing: `lusha_list_signal_types`, then `lusha_get_contact_signals` (promotions, company changes) or `lusha_get_company_signals` (hiring surges, headcount, traffic, news, intent).\n\n**Rate limits**: 25 requests a second per account by default, plus hourly and daily quotas by plan; the usage endpoint allows 5 a minute. On 429 wait and retry once.\n\n**Common errors** (`statusCode`, `message`, `errors`)\n- 401: the API key is wrong, revoked or missing.\n- 402: the account has no credits left.\n- 403: the account is inactive or the plan lacks a feature (for example `excludeDnc`).\n- 400: a filter value or parameter is invalid; `errors` names it.\n- 451: Lusha cannot return this person for legal reasons.\n- 429: rate limit. Wait and retry once.\n- Per record, a 200 can still carry `error.code` NOT_FOUND, COMPLIANCE_RESTRICTED or ENRICH_FAILED.\n\n**Out of scope here**: search-and-enrich in one call (it skips the user's confirmation step), lookalikes, buying groups, scoring, website visits, tables, webhooks, CRM export, conversations and the legacy v2 endpoints (`/v2/person`, `/prospecting/...`).",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "lusha",
+  "docsUrl": "https://docs.lusha.com/api-reference/overview",
+  "prerequisites": "A Lusha account with API access and an API key from dashboard.lusha.com (API, Manage API Keys; admins and managers only). About 2 minutes. Searches spend a few credits per result; revealing emails and phones spends more.",
+  "requiredEnvVars": [
+    "LUSHA_API_KEY"
+  ],
+  "envVarMeta": {
+    "LUSHA_API_KEY": {
+      "label": "Lusha API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "dashboard.lusha.com, API, Manage API Keys. Calls that return records spend this account's credits.",
+      "link": "https://dashboard.lusha.com/api/manage-api-keys",
+      "pattern": "^[A-Za-z0-9-]{20,128}$",
+      "patternMessage": "Paste the key as the dashboard shows it (letters, digits and dashes), without api_key or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Lusha refused the API key: it is wrong, revoked or incomplete. Copy it again from https://dashboard.lusha.com/api/manage-api-keys.",
+    "402": "The Lusha account has no credits left. Top up or wait for the renewal, then verify again.",
+    "403": "Lusha refused the request: the account is inactive or the plan does not include API access. Check the plan with your Lusha admin.",
+    "429": "Lusha is rate limiting this account. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "lusha_list_filters",
+    "params": {
+      "entity": "contacts"
+    }
+  },
+  "connector": {
+    "name": "Lusha",
+    "type": "REST",
+    "baseUrl": "https://api.lusha.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "api_key",
+      "apiKey": "{{LUSHA_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v3/contacts/prospecting/filters"
+  },
+  "tools": [
+    {
+      "name": "lusha_get_account_usage",
+      "description": "Show the Lusha account: credits total, used and remaining in the current period, rate-limit usage (minute, hour, day), the plan and its renewal dates, and the credit price of every billable action (pricing, e.g. api_search, reveal_company, email, phone). Use it to estimate a cost before spending credits. Free, but Lusha allows only 5 calls a minute. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/account/usage"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "credits": "$.credits",
+            "rateLimits": "$.rateLimits",
+            "plan": "$.plan",
+            "pricing": "$.pricing"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "lusha_list_filters",
+      "description": "List the filter types Lusha prospecting accepts, for contacts or for companies, and whether each needs a search text to list its values. Use it before lusha_get_filter_values. Free: uses no credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "enum": [
+              "contacts",
+              "companies"
+            ],
+            "description": "contacts for contact prospecting filters, companies for company prospecting filters."
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/{entity}/prospecting/filters"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId"
+          ],
+          "maxBytes": 10000
+        }
+      }
+    },
+    {
+      "name": "lusha_get_filter_values",
+      "description": "List the valid values of one Lusha prospecting filter, e.g. seniority ids, departments, countries, company sizes, revenue ranges, industries (industriesLabels with their ids), SIC and NAICS codes, intent topics. Contacts: departments, seniority, existingDataPoints, countries, locations (needs query). Companies: sizes, revenues, sics, naics, intentTopics, industriesLabels, names, technologies and locations (the last three need query). Use the values in lusha_prospect_contacts and lusha_prospect_companies. Free: uses no credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "enum": [
+              "contacts",
+              "companies"
+            ],
+            "description": "contacts or companies."
+          },
+          "filter_type": {
+            "type": "string",
+            "enum": [
+              "departments",
+              "seniority",
+              "existingDataPoints",
+              "countries",
+              "locations",
+              "names",
+              "sizes",
+              "revenues",
+              "sics",
+              "naics",
+              "industriesLabels",
+              "intentTopics",
+              "technologies"
+            ],
+            "description": "The filter whose values you need. Contacts accept departments, seniority, existingDataPoints, countries, locations; companies accept names, sizes, revenues, locations, sics, naics, industriesLabels, intentTopics, technologies."
+          },
+          "query": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "description": "Search text, 2 to 256 characters. Required for locations, names and technologies, e.g. Munich or Salesforce."
+          }
+        },
+        "required": [
+          "entity",
+          "filter_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/{entity}/prospecting/filters/{filter_type}",
+        "queryParams": {
+          "query": "$query"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "lusha_search_contacts",
+      "description": "Find up to 100 people you already know in Lusha and get a preview of each: Lusha id, name, job title, seniority, department, company, location, LinkedIn URL, which data points exist (has) and what an enrichment would reveal and cost (canReveal, e.g. emails 1 credit, phones 5 credits). No emails or phone numbers yet. Give each contact one identifier: id, linkedinUrl, email, or firstName plus lastName plus companyName or companyDomain. COSTS CREDITS: a small api_search charge per contact found (NOT_FOUND is free); ask the user before searching many. Returns personal data: use it only for a legitimate B2B purpose.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contacts": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "clientReferenceId": {
+                  "type": "string",
+                  "description": "Your own reference, echoed back on the result."
+                },
+                "id": {
+                  "type": "string",
+                  "description": "Lusha contact id."
+                },
+                "linkedinUrl": {
+                  "type": "string",
+                  "description": "LinkedIn profile URL."
+                },
+                "email": {
+                  "type": "string",
+                  "description": "A known email address."
+                },
+                "firstName": {
+                  "type": "string",
+                  "description": "First name, with lastName and companyName or companyDomain."
+                },
+                "lastName": {
+                  "type": "string",
+                  "description": "Last name."
+                },
+                "companyName": {
+                  "type": "string",
+                  "description": "Current employer name."
+                },
+                "companyDomain": {
+                  "type": "string",
+                  "description": "Current employer domain, e.g. example.com."
+                }
+              }
+            },
+            "description": "1 to 100 people, e.g. [{\"firstName\": \"Anna\", \"lastName\": \"Schmidt\", \"companyDomain\": \"example.com\"}]."
+          },
+          "include_partial_profiles": {
+            "type": "boolean",
+            "description": "Also return profiles with incomplete data."
+          }
+        },
+        "required": [
+          "contacts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/contacts/search",
+        "bodyMapping": {
+          "contacts": "$contacts",
+          "options": {
+            "includePartialProfiles": "$include_partial_profiles"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId",
+            "tableWrite"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "lusha_search_companies",
+      "description": "Find up to 100 companies you already know in Lusha by id, name or domain and get a preview of each: Lusha company id, name, domain, employee count range, industry, location, LinkedIn URL and which data points an enrichment would reveal (has). COSTS CREDITS: a small api_search charge per company found (NOT_FOUND is free). Use the ids with lusha_enrich_companies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companies": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "clientReferenceId": {
+                  "type": "string",
+                  "description": "Your own reference, echoed back on the result."
+                },
+                "id": {
+                  "type": "string",
+                  "description": "Lusha company id."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Company name."
+                },
+                "domain": {
+                  "type": "string",
+                  "description": "Company domain, e.g. example.com (most reliable)."
+                }
+              }
+            },
+            "description": "1 to 100 companies, e.g. [{\"domain\": \"example.com\"}]."
+          },
+          "include_partial_profiles": {
+            "type": "boolean",
+            "description": "Also return profiles with incomplete data."
+          }
+        },
+        "required": [
+          "companies"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/companies/search",
+        "bodyMapping": {
+          "companies": "$companies",
+          "options": {
+            "includePartialProfiles": "$include_partial_profiles"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId",
+            "tableWrite"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "lusha_prospect_contacts",
+      "description": "Find new contacts in Lusha by ICP filters and get a page of previews (Lusha id, name, job title, seniority, company, location, has, canReveal); no emails or phones. Filters go in filters with contacts and/or companies, each with include and exclude, e.g. {\"contacts\": {\"include\": {\"jobTitles\": [\"head of procurement\"], \"seniorityIds\": [4, 5], \"locations\": [{\"country\": \"Germany\"}], \"existingDataPoints\": [\"work_email\"]}}, \"companies\": {\"include\": {\"sizes\": [{\"min\": 51, \"max\": 500}], \"mainIndustriesIds\": [4]}}}. Contact fields: jobTitles, jobTitlesExactMatch, seniorityIds, departments, locations, countries, existingDataPoints, skills, searchText, signals. Company fields: names, domains, sizes, revenues, locations, mainIndustriesIds, subIndustriesIds, technologies, intentTopics, sicCodes, naicsCodes, businessModel, companyType, foundedYear, funding. Look values up with lusha_get_filter_values. COSTS CREDITS: billed per result returned (api_search, see pricing in lusha_get_account_usage), plus a charge per matched signal when filtering by signals; keep size small and tell the user before larger pages. Returns personal data: use it only for a legitimate B2B purpose.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Lusha prospecting filters: {\"contacts\": {\"include\": {...}, \"exclude\": {...}}, \"companies\": {\"include\": {...}, \"exclude\": {...}}}. At least one of contacts or companies."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 0,
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 100,
+            "default": 10,
+            "description": "Results per page, 10 to 100 (default 10). Every result is billed."
+          },
+          "include_partial_profiles": {
+            "type": "boolean",
+            "description": "Include contacts with incomplete data (Lusha default true)."
+          },
+          "exclude_dnc": {
+            "type": "boolean",
+            "description": "Leave out contacts whose phone numbers are all on Do Not Call lists. Not on every plan (403 otherwise)."
+          },
+          "max_contacts_per_company": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "At most this many contacts from one company, 1 to 20."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/contacts/prospecting",
+        "bodyMapping": {
+          "pagination": {
+            "page": "$page",
+            "size": "$size"
+          },
+          "filters": "$filters",
+          "options": {
+            "includePartialProfiles": "$include_partial_profiles",
+            "excludeDnc": "$exclude_dnc",
+            "maxContactsPerCompany": "$max_contacts_per_company"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId",
+            "tableWrite"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "lusha_prospect_companies",
+      "description": "Find new companies in Lusha by firmographic filters and get a page of previews (Lusha company id, name, domain, employee range, industry, location). Filters go in filters.companies with include and exclude, e.g. {\"companies\": {\"include\": {\"locations\": [{\"country\": \"Germany\"}], \"sizes\": [{\"min\": 51, \"max\": 500}], \"technologies\": [\"Salesforce\"], \"mainIndustriesIds\": [4]}, \"exclude\": {\"domains\": [\"example.com\"]}}}. Fields: names, domains, sizes, revenues, locations, mainIndustriesIds, subIndustriesIds, technologies with technologiesCondition, intentTopics, sicCodes, naicsCodes, businessModel (B2B, B2C, B2G), companyType, foundedYear, funding, keywords, signals. Look values up with lusha_get_filter_values. COSTS CREDITS: billed per result returned (api_search, see pricing in lusha_get_account_usage), plus a charge per matched signal when filtering by signals; keep size small.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Lusha prospecting filters: {\"companies\": {\"include\": {...}, \"exclude\": {...}}}."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 0,
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 100,
+            "default": 10,
+            "description": "Results per page, 10 to 100 (default 10). Every result is billed."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/companies/prospecting",
+        "bodyMapping": {
+          "pagination": {
+            "page": "$page",
+            "size": "$size"
+          },
+          "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId",
+            "tableWrite"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "lusha_enrich_contacts",
+      "description": "Reveal the emails and phone numbers (plus job, company, location, social links and previous employment) of up to 100 contacts by their Lusha ids from lusha_search_contacts or lusha_prospect_contacts. COSTS CREDITS: charged per revealed email and per revealed phone (a phone usually costs several times an email; canReveal in the search result shows the price, 0 when already revealed). Before calling, list the contacts and the expected cost to the user and wait for their yes; ask only for what they need (reveal [\"emails\"] or [\"phones\"]). If the answer has a job, wait job.retryAfter seconds and call lusha_get_enrich_job. Returns personal data: use it only for a legitimate B2B purpose, under GDPR and CAN-SPAM, and respect doNotCall on phone numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            },
+            "description": "Lusha contact ids from a search or prospecting result."
+          },
+          "reveal": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "emails",
+                "phones"
+              ]
+            },
+            "description": "What to reveal: [\"emails\"], [\"phones\"] or both. Omitted means both, which costs the most."
+          },
+          "waterfall_enabled": {
+            "type": "boolean",
+            "description": "false keeps this call to Lusha's own data even when Data Waterfall (third-party providers, extra credits) is switched on for the account."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/contacts/enrich",
+        "bodyMapping": {
+          "ids": "$ids",
+          "reveal": "$reveal",
+          "waterfallEnabled": "$waterfall_enabled"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId",
+            "tableWrite",
+            "results[*].tags",
+            "results[*].profile",
+            "results[*].location.coordinates"
+          ],
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "lusha_get_enrich_job",
+      "description": "Read a Lusha enrichment job that lusha_enrich_contacts returned in job (Data Waterfall). While status is processing, wait retryAfter seconds and call again; on complete, contacts holds the data that arrived late, merge it by id; on expired or failed, keep what the enrichment already returned. 404 means the job is gone: stop. Free: polling uses no credits (creditsCharged is what the late data cost). Read-only. Returns personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "job.id from lusha_enrich_contacts."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/contacts/jobs/{job_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId",
+            "contacts[*].tags",
+            "contacts[*].profile",
+            "contacts[*].location.coordinates"
+          ],
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "lusha_enrich_companies",
+      "description": "Reveal the full profile of up to 100 companies by their Lusha ids from lusha_search_companies or lusha_prospect_companies: description, company type, founding year, employee count, industry and SIC and NAICS codes, headquarters and other locations, social links, revenue range, funding, technologies. reveal adds breakdowns such as employeesByDepartment, competitors, intent, openJobsTotal, directParent or ultimateParent. COSTS CREDITS: charged per company found (reveal_company), and some reveal fields add their own charge; tell the user the expected cost and wait for their yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            },
+            "description": "Lusha company ids from a search or prospecting result."
+          },
+          "reveal": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "employeesByDepartment",
+                "employeesByLocation",
+                "employeesBySeniority",
+                "competitors",
+                "intent",
+                "estimatedAnnualItSpend",
+                "monthlyWebsiteTraffic",
+                "openJobsTotal",
+                "openJobsByDepartment",
+                "openJobsByLocation",
+                "openJobsBySeniority",
+                "directParent",
+                "ultimateParent"
+              ]
+            },
+            "description": "Optional extra data points; leave empty for the standard firmographics."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/companies/enrich",
+        "bodyMapping": {
+          "ids": "$ids",
+          "reveal": "$reveal"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId",
+            "tableWrite"
+          ],
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "lusha_list_signal_types",
+      "description": "List the signal types Lusha tracks for contacts (promotion, companyChange) or for companies (hiring surges, headcount changes, website traffic, IT spend, news categories, intent changes). Use the names in lusha_get_contact_signals and lusha_get_company_signals. Free: uses no credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "enum": [
+              "contacts",
+              "companies"
+            ],
+            "description": "contacts or companies."
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/{entity}/signals/types"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId"
+          ],
+          "maxBytes": 10000
+        }
+      }
+    },
+    {
+      "name": "lusha_get_contact_signals",
+      "description": "Get recent job changes and promotions of up to 100 contacts by Lusha contact id, e.g. to reach someone who just started a new role. signal_types: promotion, companyChange or allSignals. COSTS CREDITS: charged per matched signal per contact (no match, no charge); tell the user before running it on many contacts. Returns personal data: use it only for a legitimate B2B purpose.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            },
+            "description": "Lusha contact ids."
+          },
+          "signal_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "allSignals",
+                "promotion",
+                "companyChange"
+              ]
+            },
+            "default": [
+              "allSignals"
+            ],
+            "description": "Which signals to return."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Only signals on or after this date, YYYY-MM-DD."
+          },
+          "max_results_per_signal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "At most this many events per signal type and contact."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/contacts/signals",
+        "bodyMapping": {
+          "ids": "$ids",
+          "signalTypes": "$signal_types",
+          "startDate": "$start_date",
+          "maxResultsPerSignal": "$max_results_per_signal"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId",
+            "tableWrite"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "lusha_get_company_signals",
+      "description": "Get recent events at up to 100 companies by Lusha company id: hiring surges, headcount increases or decreases, website traffic and IT spend changes, news (risk, funding, people, product and more) and week-over-week intent changes. allSignals covers everything except the four intent types (newIntentTopic, intentScoreIncrease, intentScoreDecrease, intentTopicRemoved), which must be named. See lusha_list_signal_types. COSTS CREDITS: charged per matched signal per company (no match, no charge); tell the user before running it on many companies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            },
+            "description": "Lusha company ids."
+          },
+          "signal_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "allSignals"
+            ],
+            "description": "Signal types from lusha_list_signal_types, e.g. [\"surgeInHiring\", \"headcountIncrease3m\"] or [\"allSignals\"]."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Only signals on or after this date, YYYY-MM-DD."
+          },
+          "max_results_per_signal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "At most this many events per signal type and company."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/companies/signals",
+        "bodyMapping": {
+          "ids": "$ids",
+          "signalTypes": "$signal_types",
+          "startDate": "$start_date",
+          "maxResultsPerSignal": "$max_results_per_signal"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "requestId",
+            "tableWrite"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    }
+  ]
+}

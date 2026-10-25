@@ -15,6 +15,7 @@ export function ProviderMark({ type, size = 18 }: { type?: string | null; size?:
   const s = { ...shared, width: size, height: size, style: { flex: 'none' } };
   switch ((type ?? '').toUpperCase()) {
     case 'ENTRA':
+    case 'MICROSOFT':
       return (
         <svg viewBox="0 0 21 21" {...s}>
           <rect x="0" y="0" width="10" height="10" fill="#F25022" />

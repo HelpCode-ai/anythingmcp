@@ -303,6 +303,7 @@ describe('ConnectorsService.testConnection for SOAP connectors', () => {
         {} as any,
         {} as any,
         {} as any,
+        {} as any, // harParser
         {} as any,
         {} as any,
         {} as any,

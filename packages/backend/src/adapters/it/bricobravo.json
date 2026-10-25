@@ -1,0 +1,185 @@
+{
+  "slug": "bricobravo",
+  "name": "BricoBravo",
+  "aliases": [
+    "Brico Bravo",
+    "BricoBravo Seller Hub",
+    "BricoBravo Marketplace"
+  ],
+  "description": "Sell on BricoBravo, the Italian DIY and home marketplace, from an AI agent: orders with items, totals, customer and shipping address, filtered by date. Confirming shipment with courier and tracking is included, installed switched off.",
+  "region": "it",
+  "category": "e-commerce",
+  "icon": "bricobravo",
+  "docsUrl": "https://sellerhub.bricobravo.com",
+  "instructions": "## BricoBravo\nThis connector uses the **BricoBravo Seller Hub API** (`https://sellerhub.bricobravo.com/api`), the API for sellers on BricoBravo, the Italian DIY, home and garden marketplace: orders with items, totals, customer and shipping address, and the shipping confirmation with courier and tracking. BricoBravo runs its own seller hub, not Mirakl. Confirming shipment is included but installed switched off.\n\n**Setup**\n1. Get the API token of your shop from BricoBravo (in the Seller Hub at sellerhub.bricobravo.com, or from BricoBravo seller support).\n2. Paste it into `BRICOBRAVO_API_TOKEN`. It is sent in the `sh-token` header (not as Bearer).\n3. Install and run `bricobravo_search_orders`.\n\n**Orders**: `bricobravo_search_orders` lists orders with `id_order` (the Seller Hub order id), `vtex_id_order` (the marketplace order number, e.g. 1234460505385-01), `status`, `total`, `creation_date` (YYYY-MM-DD HH:MM:SS, Italian time), `acquired`, `items` (EAN, product code, name, price, list price, quantity), `invoice_info` and `shipping_info` (customer and receiver name, e-mail, phone, street, number, postcode, city, province, country). Status: 0 paid (to ship), 1 completed, 2 to be refunded, 3 refunded.\n- Keep `all` true (the default): otherwise BricoBravo only lists orders not yet `acquired` by an order management system, so orders your other tools already imported would be missing.\n- Filter by creation time with `start_datetime` and `end_datetime` in the compact form **YYYYMMDDHHMMSS** (e.g. `20261001000000`).\n- The answer is `data` (the orders) and `pagination` with `total_data` (orders matching) and `pages`. Pages hold `per_page` orders (default 100); page with `page` from 1.\n\n`bricobravo_get_order_details` reads one order by its `id_order` number and returns it in `data`. An unknown id, or the marketplace number (`vtex_id_order`) instead of `id_order`, still answers HTTP 200 but with an `errors` list and no `data`: check for it.\n\n**Shipping (switched off)**: `bricobravo_mark_shipped` confirms the shipment of an order with the courier, tracking number and tracking URL; called again on a shipped order it replaces the tracking data (e.g. after a second dispatch). Courier codes: dhl, gls-italy, italy-sda, tnt-it, brt-it, ups, fedex, poste-italiane, dpd, liccardi-express, kuehne-nagel, fercam, dachser, raben-group, dbschenker-se, other. For a split shipment separate several tracking numbers and URLs with commas. If an order management system already confirms your shipments, use this only for corrections. It acts on a real customer order and is installed switched off: show the user the order, courier and tracking and wait for a yes. Read the order again with `bricobravo_get_order_details` afterwards.\n\n**Errors**: 401 `token NOT valid` means a wrong or revoked token. A wrong path answers 404 `The route ... could not be found`.",
+  "prerequisites": "A seller account on BricoBravo and the API token of its Seller Hub.",
+  "requiredEnvVars": [
+    "BRICOBRAVO_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "BRICOBRAVO_API_TOKEN": {
+      "label": "Seller Hub API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API token of your BricoBravo shop, from the Seller Hub (sellerhub.bricobravo.com) or BricoBravo seller support. Sent in the sh-token header.",
+      "link": "https://sellerhub.bricobravo.com",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the token alone, without Bearer, quotes or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "BricoBravo answered token NOT valid. Check BRICOBRAVO_API_TOKEN or ask BricoBravo for a new token.",
+    "404": "BricoBravo does not know this route or order."
+  },
+  "probe": {
+    "tool": "bricobravo_search_orders",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "connector": {
+    "name": "BricoBravo Seller Hub API",
+    "type": "REST",
+    "baseUrl": "https://sellerhub.bricobravo.com/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "sh-token",
+      "apiKey": "{{BRICOBRAVO_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "bricobravo_search_orders",
+      "description": "List BricoBravo orders: id_order, marketplace order number (vtex_id_order), status (0 paid, 1 completed, 2 to refund, 3 refunded), total, creation date, acquired flag, items with EAN, name, price and quantity, invoice info and shipping info with customer and address. Filter by creation time (YYYYMMDDHHMMSS); pages of per_page orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) lists every order, also those already acquired by an order management system; false only the ones not yet acquired."
+          },
+          "start_datetime": {
+            "type": "string",
+            "pattern": "^[0-9]{14}$",
+            "description": "Orders created from this time, YYYYMMDDHHMMSS, e.g. 20261001000000."
+          },
+          "end_datetime": {
+            "type": "string",
+            "pattern": "^[0-9]{14}$",
+            "description": "Orders created up to this time, YYYYMMDDHHMMSS."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Orders per page, 100 by default."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "all": "$all",
+          "start_datetime": "$start_datetime",
+          "end_datetime": "$end_datetime",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "bricobravo_get_order_details",
+      "description": "Get one BricoBravo order by its id_order number: status, total, creation date, acquired flag, items, invoice info and shipping info. Pass id_order, not the marketplace number vtex_id_order (that answers an errors list).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "id_order from bricobravo_search_orders."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      }
+    },
+    {
+      "name": "bricobravo_mark_shipped",
+      "description": "Confirm the shipment of a BricoBravo order with courier code, tracking number and tracking URL; on a shipped order it replaces the tracking data. Courier codes: dhl, gls-italy, italy-sda, tnt-it, brt-it, ups, fedex, poste-italiane, dpd, liccardi-express, kuehne-nagel, fercam, dachser, raben-group, dbschenker-se, other. Installed switched off; acts on a real customer order: show the user the order and tracking and get a yes first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "id_order of the order."
+          },
+          "courier": {
+            "type": "string",
+            "enum": [
+              "dhl",
+              "gls-italy",
+              "italy-sda",
+              "tnt-it",
+              "brt-it",
+              "ups",
+              "fedex",
+              "poste-italiane",
+              "dpd",
+              "liccardi-express",
+              "kuehne-nagel",
+              "fercam",
+              "dachser",
+              "raben-group",
+              "dbschenker-se",
+              "other"
+            ],
+            "description": "BricoBravo courier code."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number; several separated by commas for a split shipment."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Tracking URL; several separated by commas, in the same order."
+          }
+        },
+        "required": [
+          "order_id",
+          "courier",
+          "tracking_number",
+          "tracking_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/orders/{order_id}/shipped",
+        "bodyMapping": {
+          "courier": "$courier",
+          "tracking_number": "$tracking_number",
+          "tracking_url": "$tracking_url"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

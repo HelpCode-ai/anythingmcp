@@ -2,7 +2,7 @@
   "slug": "twelve-data",
   "name": "Twelve Data",
   "description": "Market data for AI agents from Twelve Data: real-time quotes and prices, historical time series, exchange rates and currency conversion, symbol search, stock, forex and crypto lists, exchanges and market hours, and RSI, MACD, SMA, EMA and Bollinger Bands. 19 read-only tools, API key.",
-  "instructions": "This connector uses the Twelve Data REST API (`https://api.twelvedata.com`) for market data on stocks, ETFs, forex and cryptocurrencies. All tools only read.\n\n**Setup**:\n1. Create a free account at https://twelvedata.com and open the dashboard's **API Keys** page.\n2. Copy the key into `TWELVE_DATA_API_KEY`. It is sent in the `Authorization: apikey <key>` header, as Twelve Data recommends, so it never appears in a URL or a log.\n\n**Plans and limits**: the free Basic plan allows **8 API credits per minute and 800 per day**. Most tools cost 1 credit per symbol and call; reference lists (stocks, forex pairs, exchanges, symbol search, market state, earliest timestamp, API usage) cost 1 credit per call. Going over returns HTTP 429; wait for the next minute. Free plans cover US equities, forex and crypto; many non-US exchanges, fundamentals and some data need a paid plan and answer 403 otherwise. `twelve_data_get_api_usage` shows the usage of the last minute and of the day against the plan limits.\n\n**Where to start**: resolve a name into a symbol with `twelve_data_search_symbols` (for example Siemens -> SIE on XETR). Then `twelve_data_get_price` for a number, `twelve_data_get_quote` for change, volume and 52-week range, or `twelve_data_get_time_series` for history. For currencies use `twelve_data_get_exchange_rate` or `twelve_data_convert_currency` with a pair such as EUR/USD.\n\n**Symbols**: stocks use the ticker (AAPL); when a ticker is listed on several exchanges pass `exchange` (name or MIC). Forex and crypto pairs use a slash: EUR/USD, BTC/USD, ETH/BTC.\n\n**Time series and indicators**: `interval` is one of 1min, 5min, 15min, 30min, 45min, 1h, 2h, 4h, 8h, 1day, 1week, 1month. `outputsize` is 1 to 5000 data points (the tools default to 30). With `start_date` and `end_date` the API returns all points in that range. Values come newest first unless `order` is asc. Datetimes are in the exchange's timezone unless `timezone` is set (UTC for forex and crypto). Prices are strings in the JSON; convert before computing. Indicators here default to the close price.\n\n**Errors**: errors come back as `{\"code\": 400, \"message\": \"...\", \"status\": \"error\"}` with the same HTTP status: 400 bad parameter (the message lists valid values), 401 bad key, 403 plan does not include the data, 404 no data for the parameters, 429 credits exhausted.\n\n**Demo key**: Twelve Data documents the key `demo` for trying a few symbols (for example AAPL, EUR/USD, BTC/USD); it is not meant for real use.",
+  "instructions": "This connector uses the Twelve Data REST API (`https://api.twelvedata.com`) for market data on stocks, ETFs, forex and cryptocurrencies. All tools only read.\n\n**Setup**:\n1. Create a free account at https://twelvedata.com and open the dashboard's **API Keys** page.\n2. Copy the key into `TWELVE_DATA_API_KEY`. It is sent in the `Authorization: apikey <key>` header, as Twelve Data recommends, so it never appears in a URL or a log.\n\n**Plans and limits**: the free Basic plan allows **8 API credits per minute and 800 per day**. Most tools cost 1 credit per symbol and call; reference lists (stocks, forex pairs, exchanges, symbol search, market state, earliest timestamp, API usage) cost 1 credit per call. Going over returns HTTP 429; wait for the next minute. Free plans cover US equities, forex and crypto; many non-US exchanges, fundamentals and some data need a paid plan and answer 403 otherwise. `twelve_data_get_api_usage` shows the usage of the last minute and of the day against the plan limits.\n\n**Where to start**: resolve a name into a symbol with `twelve_data_search_symbols` (for example Siemens -> SIE on XETR). Then `twelve_data_get_price` for a number, `twelve_data_get_quote` for change, volume and 52-week range, or `twelve_data_get_time_series` for history. For currencies use `twelve_data_get_exchange_rate` or `twelve_data_convert_currency` with a pair such as EUR/USD.\n\n**Symbols**: stocks use the ticker (AAPL); when a ticker is listed on several exchanges pass `exchange` (name or MIC). Forex and crypto pairs use a slash: EUR/USD, BTC/USD, ETH/BTC.\n\n**Time series and indicators**: `interval` is one of 1min, 5min, 15min, 30min, 45min, 1h, 2h, 4h, 8h, 1day, 1week, 1month. `outputsize` is 1 to 5000 data points (the tools default to 30). With `start_date` and `end_date` the API returns all points in that range. Values come newest first unless `order` is asc. Datetimes are in the exchange's timezone unless `timezone` is set (UTC for forex and crypto). Prices are strings in the JSON; convert before computing. Indicators here default to the close price.\n\n**Errors**: errors come back as `{\"code\": 400, \"message\": \"...\", \"status\": \"error\"}` with the same HTTP status: 400 bad parameter (the message lists valid values), 401 bad key, 403 plan does not include the data, 404 no data for the parameters or a symbol outside the plan (\"This symbol is available starting with the Grow plan\"), 429 credits exhausted.\n\n**Indices and CFDs**: index symbols such as NDX (Nasdaq-100) or SPX need a paid plan, and broker CFD names such as NAS100, US100 or US30 are not Twelve Data symbols at all. On the Basic plan use an ETF that tracks the index instead (QQQ for the Nasdaq-100, SPY for the S&P 500, DIA for the Dow Jones) and say so in the answer. When unsure, call `twelve_data_search_symbols` with `show_plan` true, which tells for each match which plan it needs.\n\n**Demo key**: Twelve Data documents the key `demo` for trying a few symbols (for example AAPL, EUR/USD, BTC/USD); it is not meant for real use.",
   "region": "intl",
   "category": "finance",
   "icon": "twelve-data",
@@ -62,7 +62,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure. Indices such as NDX need a paid plan and CFD names such as NAS100 or US100 do not exist here; on the Basic plan use an ETF such as QQQ."
           },
           "exchange": {
             "type": "string",
@@ -126,7 +126,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure. Indices such as NDX need a paid plan and CFD names such as NAS100 or US100 do not exist here; on the Basic plan use an ETF such as QQQ."
           },
           "exchange": {
             "type": "string",
@@ -161,7 +161,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure. Indices such as NDX need a paid plan and CFD names such as NAS100 or US100 do not exist here; on the Basic plan use an ETF such as QQQ."
           },
           "interval": {
             "type": "string",
@@ -260,7 +260,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure. Indices such as NDX need a paid plan and CFD names such as NAS100 or US100 do not exist here; on the Basic plan use an ETF such as QQQ."
           },
           "exchange": {
             "type": "string",
@@ -395,6 +395,10 @@
             "maximum": 120,
             "default": 10,
             "description": "Number of data points, 1 to 120. Default 10 here; keep it small to save context."
+          },
+          "show_plan": {
+            "type": "boolean",
+            "description": "true adds, for every match, the plan it needs (access.plan), so you can pick a symbol the account can read."
           }
         },
         "required": [
@@ -406,7 +410,8 @@
         "path": "/symbol_search",
         "queryParams": {
           "symbol": "$symbol",
-          "outputsize": "$outputsize"
+          "outputsize": "$outputsize",
+          "show_plan": "$show_plan"
         }
       }
     },
@@ -578,7 +583,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure. Indices such as NDX need a paid plan and CFD names such as NAS100 or US100 do not exist here; on the Basic plan use an ETF such as QQQ."
           },
           "interval": {
             "type": "string",
@@ -662,7 +667,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure. Indices such as NDX need a paid plan and CFD names such as NAS100 or US100 do not exist here; on the Basic plan use an ETF such as QQQ."
           },
           "interval": {
             "type": "string",
@@ -739,7 +744,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure. Indices such as NDX need a paid plan and CFD names such as NAS100 or US100 do not exist here; on the Basic plan use an ETF such as QQQ."
           },
           "interval": {
             "type": "string",
@@ -829,7 +834,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure. Indices such as NDX need a paid plan and CFD names such as NAS100 or US100 do not exist here; on the Basic plan use an ETF such as QQQ."
           },
           "interval": {
             "type": "string",
@@ -906,7 +911,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure. Indices such as NDX need a paid plan and CFD names such as NAS100 or US100 do not exist here; on the Basic plan use an ETF such as QQQ."
           },
           "interval": {
             "type": "string",
@@ -983,7 +988,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure. Indices such as NDX need a paid plan and CFD names such as NAS100 or US100 do not exist here; on the Basic plan use an ETF such as QQQ."
           },
           "interval": {
             "type": "string",

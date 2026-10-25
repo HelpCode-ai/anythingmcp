@@ -1,8 +1,8 @@
 {
   "slug": "hrworks",
   "name": "HR WORKS",
-  "description": "Access HR WORKS, the German HR/payroll platform: employees, absences, sick leaves, remote work (home office), working times, projects, applicants, organization units, holidays and cost centers via the v2 REST API.",
-  "instructions": "This connector uses the HR WORKS v2 REST API (https://developers.hrworks.de).\n\n**Authentication — automatic token refresh**: HR WORKS issues short-lived tokens (~15 minutes). This connector uses the `LOGIN_TOKEN` flow: it POSTs `{accessKey, secretAccessKey}` to `/v2/authentication`, reads the returned `token`, sends it as `Authorization: Bearer <token>`, and refreshes it automatically before expiry (and re-logs-in on a 401). You never handle tokens manually.\n\n**Setup**: create an API key pair in HR WORKS (Administration → API) and set:\n- `HRWORKS_ACCESS_KEY` = your access key\n- `HRWORKS_SECRET_ACCESS_KEY` = your secret access key\n\n**Sandbox**: HR WORKS provides a demo environment at `https://api.demo-hrworks.de`. To test against it, change the connector's Base URL and the `loginUrl` in the auth config to the demo host.\n\n**Identifiers**: most person-related endpoints accept either the HR WORKS personnel number or the HR WORKS username. Use the optional `personIdentifierType` / `usePersonnelNumbers` parameters when the identifier you have on hand is not the default.\n\n**Date intervals**: most listing endpoints (absences, sick leaves, working times, remote work) require ISO `YYYY-MM-DD` `beginDate`/`endDate` — maximum span is one year (or 31 days if `interval=days`).\n\n**Pagination**: page size is 50; the API returns a `Link` header with next/prev URLs. Pass `page` to step through results.\n\n**Rate limit**: HR WORKS imposes per-tenant rate limits — see their developer portal for details.",
+  "description": "Access HR WORKS, the German HR/payroll platform: employees, absences, sick leaves, remote work (home office), working times, time accounts, wage payments, personnel files, projects, applicants, organization units, holidays and cost centers via the v2 REST API.",
+  "instructions": "This connector uses the HR WORKS v2 REST API (https://developers.hrworks.de).\n\n**Authentication: automatic token refresh**: HR WORKS issues short-lived tokens (~15 minutes). This connector uses the `LOGIN_TOKEN` flow: it POSTs `{accessKey, secretAccessKey}` to `/v2/authentication`, reads the returned `token`, sends it as `Authorization: Bearer <token>`, and refreshes it automatically before expiry (and re-logs-in on a 401). You never handle tokens manually.\n\n**Setup**: create an API key pair in HR WORKS (Administration → API) and set:\n- `HRWORKS_ACCESS_KEY` = your access key\n- `HRWORKS_SECRET_ACCESS_KEY` = your secret access key\n\n**Sandbox**: HR WORKS provides a demo environment at `https://api.demo-hrworks.de`. To test against it, change the connector's Base URL and the `loginUrl` in the auth config to the demo host.\n\n**Identifiers**: most person-related endpoints accept either the HR WORKS personnel number or the HR WORKS username. Use the optional `personIdentifierType` / `usePersonnelNumbers` parameters when the identifier you have on hand is not the default.\n\n**Date intervals**: most listing endpoints (absences, sick leaves, working times, remote work) require ISO `YYYY-MM-DD` `beginDate`/`endDate`; the maximum span is one year (or 31 days if `interval=days`). Working times are stricter: at most 31 days touching at most two calendar months per call.\n\n**Pagination**: page size is 50; the API returns a `Link` header with next/prev URLs. Pass `page` to step through results.\n\n**Rate limit**: HR WORKS imposes per-tenant rate limits; see their developer portal for details.\n\n**Clock status, onboarding and deleting working times**: `hrworks_get_working_time_status` tells whether a person is clocked in right now. `hrworks_list_onboarding_documents` and `hrworks_get_onboarding_document` read the onboarding documents of new employees, which hold private data (bank account, social security number): share only what the user needs. `hrworks_delete_working_times` deletes working times by their number (`<personnel number>_<start as Unix seconds>`); it is installed switched off, and like the other working-time writes it answers with a job id for `hrworks_get_working_times_job`.",
   "region": "de",
   "category": "hr",
   "icon": "hrworks",
@@ -540,7 +540,7 @@
     },
     {
       "name": "hrworks_list_working_times",
-      "description": "List logged working times (project time tracking) for one or more persons over a date interval. Only persons with a configured time tracking regulation in the requested interval are returned.",
+      "description": "List logged working times (time tracking) for one or more persons over a date interval. Required: beginDate and endDate (YYYY-MM-DD); HR WORKS allows at most 31 days touching at most two calendar months per call, so ask month by month. Only persons with a time recording regulation in the interval are returned.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -605,7 +605,7 @@
     },
     {
       "name": "hrworks_list_projects",
-      "description": "List time-tracking projects of the company.",
+      "description": "List the time-tracking projects of the company, e.g. to find the project id behind a working time.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -617,7 +617,7 @@
     },
     {
       "name": "hrworks_get_project",
-      "description": "Return the data of a specific time-tracking project by id.",
+      "description": "Return the data of one time-tracking project by its id from hrworks_list_projects.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -635,7 +635,7 @@
     },
     {
       "name": "hrworks_list_project_customers",
-      "description": "List the customers used for project time tracking.",
+      "description": "List the customers that time-tracking projects are booked for (project customers).",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -679,7 +679,7 @@
     },
     {
       "name": "hrworks_list_posts",
-      "description": "List all recruiting posts (job postings) of the company.",
+      "description": "List the recruiting posts (job postings) of the company; inactive ones on request.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -699,7 +699,7 @@
     },
     {
       "name": "hrworks_get_post",
-      "description": "Return the data of a single recruiting post by uuid.",
+      "description": "Return the data of one recruiting post (job posting) by its uuid from hrworks_list_posts.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -779,7 +779,7 @@
     },
     {
       "name": "hrworks_list_cost_objectives",
-      "description": "List all cost objectives (Kostenträger) of the company.",
+      "description": "List all cost objectives (Kostenträger) of the company with their number and name.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -803,7 +803,7 @@
     },
     {
       "name": "hrworks_list_travel_expense_reports",
-      "description": "List travel expense reports (Reisekostenabrechnungen). Pass optional date and person filters.",
+      "description": "List travel expense reports (Reisekostenabrechnungen) in a date interval, optionally for some people. Required: beginDate and endDate (YYYY-MM-DD). Read-only.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -818,7 +818,7 @@
           "persons": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Optional list of person identifiers."
+            "description": "Optional list of HR WORKS usernames, or personnel numbers when usePersonnelNumbers is true."
           },
           "usePersonnelNumbers": {
             "type": "boolean",
@@ -828,7 +828,8 @@
             "type": "number",
             "description": "Page number for paginated results (page size 50)."
           }
-        }
+        },
+        "required": ["beginDate", "endDate"]
       },
       "endpointMapping": {
         "method": "GET",
@@ -841,6 +842,685 @@
           "page": "$page"
         }
       }
+    },
+    {
+      "name": "hrworks_list_time_accounts",
+      "description": "Return the time accounts (Arbeitszeitkonto: target hours, worked hours, overtime balance) of people for one or more months. Defaults to the current month for everyone active. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "persons": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional list of HR WORKS usernames, or personnel numbers when usePersonnelNumbers is true. Omit for everyone."
+          },
+          "monthYears": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}$"
+            },
+            "description": "Months to return as YYYY-MM, e.g. [\"2026-09\",\"2026-10\"]. Default: the current month."
+          },
+          "usePersonnelNumbers": {
+            "type": "boolean",
+            "description": "If true, the values in persons are personnel numbers instead of HR WORKS usernames."
+          },
+          "onlyActive": {
+            "type": "boolean",
+            "description": "Default true. Set false to include people who have left the company. Ignored when persons is given."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1 (50 per page). The response Link header says whether there are more.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/working-times/time-accounts",
+        "queryParams": {
+          "persons": "$persons",
+          "monthYears": "$monthYears",
+          "usePersonnelNumbers": "$usePersonnelNumbers",
+          "onlyActive": "$onlyActive",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hrworks_list_leave_accounts",
+      "description": "Return the leave accounts (vacation entitlement, approved, requested, planned and expiring days) of several people at once, up to a reference date. For one person, hrworks_get_leave_account is enough. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "persons": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional list of HR WORKS usernames, or personnel numbers when usePersonnelNumbers is true. Omit for everyone."
+          },
+          "referenceDate": {
+            "type": "string",
+            "description": "Reference date, YYYY-MM-DD. Default today; the account runs from January 1st of that year."
+          },
+          "usePersonnelNumbers": {
+            "type": "boolean",
+            "description": "If true, the values in persons are personnel numbers instead of HR WORKS usernames."
+          },
+          "onlyActive": {
+            "type": "boolean",
+            "description": "Default true. Set false to include people who have left the company. Ignored when persons is given."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1 (50 per page). The response Link header says whether there are more.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/absences/leave-accounts",
+        "queryParams": {
+          "persons": "$persons",
+          "referenceDate": "$referenceDate",
+          "usePersonnelNumbers": "$usePersonnelNumbers",
+          "onlyActive": "$onlyActive",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hrworks_get_available_working_hours",
+      "description": "Return the working hours people are available in a date interval (target hours minus absences), summed or split by day, week or month. Useful for capacity planning. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "beginDate": {
+            "type": "string",
+            "description": "Start of the date interval, YYYY-MM-DD. The interval may span at most one year."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "End of the date interval, YYYY-MM-DD."
+          },
+          "persons": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional identifiers of the people; personIdentifierType says what they are (default personId). Omit for everyone."
+          },
+          "personIdentifierType": {
+            "type": "string",
+            "description": "What the values in persons are. Default personId.",
+            "enum": [
+              "personId",
+              "personnelNumber",
+              "personLicenseNumber",
+              "uuid",
+              "personIdentifierForKiosk"
+            ]
+          },
+          "interval": {
+            "type": "string",
+            "description": "Optional split of the interval: days (then at most 31 days), weeks or months.",
+            "enum": ["days", "weeks", "months"]
+          },
+          "onlyActive": {
+            "type": "boolean",
+            "description": "Default true. Set false to include people who have left the company. Ignored when persons is given."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1 (150 per page).",
+            "minimum": 1
+          }
+        },
+        "required": ["beginDate", "endDate"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/persons/available-working-hours",
+        "queryParams": {
+          "beginDate": "$beginDate",
+          "endDate": "$endDate",
+          "persons": "$persons",
+          "personIdentifierType": "$personIdentifierType",
+          "interval": "$interval",
+          "onlyActive": "$onlyActive",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hrworks_get_absences_accumulated",
+      "description": "Return the number of working days of absence per absence type (vacation, special leave, ...) for each person in a date interval, instead of the single absences. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "beginDate": {
+            "type": "string",
+            "description": "Start of the date interval, YYYY-MM-DD. The interval may span at most one year."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "End of the date interval, YYYY-MM-DD."
+          },
+          "persons": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional list of HR WORKS usernames, or personnel numbers when usePersonnelNumbers is true. Omit for everyone."
+          },
+          "types": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional type keys to filter by."
+          },
+          "statusFilter": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional statuses to count, e.g. approved, requested."
+          },
+          "usePersonnelNumbers": {
+            "type": "boolean",
+            "description": "If true, the values in persons are personnel numbers instead of HR WORKS usernames."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Optional split of the interval: days (then at most 31 days), weeks or months.",
+            "enum": ["days", "weeks", "months"]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1 (50 per page). The response Link header says whether there are more.",
+            "minimum": 1
+          }
+        },
+        "required": ["beginDate", "endDate"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/absences/accumulated-values",
+        "queryParams": {
+          "beginDate": "$beginDate",
+          "endDate": "$endDate",
+          "persons": "$persons",
+          "types": "$types",
+          "statusFilter": "$statusFilter",
+          "usePersonnelNumbers": "$usePersonnelNumbers",
+          "interval": "$interval",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hrworks_get_sick_leaves_accumulated",
+      "description": "Return the number of working days of sick leave per sick leave type for each person in a date interval. Health data: only share it with people allowed to see it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "beginDate": {
+            "type": "string",
+            "description": "Start of the date interval, YYYY-MM-DD. The interval may span at most one year."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "End of the date interval, YYYY-MM-DD."
+          },
+          "persons": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional list of HR WORKS usernames, or personnel numbers when usePersonnelNumbers is true. Omit for everyone."
+          },
+          "types": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional type keys to filter by."
+          },
+          "statusFilter": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional statuses to count, e.g. approved, requested."
+          },
+          "usePersonnelNumbers": {
+            "type": "boolean",
+            "description": "If true, the values in persons are personnel numbers instead of HR WORKS usernames."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Optional split of the interval: days (then at most 31 days), weeks or months.",
+            "enum": ["days", "weeks", "months"]
+          },
+          "onlyActive": {
+            "type": "boolean",
+            "description": "Default true. Set false to include people who have left the company. Ignored when persons is given."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1 (50 per page). The response Link header says whether there are more.",
+            "minimum": 1
+          }
+        },
+        "required": ["beginDate", "endDate"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/sick-leaves/accumulated-values",
+        "queryParams": {
+          "beginDate": "$beginDate",
+          "endDate": "$endDate",
+          "persons": "$persons",
+          "types": "$types",
+          "statusFilter": "$statusFilter",
+          "usePersonnelNumbers": "$usePersonnelNumbers",
+          "interval": "$interval",
+          "onlyActive": "$onlyActive",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hrworks_get_remote_work_accumulated",
+      "description": "Return the number of remote work (home office) days for each person in a date interval. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "beginDate": {
+            "type": "string",
+            "description": "Start of the date interval, YYYY-MM-DD. The interval may span at most one year."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "End of the date interval, YYYY-MM-DD."
+          },
+          "persons": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional list of HR WORKS usernames, or personnel numbers when usePersonnelNumbers is true. Omit for everyone."
+          },
+          "statusFilter": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional statuses to count, e.g. approved, requested."
+          },
+          "usePersonnelNumbers": {
+            "type": "boolean",
+            "description": "If true, the values in persons are personnel numbers instead of HR WORKS usernames."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Optional split of the interval: days (then at most 31 days), weeks or months.",
+            "enum": ["days", "weeks", "months"]
+          },
+          "onlyActive": {
+            "type": "boolean",
+            "description": "Default true. Set false to include people who have left the company. Ignored when persons is given."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1 (50 per page). The response Link header says whether there are more.",
+            "minimum": 1
+          }
+        },
+        "required": ["beginDate", "endDate"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/remote-work/accumulated-values",
+        "queryParams": {
+          "beginDate": "$beginDate",
+          "endDate": "$endDate",
+          "persons": "$persons",
+          "statusFilter": "$statusFilter",
+          "usePersonnelNumbers": "$usePersonnelNumbers",
+          "interval": "$interval",
+          "onlyActive": "$onlyActive",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hrworks_get_person_master_data",
+      "description": "Return the current master data of one person: name, contact data, address, organization unit, employment, contract and similar fields. For many people at once use hrworks_list_persons_master_data. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personIdentifier": {
+            "type": "string",
+            "description": "The person, by default as personnel number."
+          },
+          "personIdentifierType": {
+            "type": "string",
+            "description": "What personIdentifier is. Default personnelNumber.",
+            "enum": [
+              "personId",
+              "personnelNumber",
+              "personLicenseNumber",
+              "uuid",
+              "personIdentifierForKiosk"
+            ]
+          }
+        },
+        "required": ["personIdentifier"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/persons/{personIdentifier}/master-data",
+        "queryParams": {
+          "personIdentifierType": "$personIdentifierType"
+        }
+      }
+    },
+    {
+      "name": "hrworks_list_personnel_file_entries",
+      "description": "List the entries of one person's digital personnel file (Personalakte), optionally filtered by category, creation date, attached documents or wage relevance. Personnel file content is confidential. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personIdentifier": {
+            "type": "string",
+            "description": "The person, by default as personnel number."
+          },
+          "personIdentifierType": {
+            "type": "string",
+            "description": "What personIdentifier is. Default personnelNumber.",
+            "enum": [
+              "personId",
+              "personnelNumber",
+              "personLicenseNumber",
+              "uuid",
+              "personIdentifierForKiosk"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "description": "Optional key of a personnel file category."
+          },
+          "createdAfter": {
+            "type": "string",
+            "description": "Only entries created on or after this date, YYYY-MM-DD."
+          },
+          "createdBefore": {
+            "type": "string",
+            "description": "Only entries created on or before this date, YYYY-MM-DD."
+          },
+          "hasDocuments": {
+            "type": "boolean",
+            "description": "Only entries with (true) or without (false) attached PDF documents."
+          },
+          "isWageRelevant": {
+            "type": "boolean",
+            "description": "Only entries that are (true) or are not (false) relevant for payroll."
+          }
+        },
+        "required": ["personIdentifier"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/persons/{personIdentifier}/personnel-file",
+        "queryParams": {
+          "personIdentifierType": "$personIdentifierType",
+          "category": "$category",
+          "createdAfter": "$createdAfter",
+          "createdBefore": "$createdBefore",
+          "hasDocuments": "$hasDocuments",
+          "isWageRelevant": "$isWageRelevant"
+        }
+      }
+    },
+    {
+      "name": "hrworks_list_person_wage_payments",
+      "description": "List the wage payments (Lohnzahlungen: wage type, amount, period) recorded for one person. The person is given by UUID: hrworks_get_person and hrworks_list_persons_master_data return it. Payroll data is confidential. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "UUID of the person."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": ["uuid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/persons/{uuid}/wage-payments",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hrworks_list_wage_payments",
+      "description": "List wage payments across all people, optionally only for one wage type (see hrworks_list_wage_salary_types). Payroll data is confidential. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "wageTypeNumber": {
+            "type": "integer",
+            "description": "Optional number of the wage type to filter by."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/wage-and-salary/wage-payments",
+        "queryParams": {
+          "wageTypeNumber": "$wageTypeNumber",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hrworks_create_working_times",
+      "description": "Record working times or breaks for one or more people. HR WORKS processes the request in the background and answers with a job id: check the result with hrworks_get_working_times_job. Changes time tracking data, so confirm the people, dates and times with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The working times to record.",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "personnelNumber": {
+                  "type": "string",
+                  "description": "Personnel number of the person."
+                },
+                "type": {
+                  "type": "string",
+                  "description": "workingTime or break.",
+                  "enum": ["workingTime", "break"]
+                },
+                "beginDateAndTime": {
+                  "type": "string",
+                  "description": "Start as ISO 8601 date and time in UTC, e.g. 2026-10-12T06:10:00Z."
+                },
+                "endDateAndTime": {
+                  "type": "string",
+                  "description": "End as ISO 8601 date and time in UTC, e.g. 2026-10-12T16:15:00Z."
+                }
+              },
+              "required": [
+                "personnelNumber",
+                "type",
+                "beginDateAndTime",
+                "endDateAndTime"
+              ]
+            }
+          },
+          "deleteOverlappingWorkingTimes": {
+            "type": "boolean",
+            "description": "If true, existing working times that overlap the new ones are deleted. Default false. Ask the user before setting it."
+          }
+        },
+        "required": ["data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/working-times",
+        "bodyMapping": {
+          "data": "$data",
+          "deleteOverlappingWorkingTimes": "$deleteOverlappingWorkingTimes"
+        }
+      }
+    },
+    {
+      "name": "hrworks_update_working_times",
+      "description": "Change working times that already exist in HR WORKS, with the same item format as hrworks_create_working_times. Processed in the background; check the job with hrworks_get_working_times_job. Confirm the changes with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The working times to change, in the format of hrworks_create_working_times.",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "deleteOverlappingWorkingTimes": {
+            "type": "boolean",
+            "description": "If true, other working times that overlap the changed ones are deleted. Default false. Ask the user before setting it."
+          }
+        },
+        "required": ["data"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/working-times",
+        "bodyMapping": {
+          "data": "$data",
+          "deleteOverlappingWorkingTimes": "$deleteOverlappingWorkingTimes"
+        }
+      }
+    },
+    {
+      "name": "hrworks_get_working_times_job",
+      "description": "Return the status and result of a create, update or delete of working times, by the job id those tools returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "Job id returned by hrworks_create_working_times, hrworks_update_working_times or hrworks_delete_working_times."
+          }
+        },
+        "required": ["jobId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/working-times/jobs/{jobId}"
+      }
+    },
+    {
+      "name": "hrworks_get_working_time_status",
+      "description": "Return whether a person is clocked in right now and, if so, the running working time: start, type (working time, business errand, doctor's appointment...), project, comment and kiosk. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personIdentifier": {
+            "type": "string",
+            "description": "Personnel number of the person (default), or the identifier named in personIdentifierType."
+          },
+          "personIdentifierType": {
+            "type": "string",
+            "enum": ["personId", "personnelNumber", "personLicenseNumber", "uuid", "personIdentifierForKiosk"],
+            "description": "Type of personIdentifier. Leave out for the company's default identifier for working times (usually the personnel number)."
+          }
+        },
+        "required": ["personIdentifier"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/persons/{personIdentifier}/working-times/status",
+        "queryParams": {
+          "personIdentifierType": "$personIdentifierType"
+        }
+      }
+    },
+    {
+      "name": "hrworks_list_onboarding_documents",
+      "description": "List the onboarding documents (Onboarding-Dokumente) of new employees: name, join date, organization unit, superior, status and the personal data the new employee entered. Contains private data such as address, bank account and social security number. Filter by status or organization unit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statusFilter": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["created", "editingFinished", "activated"] },
+            "description": "Only documents in these states: created (sent to the new employee), editingFinished (filled in, waiting for HR) or activated (the person was created from it)."
+          },
+          "organizationUnits": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Only documents of people assigned to these organization units (numbers from hrworks_list_organization_units)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/persons/onboarding",
+        "queryParams": {
+          "statusFilter": "$statusFilter",
+          "organizationUnits": "$organizationUnits"
+        }
+      }
+    },
+    {
+      "name": "hrworks_get_onboarding_document",
+      "description": "Return one onboarding document by id, with all the data the new employee entered (address, bank account, tax and social security data, emergency contact) and its status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Onboarding document id from hrworks_list_onboarding_documents."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/persons/onboarding/{id}"
+      }
+    },
+    {
+      "name": "hrworks_delete_working_times",
+      "description": "Delete recorded working times. Each one is named by its number: the personnel number, an underscore and the start as Unix time in seconds (e.g. 1_1683093600), the `id` that hrworks_list_working_times returns. Deleted times are gone from time tracking and the time accounts change. HR WORKS processes the request in the background and answers with a job id: check the result with hrworks_get_working_times_job. List the times to delete to the user and confirm before calling. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "numbers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": { "type": "string" },
+            "description": "Working time numbers to delete, e.g. [\"1_1683093600\"]."
+          }
+        },
+        "required": ["numbers"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/working-times",
+        "queryParams": {
+          "numbers": "$numbers"
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true }
     }
   ]
 }

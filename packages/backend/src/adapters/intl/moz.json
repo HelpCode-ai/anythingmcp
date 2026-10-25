@@ -1,0 +1,1257 @@
+{
+  "slug": "moz",
+  "name": "Moz",
+  "description": "Give your AI Moz SEO data: Domain Authority, Page Authority, Spam Score and Brand Authority, backlinks, linking domains, anchor texts and top pages, ranking keywords, and keyword volume, difficulty and suggestions from the Moz API.",
+  "instructions": "## Moz\nThis connector calls the **Moz API** (`https://api.moz.com/jsonrpc`, JSON-RPC 2.0) with the user's own API token: Domain Authority, Page Authority, Spam Score and Brand Authority, backlinks, linking domains, anchor texts and top pages from the Moz link index, ranking keywords, and keyword volume, difficulty and suggestions.\n\n**Data calls use rows of the user's monthly Moz API quota.** One row is usually one returned item (a link, a domain, a keyword) or one value; each tool says what it uses. The free plan has only 50 rows a month, paid plans more (moz.com/api/pricing); some plans bill overages. `moz_get_quota` and `moz_get_async_result` are free. Keep `limit` small (defaults 10 to 20), check the quota before large lists, and tell the user before spending many rows.\n\n**Setup (about 3 minutes)**\n1. Sign up for the Moz API at https://moz.com/api (separate from Moz Pro; the free plan needs a credit card but is not charged).\n2. Open the Moz API dashboard at https://moz.com/api/dashboard and create an API token (up to 5 per account).\n3. Paste it into `MOZ_API_TOKEN` and install. It is sent in the `x-moz-token` header, only to api.moz.com.\n\n**Tools**\n- `moz_get_quota`: rows used and left this month (free; also the connection check).\n- `moz_site_metrics`: Domain Authority, Page Authority, Spam Score and link counts of one site (1 row).\n- `moz_site_metrics_multiple`: the same for up to 50 sites (1 row each).\n- `moz_brand_authority`: Brand Authority of a domain (1 row).\n- `moz_list_links`: backlinks of a site or page (1 row per link).\n- `moz_list_linking_domains`: linking root domains (1 row per domain).\n- `moz_list_anchor_texts`: anchor texts used to link to a site (1 row per anchor).\n- `moz_list_top_pages`: strongest pages of a domain (1 row per page).\n- `moz_list_ranking_keywords`: keywords a site ranks for in the top 50, US, UK, Canada and Australia only (1 row per keyword).\n- `moz_count_ranking_keywords`: number of ranking keywords per position (1 row).\n- `moz_keyword_metrics`: volume, difficulty, organic CTR and priority of a keyword (up to 4 rows, 5 with intent).\n- `moz_keyword_metrics_multiple`: the same for up to 50 keywords (up to 5 rows each).\n- `moz_keyword_suggestions`: start a keyword suggestion job (1 row per suggestion), then\n- `moz_get_async_result`: collect it by id (free).\n- `moz_list_locales`: locales the keyword tools accept (no rows).\n\n**Sites and scope**: site tools take `query` (moz.com, blog.moz.com, moz.com/blog or a page URL) and `scope` (domain, subdomain, subfolder or url). When Moz reads the input differently it returns `site_query_suggestion`; follow it. List tools return `next_token`; pass it back as `next_token` for the next page, until it is empty.\n\n**Keyword markets**: keyword tools take `locale` as a Google hl-gl pair (en-US, de-DE, it-IT ...); `moz_list_locales` lists them. Ranking keyword tools only cover en-US, en-GB, en-CA and en-AU.\n\n**Common errors**\n- 401 (-32651): the token is wrong or was deleted. Create or copy it again at https://moz.com/api/dashboard. Moz blocks an IP for 30 minutes after 10 failed logins in 5 minutes, so do not retry a refused token in a loop.\n- 403 (-32670): not enough quota left this month; check with `moz_get_quota`.\n- 400 (-32652): a parameter is invalid; `data.key` names it. 404 (-32655): Moz has no data for that site or keyword.\n- 429 (-32658, -32650): rate limited. Wait and retry once; keyword suggestions allow 100 requests a minute across all Moz users.\n\n**Out of scope here**: Moz Local (locations, listings, reviews), Moz Pro campaigns, SERP fetching, competitor and link intersect methods, beta methods and the older Links API v2.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "moz",
+  "docsUrl": "https://moz.com/api/docs",
+  "unlisted": true,
+  "requiredEnvVars": [
+    "MOZ_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "MOZ_API_TOKEN": {
+      "label": "Moz API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "moz.com/api/dashboard: create or copy an API token. The Moz API is a separate subscription from Moz Pro; its free plan has 50 rows a month.",
+      "link": "https://moz.com/api/dashboard",
+      "pattern": "^[A-Za-z0-9+/=._~-]{16,}$",
+      "patternMessage": "Paste the API token exactly as the Moz API dashboard shows it, without spaces or a header name."
+    }
+  },
+  "verifyHints": {
+    "401": "Moz refused the API token: it is wrong or was deleted. Copy it again from https://moz.com/api/dashboard. Do not retry many times: Moz blocks the IP for 30 minutes after 10 failed logins.",
+    "403": "The Moz API account has no quota left for this period. Check the plan at https://moz.com/api/dashboard.",
+    "429": "Moz is rate limiting requests from this server. Wait a few minutes and verify again."
+  },
+  "probe": {
+    "tool": "moz_get_quota"
+  },
+  "prerequisites": "A Moz API account (separate from Moz Pro) and an API token from moz.com/api/dashboard. Data calls use rows of the monthly quota (the free plan has 50 rows); the quota check is free. About 3 minutes.",
+  "connector": {
+    "name": "Moz",
+    "type": "REST",
+    "baseUrl": "https://api.moz.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-moz-token",
+      "apiKey": "{{MOZ_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "moz_get_quota",
+      "description": "Check the Moz API quota of the current billing period: rows allotted and used, when it resets and whether overages are enabled. Free: uses no quota. Also the connection check.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "enum": [
+              "api.limits.data.rows",
+              "api.limits.beta.rows",
+              "api.limits.mozscape.rows"
+            ],
+            "default": "api.limits.data.rows",
+            "description": "Which quota: api.limits.data.rows (default, used by all tools here), api.limits.beta.rows (beta methods) or api.limits.mozscape.rows."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-quota-lookup-request",
+          "method": "quota.lookup",
+          "params": {
+            "data": {
+              "path": "$path"
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "quota": "$.result.quota"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_site_metrics",
+      "description": "Get Moz metrics of one site or page: Domain Authority, Page Authority, Spam Score, link propensity, linking root domains, external and nofollow link counts, pages crawled, title, HTTP status and last crawl date. Uses 1 row of quota. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The site to look up: a domain (moz.com), subdomain (blog.moz.com), folder (moz.com/blog) or page URL."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "subdomain",
+              "subfolder",
+              "url"
+            ],
+            "default": "domain",
+            "description": "How to read query: domain, subdomain, subfolder, url. Default domain. A wider scope than the URL shortens it, e.g. moz.com/blog with domain becomes moz.com."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-site-metrics-fetch-request",
+          "method": "data.site.metrics.fetch",
+          "params": {
+            "data": {
+              "site_query": {
+                "query": "$query",
+                "scope": "$scope"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "site_query": "$.result.site_query",
+            "site_metrics": "$.result.site_metrics"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_site_metrics_multiple",
+      "description": "Get Moz metrics (Domain Authority, Page Authority, Spam Score, linking root domains, link counts) for up to 50 sites or pages in one call, e.g. to compare competitors. Uses 1 row of quota per returned site. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_queries": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Up to 50 sites, each {\"query\": \"moz.com\", \"scope\": \"domain\"}; scope is domain, subdomain, subfolder or url.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "Domain, subdomain, folder or page URL."
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "domain",
+                    "subdomain",
+                    "subfolder",
+                    "url"
+                  ],
+                  "description": "How to read query."
+                }
+              },
+              "required": [
+                "query",
+                "scope"
+              ]
+            }
+          }
+        },
+        "required": [
+          "site_queries"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-site-metrics-fetch-multiple-request",
+          "method": "data.site.metrics.fetch.multiple",
+          "params": {
+            "data": {
+              "site_queries": "$site_queries"
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "results": {
+              "$from": "$.result.results_by_site[*]",
+              "$select": {
+                "query": "site_query.query",
+                "scope": "site_query.scope",
+                "page": "site_metrics.page",
+                "title": "site_metrics.title",
+                "http_code": "site_metrics.http_code",
+                "domain_authority": "site_metrics.domain_authority",
+                "page_authority": "site_metrics.page_authority",
+                "spam_score": "site_metrics.spam_score",
+                "link_propensity": "site_metrics.link_propensity",
+                "root_domains_to_root_domain": "site_metrics.root_domains_to_root_domain",
+                "root_domains_to_page": "site_metrics.root_domains_to_page",
+                "external_pages_to_root_domain": "site_metrics.external_pages_to_root_domain",
+                "external_pages_to_page": "site_metrics.external_pages_to_page",
+                "pages_crawled_from_root_domain": "site_metrics.pages_crawled_from_root_domain",
+                "last_crawled": "site_metrics.last_crawled"
+              }
+            },
+            "errors": {
+              "$from": "$.result.errors_by_site[*]",
+              "$select": {
+                "query": "site_query.query",
+                "scope": "site_query.scope",
+                "message": "error.message"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_brand_authority",
+      "description": "Get the Moz Brand Authority score (1 to 100) of a domain: how strong its brand is in search, to benchmark against competitors. Uses 1 row of quota. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The domain, e.g. moz.com."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-site-metrics-brand-authority-fetch-request",
+          "method": "data.site.metrics.brand.authority.fetch",
+          "params": {
+            "data": {
+              "site_query": {
+                "query": "$query",
+                "scope": "domain"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "site_query": "$.result.site_query",
+            "brand_authority_score": "$.result.site_metrics.brand_authority_score"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_list_links",
+      "description": "List backlinks pointing to a site or page: source page and domain with their Domain Authority, Page Authority and Spam Score, target page, anchor text, nofollow, redirect and canonical flags, first and last seen. Uses 1 row of quota per returned link (up to 50 per call). Page with next_token. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The site to look up: a domain (moz.com), subdomain (blog.moz.com), folder (moz.com/blog) or page URL."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "subdomain",
+              "subfolder",
+              "url"
+            ],
+            "default": "domain",
+            "description": "How to read query: domain, subdomain, subfolder, url. Default domain. A wider scope than the URL shortens it, e.g. moz.com/blog with domain becomes moz.com."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "source_page_authority",
+              "source_domain_authority",
+              "source_link_propensity",
+              "source_spam_score",
+              "root_domains_to_source_page",
+              "root_domains_to_source_root_domain"
+            ],
+            "default": "source_page_authority",
+            "description": "Order of the links, highest first. Default source_page_authority."
+          },
+          "link_scope": {
+            "type": "string",
+            "enum": [
+              "page",
+              "subdomain",
+              "domain"
+            ],
+            "description": "page returns every link (Moz default); subdomain or domain only the best link from each source subdomain or domain."
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "external",
+                "follow",
+                "nofollow",
+                "deleted",
+                "not_deleted",
+                "redirect",
+                "not_redirect",
+                "rel_canonical",
+                "not_rel_canonical",
+                "via_redirect",
+                "not_via_redirect",
+                "via_rel_canonical",
+                "not_via_rel_canonical",
+                "gained_last_60_days",
+                "lost_last_60_days"
+              ]
+            },
+            "description": "Only links matching all of these, e.g. [\"external\", \"follow\"]. With more than one filter, external must be one of them."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "How many links to return, 1 to 50. Default 10; each returned row uses one row of quota."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "next_token from the previous answer, to get the next page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-site-link-list-request",
+          "method": "data.site.link.list",
+          "params": {
+            "data": {
+              "site_query": {
+                "query": "$query",
+                "scope": "$scope"
+              },
+              "options": {
+                "sort": "$sort",
+                "scope": "$link_scope",
+                "filters": "$filters"
+              },
+              "offset": {
+                "limit": "$limit",
+                "token": "$next_token"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "site_query": "$.result.site_query",
+            "links": {
+              "$from": "$.result.links[*]",
+              "$select": {
+                "source_page": "source_site_metrics.page",
+                "source_title": "source_site_metrics.title",
+                "source_root_domain": "source_site_metrics.root_domain",
+                "source_domain_authority": "source_site_metrics.domain_authority",
+                "source_page_authority": "source_site_metrics.page_authority",
+                "source_spam_score": "source_site_metrics.spam_score",
+                "target_page": "target_site_metrics.page",
+                "anchor_text": "anchor_text",
+                "nofollow": "nofollow",
+                "redirect": "redirect",
+                "rel_canonical": "rel_canonical",
+                "date_first_seen": "date_first_seen",
+                "date_last_seen": "date_last_seen",
+                "date_disappeared": "date_disappeared"
+              }
+            },
+            "next_token": "$.result.offset.token"
+          },
+          "maxBytes": 100000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_list_linking_domains",
+      "description": "List the root domains that link to a site or page, with their Domain Authority, Spam Score and link propensity and how many of the target's pages each one links to. Uses 1 row of quota per returned domain (up to 50 per call). Page with next_token. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The site to look up: a domain (moz.com), subdomain (blog.moz.com), folder (moz.com/blog) or page URL."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "subdomain",
+              "subfolder",
+              "url"
+            ],
+            "default": "domain",
+            "description": "How to read query: domain, subdomain, subfolder, url. Default domain. A wider scope than the URL shortens it, e.g. moz.com/blog with domain becomes moz.com."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "source_domain_authority",
+              "source_link_propensity",
+              "source_spam_score"
+            ],
+            "default": "source_domain_authority",
+            "description": "Order of the domains, highest first. Default source_domain_authority."
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "external",
+                "follow",
+                "nofollow",
+                "deleted",
+                "not_deleted"
+              ]
+            },
+            "description": "Only domains matching all of these, e.g. [\"external\", \"follow\"]. With more than one filter, external must be one of them."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "How many linking domains to return, 1 to 50. Default 10; each returned row uses one row of quota."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "next_token from the previous answer, to get the next page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-site-linking-domain-list-request",
+          "method": "data.site.linking-domain.list",
+          "params": {
+            "data": {
+              "site_query": {
+                "query": "$query",
+                "scope": "$scope"
+              },
+              "options": {
+                "sort": "$sort",
+                "filters": "$filters"
+              },
+              "offset": {
+                "limit": "$limit",
+                "token": "$next_token"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "site_query": "$.result.site_query",
+            "linking_domains": {
+              "$from": "$.result.linking_domains[*]",
+              "$select": {
+                "root_domain": "site_metrics.root_domain",
+                "domain_authority": "site_metrics.domain_authority",
+                "spam_score": "site_metrics.spam_score",
+                "link_propensity": "link_propensity",
+                "targeted_pages": "targeted_pages",
+                "targeted_nofollow_pages": "targeted_nofollow_pages",
+                "targeted_redirect_pages": "targeted_redirect_pages",
+                "targeted_deleted_pages": "targeted_deleted_pages"
+              }
+            },
+            "next_token": "$.result.offset.token"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_list_anchor_texts",
+      "description": "List the anchor texts other sites use to link to a site or page, with the number of external root domains and pages using each. Uses 1 row of quota per returned anchor text (up to 50 per call). Page with next_token. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The site to look up: a domain (moz.com), subdomain (blog.moz.com), folder (moz.com/blog) or page URL."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "subdomain",
+              "subfolder",
+              "url"
+            ],
+            "default": "domain",
+            "description": "How to read query: domain, subdomain, subfolder, url. Default domain. A wider scope than the URL shortens it, e.g. moz.com/blog with domain becomes moz.com."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "How many anchor texts to return, 1 to 50. Default 10; each returned row uses one row of quota."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "next_token from the previous answer, to get the next page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-site-anchor-text-list-request",
+          "method": "data.site.anchor-text.list",
+          "params": {
+            "data": {
+              "site_query": {
+                "query": "$query",
+                "scope": "$scope"
+              },
+              "offset": {
+                "limit": "$limit",
+                "token": "$next_token"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "site_query": "$.result.site_query",
+            "anchor_texts": "$.result.anchor_texts",
+            "next_token": "$.result.offset.token"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_list_ranking_keywords",
+      "description": "List the Google keywords a site or page ranks for in the top 50, with ranking page, position, difficulty and monthly search volume. Only for en-US, en-GB, en-CA and en-AU. Uses 1 row of quota per returned keyword. Page with page_number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The site to look up: a domain (moz.com), subdomain (blog.moz.com), folder (moz.com/blog) or page URL."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "subdomain",
+              "subfolder",
+              "url"
+            ],
+            "default": "domain",
+            "description": "How to read query: domain, subdomain, subfolder, url. Default domain. A wider scope than the URL shortens it, e.g. moz.com/blog with domain becomes moz.com."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en-US",
+              "en-GB",
+              "en-CA",
+              "en-AU"
+            ],
+            "default": "en-US",
+            "description": "Google market of the rankings: en-US (default), en-GB, en-CA or en-AU; Moz has ranking data for these four only."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "rank",
+              "volume",
+              "difficulty",
+              "alpha"
+            ],
+            "default": "rank",
+            "description": "Order of the keywords. Default rank."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20,
+            "description": "How many keywords to return, 1 to 500. Default 20; each returned row uses one row of quota."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page to load, 0 for the first (default), 1 for the next and so on."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-site-ranking-keyword-list-request",
+          "method": "data.site.ranking-keyword.list",
+          "params": {
+            "data": {
+              "target_query": {
+                "query": "$query",
+                "scope": "$scope",
+                "locale": "$locale"
+              },
+              "options": {
+                "sort": "$sort"
+              },
+              "page": {
+                "n": "$page_number",
+                "limit": "$limit"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "target_query": "$.result.target_query",
+            "ranking_keywords": "$.result.ranking_keywords",
+            "page": "$.result.page"
+          },
+          "maxBytes": 100000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_count_ranking_keywords",
+      "description": "Count the Google keywords a domain, subdomain or page ranks for in the top 50, in total and per position 1 to 50. Only for en-US, en-GB, en-CA and en-AU. Uses 1 row of quota. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The site to look up: a domain (moz.com), subdomain (blog.moz.com), folder (moz.com/blog) or page URL."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "subdomain",
+              "url"
+            ],
+            "default": "domain",
+            "description": "How to read query: domain, subdomain, url. Default domain. A wider scope than the URL shortens it, e.g. moz.com/blog with domain becomes moz.com."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en-US",
+              "en-GB",
+              "en-CA",
+              "en-AU"
+            ],
+            "default": "en-US",
+            "description": "Google market of the rankings: en-US (default), en-GB, en-CA or en-AU; Moz has ranking data for these four only."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-site-ranking-keyword-count-request",
+          "method": "data.site.ranking-keyword.count",
+          "params": {
+            "data": {
+              "target_query": {
+                "query": "$query",
+                "scope": "$scope",
+                "locale": "$locale"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "target_query": "$.result.target_query",
+            "ranking_keyword_count": "$.result.ranking_keyword_count"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_list_top_pages",
+      "description": "List the strongest pages of a domain or subdomain by Page Authority, linking root domains or external links, with title and HTTP status. Uses 1 row of quota per returned page (up to 50 per call). Page with next_token. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The site to look up: a domain (moz.com), subdomain (blog.moz.com), folder (moz.com/blog) or page URL."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "subdomain"
+            ],
+            "default": "domain",
+            "description": "How to read query: domain, subdomain. Default domain. A wider scope than the URL shortens it, e.g. moz.com/blog with domain becomes moz.com."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "page_authority",
+              "root_domains_to_page",
+              "external_pages_to_page"
+            ],
+            "default": "page_authority",
+            "description": "Order of the pages, highest first. Default page_authority."
+          },
+          "status_filter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "status_200",
+              "status_301",
+              "status_302",
+              "status_4xx",
+              "status_5xx"
+            ],
+            "description": "Only pages whose last crawl returned this HTTP status. Default all."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "How many pages to return, 1 to 50. Default 10; each returned row uses one row of quota."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "next_token from the previous answer, to get the next page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-site-top-page-list-request",
+          "method": "data.site.top-page.list",
+          "params": {
+            "data": {
+              "site_query": {
+                "query": "$query",
+                "scope": "$scope"
+              },
+              "options": {
+                "sort": "$sort",
+                "filter": "$status_filter"
+              },
+              "offset": {
+                "limit": "$limit",
+                "token": "$next_token"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "site_query": "$.result.site_query",
+            "top_pages": {
+              "$from": "$.result.top_pages[*]",
+              "$select": {
+                "page": "page",
+                "title": "title",
+                "http_code": "http_code",
+                "page_authority": "page_authority",
+                "spam_score": "spam_score",
+                "root_domains_to_page": "root_domains_to_page",
+                "external_pages_to_page": "external_pages_to_page",
+                "last_crawled": "last_crawled"
+              }
+            },
+            "next_token": "$.result.offset.token"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_keyword_metrics",
+      "description": "Get Moz keyword metrics for one keyword in a market: monthly search volume, difficulty, organic CTR and priority, optionally search intent. Uses up to 4 rows of quota (5 with intent); metrics Moz has no value for are not charged. Fails with not found when Moz has no data for the keyword. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "The keyword, 1 to 255 characters."
+          },
+          "locale": {
+            "type": "string",
+            "default": "en-US",
+            "description": "Market as Google hl-gl pair, e.g. en-US (default), de-DE, it-IT, en-GB. moz_list_locales lists the supported ones."
+          },
+          "device": {
+            "type": "string",
+            "enum": [
+              "desktop",
+              "mobile_android",
+              "mobile_ios"
+            ],
+            "default": "desktop",
+            "description": "Device of the search. Default desktop."
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "google",
+              "bing",
+              "yahoo"
+            ],
+            "default": "google",
+            "description": "Search engine. Default google."
+          },
+          "vicinity": {
+            "type": "string",
+            "description": "Optional place to search from, e.g. New York, NY. Leave out for national results."
+          },
+          "include_intent": {
+            "type": "boolean",
+            "default": false,
+            "description": "Also return search intent (1 more row of quota). Default false."
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-keyword-metrics-fetch-request",
+          "method": "data.keyword.metrics.fetch",
+          "params": {
+            "data": {
+              "serp_query": {
+                "keyword": "$keyword",
+                "locale": "$locale",
+                "device": "$device",
+                "engine": "$engine",
+                "vicinity": "$vicinity"
+              },
+              "options": {
+                "include_intent": "$include_intent"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "serp_query": "$.result.serp_query",
+            "keyword_metrics": "$.result.keyword_metrics"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_keyword_metrics_multiple",
+      "description": "Get Moz keyword metrics (volume, difficulty, organic CTR, priority and search intent) for up to 50 keywords in one call. Uses up to 5 rows of quota per keyword with data; keywords without data come back under errors and are not charged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "serp_queries": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Up to 50 keywords, each {\"keyword\": \"seo tools\", \"locale\": \"en-US\", \"device\": \"desktop\", \"engine\": \"google\"}.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "keyword": {
+                  "type": "string",
+                  "description": "The keyword."
+                },
+                "locale": {
+                  "type": "string",
+                  "description": "hl-gl pair, e.g. en-US."
+                },
+                "device": {
+                  "type": "string",
+                  "enum": [
+                    "desktop",
+                    "mobile_android",
+                    "mobile_ios"
+                  ],
+                  "description": "Device."
+                },
+                "engine": {
+                  "type": "string",
+                  "enum": [
+                    "google",
+                    "bing",
+                    "yahoo"
+                  ],
+                  "description": "Search engine."
+                },
+                "vicinity": {
+                  "type": "string",
+                  "description": "Optional place, e.g. New York, NY."
+                }
+              },
+              "required": [
+                "keyword",
+                "locale",
+                "device",
+                "engine"
+              ]
+            }
+          }
+        },
+        "required": [
+          "serp_queries"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-keyword-metrics-fetch-multiple-request",
+          "method": "data.keyword.metrics.fetch.multiple",
+          "params": {
+            "data": {
+              "serp_queries": "$serp_queries"
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "results": {
+              "$from": "$.result.results_by_serp_query[*]",
+              "$select": {
+                "keyword": "serp_query.keyword",
+                "locale": "serp_query.locale",
+                "keyword_metrics": "keyword_metrics"
+              }
+            },
+            "errors": {
+              "$from": "$.result.errors_by_serp_query[*]",
+              "$select": {
+                "keyword": "serp_query.keyword",
+                "locale": "serp_query.locale",
+                "message": "error.message"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_keyword_suggestions",
+      "description": "Start a Moz keyword suggestion job for a keyword: related keywords with a relevance score. Asynchronous: it returns an async_call; call moz_get_async_result with its id about 5 seconds later (again until status is complete) to get the suggestions. Uses 1 row of quota per returned suggestion. Google only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "The seed keyword, 1 to 255 characters."
+          },
+          "locale": {
+            "type": "string",
+            "default": "en-US",
+            "description": "Market as Google hl-gl pair, e.g. en-US (default), de-DE, it-IT, en-GB. moz_list_locales lists the supported ones."
+          },
+          "vicinity": {
+            "type": "string",
+            "description": "Optional place to search from, e.g. New York, NY. Leave out for national results."
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "default",
+              "related_synonyms",
+              "related_topics"
+            ],
+            "default": "default",
+            "description": "default mixes Moz models with recent search data; related_synonyms gives semantically close keywords; related_topics keywords from related topics."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "How many suggestions to return, 1 to 100. Default 20; each returned row uses one row of quota."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page to load, 0 for the first (default)."
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-data-keyword-suggestion-list-request",
+          "method": "data.keyword.suggestion.list",
+          "params": {
+            "data": {
+              "serp_query": {
+                "keyword": "$keyword",
+                "locale": "$locale",
+                "device": "desktop",
+                "engine": "google",
+                "vicinity": "$vicinity"
+              },
+              "options": {
+                "strategy": "$strategy"
+              },
+              "page": {
+                "n": "$page_number",
+                "limit": "$limit"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "async_call": "$.result.async_call"
+          },
+          "maxBytes": 100000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_get_async_result",
+      "description": "Fetch the result of an asynchronous Moz job, such as moz_keyword_suggestions, by its async_call id. While status is pending or processing, wait about 5 seconds and ask again; once complete, result or error is filled. Free: uses no quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "async_call.id returned by the job, e.g. c3397e5a-ce31-42fb-8607-ed40487aea18."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-async-call-lookup-request",
+          "method": "async.call.lookup",
+          "params": {
+            "data": {
+              "id": "$id"
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "async_call": "$.result.async_call"
+          },
+          "maxBytes": 100000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moz_list_locales",
+      "description": "List the locales (hl-gl pairs such as en-US or de-DE) a search engine supports in Moz keyword tools. Uses no rows, but needs an account with Moz API row quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "type": "string",
+            "enum": [
+              "google",
+              "bing",
+              "yahoo"
+            ],
+            "default": "google",
+            "description": "Search engine. Default google."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jsonrpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": "anythingmcp-metadata-locale-list-request",
+          "method": "metadata.locale.list",
+          "params": {
+            "data": {
+              "engine": "$engine"
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "engine": "$.result.engine",
+            "locales": "$.result.locales"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

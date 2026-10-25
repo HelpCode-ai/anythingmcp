@@ -268,11 +268,16 @@ export function toPublicConnector<
   T extends ConnectorLike & { envVars?: unknown; authConfig?: unknown },
 >(
   connector: T,
-): Omit<T, 'authConfig'> & { maskedEnvVars: string[]; maskedHeaders: string[] } {
+): Omit<T, 'authConfig' | 'authStatusRef'> & { maskedEnvVars: string[]; maskedHeaders: string[] } {
   const ctx = secretContext(connector);
   const env = maskEnvVars(connector.envVars, ctx);
   const hdr = maskHeaders(connector.headers, ctx);
-  const { authConfig: _authConfig, ...rest } = connector;
+  // authStatusRef is a hash of a credential: of no use to a client.
+  const {
+    authConfig: _authConfig,
+    authStatusRef: _authStatusRef,
+    ...rest
+  } = connector as T & { authStatusRef?: unknown };
   return {
     ...rest,
     envVars: env.envVars,
@@ -326,4 +331,25 @@ export function mergeMaskedHeaders(
   ctx: SecretContext,
 ): Record<string, string> {
   return keepMaskedValues(incoming, stored, (n, v) => isMaskedHeader(n, v, ctx));
+}
+
+/**
+ * The values of a connector's secret variables (by name, by the slot the
+ * adapter uses them in, or by their shape: what the dashboard withholds),
+ * for masking wherever they could be quoted back: an echoing response, an
+ * error, a log line. Values under 8 characters are skipped: they would match
+ * inside ordinary words and ids.
+ */
+export function connectorSecretValues(
+  connector: ConnectorLike & { envVars?: unknown },
+): string[] {
+  const envVars = connector.envVars;
+  if (!envVars || typeof envVars !== 'object') return [];
+  const ctx = secretContext(connector);
+  return Object.entries(envVars as Record<string, unknown>)
+    .filter(
+      ([name, value]) =>
+        typeof value === 'string' && value.length >= 8 && isMaskedEnvVar(name, value, ctx),
+    )
+    .map(([, value]) => value as string);
 }

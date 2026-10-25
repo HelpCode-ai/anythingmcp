@@ -25,7 +25,7 @@ const AUTH_HINTS: Record<string, string> = {
   BASIC_AUTH:
     'The username/password (or API key used as username) was rejected. Verify both fields.',
   LOGIN_TOKEN:
-    'Login failed — the email/password used to mint the session token was rejected.',
+    'Login failed — the credentials used to mint the session token (email and password, or a signing key) were rejected.',
   QUERY_AUTH: 'The API key sent as a query parameter was rejected.',
   // Auth type NONE also covers keys carried in the address or the body (a
   // Telegram bot token is part of the URL), so "no credentials" can be wrong.

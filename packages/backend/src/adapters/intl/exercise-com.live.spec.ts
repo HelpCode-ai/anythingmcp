@@ -35,6 +35,38 @@ describe('exercise-com adapter - static spec conformance', () => {
   it('calendar needs a Unix-time window', () => {
     expect(tool('exercise_com_get_calendar').parameters.required).toEqual(['start', 'end']);
   });
+
+  it('maps the added documented v4 reads', () => {
+    expect(tool('exercise_com_get_assessment').endpointMapping).toEqual({ method: 'GET', path: '/api/v4/assessments/{id}' });
+    expect(tool('exercise_com_list_appointment_packages').endpointMapping).toEqual({ method: 'GET', path: '/api/v4/fbm/appointments/{id}/packages' });
+    expect(tool('exercise_com_list_group_calendars').endpointMapping).toEqual({ method: 'GET', path: '/api/v4/groups/calendars', queryParams: { per: '$per', page: '$page' } });
+    expect(tool('exercise_com_list_purchased_items').endpointMapping).toEqual({ method: 'GET', path: '/api/v4/carts/purchased_items', queryParams: { user_id: '$user_id' } });
+    expect(tool('exercise_com_list_user_workout_exercises').endpointMapping).toEqual({
+      method: 'GET',
+      path: '/api/v4/users/{id}/workout_exercises',
+      queryParams: { exercise_id: '$exercise_id', with_date: '$with_date', 'q[s]': '$sort', pluck_columns: '$pluck_columns', per: '$per', page: '$page' },
+    });
+    expect(tool('exercise_com_list_visits').endpointMapping.queryParams).toMatchObject({ for_user: '$for_user', with_ids: '$with_ids' });
+    expect(tool('exercise_com_list_scheduled_appointment_members').endpointMapping.queryParams).toMatchObject({ for_user: '$for_user' });
+  });
+
+  it('every declared parameter reaches the request, path parameters are required, every tool is in the instructions', () => {
+    const ins = (adapter as unknown as { instructions: string }).instructions;
+    for (const t of a.tools) {
+      const used = new Set(Object.values(t.endpointMapping.queryParams ?? {}).map((v) => v.replace(/^\$/, '')));
+      for (const [, p] of t.endpointMapping.path.matchAll(/\{(\w+)\}/g)) {
+        used.add(p);
+        expect(`${t.name}:${p}:${(t.parameters.required ?? []).includes(p)}`).toBe(`${t.name}:${p}:true`);
+      }
+      const walk = (v: unknown): void => {
+        if (typeof v === 'string' && v.startsWith('$')) used.add(v.slice(1));
+        else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+      };
+      walk((t.endpointMapping as { bodyMapping?: unknown }).bodyMapping);
+      for (const p of Object.keys(t.parameters.properties ?? {})) expect(`${t.name}:${p}:${used.has(p)}`).toBe(`${t.name}:${p}:true`);
+      expect(`${t.name}:${ins.includes(t.name)}`).toBe(`${t.name}:true`);
+    }
+  });
 });
 
 // Keyless: the vendor's public demo tenant answers 401 JSON for every v4 route

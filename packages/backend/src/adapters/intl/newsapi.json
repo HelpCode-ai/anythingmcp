@@ -8,6 +8,7 @@
   "icon": "newsapi",
   "docsUrl": "https://newsapi.org/docs",
   "requiredEnvVars": ["NEWSAPI_API_KEY"],
+  "probe": { "tool": "newsapi_sources", "params": { "language": "en" } },
   "connector": {
     "name": "NewsAPI v2",
     "type": "REST",

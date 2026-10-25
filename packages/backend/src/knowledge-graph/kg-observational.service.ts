@@ -128,6 +128,10 @@ export class KgObservationalService {
     const slugByConnector = new Map(
       connectors.map((c) => [c.id, deriveSlug(c.tools.map((t) => t.name))]),
     );
+    // The organization's connectors as of this run. correlate() only pairs
+    // values of these: a value row of a connector deleted since can never get
+    // a node (kg_nodes has a foreign key), so trying cost a failed insert.
+    const liveConnectors = new Set(connectors.map((c) => c.id));
     const states = await this.prisma.kgConnectorState.findMany({
       where: { organizationId },
       select: { connectorId: true, lastObservedAt: true },
@@ -279,7 +283,11 @@ export class KgObservationalService {
       }
       const hashes = [...newHashes];
       for (let i = 0; i < hashes.length; i += WRITE_CHUNK) {
-        edges += await this.correlate(organizationId, hashes.slice(i, i + WRITE_CHUNK));
+        edges += await this.correlate(
+          organizationId,
+          hashes.slice(i, i + WRITE_CHUNK),
+          liveConnectors,
+        );
         await yieldToEventLoop();
       }
 
@@ -291,7 +299,7 @@ export class KgObservationalService {
     } // while pages
 
     // Apply references edges mined from response shapes.
-    const refCache = new Map<string, string>();
+    const refCache = new Map<string, string | null>();
     for (const b of refBumps.values()) {
       const src = await this.nodeId(refCache, organizationId, b.connectorId, b.from);
       const tgt = await this.nodeId(refCache, organizationId, b.connectorId, b.to);
@@ -313,7 +321,7 @@ export class KgObservationalService {
     // Intent co-occurrence: entities whose tools satisfied the SAME captured
     // user request are related. A weak, suggested signal (awaits confirmation)
     // — this is how the chat history that led to calls extends the graph.
-    const coCache = new Map<string, string>();
+    const coCache = new Map<string, string | null>();
     for (const members of intentGroups.values()) {
       const list = [...members];
       if (list.length < 2) continue;
@@ -422,7 +430,9 @@ export class KgObservationalService {
   /**
    * One statement with seven array parameters, however many rows. Prisma's
    * createMany compiles a parameter per column per row, synchronously: 1,000
-   * rows held the production event loop for 330-630 ms per call.
+   * rows held the production event loop for 330-630 ms per call. Rows of a
+   * connector deleted while the run was going are dropped rather than
+   * failing the whole batch on the foreign key.
    */
   private async insertValueRows(rows: ValueRow[]): Promise<void> {
     if (rows.length === 0) return;
@@ -430,7 +440,7 @@ export class KgObservationalService {
     await this.prisma.$executeRaw`
       INSERT INTO kg_value_seen
         (id, organization_id, connector_id, value_hash, entity, field, direction)
-      SELECT * FROM unnest(
+      SELECT r.* FROM unnest(
         ${rows.map(() => randomUUID())}::text[],
         ${col('organizationId')}::text[],
         ${col('connectorId')}::text[],
@@ -438,7 +448,8 @@ export class KgObservationalService {
         ${col('entity')}::text[],
         ${col('field')}::text[],
         ${col('direction')}::text[]
-      )
+      ) AS r(id, organization_id, connector_id, value_hash, entity, field, direction)
+      WHERE EXISTS (SELECT 1 FROM connectors c WHERE c.id = r.connector_id)
       ON CONFLICT (organization_id, connector_id, value_hash, entity, field, direction) DO NOTHING`;
   }
 
@@ -459,6 +470,7 @@ export class KgObservationalService {
   private async correlate(
     organizationId: string,
     hashes: string[],
+    liveConnectors: ReadonlySet<string>,
   ): Promise<number> {
     const rows = await this.prisma.kgValueSeen.findMany({
       where: { organizationId, valueHash: { in: hashes } },
@@ -479,6 +491,9 @@ export class KgObservationalService {
     const byHash = new Map<string, typeof rows>();
     const seen = new Set<string>();
     for (const r of rows) {
+      // Deleting a connector deletes its rows (ON DELETE CASCADE); this
+      // covers a connector deleted during the run.
+      if (!liveConnectors.has(r.connectorId)) continue;
       const key = `${r.valueHash}|${r.connectorId}|${r.entity}|${r.direction}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -487,7 +502,7 @@ export class KgObservationalService {
       byHash.set(r.valueHash, list);
     }
 
-    const nodeCache = new Map<string, string>(); // `${connectorId}::${entity}` -> nodeId
+    const nodeCache = new Map<string, string | null>(); // `${connectorId}::${entity}` -> nodeId
     // Many values link the same two nodes, so one pass used to write the same
     // edge again for every one of them: a read and an update per value, most
     // of the database work behind an MCP call. The bumps are counted here and
@@ -569,14 +584,15 @@ export class KgObservationalService {
   }
 
   private async nodeId(
-    cache: Map<string, string>,
+    cache: Map<string, string | null>,
     organizationId: string,
     connectorId: string,
     entity: string,
   ): Promise<string | null> {
     const key = `${connectorId}::${entity}`;
-    const cached = cache.get(key);
-    if (cached) return cached;
+    // A cached null is a connector that is gone: ask once per pass, not once
+    // per value that names it.
+    if (cache.has(key)) return cache.get(key) ?? null;
     let node: { id: string };
     try {
       node = await this.prisma.kgNode.upsert({
@@ -593,11 +609,13 @@ export class KgObservationalService {
         select: { id: true },
       });
     } catch (e: any) {
-      // kg_value_seen keeps the values of a connector after it is deleted (no
-      // foreign key there), so a match can name a connector that is gone. A
-      // node for it would violate kg_nodes_connector_id_fkey and abort the
-      // whole run for the organization, on every call: skip it instead.
-      if (e?.code === 'P2003') return null;
+      // A connector deleted while the run was going: a node for it would
+      // violate kg_nodes_connector_id_fkey and abort the whole run for the
+      // organization. Skip it instead.
+      if (e?.code === 'P2003') {
+        cache.set(key, null);
+        return null;
+      }
       throw e;
     }
     cache.set(key, node.id);

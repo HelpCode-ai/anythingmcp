@@ -1,0 +1,1181 @@
+{
+  "slug": "netlify",
+  "name": "Netlify",
+  "description": "Let your AI check and run your Netlify sites: sites, deploys and builds, functions, forms and submissions, environment variable names and DNS, and start builds, publish or roll back deploys and lock auto publishing after you confirm.",
+  "instructions": "## Netlify\nThis connector works with Netlify through the **Netlify API** (`https://api.netlify.com/api/v1`): teams, sites, deploys and builds, build hooks, functions, forms and their submissions, environment variable names and Netlify DNS. It can start builds, publish an earlier deploy, roll back, lock or unlock auto publishing and cancel deploys after you confirm. It acts as the user who owns the token.\n\n**Setup (about 2 minutes)**\n1. In Netlify open **User settings > Applications > Personal access tokens** (https://app.netlify.com/user/applications#personal-access-tokens) and click **New access token**.\n2. Give it a description and an expiration, copy it and paste it into `NETLIFY_TOKEN`. It is sent as `Authorization: Bearer <token>` to api.netlify.com only.\n3. Check the setup with `netlify_get_current_user`, then `netlify_list_sites`.\n\nA personal access token has the user's full rights in every team they belong to; Netlify has no read-only tokens. Share the MCP server only with people allowed to deploy, and switch off the write tools for a read-only setup.\n\n**How to work**\n1. `netlify_list_accounts` lists your teams; `netlify_list_sites` gives each site's id (a site's domain such as my-site.netlify.app works as site_id too).\n2. Deploys: `netlify_list_deploys` (filter by branch, state or production), `netlify_get_deploy`; builds: `netlify_list_builds`, `netlify_get_build`, `netlify_list_build_hooks`.\n3. Site details: `netlify_get_site`, `netlify_list_functions`, `netlify_list_env_vars`.\n4. Forms: `netlify_list_forms`, then `netlify_list_form_submissions`. Submissions hold what visitors typed, often personal data.\n5. DNS: `netlify_list_dns_zones`, then `netlify_list_dns_records` (only for domains on Netlify DNS).\n\n**Writes always need the user's confirmation**: `netlify_trigger_build` (also the way to retry a failed deploy; a production build publishes when it succeeds), `netlify_restore_deploy` and `netlify_rollback_site` (change what visitors see immediately), `netlify_lock_deploy`, `netlify_unlock_deploy` and `netlify_cancel_deploy`. Say what will change and call only after the user agrees.\n\n**Secrets**: `netlify_list_env_vars` returns names, scopes and contexts, never values. `netlify_get_env_var_value` is installed switched off: it returns non-secret values in plain text (secret ones stay masked). Turn it on only if the AI really needs a value. Build hook URLs, site passwords and deploy hook URLs are never returned.\n\n**Switched off at install**: `netlify_delete_form_submission` and `netlify_get_env_var_value`.\n\n**Pagination**: lists with page and per_page carry `_pagination` when there is another page; call again with page = `_pagination.nextCursor` until it is absent.\n\n**Errors**: 401 means the token is wrong, expired or revoked. 403 means the user lacks the role for this team or site. 404 means a wrong site, deploy or form id, or one the user cannot see. 422 names an invalid value. 429 means the rate limit is reached (about 500 requests a minute, and only a few deploys a minute); wait and retry.\n\n**Out of scope here**: creating, deleting or configuring sites, uploading files, editing environment variables, DNS records or domains, and site analytics, which Netlify does not offer in its public API.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "netlify",
+  "docsUrl": "https://open-api.netlify.com/",
+  "prerequisites": "A Netlify account with access to the sites, and a personal access token from User settings > Applications. About 2 minutes.",
+  "requiredEnvVars": [
+    "NETLIFY_TOKEN"
+  ],
+  "appRegistrationUrl": "https://app.netlify.com/user/applications#personal-access-tokens",
+  "envVarMeta": {
+    "NETLIFY_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Netlify, User settings, Applications, Personal access tokens, New access token. Paste only the token, without Bearer.",
+      "link": "https://app.netlify.com/user/applications#personal-access-tokens",
+      "example": "nfp_...",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the personal access token (newer ones start with nfp_), without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Netlify refused the token: it is wrong, expired or revoked. Create a new personal access token under User settings, Applications.",
+    "403": "The token works but the user lacks the role for this team or site.",
+    "rate_limited": "Netlify is rate limiting this token. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "netlify_get_current_user"
+  },
+  "connector": {
+    "name": "Netlify API",
+    "type": "REST",
+    "baseUrl": "https://api.netlify.com/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{NETLIFY_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/user"
+  },
+  "tools": [
+    {
+      "name": "netlify_get_current_user",
+      "description": "Get the Netlify user the personal access token belongs to: id, name, email, number of sites and last login. A quick check that the token works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "full_name": "$.full_name",
+            "email": "$.email",
+            "site_count": "$.site_count",
+            "created_at": "$.created_at",
+            "last_login": "$.last_login"
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_list_accounts",
+      "description": "List the Netlify teams (accounts) the user belongs to: id, name, slug, plan type and the user's roles. The slug filters netlify_list_dns_zones. Billing details are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "accounts": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "slug": "slug",
+                "type": "type_name",
+                "roles_allowed": "roles_allowed",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_list_sites",
+      "description": "List sites (projects): id, name, URL, custom domain, team, connected repository and branch, build command and the currently published deploy. Filter by name. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only sites whose name contains this text."
+          },
+          "filter": {
+            "type": "string",
+            "description": "all (default here), owner or guest.",
+            "enum": [
+              "all",
+              "owner",
+              "guest"
+            ],
+            "default": "all"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has _pagination, call again with page = _pagination.nextCursor.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 30, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites",
+        "queryParams": {
+          "name": "$name",
+          "filter": "$filter",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "sites": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "url": "ssl_url",
+                "admin_url": "admin_url",
+                "custom_domain": "custom_domain",
+                "domain_aliases": "domain_aliases",
+                "state": "state",
+                "plan": "plan",
+                "account_slug": "account_slug",
+                "account_name": "account_name",
+                "account_id": "account_id",
+                "git_provider": "git_provider",
+                "repo_url": "build_settings.repo_url",
+                "repo_branch": "build_settings.repo_branch",
+                "build_command": "build_settings.cmd",
+                "publish_dir": "build_settings.dir",
+                "published_deploy": {
+                  "id": "published_deploy.id",
+                  "state": "published_deploy.state",
+                  "branch": "published_deploy.branch",
+                  "commit_ref": "published_deploy.commit_ref",
+                  "published_at": "published_deploy.published_at"
+                },
+                "managed_dns": "managed_dns",
+                "force_ssl": "force_ssl",
+                "functions_region": "functions_region",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "netlify_get_site",
+      "description": "Get one site: URL, custom domain and aliases, state, plan, team, repository, branch, build command, publish folder and the published deploy. The site password and deploy hook URL are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site (project) id, or its Netlify domain such as my-site.netlify.app. From netlify_list_sites."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "url": "$.ssl_url",
+            "admin_url": "$.admin_url",
+            "custom_domain": "$.custom_domain",
+            "domain_aliases": "$.domain_aliases",
+            "state": "$.state",
+            "plan": "$.plan",
+            "account_slug": "$.account_slug",
+            "account_name": "$.account_name",
+            "account_id": "$.account_id",
+            "git_provider": "$.git_provider",
+            "repo_url": "$.build_settings.repo_url",
+            "repo_branch": "$.build_settings.repo_branch",
+            "build_command": "$.build_settings.cmd",
+            "publish_dir": "$.build_settings.dir",
+            "published_deploy": {
+              "id": "$.published_deploy.id",
+              "state": "$.published_deploy.state",
+              "branch": "$.published_deploy.branch",
+              "commit_ref": "$.published_deploy.commit_ref",
+              "published_at": "$.published_deploy.published_at"
+            },
+            "managed_dns": "$.managed_dns",
+            "force_ssl": "$.force_ssl",
+            "functions_region": "$.functions_region",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_list_deploys",
+      "description": "List a site's deploys, newest first: id, state (ready, building, error, ...), context (production, deploy-preview, branch-deploy), branch, commit, title, error message, URLs, lock state and times. Filter by branch, state or production. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site (project) id, or its Netlify domain such as my-site.netlify.app. From netlify_list_sites."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Only deploys of this branch."
+          },
+          "state": {
+            "type": "string",
+            "description": "Only deploys in this state.",
+            "enum": [
+              "new",
+              "pending_review",
+              "accepted",
+              "rejected",
+              "enqueued",
+              "building",
+              "uploading",
+              "uploaded",
+              "preparing",
+              "prepared",
+              "processing",
+              "processed",
+              "ready",
+              "error",
+              "retrying"
+            ]
+          },
+          "production": {
+            "type": "boolean",
+            "description": "Only production deploys."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has _pagination, call again with page = _pagination.nextCursor.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/deploys",
+        "encodePathParams": true,
+        "queryParams": {
+          "branch": "$branch",
+          "state": "$state",
+          "production": "$production",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deploys": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "site_id": "site_id",
+                "state": "state",
+                "context": "context",
+                "branch": "branch",
+                "commit_ref": "commit_ref",
+                "commit_url": "commit_url",
+                "title": "title",
+                "error_message": "error_message",
+                "deploy_url": "deploy_ssl_url",
+                "url": "ssl_url",
+                "admin_url": "admin_url",
+                "review_url": "review_url",
+                "locked": "locked",
+                "skipped": "skipped",
+                "draft": "draft",
+                "framework": "framework",
+                "build_id": "build_id",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "published_at": "published_at"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "netlify_get_deploy",
+      "description": "Get one deploy by id: state, context, branch, commit, title, error message, URLs, lock state and times. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deploy_id": {
+            "type": "string",
+            "description": "Deploy id, from netlify_list_deploys."
+          }
+        },
+        "required": [
+          "deploy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deploys/{deploy_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "site_id": "$.site_id",
+            "state": "$.state",
+            "context": "$.context",
+            "branch": "$.branch",
+            "commit_ref": "$.commit_ref",
+            "commit_url": "$.commit_url",
+            "title": "$.title",
+            "error_message": "$.error_message",
+            "deploy_url": "$.deploy_ssl_url",
+            "url": "$.ssl_url",
+            "admin_url": "$.admin_url",
+            "review_url": "$.review_url",
+            "locked": "$.locked",
+            "skipped": "$.skipped",
+            "draft": "$.draft",
+            "framework": "$.framework",
+            "build_id": "$.build_id",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "published_at": "$.published_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_list_builds",
+      "description": "List a site's builds, newest first: id, deploy id, commit sha, whether it is done, error text and time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site (project) id, or its Netlify domain such as my-site.netlify.app. From netlify_list_sites."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has _pagination, call again with page = _pagination.nextCursor.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/builds",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "builds": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "deploy_id": "deploy_id",
+                "sha": "sha",
+                "done": "done",
+                "error": "error",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_get_build",
+      "description": "Get one build: deploy id, commit sha, whether it is done, error text and time. The deploy (netlify_get_deploy) has the state and error message. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "build_id": {
+            "type": "string",
+            "description": "Build id from netlify_list_builds."
+          }
+        },
+        "required": [
+          "build_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/builds/{build_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "deploy_id": "$.deploy_id",
+            "sha": "$.sha",
+            "done": "$.done",
+            "error": "$.error",
+            "created_at": "$.created_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_list_build_hooks",
+      "description": "List a site's build hooks: id, title and branch. The hook URLs are left out because anyone holding one can start builds. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site (project) id, or its Netlify domain such as my-site.netlify.app. From netlify_list_sites."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/build_hooks",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "build_hooks": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "branch": "branch",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_list_functions",
+      "description": "List the serverless functions deployed for a site, with the deploy and branch they belong to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site (project) id, or its Netlify domain such as my-site.netlify.app. From netlify_list_sites."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Only functions whose name contains this text."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/functions",
+        "encodePathParams": true,
+        "queryParams": {
+          "filter": "$filter"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deploys": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "branch": "branch",
+                "provider": "provider",
+                "log_type": "log_type",
+                "created_at": "created_at",
+                "functions": "functions"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "netlify_list_forms",
+      "description": "List the forms Netlify detected on a site: id, name, the pages they are on, number of submissions and their fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site (project) id, or its Netlify domain such as my-site.netlify.app. From netlify_list_sites."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/forms",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "forms": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "paths": "paths",
+                "submission_count": "submission_count",
+                "fields": "fields",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_list_form_submissions",
+      "description": "List the submissions of one form, newest first: number, time, name, email, company, summary and all submitted fields. They contain what visitors typed, often personal data. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id from netlify_list_forms."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When the answer has _pagination, call again with page = _pagination.nextCursor.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 20, maximum 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "form_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{form_id}/submissions",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "submissions": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "number": "number",
+                "created_at": "created_at",
+                "name": "name",
+                "email": "email",
+                "company": "company",
+                "summary": "summary",
+                "data": "data"
+              }
+            }
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "netlify_list_env_vars",
+      "description": "List a site's environment variables: key, scopes (builds, functions, runtime, post-processing), whether it is marked secret, the deploy contexts that have a value, and when it was last changed. Values are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site (project) id, or its Netlify domain such as my-site.netlify.app. From netlify_list_sites."
+          },
+          "context_name": {
+            "type": "string",
+            "description": "Only variables with a value in this deploy context.",
+            "enum": [
+              "all",
+              "dev",
+              "dev-server",
+              "branch-deploy",
+              "deploy-preview",
+              "production"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "description": "Only variables available in this scope.",
+            "enum": [
+              "builds",
+              "functions",
+              "runtime",
+              "post-processing"
+            ]
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/env",
+        "encodePathParams": true,
+        "queryParams": {
+          "context_name": "$context_name",
+          "scope": "$scope"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "env_vars": {
+              "$from": "$[*]",
+              "$select": {
+                "key": "key",
+                "scopes": "scopes",
+                "is_secret": "is_secret",
+                "contexts": "values[*].context",
+                "updated_at": "updated_at",
+                "updated_by": "updated_by.full_name"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_get_env_var_value",
+      "description": "Read the values of ONE environment variable per deploy context. Non-secret values come back in plain text, so this can expose API keys and passwords to the AI and its logs; variables marked secret come back masked except in the dev context. Installed switched off. Call only when the user explicitly asks for that variable's value.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Team (account) id: account_id from netlify_get_site."
+          },
+          "key": {
+            "type": "string",
+            "description": "Variable name, e.g. API_BASE_URL."
+          },
+          "site_id": {
+            "type": "string",
+            "description": "Site id, for a site-level variable. Omit for a team-wide variable."
+          }
+        },
+        "required": [
+          "account_id",
+          "key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{account_id}/env/{key}",
+        "encodePathParams": true,
+        "queryParams": {
+          "site_id": "$site_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "key": "$.key",
+            "is_secret": "$.is_secret",
+            "scopes": "$.scopes",
+            "values": {
+              "$from": "$.values[*]",
+              "$select": {
+                "context": "context",
+                "context_parameter": "context_parameter",
+                "value": "value"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_list_dns_zones",
+      "description": "List the DNS zones managed by Netlify DNS: id, domain name, team, linked site and the Netlify name servers. Records are listed with netlify_list_dns_records. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_slug": {
+            "type": "string",
+            "description": "Only zones of this team slug, from netlify_list_accounts."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dns_zones",
+        "queryParams": {
+          "account_slug": "$account_slug"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "dns_zones": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "domain": "domain",
+                "account_slug": "account_slug",
+                "site_id": "site_id",
+                "dns_servers": "dns_servers",
+                "dedicated": "dedicated",
+                "ipv6_enabled": "ipv6_enabled",
+                "created_at": "created_at",
+                "errors": "errors"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_list_dns_records",
+      "description": "List the records of a Netlify DNS zone: id, hostname, type (A, AAAA, CNAME, MX, TXT, NETLIFY ...), value, TTL, priority and whether Netlify manages it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "DNS zone id from netlify_list_dns_zones."
+          }
+        },
+        "required": [
+          "zone_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dns_zones/{zone_id}/dns_records",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "records": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "hostname": "hostname",
+                "type": "type",
+                "value": "value",
+                "ttl": "ttl",
+                "priority": "priority",
+                "managed": "managed",
+                "site_id": "site_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_trigger_build",
+      "description": "Start a new build and deploy of a site from its connected repository, optionally for another branch or with a cleared cache. A build of the production branch publishes to the live site when it succeeds, unless auto publishing is locked, and it uses build minutes. Tell the user the site and branch and call only after they confirm. Use it to retry a failed deploy too.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site (project) id, or its Netlify domain such as my-site.netlify.app. From netlify_list_sites."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch to build; default is the site's production branch."
+          },
+          "clear_cache": {
+            "type": "boolean",
+            "description": "Clear the build cache first (helps with stale dependencies)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title shown on the deploy, e.g. Rebuild requested by the assistant."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sites/{site_id}/builds",
+        "encodePathParams": true,
+        "queryParams": {
+          "branch": "$branch",
+          "clear_cache": "$clear_cache",
+          "title": "$title"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "deploy_id": "$.deploy_id",
+            "sha": "$.sha",
+            "done": "$.done",
+            "error": "$.error",
+            "created_at": "$.created_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "netlify_restore_deploy",
+      "description": "Publish an earlier deploy to the live site again (Netlify's Publish deploy). Visitors see that version immediately; later deploys stay available. Show the deploy with netlify_get_deploy first, tell the user which version goes live and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site (project) id, or its Netlify domain such as my-site.netlify.app. From netlify_list_sites."
+          },
+          "deploy_id": {
+            "type": "string",
+            "description": "Deploy id, from netlify_list_deploys."
+          }
+        },
+        "required": [
+          "site_id",
+          "deploy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sites/{site_id}/deploys/{deploy_id}/restore",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "site_id": "$.site_id",
+            "state": "$.state",
+            "context": "$.context",
+            "branch": "$.branch",
+            "commit_ref": "$.commit_ref",
+            "commit_url": "$.commit_url",
+            "title": "$.title",
+            "error_message": "$.error_message",
+            "deploy_url": "$.deploy_ssl_url",
+            "url": "$.ssl_url",
+            "admin_url": "$.admin_url",
+            "review_url": "$.review_url",
+            "locked": "$.locked",
+            "skipped": "$.skipped",
+            "draft": "$.draft",
+            "framework": "$.framework",
+            "build_id": "$.build_id",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "published_at": "$.published_at"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "netlify_rollback_site",
+      "description": "Roll the live site back to the deploy that was published before the current one. Visitors see the older version immediately. Tell the user which deploy is live now and call only after they confirm. Returns no content on success; check with netlify_get_site.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site (project) id, or its Netlify domain such as my-site.netlify.app. From netlify_list_sites."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sites/{site_id}/rollback",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "netlify_lock_deploy",
+      "description": "Lock a published deploy: auto publishing stops, so new builds are deployed but not published until it is unlocked. Tell the user and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deploy_id": {
+            "type": "string",
+            "description": "Deploy id, from netlify_list_deploys."
+          }
+        },
+        "required": [
+          "deploy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deploys/{deploy_id}/lock",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "site_id": "$.site_id",
+            "state": "$.state",
+            "context": "$.context",
+            "branch": "$.branch",
+            "commit_ref": "$.commit_ref",
+            "commit_url": "$.commit_url",
+            "title": "$.title",
+            "error_message": "$.error_message",
+            "deploy_url": "$.deploy_ssl_url",
+            "url": "$.ssl_url",
+            "admin_url": "$.admin_url",
+            "review_url": "$.review_url",
+            "locked": "$.locked",
+            "skipped": "$.skipped",
+            "draft": "$.draft",
+            "framework": "$.framework",
+            "build_id": "$.build_id",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "published_at": "$.published_at"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "netlify_unlock_deploy",
+      "description": "Unlock a locked deploy so auto publishing resumes; the next successful production build goes live. Tell the user and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deploy_id": {
+            "type": "string",
+            "description": "Deploy id, from netlify_list_deploys."
+          }
+        },
+        "required": [
+          "deploy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deploys/{deploy_id}/unlock",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "site_id": "$.site_id",
+            "state": "$.state",
+            "context": "$.context",
+            "branch": "$.branch",
+            "commit_ref": "$.commit_ref",
+            "commit_url": "$.commit_url",
+            "title": "$.title",
+            "error_message": "$.error_message",
+            "deploy_url": "$.deploy_ssl_url",
+            "url": "$.ssl_url",
+            "admin_url": "$.admin_url",
+            "review_url": "$.review_url",
+            "locked": "$.locked",
+            "skipped": "$.skipped",
+            "draft": "$.draft",
+            "framework": "$.framework",
+            "build_id": "$.build_id",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "published_at": "$.published_at"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "netlify_cancel_deploy",
+      "description": "Cancel a deploy that is still building or processing; it will not be published. Tell the user which deploy and call only after they confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deploy_id": {
+            "type": "string",
+            "description": "Deploy id, from netlify_list_deploys."
+          }
+        },
+        "required": [
+          "deploy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deploys/{deploy_id}/cancel",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "site_id": "$.site_id",
+            "state": "$.state",
+            "context": "$.context",
+            "branch": "$.branch",
+            "commit_ref": "$.commit_ref",
+            "commit_url": "$.commit_url",
+            "title": "$.title",
+            "error_message": "$.error_message",
+            "deploy_url": "$.deploy_ssl_url",
+            "url": "$.ssl_url",
+            "admin_url": "$.admin_url",
+            "review_url": "$.review_url",
+            "locked": "$.locked",
+            "skipped": "$.skipped",
+            "draft": "$.draft",
+            "framework": "$.framework",
+            "build_id": "$.build_id",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "published_at": "$.published_at"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "netlify_delete_form_submission",
+      "description": "Delete one form submission for good. Installed switched off: an administrator turns it on deliberately. Show the submission first and call only after the user confirms.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "description": "Submission id from netlify_list_form_submissions."
+          }
+        },
+        "required": [
+          "submission_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/submissions/{submission_id}",
+        "encodePathParams": true
+      }
+    }
+  ]
+}

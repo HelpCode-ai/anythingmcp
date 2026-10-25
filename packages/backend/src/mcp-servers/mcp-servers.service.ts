@@ -1,6 +1,11 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
-import { KgSkillService } from '../knowledge-graph/kg-skill.service';
+import {
+  KgSkillService,
+  SKILLS_DELIVERY_MODES,
+  type SkillsDelivery,
+} from '../knowledge-graph/kg-skill.service';
+import { KnowledgeFoldersService } from '../knowledge-folders/knowledge-folders.service';
 import { McpSessionManager } from './mcp-session.manager';
 
 /** What the per-server endpoint may serve as text to one caller. */
@@ -28,7 +33,13 @@ export class McpServersService {
     private readonly prisma: PrismaService,
     private readonly kgSkills: KgSkillService,
     private readonly sessionManager: McpSessionManager,
+    @Optional() private readonly folders?: KnowledgeFoldersService,
   ) {}
+
+  /** The caller's knowledge-folder access in one workspace (null without the module). */
+  private folderAccess(organizationId: string, userId?: string | null) {
+    return this.folders ? this.folders.accessFor(organizationId, userId) : Promise.resolve(null);
+  }
 
   async findAllByUser(userId: string) {
     return this.prisma.mcpServerConfig.findMany({
@@ -71,6 +82,61 @@ export class McpServersService {
       });
     }
     return usage;
+  }
+
+  /**
+   * Calls and failed calls per connector over the last `days` days, with the
+   * time of the last call and of the last failure. Counts only: no inputs,
+   * outputs or error texts. Grouped on the (connector_id, created_at) index.
+   */
+  async activityByConnector(
+    connectorIds: string[],
+    days: number,
+  ): Promise<
+    Array<{
+      connectorId: string;
+      calls: number;
+      errors: number;
+      lastCallAt: Date | null;
+      lastErrorAt: Date | null;
+    }>
+  > {
+    const ids = [...new Set(connectorIds)];
+    if (ids.length === 0) return [];
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const where = { connectorId: { in: ids }, createdAt: { gte: since } };
+    const [all, failed] = await Promise.all([
+      this.prisma.toolInvocation.groupBy({
+        by: ['connectorId'],
+        where,
+        _count: { _all: true },
+        _sum: { repeatCount: true },
+        _max: { createdAt: true },
+      }),
+      this.prisma.toolInvocation.groupBy({
+        by: ['connectorId'],
+        where: { ...where, status: { in: ['ERROR', 'TIMEOUT'] } },
+        _count: { _all: true },
+        _sum: { repeatCount: true },
+        _max: { createdAt: true },
+      }),
+    ]);
+    // A row can stand for repeats of the same failure (repeat_count).
+    const calls = (r: { _count: { _all: number }; _sum: { repeatCount: number | null } }) =>
+      r._sum.repeatCount ?? r._count._all;
+    const failedById = new Map(failed.map((r) => [r.connectorId, r]));
+    return all
+      .filter((r) => r.connectorId)
+      .map((r) => {
+        const f = failedById.get(r.connectorId);
+        return {
+          connectorId: r.connectorId as string,
+          calls: calls(r),
+          errors: f ? calls(f) : 0,
+          lastCallAt: r._max.createdAt ?? null,
+          lastErrorAt: f?._max.createdAt ?? null,
+        };
+      });
   }
 
   async findAllByOrg(
@@ -125,20 +191,30 @@ export class McpServersService {
             },
           },
         },
-        apiKeys: {
-          select: {
-            id: true,
-            name: true,
-            key: true,
-            isActive: true,
-            lastUsedAt: true,
-            createdAt: true,
-          },
-          orderBy: { createdAt: 'desc' },
-        },
         _count: { select: { connectors: true, apiKeys: true } },
       },
     });
+  }
+
+  /**
+   * The caller's own API keys for one server, masked to the last 8 characters.
+   * Keys are bearer credentials: never return another member's key, and never
+   * a full key after creation (POST /api/mcp-keys shows it once).
+   */
+  async listOwnKeysForServer(mcpServerId: string, userId: string, organizationId: string) {
+    const keys = await this.prisma.mcpApiKey.findMany({
+      where: { mcpServerId, userId, organizationId },
+      select: {
+        id: true,
+        name: true,
+        key: true,
+        isActive: true,
+        lastUsedAt: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return keys.map((k) => ({ ...k, key: `mcp_${'•'.repeat(24)}${k.key.slice(-8)}` }));
   }
 
   async create(userId: string, organizationId: string, data: { name: string; slug?: string; description?: string; instructions?: string }) {
@@ -163,7 +239,7 @@ export class McpServersService {
     );
   }
 
-  async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean }) {
+  async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: string }) {
     return this.withSlugConflict(data.slug, () =>
       this.prisma.mcpServerConfig.update({
         where: { id },
@@ -316,12 +392,13 @@ export class McpServersService {
   async getComposedInstructions(
     serverId: string,
     visibleConnectorIds: string[],
+    userId?: string | null,
   ): Promise<string | undefined> {
     const { server, serverConnectors } = await this.loadVisibleConnectors(
       serverId,
       visibleConnectorIds,
     );
-    return this.composeInstructions(serverId, server, serverConnectors);
+    return this.composeInstructions(serverId, server, serverConnectors, userId);
   }
 
   /**
@@ -357,6 +434,8 @@ export class McpServersService {
   async getSharedGuide(opts: {
     connectorIds: string[];
     serverIds: string[];
+    /** The caller, so skills in folders limited to roles they lack stay out. */
+    userId?: string | null;
   }): Promise<string | undefined> {
     const connectorIds = [...new Set(opts.connectorIds)];
     const serverIds = [...new Set(opts.serverIds)];
@@ -366,13 +445,15 @@ export class McpServersService {
       serverIds.length
         ? this.prisma.mcpServerConfig.findMany({
             where: { id: { in: serverIds } },
-            select: { name: true, instructions: true },
+            select: { id: true, name: true, instructions: true, organizationId: true },
             orderBy: { createdAt: 'asc' },
           })
-        : Promise.resolve([]),
+        : Promise.resolve(
+            [] as Array<{ id: string; name: string; instructions: string | null; organizationId: string }>,
+          ),
       this.prisma.connector.findMany({
         where: { id: { in: connectorIds } },
-        select: { name: true, instructions: true },
+        select: { id: true, name: true, instructions: true, organizationId: true },
         orderBy: { name: 'asc' },
       }),
     ]);
@@ -384,8 +465,20 @@ export class McpServersService {
     for (const c of connectors) {
       if (c.instructions) parts.push(`## ${c.name}\n${c.instructions}`);
     }
-    const skillsText = await this.kgSkills.activeSkillsText(serverIds, connectorIds);
-    if (skillsText) parts.push(skillsText);
+    // A shared connection can reach several workspaces: read each one's
+    // skills with its own organization and only its own server/connector ids.
+    const orgIds = [...new Set(connectors.map((c) => c.organizationId))];
+    for (const orgId of orgIds) {
+      // No skill_get on the shared endpoint: procedures are returned in full.
+      const skillsText = await this.kgSkills.activeSkillsText(
+        orgId,
+        servers.filter((s) => s.organizationId === orgId).map((s) => s.id),
+        connectors.filter((c) => c.organizationId === orgId).map((c) => c.id),
+        'full',
+        await this.folderAccess(orgId, opts.userId),
+      );
+      if (skillsText) parts.push(skillsText);
+    }
     return parts.length > 0 ? parts.join('\n\n') : undefined;
   }
 
@@ -413,6 +506,7 @@ export class McpServersService {
   async getVisibleContent(
     serverId: string,
     visibleConnectorIds: string[],
+    userId?: string | null,
   ): Promise<VisibleServerContent> {
     const { server, serverConnectors } = await this.loadVisibleConnectors(
       serverId,
@@ -422,6 +516,7 @@ export class McpServersService {
       serverId,
       server,
       serverConnectors,
+      userId,
     );
     if (!server) return { instructions, connectors: [], resources: [] };
 
@@ -470,7 +565,7 @@ export class McpServersService {
     serverId: string,
     visibleConnectorIds: string[],
   ): Promise<{
-    server: { instructions: string | null; organizationId: string } | null;
+    server: { instructions: string | null; organizationId: string; skillsDelivery?: string } | null;
     serverConnectors: Array<{
       connectorId: string;
       connector: { id: string; name: string; instructions: string | null };
@@ -478,7 +573,7 @@ export class McpServersService {
   }> {
     const server = await this.prisma.mcpServerConfig.findUnique({
       where: { id: serverId },
-      select: { instructions: true, organizationId: true },
+      select: { instructions: true, organizationId: true, skillsDelivery: true },
     });
     const visible = [...new Set(visibleConnectorIds)];
     if (!server || visible.length === 0) return { server, serverConnectors: [] };
@@ -500,11 +595,12 @@ export class McpServersService {
 
   private async composeInstructions(
     serverId: string,
-    server: { instructions: string | null } | null,
+    server: { instructions: string | null; organizationId: string; skillsDelivery?: string } | null,
     serverConnectors: Array<{
       connectorId: string;
       connector: { name: string; instructions: string | null };
     }>,
+    userId?: string | null,
   ): Promise<string | undefined> {
     const parts: string[] = [];
 
@@ -521,10 +617,15 @@ export class McpServersService {
     // Compose applied skills (server-scoped + the visible connectors'
     // connector-scoped ones) dynamically, so editing/deleting a skill takes
     // effect immediately.
-    const skillsText = await this.kgSkills.activeSkillsText(
-      serverId,
-      serverConnectors.map((sc) => sc.connectorId),
-    );
+    const skillsText = server
+      ? await this.kgSkills.activeSkillsText(
+          server.organizationId,
+          serverId,
+          serverConnectors.map((sc) => sc.connectorId),
+          toDelivery(server.skillsDelivery),
+          await this.folderAccess(server.organizationId, userId),
+        )
+      : null;
     if (skillsText) parts.push(skillsText);
 
     return parts.length > 0 ? parts.join('\n\n') : undefined;
@@ -574,4 +675,10 @@ export class McpServersService {
       .replace(/^-|-$/g, '')
       || 'server';
   }
+}
+
+function toDelivery(value: string | undefined): SkillsDelivery {
+  return (SKILLS_DELIVERY_MODES as readonly string[]).includes(value ?? '')
+    ? (value as SkillsDelivery)
+    : 'auto';
 }

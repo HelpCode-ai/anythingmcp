@@ -19,7 +19,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsIn, IsString, IsOptional, Matches } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
-import { LicenseService } from './license.service';
+import { LicenseService, type BillingPortalFlow } from './license.service';
 import { LicenseGuardService } from './license-guard.service';
 import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
@@ -27,6 +27,7 @@ import { DeploymentService } from '../common/deployment.service';
 import { ProductEventService, ProductEvents } from '../audit/product-event.service';
 import { CardTrialEligibilityService } from './card-trial-eligibility.service';
 import { CardTrialOfferService } from './card-trial-offer.service';
+import { createEmailLinkToken } from '../common/email-link-token';
 import {
   CHECKOUT_BILLING_PERIODS,
   CHECKOUT_PLANS,
@@ -34,6 +35,7 @@ import {
   CheckoutBillingPeriod,
   CheckoutPlan,
   CheckoutSource,
+  DEFAULT_CHECKOUT_SOURCE,
   cardTrialEnd,
   checkoutAdMetadata,
   cloudFrontendOrigin,
@@ -66,8 +68,9 @@ export class CheckoutLinkDto {
   @Matches(/^[A-Za-z0-9_-]{1,64}$/)
   promo?: string;
 
-  // Which in-app offer led here (e.g. 'first_success', the card-trial offer
-  // after the first successful tool call). Lands in Stripe metadata.
+  // Where in the app the checkout was started (e.g. 'first_success_banner',
+  // the card-trial offer after the first successful tool call). Lands in
+  // Stripe metadata as checkout_source; 'app' when the page does not say.
   @IsOptional()
   @IsIn(CHECKOUT_SOURCES as unknown as string[])
   source?: CheckoutSource;
@@ -78,10 +81,13 @@ class BillingPortalDto {
   @IsString()
   returnUrl?: string;
 
-  /** 'cancel': open Stripe's cancellation page directly. */
+  /**
+   * 'cancel': open Stripe's cancellation page directly;
+   * 'payment_method_update': the page to add a card.
+   */
   @IsOptional()
-  @IsIn(['cancel'])
-  flow?: 'cancel';
+  @IsIn(['cancel', 'payment_method_update'])
+  flow?: BillingPortalFlow;
 }
 
 @ApiTags('License')
@@ -119,6 +125,30 @@ export class LicenseController {
     }
 
     const license = await this.licenseService.getCurrentLicense(organizationId);
+
+    // Cloud: a paid licence stopped on a declined card while Stripe still
+    // retries the subscription. Reported ahead of a free trial that has run
+    // out (a card trial is charged when the free trial ends), so the app asks
+    // for a new card instead of selling a second subscription.
+    if (
+      this.deployment.isCloud() &&
+      organizationId &&
+      (!license || (license.plan === 'trial' && trialDaysLeftOf(license) === 0))
+    ) {
+      const failed = await this.licenseService.getPaymentFailedLicense(organizationId);
+      if (failed) {
+        return {
+          plan: failed.plan,
+          status: failed.status,
+          features: null,
+          expiresAt: failed.expiresAt,
+          instanceId: null,
+          paymentFailed: true,
+          billing: failed.billing,
+        };
+      }
+    }
+
     if (!license) {
       // Cloud: a workspace whose trial ran out (or whose paid licence lapsed)
       // has no active licence, but it is not a workspace that never had one.
@@ -143,10 +173,7 @@ export class LicenseController {
       return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
     }
 
-    const trialDaysLeft =
-      license.plan === 'trial' && license.expiresAt
-        ? Math.max(0, Math.ceil((new Date(license.expiresAt).getTime() - Date.now()) / 86400000))
-        : undefined;
+    const trialDaysLeft = trialDaysLeftOf(license);
 
     return {
       plan: license.plan,
@@ -294,6 +321,13 @@ export class LicenseController {
         'This workspace already has a subscription. Change your plan in the billing portal.',
       );
     }
+    // Nor while Stripe is still retrying a failed payment: the new payment
+    // method goes on that subscription, which resumes once it is paid.
+    if (!(current && current.plan !== 'trial') && (await this.licenseService.getPaymentFailedLicense(organizationId))) {
+      throw new ConflictException(
+        'The last payment for this workspace did not go through. Update your payment method to resume your subscription.',
+      );
+    }
 
     // A card trial ends when the free trial would have. Asked for after the
     // trial is over, it is a plain purchase: no trialEnd means pay now. An
@@ -306,6 +340,8 @@ export class LicenseController {
     const adMetadata = checkoutAdMetadata(
       await this.productEvents.clickIdForUser(req.user.sub).catch(() => null),
     );
+    // Every checkout carries its entry point, so Stripe can count each one.
+    const source: CheckoutSource = dto.source ?? DEFAULT_CHECKOUT_SOURCE;
 
     try {
       const link = await this.licenseService.createCheckoutIntent({
@@ -317,13 +353,13 @@ export class LicenseController {
         organizationId,
         ...(dto.promo && { promoCode: dto.promo.toUpperCase() }),
         ...(adMetadata && { adMetadata }),
-        ...(dto.source && { source: dto.source }),
+        source,
       });
       void this.productEvents.log({
         event: ProductEvents.CHECKOUT_LINK_CREATED,
         userId: req.user.sub,
         organizationId,
-        metadata: { via: dto.source ?? 'app', kind: trialEnd ? 'trial' : 'pay' },
+        metadata: { via: source, kind: trialEnd ? 'trial' : 'pay' },
       });
       return link;
     } catch (err: any) {
@@ -332,6 +368,23 @@ export class LicenseController {
         'The checkout could not be opened right now. Please try again in a moment.',
       );
     }
+  }
+
+  @Get('pricing-link-token')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      "Cloud: the signed-in user's address token for links to the pricing page (#t=), null when EMAIL_LINK_SECRET is unset",
+  })
+  pricingLinkToken(@Req() req: any): { token: string | null } {
+    // With it the pricing page knows who is buying and refuses a second
+    // subscription beside a card trial or plan the address already has (the
+    // licence site's duplicate guard). The address is the caller's own, and
+    // the token only prefills a checkout with it. Self-hosted instances buy
+    // their licence on the pricing page as anyone does and get none.
+    if (!this.deployment.isCloud()) return { token: null };
+    return { token: createEmailLinkToken(req.user?.email) };
   }
 
   @Get('card-trial-eligibility')
@@ -455,4 +508,11 @@ export class LicenseController {
       throw new BadRequestException(err.message || 'Failed to register community license');
     }
   }
+}
+
+/** Whole days left on a free trial (0 once it is over); undefined for other plans. */
+function trialDaysLeftOf(license: { plan: string; expiresAt: Date | null }): number | undefined {
+  return license.plan === 'trial' && license.expiresAt
+    ? Math.max(0, Math.ceil((new Date(license.expiresAt).getTime() - Date.now()) / 86400000))
+    : undefined;
 }

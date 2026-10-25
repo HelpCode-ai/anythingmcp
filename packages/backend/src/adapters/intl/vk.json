@@ -1,0 +1,1065 @@
+{
+  "slug": "vk",
+  "name": "VK (VKontakte)",
+  "description": "Manage a VK community from an AI agent: community info and token rights, community messages (conversations, history, replies), comments as the community, and with an admin user token the wall posts, publishing, statistics, shop products and photo albums.",
+  "instructions": "## VK (VKontakte)\nThis connector calls the **VK API** (`https://api.vk.ru/method/<method>`, version 5.199) for a VK community (сообщество): community information, community messages, comments as the community, and, with an optional user token, the wall, statistics, shop products and photo albums.\n\n**Two kinds of token**\nVK decides per method which token it accepts, and a community token cannot call every method.\n- `VK_COMMUNITY_TOKEN` (required) is a community access key (ключ доступа сообщества). It works for `vk_get_token_permissions`, `vk_get_community`, `vk_list_conversations`, `vk_get_conversation_history`, `vk_send_message` and `vk_create_comment`.\n- `VK_USER_TOKEN` (optional) is a user access key of a community admin. VK accepts only user tokens for `vk_publish_post`, `vk_get_community_stats`, `vk_list_market_products` and the delete tools. `vk_get_wall_posts`, `vk_get_post_comments` and `vk_list_photo_albums` also accept a service key (сервисный ключ) of your VK ID app, for public communities. Without it these tools stop before calling VK and say that the variable is missing; a community token there would be refused with error 27.\n\n**Setup of the community token (about 3 minutes, self-service)**\n1. Open the community, then **Manage > Advanced > API usage** (Управление > Дополнительно > Работа с API), tab **Access keys** (Ключи доступа), and click **Create key**.\n2. Tick the rights the tools need: **Community management** (управление сообществом), **Community messages** (сообщения сообщества), **Wall** (стена) for comments, **Photos** if needed. Confirm in the VK app or by SMS.\n3. Copy the key into `VK_COMMUNITY_TOKEN`. Community keys do not expire; delete and recreate the key if it leaks.\n4. For messages, also switch on **Community messages** (Сообщения сообщества) under Manage > Messages.\n\n**User token (optional)**: VK issues user tokens through VK ID apps (https://id.vk.ru/business/go). The wall and market rights are granted to an app only on request to VK support, and VK ID access tokens are short-lived unless issued with offline access, so a static `VK_USER_TOKEN` suits accounts that already have such a token. A service key from the app settings is enough to read public walls, comments and photo albums.\n\n**Errors**: VK answers HTTP 200 with an `error` object; the connector turns it into a failed call. Error 5 means the token is wrong or revoked; 15 or 7 means the token lacks the right (check `vk_get_token_permissions`); 27 means the method does not accept community tokens (set `VK_USER_TOKEN`); 6, 9 and 29 are rate limits (wait and retry later); 100 means a wrong or missing parameter; 901 and 902 mean the user has not allowed messages from the community.\n\n**Ids**: a community has a positive id (`community_id`, `group_id`) and appears as a negative `owner_id` on its wall; the tools build the negative form themselves. `vk_get_community` returns the id and the short address (`screen_name`) that `vk_get_wall_posts` takes. A conversation is addressed by `peer_id` (the user id in a private chat). Dates are Unix time in seconds.\n\n**Where to start**: `vk_get_token_permissions` and `vk_get_community` need no arguments. For messages call `vk_list_conversations` with `filter` = unanswered, then `vk_get_conversation_history` with the `peer_id`.\n\n**Writes**: `vk_send_message`, `vk_create_comment` and `vk_publish_post` are public or reach a person at once. Show the user the exact text, the recipient or the community, and wait for confirmation before each one. Give every message a new `random_id` and reuse it only to retry the same message. The delete tools are installed switched off.\n\n**Rate limits**: a community token allows about 20 requests a second, a user token 3. Messaging users who never wrote to the community is limited and may be refused.\n\n**Out of scope**: uploading photos or videos (attach media that is already on VK), ads, Callback and Long Poll events, member management and bans, polls, stories and personal (non-community) messages.",
+  "region": "intl",
+  "category": "social",
+  "icon": "vk",
+  "docsUrl": "https://dev.vk.ru/ru/reference",
+  "aliases": [
+    "VKontakte",
+    "ВКонтакте",
+    "ВК"
+  ],
+  "requiredEnvVars": [
+    "VK_COMMUNITY_TOKEN"
+  ],
+  "optionalEnvVars": [
+    "VK_USER_TOKEN"
+  ],
+  "envVarMeta": {
+    "VK_COMMUNITY_TOKEN": {
+      "label": "Community access key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Community > Manage > Advanced > API usage > Access keys > Create key. Tick Community management, Community messages and Wall, confirm, and copy the key.",
+      "link": "https://dev.vk.ru/ru/api/access-token/community-token/in-community-settings",
+      "example": "vk1.a.AbCdEf0123456789",
+      "pattern": "^[A-Za-z0-9._-]{40,}$",
+      "patternMessage": "A VK access key is a long string of letters, digits, dots, dashes and underscores (newer keys start with vk1.a.). Paste only the key, without Bearer or access_token=."
+    },
+    "VK_USER_TOKEN": {
+      "label": "User or service access key (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Optional. A user access key of a community admin (rights wall, stats, market, photos, offline) for publishing, statistics and shop products, or the service key of your VK ID app for reading public walls, comments and photo albums.",
+      "link": "https://id.vk.ru/business/go",
+      "example": "vk1.a.AbCdEf0123456789",
+      "pattern": "^[A-Za-z0-9._-]{40,}$",
+      "patternMessage": "A VK access key is a long string of letters, digits, dots, dashes and underscores. Paste only the key, without Bearer or access_token=."
+    }
+  },
+  "verifyHints": {
+    "401": "VK refused the community access key (error 5). Copy it again from Manage > Advanced > API usage > Access keys, or create a new one.",
+    "403": "The key works but lacks a right this method needs, or the method does not accept community keys. Check vk_get_token_permissions and the instructions.",
+    "rate_limited": "VK is rate limiting this token (error 6, 9 or 29). Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "vk_get_token_permissions"
+  },
+  "prerequisites": "Admin rights in a VK community and a community access key (Manage > Advanced > API usage). Publishing posts, statistics and shop products also need a user access key of an admin, which VK issues through VK ID apps. About 3 minutes for the community key.",
+  "connector": {
+    "name": "VK API",
+    "type": "REST",
+    "baseUrl": "https://api.vk.ru/method",
+    "authType": "NONE",
+    "headers": {
+      "Authorization": "Bearer {{VK_COMMUNITY_TOKEN}}",
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/groups.getTokenPermissions?v=5.199",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error.error_code",
+          "in": [
+            5
+          ],
+          "messagePath": "error.error_msg",
+          "status": 401
+        },
+        {
+          "path": "error.error_code",
+          "in": [
+            7,
+            15,
+            27,
+            28,
+            200,
+            201,
+            203,
+            212,
+            213,
+            214,
+            260,
+            901,
+            902,
+            917,
+            925
+          ],
+          "messagePath": "error.error_msg",
+          "status": 403
+        },
+        {
+          "path": "error.error_code",
+          "in": [
+            6,
+            9,
+            29
+          ],
+          "messagePath": "error.error_msg",
+          "status": 429
+        },
+        {
+          "path": "error.error_code",
+          "in": [
+            18,
+            104
+          ],
+          "messagePath": "error.error_msg",
+          "status": 404
+        },
+        {
+          "path": "error.error_code",
+          "in": [
+            1,
+            10
+          ],
+          "messagePath": "error.error_msg",
+          "status": 502
+        },
+        {
+          "path": "error.error_code",
+          "messagePath": "error.error_msg",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "vk_get_token_permissions",
+      "description": "Check the community token: which rights (права) it carries, for example manage, messages, photos, wall. Cheap and needs no arguments; call it first, and whenever a tool answers that access is denied.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups.getTokenPermissions",
+        "queryParams": {
+          "v": "5.199"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "mask": "$.response.mask",
+            "permissions": "$.response.permissions[*].name"
+          }
+        }
+      }
+    },
+    {
+      "name": "vk_get_community",
+      "description": "Get the community (сообщество): id, name, screen_name (short address), type, open or closed, description, members count, activity, site, status, verification, shop settings and counters. Without group_id it returns the token's own community.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Optional id or short address of another community, for example apiclub. Omit for the token's own community."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups.getById",
+        "queryParams": {
+          "v": "5.199",
+          "group_id": "$group_id",
+          "fields": "description,members_count,activity,site,status,verified,market,counters,can_message"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "groups": {
+              "$from": "$.response.groups[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "screen_name": "screen_name",
+                "type": "type",
+                "is_closed": "is_closed",
+                "description": "description",
+                "members_count": "members_count",
+                "activity": "activity",
+                "site": "site",
+                "status": "status",
+                "verified": "verified",
+                "market": "market",
+                "counters": "counters",
+                "can_message": "can_message"
+              }
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "vk_list_conversations",
+      "description": "List the community's conversations (диалоги сообщества) with users: peer id, unread count, whether it is unanswered, the last message, and the users' names. Needs the messages right on the token and community messages switched on. Use filter unanswered or unread to find messages waiting for a reply.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "unread",
+              "unanswered",
+              "important",
+              "archive"
+            ],
+            "default": "all",
+            "description": "all (default), unread, unanswered, important or archive."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Conversations per call, 1 to 200. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages.getConversations",
+        "queryParams": {
+          "v": "5.199",
+          "filter": "$filter",
+          "count": "$count",
+          "offset": "$offset",
+          "extended": "1"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "count": "$.response.count",
+            "unread_count": "$.response.unread_count",
+            "items": {
+              "$from": "$.response.items[*]",
+              "$select": {
+                "peer_id": "conversation.peer.id",
+                "peer_type": "conversation.peer.type",
+                "unread_count": "conversation.unread_count",
+                "unanswered": "conversation.unanswered",
+                "can_write": "conversation.can_write.allowed",
+                "last_message_id": "last_message.id",
+                "last_message_date": "last_message.date",
+                "last_message_from_id": "last_message.from_id",
+                "last_message_out": "last_message.out",
+                "last_message_text": "last_message.text"
+              }
+            },
+            "profiles": {
+              "$from": "$.response.profiles[*]",
+              "$select": {
+                "id": "id",
+                "first_name": "first_name",
+                "last_name": "last_name"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "vk_get_conversation_history",
+      "description": "Read the messages of one conversation of the community, newest first: id, date (Unix time), sender, direction (out = 1 sent by the community), text and attachment types. Needs the messages right on the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "peer_id": {
+            "type": "integer",
+            "description": "Conversation peer id from vk_list_conversations (a user id for a private chat)."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Messages per call, 1 to 200. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip, for the next page."
+          },
+          "start_message_id": {
+            "type": "integer",
+            "description": "Optional message id to start from."
+          },
+          "rev": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for chronological order; 0 (default) newest first."
+          }
+        },
+        "required": [
+          "peer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages.getHistory",
+        "queryParams": {
+          "v": "5.199",
+          "peer_id": "$peer_id",
+          "count": "$count",
+          "offset": "$offset",
+          "start_message_id": "$start_message_id",
+          "rev": "$rev"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "count": "$.response.count",
+            "items": {
+              "$from": "$.response.items[*]",
+              "$select": {
+                "id": "id",
+                "conversation_message_id": "conversation_message_id",
+                "date": "date",
+                "from_id": "from_id",
+                "out": "out",
+                "text": "text",
+                "attachment_types": "attachments[*].type",
+                "reply_to": "reply_message.id"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "vk_send_message",
+      "description": "Send a message from the community to a user who has written to it or allowed its messages. The user receives it at once and it cannot be recalled from here. Show the user the recipient and the exact text and ask for confirmation before calling. Needs the messages right on the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "peer_id": {
+            "type": "integer",
+            "description": "Recipient: the user id or peer_id from vk_list_conversations."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 9000,
+            "description": "Message text, as approved by the user."
+          },
+          "random_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647,
+            "description": "A random number that identifies this message, for example 482913377. VK refuses a second message with the same random_id from the community, so a retry with the same value cannot send the message twice. Use a new value for each new message."
+          },
+          "reply_to": {
+            "type": "integer",
+            "description": "Optional id of the message this one answers."
+          },
+          "attachment": {
+            "type": "string",
+            "description": "Optional media already on VK, comma-separated, for example photo-1_456239017."
+          }
+        },
+        "required": [
+          "peer_id",
+          "message",
+          "random_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages.send",
+        "queryParams": {
+          "v": "5.199"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "peer_id": "$peer_id",
+          "message": "$message",
+          "random_id": "$random_id",
+          "reply_to": "$reply_to",
+          "attachment": "$attachment"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message_id": "$.response"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "vk_create_comment",
+      "description": "Comment on a post of the community's wall, as the community. The comment is public. Show the user the exact text and ask for confirmation before calling. Needs the wall right on the community token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "community_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Community id, a positive number (id from vk_get_community), for example 1."
+          },
+          "post_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Post id on the community wall (id from vk_get_wall_posts)."
+          },
+          "message": {
+            "type": "string",
+            "description": "Comment text, as approved by the user."
+          },
+          "reply_to_comment": {
+            "type": "integer",
+            "description": "Optional id of the comment this one answers (from vk_get_post_comments)."
+          }
+        },
+        "required": [
+          "community_id",
+          "post_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wall.createComment",
+        "queryParams": {
+          "v": "5.199"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "owner_id": "-${community_id}",
+          "from_group": "$community_id",
+          "post_id": "$post_id",
+          "message": "$message",
+          "reply_to_comment": "$reply_to_comment"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "comment_id": "$.response.comment_id",
+            "parents_stack": "$.response.parents_stack"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "vk_get_wall_posts",
+      "description": "Read posts of a community wall (стена), newest first: id, date (Unix time), text, type, pinned flag, counts of comments, likes, reposts and views, and attachment types. Needs VK_USER_TOKEN (a user token, or a service token for public communities): VK does not accept community tokens for this method.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Short address of the community, the screen_name from vk_get_community (for example apiclub), or club followed by its id (club1)."
+          },
+          "filter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "owner",
+              "others",
+              "postponed",
+              "suggests",
+              "donut"
+            ],
+            "default": "all",
+            "description": "all (default); owner for the community's own posts; others for visitors' posts; postponed (scheduled) and suggests (suggested) need an admin's user token."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Posts per call, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip, for the next page."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wall.get",
+        "queryParams": {
+          "v": "5.199",
+          "domain": "$domain",
+          "filter": "$filter",
+          "count": "$count",
+          "offset": "$offset"
+        },
+        "headers": {
+          "Authorization": "Bearer {{VK_USER_TOKEN}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "count": "$.response.count",
+            "items": {
+              "$from": "$.response.items[*]",
+              "$select": {
+                "id": "id",
+                "owner_id": "owner_id",
+                "from_id": "from_id",
+                "date": "date",
+                "text": "text",
+                "post_type": "post_type",
+                "is_pinned": "is_pinned",
+                "comments": "comments.count",
+                "likes": "likes.count",
+                "reposts": "reposts.count",
+                "views": "views.count",
+                "attachment_types": "attachments[*].type"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "vk_get_post_comments",
+      "description": "Read the comments under a post of a community wall: id, author id, date (Unix time), text, reply target, number of replies and likes, with the authors' names. Needs VK_USER_TOKEN (a user token, or a service token for public communities).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "community_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Community id, a positive number (id from vk_get_community), for example 1."
+          },
+          "post_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Post id from vk_get_wall_posts."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc",
+            "description": "desc (default) newest first, asc oldest first."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Comments per call, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip, for the next page."
+          },
+          "comment_id": {
+            "type": "integer",
+            "description": "Optional comment id, to read the replies in its thread."
+          }
+        },
+        "required": [
+          "community_id",
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wall.getComments",
+        "queryParams": {
+          "v": "5.199",
+          "owner_id": "-${community_id}",
+          "post_id": "$post_id",
+          "sort": "$sort",
+          "count": "$count",
+          "offset": "$offset",
+          "comment_id": "$comment_id",
+          "need_likes": "1",
+          "preview_length": "0",
+          "extended": "1"
+        },
+        "headers": {
+          "Authorization": "Bearer {{VK_USER_TOKEN}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "count": "$.response.count",
+            "items": {
+              "$from": "$.response.items[*]",
+              "$select": {
+                "id": "id",
+                "from_id": "from_id",
+                "date": "date",
+                "text": "text",
+                "reply_to_comment": "reply_to_comment",
+                "thread_count": "thread.count",
+                "likes": "likes.count"
+              }
+            },
+            "profiles": {
+              "$from": "$.response.profiles[*]",
+              "$select": {
+                "id": "id",
+                "first_name": "first_name",
+                "last_name": "last_name"
+              }
+            },
+            "groups": {
+              "$from": "$.response.groups[*]",
+              "$select": {
+                "id": "id",
+                "name": "name"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "vk_list_photo_albums",
+      "description": "List the community's photo albums: id, title, description, number of photos, creation and update dates (Unix time) and the cover URL. Needs VK_USER_TOKEN (a user token, or a service token for public communities).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "community_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Community id, a positive number (id from vk_get_community), for example 1."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Albums per call, 1 to 100. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip, for the next page."
+          }
+        },
+        "required": [
+          "community_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/photos.getAlbums",
+        "queryParams": {
+          "v": "5.199",
+          "owner_id": "-${community_id}",
+          "count": "$count",
+          "offset": "$offset",
+          "need_covers": "1"
+        },
+        "headers": {
+          "Authorization": "Bearer {{VK_USER_TOKEN}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "count": "$.response.count",
+            "items": {
+              "$from": "$.response.items[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "description": "description",
+                "size": "size",
+                "created": "created",
+                "updated": "updated",
+                "thumb_src": "thumb_src"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "vk_publish_post",
+      "description": "Publish a post on the community wall as the community, or schedule it with publish_date. The post is public and reaches every subscriber's feed. Show the user the exact text, attachments and time and ask for confirmation before calling. Needs VK_USER_TOKEN: a user token of a community admin with the wall right (VK grants it to apps on request only); community tokens cannot post.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "community_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Community id, a positive number (id from vk_get_community), for example 1."
+          },
+          "message": {
+            "type": "string",
+            "description": "Post text, as approved by the user. Required unless attachments is set."
+          },
+          "attachments": {
+            "type": "string",
+            "description": "Optional media already on VK or one link, comma-separated, for example photo-1_456239017,https://example.com."
+          },
+          "publish_date": {
+            "type": "integer",
+            "description": "Optional Unix time to schedule the post (отложенная запись)."
+          },
+          "signed": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 to sign the post with the admin's name."
+          },
+          "close_comments": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 to switch comments off for this post."
+          },
+          "mute_notifications": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 to receive no notifications about this post."
+          }
+        },
+        "required": [
+          "community_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wall.post",
+        "queryParams": {
+          "v": "5.199"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "owner_id": "-${community_id}",
+          "from_group": "1",
+          "message": "$message",
+          "attachments": "$attachments",
+          "publish_date": "$publish_date",
+          "signed": "$signed",
+          "close_comments": "$close_comments",
+          "mute_notifications": "$mute_notifications"
+        },
+        "headers": {
+          "Authorization": "Bearer {{VK_USER_TOKEN}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "post_id": "$.response.post_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "vk_get_community_stats",
+      "description": "Community statistics per day, week or month: views, unique visitors, reach, reach among subscribers, mobile reach and activity (likes, comments, reposts, subscribed and unsubscribed). Needs VK_USER_TOKEN of a community admin with access to statistics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "community_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Community id, a positive number (id from vk_get_community), for example 1."
+          },
+          "timestamp_from": {
+            "type": "integer",
+            "description": "Start of the period, Unix time in seconds."
+          },
+          "timestamp_to": {
+            "type": "integer",
+            "description": "Optional end of the period, Unix time in seconds."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "year",
+              "all"
+            ],
+            "default": "day",
+            "description": "Length of one row. Default day."
+          },
+          "intervals_count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional number of intervals, counted back from timestamp_to."
+          }
+        },
+        "required": [
+          "community_id",
+          "timestamp_from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stats.get",
+        "queryParams": {
+          "v": "5.199",
+          "group_id": "$community_id",
+          "timestamp_from": "$timestamp_from",
+          "timestamp_to": "$timestamp_to",
+          "interval": "$interval",
+          "intervals_count": "$intervals_count",
+          "extended": "0"
+        },
+        "headers": {
+          "Authorization": "Bearer {{VK_USER_TOKEN}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "periods": {
+              "$from": "$.response[*]",
+              "$select": {
+                "period_from": "period_from",
+                "period_to": "period_to",
+                "views": "visitors.views",
+                "visitors": "visitors.visitors",
+                "mobile_views": "visitors.mobile_views",
+                "reach": "reach.reach",
+                "reach_subscribers": "reach.reach_subscribers",
+                "mobile_reach": "reach.mobile_reach",
+                "activity": "activity"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "vk_list_market_products",
+      "description": "List the products of the community shop (товары): id, title, price, availability, category, SKU, stock and date. Needs VK_USER_TOKEN with the market right (VK grants it to apps on request only).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "community_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Community id, a positive number (id from vk_get_community), for example 1."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Products per call, 1 to 200. Default 20."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip, for the next page."
+          },
+          "album_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional product collection (подборка) id."
+          },
+          "with_disabled": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 to include unavailable products."
+          }
+        },
+        "required": [
+          "community_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/market.get",
+        "queryParams": {
+          "v": "5.199",
+          "owner_id": "-${community_id}",
+          "count": "$count",
+          "offset": "$offset",
+          "album_id": "$album_id",
+          "with_disabled": "$with_disabled"
+        },
+        "headers": {
+          "Authorization": "Bearer {{VK_USER_TOKEN}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "count": "$.response.count",
+            "items": {
+              "$from": "$.response.items[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "price": "price.text",
+                "price_amount": "price.amount",
+                "currency": "price.currency.name",
+                "availability": "availability",
+                "category": "category.name",
+                "sku": "sku",
+                "stock_amount": "stock_amount",
+                "date": "date"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "vk_delete_post",
+      "description": "Delete a post from the community wall. Cannot be undone. Installed switched off. Ask the user for explicit confirmation before calling. Needs VK_USER_TOKEN of a community admin.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "community_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Community id, a positive number (id from vk_get_community), for example 1."
+          },
+          "post_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Post id from vk_get_wall_posts."
+          }
+        },
+        "required": [
+          "community_id",
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wall.delete",
+        "queryParams": {
+          "v": "5.199"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "owner_id": "-${community_id}",
+          "post_id": "$post_id"
+        },
+        "headers": {
+          "Authorization": "Bearer {{VK_USER_TOKEN}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "ok": "$.response"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "vk_delete_comment",
+      "description": "Delete a comment under a post of the community wall. Installed switched off. Ask the user for explicit confirmation before calling. Needs VK_USER_TOKEN of a community admin.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "community_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Community id, a positive number (id from vk_get_community), for example 1."
+          },
+          "comment_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Comment id from vk_get_post_comments."
+          }
+        },
+        "required": [
+          "community_id",
+          "comment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wall.deleteComment",
+        "queryParams": {
+          "v": "5.199"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "owner_id": "-${community_id}",
+          "comment_id": "$comment_id"
+        },
+        "headers": {
+          "Authorization": "Bearer {{VK_USER_TOKEN}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "ok": "$.response"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

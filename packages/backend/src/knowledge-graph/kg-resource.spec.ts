@@ -59,7 +59,7 @@ describe('KgService.describeForResource', () => {
     const { svc } = make({
       nodes: [node('n1', 'c1', 'Customer'), node('n2', 'c2', 'Order', { description: 'A sales order.' })],
       edges: [{ sourceNodeId: 'n2', targetNodeId: 'n1', kind: 'references', matchKey: 'customer_id', note: null }],
-      skills: [{ title: 'Monthly revenue', whenToUse: 'When asked for revenue per month.' }],
+      skills: [{ id: 'sk-rev', title: 'Monthly revenue', whenToUse: 'When asked for revenue per month.' }],
     });
     const text = await svc.describeForResource(ORG, { connectorIds: ['c1', 'c2'], serverName: 'Sales' });
 
@@ -69,7 +69,7 @@ describe('KgService.describeForResource', () => {
     expect(text).toContain('`c1_get_customer`');
     expect(text).toContain('`customer_number`');
     expect(text).toContain('- Order (ERP) refers to Customer (CRM) via `customer_id`');
-    expect(text).toContain('- **Monthly revenue**: When asked for revenue per month.');
+    expect(text).toContain('- **Monthly revenue** (`sk-rev`): When asked for revenue per month.');
   });
 
   it('stays bounded on a large graph and says what it left out', async () => {

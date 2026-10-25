@@ -56,11 +56,14 @@ describe('catalog search — typos', () => {
   });
 
   it('caps fuzzy results', () => {
-    // "googel" is one edit from every Google connector.
+    // "googel" is one edit from every Google connector, including "Google
+    // BigQuery", whose slug has no google- prefix.
     const result = searchCatalog(catalog, 'googel');
     expect(result.match).toBe('fuzzy');
     expect(result.hits.length).toBeLessThanOrEqual(MAX_FUZZY);
-    expect(result.hits.every((h) => h.entry.slug.startsWith('google-'))).toBe(true);
+    expect(
+      result.hits.every((h) => h.entry.slug.startsWith('google-') || h.entry.name.startsWith('Google ')),
+    ).toBe(true);
   });
 });
 
@@ -106,8 +109,8 @@ describe('catalog search — aliases', () => {
   it.each([
     ['mercado livre', 'mercado-libre'],
     ['mercadolivre', 'mercado-libre'],
-    ['amocrm', 'kommo'],
-    ['amo crm', 'kommo'],
+    ['amocrm', 'amocrm'],
+    ['amo crm', 'amocrm'],
     ['twitter', 'x'],
     ['lexoffice', 'lexware-office'],
     ['navision', 'dynamics-nav'],
@@ -120,7 +123,7 @@ describe('catalog search — aliases', () => {
   });
 
   it('"facebook" finds the Meta connectors', () => {
-    expect(slugs('facebook').slice(0, 3).sort()).toEqual(['instagram', 'meta-ads', 'whatsapp-business']);
+    expect(slugs('facebook').slice(0, 4).sort()).toEqual(['instagram', 'meta-ads', 'meta-catalog', 'whatsapp-business']);
     expect(slugs('fb').slice(0, 2).sort()).toEqual(['instagram', 'meta-ads']);
   });
 

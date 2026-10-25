@@ -9,11 +9,15 @@ import {
   Param,
   Query,
   Req,
+  Res,
   UseGuards,
   Logger,
   ForbiddenException,
   BadRequestException,
+  NotFoundException,
+  ValidationPipe,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PaginationQueryDto } from '../common/pagination.dto';
@@ -28,6 +32,7 @@ import {
   IsIn,
   ValidateNested,
   ArrayMinSize,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ConnectorType, AuthType } from '../generated/prisma/client';
@@ -38,6 +43,7 @@ import { WsdlParser } from './parsers/wsdl.parser';
 import { GraphqlParser } from './parsers/graphql.parser';
 import { PostmanParser } from './parsers/postman.parser';
 import { CurlParser } from './parsers/curl.parser';
+import { HarParser } from './parsers/har.parser';
 import { describeSpecError, readRemoteSpec } from './parsers/spec-read-error';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { McpOAuthService } from './mcp-oauth.service';
@@ -62,16 +68,27 @@ import {
   type StoredDynamicClient,
 } from './mcp-oauth-settings';
 import { mcpPathOf } from './mcp-connector-config.util';
+import {
+  EXPORT_FORMATS,
+  IMPORT_FILE_MAX_CHARS,
+  exportFileName,
+  parseImportFile,
+  serializeExport,
+  toExportEnvelope,
+  type ExportFormat,
+} from './connector-export.util';
 import { catalogMcpToolsFor } from '../adapters/mcp-adapter.util';
 import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 import { resolveMcpEndpointUrl } from '../common/url.util';
 import type { ClientAssertionSettings } from './engines/client-assertion.util';
 import {
+  connectorSecretValues,
   mergeMaskedEnvVars,
   mergeMaskedHeaders,
   secretContext,
   toPublicConnector,
 } from './connector-secrets.util';
+import { urlForLog } from '../common/log-safe-url.util';
 import {
   describeMissing,
   rebuildCatalogCredentials,
@@ -381,12 +398,12 @@ class UpdateOAuth1ConfigDto {
 
 class ImportToolsDto {
   @ApiProperty({
-    enum: ['openapi', 'wsdl', 'graphql', 'postman', 'curl', 'json', 'mcp', 'odata'],
+    enum: ['openapi', 'wsdl', 'graphql', 'postman', 'curl', 'har', 'json', 'mcp', 'odata'],
     description: 'Which parser to run on the supplied content/url.',
     example: 'openapi',
   })
   @IsString()
-  source: 'openapi' | 'wsdl' | 'graphql' | 'postman' | 'curl' | 'json' | 'mcp' | 'odata';
+  source: 'openapi' | 'wsdl' | 'graphql' | 'postman' | 'curl' | 'har' | 'json' | 'mcp' | 'odata';
 
   @ApiPropertyOptional({
     description: 'Inline spec content (JSON or YAML). Mutually exclusive with `url`.',
@@ -581,6 +598,28 @@ class ImportAllDto {
   secretsIncluded?: boolean;
 }
 
+class ImportFileDto {
+  @ApiProperty({
+    description:
+      'Contents of a file written by export-all or :id/export, JSON or YAML. ' +
+      'Parsed with the YAML core schema (JSON is a subset of it).',
+    example: 'version: "1.0"\nconnectors:\n  - name: Acme CRM\n    type: REST\n    baseUrl: https://api.acme.test\n',
+  })
+  @IsString()
+  @MaxLength(IMPORT_FILE_MAX_CHARS)
+  content: string;
+}
+
+/**
+ * The same pipe main.ts registers globally, run on the parsed file so a YAML
+ * import is validated exactly like a JSON body sent to import-all.
+ */
+const importFilePipe = new ValidationPipe({
+  transform: true,
+  whitelist: true,
+  forbidNonWhitelisted: true,
+});
+
 class UpdateEnvVarsDto {
   @ApiProperty({
     description:
@@ -609,6 +648,7 @@ export class ConnectorsController {
     private readonly graphqlParser: GraphqlParser,
     private readonly postmanParser: PostmanParser,
     private readonly curlParser: CurlParser,
+    private readonly harParser: HarParser,
     private readonly mcpClientEngine: McpClientEngine,
     private readonly mcpOAuthService: McpOAuthService,
     private readonly catalogResync: CatalogResyncService,
@@ -893,6 +933,18 @@ export class ConnectorsController {
     const results = await Promise.allSettled(
       active.map(async (c) => {
         const start = Date.now();
+        // The provider refused this connector's credential for good: asking
+        // again on every dashboard load only earns the same refusal.
+        if (c.authStatus === 'needs_reauth') {
+          return {
+            id: c.id,
+            name: c.name,
+            type: c.type,
+            status: 'needs_reauth',
+            message: c.authStatusMessage ?? 'The provider refused the credential; authorize again.',
+            latencyMs: 0,
+          };
+        }
         try {
           const result = await this.connectorsService.testConnection(c.id);
           return {
@@ -945,41 +997,51 @@ export class ConnectorsController {
       where: { organizationId: req.user.organizationId },
       include: { tools: true },
     });
-    const includeSecrets = req.user.role === 'ADMIN';
+    return toExportEnvelope(allConnectors, req.user.role === 'ADMIN');
+  }
 
-    const exportData = allConnectors.map((c) => {
-      const masked = includeSecrets ? null : toPublicConnector(c);
-      return {
-        name: c.name,
-        type: c.type,
-        baseUrl: c.baseUrl,
-        isActive: c.isActive,
-        authType: c.authType,
-        specUrl: c.specUrl,
-        headers: masked ? masked.headers : c.headers,
-        config: c.config,
-        envVars: masked ? masked.envVars : c.envVars,
-        ...(masked
-          ? { maskedEnvVars: masked.maskedEnvVars, maskedHeaders: masked.maskedHeaders }
-          : {}),
-        tools: c.tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          isEnabled: t.isEnabled,
-          parameters: t.parameters,
-          endpointMapping: t.endpointMapping,
-          responseMapping: t.responseMapping,
-          outputSchema: t.outputSchema,
-        })),
-      };
+  @Get(':id/export')
+  @ApiOperation({
+    summary: 'Export one connector and its tools as a JSON or YAML file',
+    description:
+      'Same file format as export-all, with a single entry in `connectors`, ' +
+      'so it can be restored with import-all or import. authConfig is never ' +
+      'exported. Secret environment variables and headers are exported only ' +
+      'to admins; for every other role they are left empty and named in ' +
+      '`maskedEnvVars` / `maskedHeaders`.',
+  })
+  @ApiQuery({ name: 'format', required: false, enum: ['json', 'yaml'] })
+  async exportOne(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('format') format: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const fmt = (format ?? 'json').toLowerCase() as ExportFormat;
+    if (!EXPORT_FORMATS.includes(fmt)) {
+      throw new BadRequestException('format must be "json" or "yaml"');
+    }
+    const connector = await this.prisma.connector.findFirst({
+      where: { id },
+      include: { tools: true },
     });
+    if (!connector) {
+      throw new NotFoundException('Connector not found');
+    }
+    this.assertOrgMatch(connector, req);
 
-    return {
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      secretsIncluded: includeSecrets,
-      connectors: exportData,
-    };
+    const secretsIncluded = req.user.role === 'ADMIN';
+    const data = toExportEnvelope([connector], secretsIncluded);
+    res.setHeader('X-Secrets-Included', String(secretsIncluded));
+    res.setHeader(
+      'Content-Type',
+      fmt === 'yaml' ? 'application/yaml; charset=utf-8' : 'application/json; charset=utf-8',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${exportFileName(connector.name, fmt)}"`,
+    );
+    return serializeExport(data, fmt);
   }
 
   @Get(':id')
@@ -1376,7 +1438,9 @@ export class ConnectorsController {
         );
         const baseUrl = interpolateString(connector.baseUrl, envVars);
         const metadata = await this.mcpOAuthService.discoverMetadata(baseUrl);
-        this.logger.log(`OAuth metadata discovered from ${baseUrl}: issuer=${metadata.issuer}`);
+        this.logger.log(
+          `OAuth metadata discovered from ${urlForLog(baseUrl, { secrets: connectorSecretValues(connector) })}: issuer=${metadata.issuer}`,
+        );
 
         const plan = planMcpAuthorization({
           metadata,
@@ -1547,6 +1611,7 @@ export class ConnectorsController {
         headers,
         connectorId: connector.id,
         mcpPath,
+        logSecrets: connectorSecretValues(connector),
       });
 
       const discovered = remoteTools.map((rt) => ({
@@ -1590,8 +1655,48 @@ export class ConnectorsController {
       return { error: 'Provide a "connectors" array with at least one connector' };
     }
 
+    return this.importConnectors(body, req);
+  }
+
+  @Post('import')
+  @ApiOperation({
+    summary: 'Import connectors from an exported JSON or YAML file',
+    description:
+      'Takes the text of a file written by export-all or :id/export, in JSON ' +
+      'or YAML, and imports it like import-all: into the caller\'s ' +
+      'organization only, skipping connectors with duplicate names, never ' +
+      'restoring auth credentials. Not to be confused with POST :id/import, ' +
+      'which imports tools from an API spec into an existing connector.',
+  })
+  async importFile(@Req() req: any, @Body() dto: ImportFileDto) {
+    this.assertCanCreate(req);
+    const parsed = parseImportFile(dto.content);
+    const body: ImportAllDto = await importFilePipe.transform(parsed, {
+      type: 'body',
+      metatype: ImportAllDto,
+      data: '',
+    });
+    return this.importConnectors(body, req);
+  }
+
+  /**
+   * Create the connectors of an export file in the caller's organization.
+   * Shared by import-all and import; the target organization and owner
+   * always come from the request, never from the file.
+   */
+  private async importConnectors(body: ImportAllDto, req: any) {
     const results = { created: 0, skipped: 0, tools: 0, errors: [] as string[] };
     const moves: SecretMoveSummary[] = [];
+
+    // Same base URL check as create and update, run for every connector
+    // before anything is written, so a bad file imports nothing.
+    body.connectors.forEach((c, i) => {
+      try {
+        this.assertUsableBaseUrl(c.baseUrl, c.type);
+      } catch (err: any) {
+        throw new BadRequestException(`connectors[${i}].baseUrl: ${err.message}`);
+      }
+    });
 
     for (const c of body.connectors) {
       // Connector names are not unique in the schema, so the P2002 branch
@@ -1765,7 +1870,7 @@ export class ConnectorsController {
 
   @Post(':id/import')
   @ApiOperation({
-    summary: 'Import tools from any source: OpenAPI, Postman, cURL, WSDL, GraphQL',
+    summary: 'Import tools from any source: OpenAPI, Postman, cURL, HAR, WSDL, GraphQL',
   })
   async importTools(
     @Req() req: any,
@@ -1781,6 +1886,7 @@ export class ConnectorsController {
     let odataScope: string | undefined;
 
     let detectedHealthcheckPath: string | undefined;
+    let harSkipped: { otherOrigin: number; staticAsset: number; duplicate: number } | undefined;
 
     try {
       switch (dto.source) {
@@ -1828,6 +1934,16 @@ export class ConnectorsController {
           parsedTools = this.curlParser.parse(dto.content);
           break;
         }
+        case 'har': {
+          if (!dto.content) {
+            return { error: 'Provide the HAR file content in the content field' };
+          }
+          const { baseUrl } = this.resolvedAddress(connector);
+          const result = this.harParser.parse(dto.content, { baseUrl });
+          parsedTools = result.tools;
+          harSkipped = result.skipped;
+          break;
+        }
         case 'json': {
           if (!dto.content) {
             return { error: 'Provide the JSON tool definitions in content field' };
@@ -1867,6 +1983,7 @@ export class ConnectorsController {
             headers,
             mcpPath: dto.url || '/mcp',
             connectorId: connector.id,
+            logSecrets: connectorSecretValues(connector),
           });
           for (const rt of remoteTools) {
             parsedTools.push({
@@ -1930,8 +2047,8 @@ export class ConnectorsController {
     // Retiring everything else is what a full spec import (OpenAPI, WSDL…)
     // means; for a handful of hand-written tools it disabled every other tool
     // of the connector, catalog tools included.
-    const additive = dto.source === 'json' || dto.source === 'curl';
-    return this.createToolsFromParsed(
+    const additive = dto.source === 'json' || dto.source === 'curl' || dto.source === 'har';
+    const result = await this.createToolsFromParsed(
       connector,
       parsedTools,
       additive
@@ -1943,6 +2060,14 @@ export class ConnectorsController {
             }
           : undefined,
     );
+    if (harSkipped) {
+      return {
+        ...result,
+        message: `${result.message} (skipped ${harSkipped.otherOrigin} other-origin, ${harSkipped.staticAsset} static/socket, ${harSkipped.duplicate} duplicate entries)`,
+        harSkipped,
+      };
+    }
+    return result;
   }
 
   @Put(':id/env-vars')
@@ -2233,6 +2358,11 @@ export class ConnectorsController {
     }
 
     const matchedIds = new Set<string>();
+    // Matched tools that kept their name because another tool of the
+    // connector already has the wanted one (the name is unique per connector).
+    const renameConflicts: Array<{ toolId: string; kept: string; wanted: string }> = [];
+    // Parsed tools not created because their name is already in use.
+    const skipped: string[] = [];
     let createdCount = 0;
     let updatedCount = 0;
     const tools: any[] = [];
@@ -2243,21 +2373,34 @@ export class ConnectorsController {
         em?.method && em?.path
           ? `${String(em.method).toUpperCase()} ${em.path}`
           : null;
+      // A tool another entry of this import already matched is not a
+      // candidate again: two entries with the same operationId, endpoint or
+      // name would otherwise overwrite each other.
+      const unclaimed = (t: (typeof existing)[number] | undefined) =>
+        t && !matchedIds.has(t.id) ? t : undefined;
       // By name last: a static tool has no path to match on, and without this
       // a re-import tried to create it again, hit the unique name and left the
       // old (possibly retired) copy as it was.
       const match =
-        (tool.operationId && byOperationId.get(tool.operationId)) ||
-        (endpointKey && byEndpoint.get(endpointKey)) ||
-        byName.get(tool.name) ||
+        (tool.operationId && unclaimed(byOperationId.get(tool.operationId))) ||
+        (endpointKey && unclaimed(byEndpoint.get(endpointKey))) ||
+        unclaimed(byName.get(tool.name)) ||
         null;
 
       if (match) {
         matchedIds.add(match.id);
+        // When a different tool holds the wanted name (two endpoints swapped
+        // names, or a tool renamed by hand), keep the current name and still
+        // refresh everything else, instead of failing the import on P2002.
+        const holder = byName.get(tool.name);
+        const nameTaken = holder !== undefined && holder.id !== match.id;
+        if (nameTaken) {
+          renameConflicts.push({ toolId: match.id, kept: match.name, wanted: tool.name });
+        }
         const updated = await this.prisma.mcpTool.update({
           where: { id: match.id },
           data: {
-            name: tool.name,
+            ...(nameTaken ? {} : { name: tool.name }),
             description: tool.description,
             parameters: tool.parameters as any,
             endpointMapping: tool.endpointMapping as any,
@@ -2288,8 +2431,20 @@ export class ConnectorsController {
             isEnabled: match.deprecatedAt ? true : match.isEnabled,
           },
         });
+        if (!nameTaken && match.name !== tool.name) {
+          if (byName.get(match.name)?.id === match.id) byName.delete(match.name);
+          byName.set(tool.name, match);
+        }
         tools.push(updated);
         updatedCount++;
+        continue;
+      }
+
+      // Another tool of the connector (an existing one matched by a
+      // different entry, or one created earlier in this import) already has
+      // this name.
+      if (byName.has(tool.name)) {
+        skipped.push(tool.name);
         continue;
       }
 
@@ -2311,13 +2466,34 @@ export class ConnectorsController {
             ...(tool.origin === 'catalog' ? { origin: 'catalog' } : {}),
           },
         });
+        matchedIds.add(created.id);
+        byName.set(created.name, created);
         tools.push(created);
         createdCount++;
       } catch (err: any) {
-        // A different existing tool happens to share the new tool's name
-        // (e.g. same name across two re-imports on parametric paths).
-        // Skip rather than throw — preserves prior semantics.
+        // A concurrent write took the name in the meantime.
         if (err.code !== 'P2002') throw err;
+        skipped.push(tool.name);
+      }
+    }
+
+    // A name may have been freed by a rename later in the loop (A wants B's
+    // name, B moves on to a new one): apply those renames now. A true swap
+    // stays a conflict, the tools keep their names.
+    for (let progress = true; progress && renameConflicts.length > 0; ) {
+      progress = false;
+      for (const conflict of [...renameConflicts]) {
+        if (byName.has(conflict.wanted)) continue;
+        const renamed = await this.prisma.mcpTool.update({
+          where: { id: conflict.toolId },
+          data: { name: conflict.wanted },
+        });
+        if (byName.get(conflict.kept)?.id === conflict.toolId) byName.delete(conflict.kept);
+        byName.set(conflict.wanted, renamed);
+        const i = tools.findIndex((t) => t.id === conflict.toolId);
+        if (i >= 0) tools[i] = renamed;
+        renameConflicts.splice(renameConflicts.indexOf(conflict), 1);
+        progress = true;
       }
     }
 
@@ -2342,15 +2518,20 @@ export class ConnectorsController {
 
     const parts = [`created ${createdCount}`, `updated ${updatedCount}`];
     if (deprecated.length > 0) parts.push(`deprecated ${deprecated.length}`);
+    if (skipped.length > 0) parts.push(`skipped ${skipped.length}`);
+    if (renameConflicts.length > 0) {
+      this.logger.warn(
+        `Import into connector ${connectorId}: ${renameConflicts.length} tool(s) kept their name, the new one is used by another tool`,
+      );
+    }
     return {
       message: `Imported tools: ${parts.join(', ')}`,
       tools,
       created: createdCount,
       updated: updatedCount,
       deprecated,
-      // `skipped` kept for back-compat with clients that consumed the old
-      // shape; always empty under the new upsert strategy.
-      skipped: [] as string[],
+      skipped,
+      renameConflicts,
       ...secrets.summary(),
     };
   }

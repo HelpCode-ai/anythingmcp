@@ -1,0 +1,852 @@
+{
+  "slug": "gamma",
+  "name": "Gamma",
+  "aliases": [
+    "Gamma App",
+    "gamma.app"
+  ],
+  "description": "Let your AI create Gamma presentations, documents, webpages and social posts from text or from a template, follow the generation until it is ready, export to PDF, PPTX or PNG, and find themes, folders, templates and existing gammas.",
+  "instructions": "## Gamma\nThis connector calls the **Gamma public API** (`https://public-api.gamma.app/v1.0`) with the user's own API key, sent as the `X-API-KEY` header. It creates presentations, documents, webpages and social posts (\"gammas\") from text or from a template, polls the generation, exports existing gammas, and looks up themes, folders, templates and gammas.\n\n**Plan and credits**: API keys exist only on the paid Pro, Ultra, Teams and Business plans. Every generation spends the workspace's Gamma credits: 1 to 3 credits per card, plus 2 to 125 credits per AI image depending on the image model (Gamma's figures, subject to change; template generations cost slightly more per card). A 10-card deck with 5 basic images costs about 20 to 60 credits. **Confirm the topic, format, number of cards and image source with the user before `gamma_generate`, `gamma_generate_multi_page` or `gamma_generate_from_template`.** For a cheap draft use few cards and `imageOptions.source` `noImages`, `pexels` or `placeholder`.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://gamma.app on a Pro, Ultra, Teams or Business plan.\n2. Open **Settings > API Keys** (https://gamma.app/settings/api-keys) and create a key. It starts with `sk-gamma-`.\n3. Paste it into `GAMMA_API_KEY` and install. It is sent only to Gamma.\n\n**How a generation works**\n1. Optional lookups: `gamma_list_themes` for a `themeId`, `gamma_list_folders` for a `folderId`, `gamma_search_templates` for a template's id.\n2. Start it with `gamma_generate` (one page from `inputText`), `gamma_generate_multi_page` (up to 50 pages in one file, optionally published as a Gamma site) or `gamma_generate_from_template` (a one-page template gamma plus a `prompt`). Each returns a `generationId` at once.\n3. Call `gamma_get_generation` about every 5 to 10 seconds until `status` is `completed` or `failed`. A small deck takes under a minute; 40 cards with AI images can take several minutes. When completed it returns `gammaUrl`, `gammaId`, `exportUrl` (only if `exportAs` was set) and `credits` (`deducted`, `remaining`).\n4. To export an existing gamma later, call `gamma_export_gamma`, then `gamma_get_export` until `status` is `completed` and read `exportUrl`.\n\n**Existing gammas**: `gamma_search_gammas` finds gammas by words in their title and text, or lists them by creator (`createdBy` me) and update date; `gamma_get_gamma` returns one gamma's details (title, url, theme, author, dates), not its slide content.\n\n**Options worth knowing**\n- `textMode`: `generate` expands a short brief, `condense` summarizes long text, `preserve` keeps the user's text.\n- `format`: `presentation` (default), `document`, `webpage` or `social`. `cardOptions.dimensions` sets the shape (`16x9`, `4x3`, `fluid` for presentations; `pageless`, `letter`, `a4` for documents; `1x1`, `4x5`, `9x16` for social).\n- `numCards` defaults to 10 (1 to 75 on paid plans) and is only honoured with `cardSplit` `auto`; with `inputTextBreaks` each `\\n---\\n` in `inputText` starts a new card.\n- There is no theme-by-name parameter: look the theme up with `gamma_list_themes` (`query` searches names) and pass its `id` as `themeId`.\n- `exportAs` is one of `pdf`, `pptx` or `png` (a .zip with one PNG per card).\n\n**Export links**: `exportUrl` works for anyone holding it for about a week and is not tied to the API key. Hand it only to the user who asked for it.\n\n**Time limit**: a call through this connector is cut after 30 seconds, so always poll instead of waiting.\n\n**Common errors**\n- 401: the key is wrong, deleted or the plan has no API access.\n- 402: the workspace is out of credits. Buy credits or enable auto-recharge at https://gamma.app/settings/billing.\n- 403: the plan does not include the feature, or the key's user may not use that gamma or folder (exports and templates need view access).\n- 400: an invalid option, for example a `themeId` that does not exist or an explore template id passed as `gammaId`; the message names the field.\n- 429: rate limited. Wait about 30 seconds and retry once, then back off.\n- 404 on a status call: the id is unknown or belongs to another workspace.\n\n**Out of scope here**: the Gamma 5 agent and edit endpoints, standalone image generation, comments, analytics, archiving and deleting gammas.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "gamma",
+  "docsUrl": "https://developers.gamma.app/generations/create-generation",
+  "prerequisites": "A Gamma account on the Pro, Ultra, Teams or Business plan and an API key from Settings > API Keys. Every generation spends Gamma credits. About 2 minutes.",
+  "requiredEnvVars": [
+    "GAMMA_API_KEY"
+  ],
+  "envVarMeta": {
+    "GAMMA_API_KEY": {
+      "label": "Gamma API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "gamma.app, Settings, API Keys: create a key (paid plans only). Generations spend this workspace's credits.",
+      "link": "https://gamma.app/settings/api-keys",
+      "example": "sk-gamma-...",
+      "pattern": "^sk-gamma-[A-Za-z0-9_-]{8,}$",
+      "patternMessage": "Paste the key as Gamma shows it, starting with sk-gamma-, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Gamma refused the API key: it is wrong or deleted, or the workspace's plan has no API access (Pro, Ultra, Teams or Business). Create a key at https://gamma.app/settings/api-keys.",
+    "403": "Gamma refused the request for this key or plan. Check the plan at https://gamma.app/settings/billing.",
+    "429": "Gamma is rate limiting this key. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "gamma_list_themes",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Gamma",
+    "type": "REST",
+    "baseUrl": "https://public-api.gamma.app",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{GAMMA_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1.0/themes?limit=1",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status",
+          "equals": "failed",
+          "messagePath": "error.message",
+          "status": 502
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "gamma_generate",
+      "description": "Start generating one Gamma presentation, document, webpage or social post from text. Spends the workspace's Gamma credits (1 to 3 per card plus 2 to 125 per AI image), so confirm topic, format, card count and image source with the user first. Returns generationId at once; poll gamma_get_generation until status is completed to get gammaUrl, exportUrl and the credits used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inputText": {
+            "type": "string",
+            "description": "The content to build from: a topic, an outline or the full text (up to 400,000 characters). Image URLs inside the text are placed in the gamma. With cardSplit inputTextBreaks, separate cards with \\n---\\n."
+          },
+          "textMode": {
+            "type": "string",
+            "enum": [
+              "generate",
+              "condense",
+              "preserve"
+            ],
+            "description": "generate rewrites and expands a short brief; condense summarizes long text; preserve keeps the given text and only structures it."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "presentation",
+              "document",
+              "webpage",
+              "social"
+            ],
+            "description": "What to create. Gamma's default is presentation."
+          },
+          "numCards": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 75,
+            "description": "Number of cards (slides or sections), 1 to 75 on paid plans; Gamma's default is 10. Only used with cardSplit auto. More cards cost more credits."
+          },
+          "cardSplit": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "inputTextBreaks"
+            ],
+            "description": "auto (default) splits into numCards cards; inputTextBreaks makes one card per \\n---\\n break in inputText and ignores numCards."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the gamma (up to 500 characters). Generated from the content when left out."
+          },
+          "additionalInstructions": {
+            "type": "string",
+            "description": "Extra guidance on content, layout or style, up to 5,000 characters, e.g. \"Use bullet points and end with a summary card\"."
+          },
+          "themeId": {
+            "type": "string",
+            "description": "Theme id from gamma_list_themes. The workspace default theme is used when left out."
+          },
+          "folderId": {
+            "type": "string",
+            "description": "Folder id from gamma_list_folders to save the gamma in. The key's user must be a member of the folder."
+          },
+          "exportAs": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "pptx",
+              "png"
+            ],
+            "description": "Also export the result as a file: pdf, pptx, or png (a .zip with one PNG per card). The link appears as exportUrl in gamma_get_generation."
+          },
+          "textOptions": {
+            "type": "object",
+            "description": "Text settings.",
+            "properties": {
+              "amount": {
+                "type": "string",
+                "enum": [
+                  "brief",
+                  "medium",
+                  "detailed",
+                  "extensive"
+                ],
+                "description": "Text per card (default medium). Used with textMode generate or condense."
+              },
+              "tone": {
+                "type": "string",
+                "description": "Tone or voice, up to 500 characters, e.g. \"professional, upbeat\". Used with textMode generate."
+              },
+              "audience": {
+                "type": "string",
+                "description": "Who will read it, up to 500 characters, e.g. \"sales managers\". Used with textMode generate."
+              },
+              "language": {
+                "type": "string",
+                "description": "Output language code (default en), e.g. de, it, fr, es, pt-br, en-gb, zh-cn, ja."
+              }
+            }
+          },
+          "imageOptions": {
+            "type": "object",
+            "description": "Image settings. AI images cost the most credits.",
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "aiGenerated",
+                  "pictographic",
+                  "pexels",
+                  "giphy",
+                  "webAllImages",
+                  "webFreeToUse",
+                  "webFreeToUseCommercially",
+                  "themeAccent",
+                  "placeholder",
+                  "noImages"
+                ],
+                "description": "Where images come from (default aiGenerated). noImages uses only image URLs given in inputText; placeholder leaves slots to fill later."
+              },
+              "model": {
+                "type": "string",
+                "description": "AI image model when source is aiGenerated, e.g. flux-2-pro, gpt-image-2, recraft-v4, ideogram-v3-turbo, gemini-3.1-flash-image. Gamma picks one when left out; premium models cost far more credits."
+              },
+              "style": {
+                "type": "string",
+                "description": "Visual style for AI images, up to 5,000 characters, e.g. \"minimal line art, black and white\"."
+              }
+            }
+          },
+          "cardOptions": {
+            "type": "object",
+            "description": "Card shape and header or footer.",
+            "properties": {
+              "dimensions": {
+                "type": "string",
+                "enum": [
+                  "fluid",
+                  "16x9",
+                  "4x3",
+                  "pageless",
+                  "letter",
+                  "a4",
+                  "1x1",
+                  "4x5",
+                  "9x16"
+                ],
+                "description": "Card size: fluid, 16x9 or 4x3 for presentations; pageless, letter or a4 for documents; 1x1, 4x5 or 9x16 for social."
+              },
+              "headerFooter": {
+                "type": "object",
+                "description": "Header and footer: keys topLeft, topCenter, topRight, bottomLeft, bottomCenter, bottomRight, each {\"type\": \"text\", \"value\": \"...\"}, {\"type\": \"cardNumber\"} or {\"type\": \"image\", \"source\": \"themeLogo\" or \"custom\", \"src\": \"https://...\", \"size\": \"sm\"}; plus hideFromFirstCard and hideFromLastCard booleans."
+              }
+            }
+          },
+          "sharingOptions": {
+            "type": "object",
+            "description": "Who can open the result.",
+            "properties": {
+              "workspaceAccess": {
+                "type": "string",
+                "enum": [
+                  "noAccess",
+                  "view",
+                  "comment",
+                  "edit",
+                  "fullAccess"
+                ],
+                "description": "Access for members of the workspace."
+              },
+              "externalAccess": {
+                "type": "string",
+                "enum": [
+                  "noAccess",
+                  "view",
+                  "comment",
+                  "edit"
+                ],
+                "description": "Access for anyone with the link."
+              },
+              "emailOptions": {
+                "type": "object",
+                "description": "Share by email: {\"recipients\": [\"a@example.com\"], \"access\": \"view\"} (access view, comment, edit or fullAccess). Confirm the recipients with the user."
+              }
+            }
+          }
+        },
+        "required": [
+          "inputText"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1.0/generations",
+        "bodyMapping": {
+          "inputText": "$inputText",
+          "textMode": "$textMode",
+          "format": "$format",
+          "numCards": "$numCards",
+          "cardSplit": "$cardSplit",
+          "title": "$title",
+          "additionalInstructions": "$additionalInstructions",
+          "themeId": "$themeId",
+          "folderId": "$folderId",
+          "exportAs": "$exportAs",
+          "textOptions": "$textOptions",
+          "imageOptions": "$imageOptions",
+          "cardOptions": "$cardOptions",
+          "sharingOptions": "$sharingOptions"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "gamma_generate_multi_page",
+      "description": "Start generating one Gamma file with several pages (up to 50) under one URL, for example a proposal site or microsite, optionally published as a Gamma site. Each page needs its own inputText and can set its own format, card count and options. Spends Gamma credits for every page, so confirm the pages and image source with the user first. Returns generationId; poll gamma_get_generation, whose pages list each page's URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "The pages, in order. The first is the file's main page.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "inputText": {
+                  "type": "string",
+                  "description": "Content of this page: topic, outline or full text."
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Title of this page."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "URL slug of this page in the published site, e.g. /pricing. Ignored for the first page."
+                },
+                "textMode": {
+                  "type": "string",
+                  "enum": [
+                    "generate",
+                    "condense",
+                    "preserve"
+                  ],
+                  "description": "How to treat inputText on this page."
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "presentation",
+                    "document",
+                    "webpage",
+                    "social"
+                  ],
+                  "description": "Format of this page."
+                },
+                "numCards": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Cards on this page."
+                },
+                "cardSplit": {
+                  "type": "string",
+                  "enum": [
+                    "auto",
+                    "inputTextBreaks"
+                  ],
+                  "description": "auto or inputTextBreaks, as on gamma_generate."
+                },
+                "additionalInstructions": {
+                  "type": "string",
+                  "description": "Extra guidance for this page."
+                },
+                "textOptions": {
+                  "type": "object",
+                  "description": "amount, tone, audience, language, as on gamma_generate."
+                },
+                "imageOptions": {
+                  "type": "object",
+                  "description": "source, model, style, as on gamma_generate."
+                }
+              },
+              "required": [
+                "inputText"
+              ]
+            }
+          },
+          "publish": {
+            "type": "boolean",
+            "description": "Publish the file as a Gamma site once every page has succeeded. Confirm with the user: a published site is public."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the file. Generated when left out."
+          },
+          "themeId": {
+            "type": "string",
+            "description": "Theme id from gamma_list_themes, applied to every page."
+          },
+          "folderId": {
+            "type": "string",
+            "description": "Folder id from gamma_list_folders."
+          },
+          "exportAs": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "pptx",
+              "png"
+            ],
+            "description": "Export every page as pdf, pptx or png (.zip); links appear per page in gamma_get_generation."
+          },
+          "cardOptions": {
+            "type": "object",
+            "description": "dimensions and headerFooter for the whole file, as on gamma_generate."
+          },
+          "sharingOptions": {
+            "type": "object",
+            "description": "workspaceAccess, externalAccess and emailOptions, as on gamma_generate."
+          }
+        },
+        "required": [
+          "pages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1.0/generations",
+        "bodyMapping": {
+          "pages": "$pages",
+          "publish": "$publish",
+          "title": "$title",
+          "themeId": "$themeId",
+          "folderId": "$folderId",
+          "exportAs": "$exportAs",
+          "cardOptions": "$cardOptions",
+          "sharingOptions": "$sharingOptions"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "gamma_generate_from_template",
+      "description": "Start a new gamma from an existing one-page template gamma: Gamma keeps the template's structure and rewrites it for the prompt. Find workspace templates with gamma_search_templates (explore templates are not accepted). Spends Gamma credits, slightly more per card than gamma_generate, so confirm with the user first. Returns generationId; poll gamma_get_generation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gammaId": {
+            "type": "string",
+            "description": "File id of the template gamma (from gamma_search_templates workspaceTemplates[].id). The file must have exactly one page."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What to make from the template: new topic, audience, content or instructions (up to 400,000 characters)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the new gamma. Generated when left out."
+          },
+          "themeId": {
+            "type": "string",
+            "description": "Theme id from gamma_list_themes, to replace the template's theme."
+          },
+          "folderId": {
+            "type": "string",
+            "description": "Folder id from gamma_list_folders."
+          },
+          "exportAs": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "pptx",
+              "png"
+            ],
+            "description": "Also export as pdf, pptx or png (.zip)."
+          },
+          "imageOptions": {
+            "type": "object",
+            "description": "AI image settings for new images.",
+            "properties": {
+              "model": {
+                "type": "string",
+                "description": "AI image model, e.g. flux-2-pro. Gamma picks one when left out."
+              },
+              "style": {
+                "type": "string",
+                "description": "Visual style for new images."
+              }
+            }
+          },
+          "sharingOptions": {
+            "type": "object",
+            "description": "workspaceAccess, externalAccess and emailOptions, as on gamma_generate."
+          }
+        },
+        "required": [
+          "gammaId",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1.0/generations/from-template",
+        "bodyMapping": {
+          "gammaId": "$gammaId",
+          "prompt": "$prompt",
+          "title": "$title",
+          "themeId": "$themeId",
+          "folderId": "$folderId",
+          "exportAs": "$exportAs",
+          "imageOptions": "$imageOptions",
+          "sharingOptions": "$sharingOptions"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "gamma_get_generation",
+      "description": "Check a generation started with gamma_generate, gamma_generate_multi_page or gamma_generate_from_template. Returns status (pending, completed or failed) and, once completed, gammaUrl, gammaId, exportUrl when an export was asked for, per-page results and credits (deducted, remaining). Poll every 5 to 10 seconds while pending. Free and read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "generationId": {
+            "type": "string",
+            "description": "The generationId returned when the generation was started."
+          }
+        },
+        "required": [
+          "generationId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1.0/generations/{generationId}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "generationId": "$.generationId",
+            "status": "$.status",
+            "gammaId": "$.gammaId",
+            "gammaUrl": "$.gammaUrl",
+            "exportUrl": "$.exportUrl",
+            "credits": "$.credits",
+            "pages": "$.pages",
+            "error": "$.error"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "gamma_list_themes",
+      "description": "List the themes available to the workspace, both Gamma's standard themes and the workspace's custom ones, with color and tone keywords. Use query to find a theme by name and pass its id as themeId when generating. Free and read-only. Paginate with after = nextCursor while hasMore is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Filter themes by name, e.g. \"Prism\" or \"dark\"."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "custom"
+            ],
+            "description": "standard for Gamma's built-in themes, custom for the workspace's own. Keep the same value on every page."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Themes per page, 1 to 50. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "nextCursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1.0/themes",
+        "queryParams": {
+          "query": "$query",
+          "type": "$type",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "themes": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "type": "type",
+                "colorKeywords": "colorKeywords",
+                "toneKeywords": "toneKeywords"
+              }
+            },
+            "hasMore": "$.hasMore",
+            "nextCursor": "$.nextCursor"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "gamma_list_folders",
+      "description": "List the workspace's Gamma folders with their id and name. Pass a folder's id as folderId when generating to save the result there. Free and read-only. Paginate with after = nextCursor while hasMore is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Filter folders by name."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Folders per page, 1 to 50. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "nextCursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1.0/folders",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "folders": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name"
+              }
+            },
+            "hasMore": "$.hasMore",
+            "nextCursor": "$.nextCursor"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "gamma_search_templates",
+      "description": "Search templates: the workspace's own template gammas (usable as gammaId in gamma_generate_from_template) and Gamma's official explore templates (for inspiration only, not accepted as gammaId). Without q both lists are browsed, newest first. Free and read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "What the template is about, e.g. \"quarterly business review\"."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 10,
+            "description": "Results per list, 1 to 25. Default 10."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1.0/templates/search",
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "workspaceTemplates": {
+              "$from": "$.workspaceTemplates[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "url": "url"
+              }
+            },
+            "exploreTemplates": {
+              "$from": "$.exploreTemplates[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "url": "url"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "gamma_search_gammas",
+      "description": "Search the gammas the key's user can open by words in their title and text, or list them by creator and last-updated date. Returns id, title, url, a text snippet, creator and updatedTime per hit. Free and read-only. Needs q or at least one filter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Words to find in titles and text. Optional when createdBy, updatedAfter or updatedBefore is set."
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "Only gammas created by this user: me, an email address or a user id."
+          },
+          "updatedAfter": {
+            "type": "string",
+            "description": "Only gammas last updated at or after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "updatedBefore": {
+            "type": "string",
+            "description": "Only gammas last updated at or before this ISO 8601 time."
+          },
+          "includeArchived": {
+            "type": "boolean",
+            "description": "Also return archived gammas. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 10,
+            "description": "Hits to return, 1 to 25. Default 10."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1.0/gammas/search",
+        "queryParams": {
+          "q": "$q",
+          "createdBy": "$createdBy",
+          "updatedAfter": "$updatedAfter",
+          "updatedBefore": "$updatedBefore",
+          "includeArchived": "$includeArchived",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "hits": {
+              "$from": "$.hits[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "url": "url",
+                "highlight": "highlight",
+                "createdBy": "createdBy",
+                "updatedTime": "updatedTime",
+                "archived": "archived"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "gamma_get_gamma",
+      "description": "Get one gamma's details: title, type (regular or template), url, description, author, created and updated time, themeId and whether it is archived. Accepts the file id or the id in a gamma.app/docs/... URL. Free and read-only; it does not return the slide content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gammaId": {
+            "type": "string",
+            "description": "The gamma's file id, or the doc id from a gamma.app/docs/<id> URL."
+          }
+        },
+        "required": [
+          "gammaId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1.0/gammas/{gammaId}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "author.avatarUrl",
+            "thumbnailUrl"
+          ],
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "gamma_export_gamma",
+      "description": "Start exporting an existing gamma to PDF, PPTX or PNG (a .zip with one PNG per card). The gamma itself is not changed. Confirm the gamma and format with the user first. Returns exportId at once; poll gamma_get_export until status is completed to get exportUrl. Needs view access to the gamma.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gammaId": {
+            "type": "string",
+            "description": "The gamma's file id, or the doc id from a gamma.app/docs/<id> URL."
+          },
+          "exportAs": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "pptx",
+              "png"
+            ],
+            "description": "pdf, pptx, or png (a .zip with one PNG per card)."
+          }
+        },
+        "required": [
+          "gammaId",
+          "exportAs"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1.0/gammas/{gammaId}/export",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "exportAs": "$exportAs"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "gamma_get_export",
+      "description": "Check an export started with gamma_export_gamma. Returns status (pending, completed or failed), exportAs, gammaId and, once completed, exportUrl, a download link that works for anyone for about a week. On failure error.reason says whether to retry (render_timeout, export_failed) or change the gamma (deck_too_large, no_content). Free and read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exportId": {
+            "type": "string",
+            "description": "The exportId returned by gamma_export_gamma."
+          }
+        },
+        "required": [
+          "exportId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1.0/exports/{exportId}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "exportId": "$.exportId",
+            "status": "$.status",
+            "exportAs": "$.exportAs",
+            "gammaId": "$.gammaId",
+            "exportUrl": "$.exportUrl",
+            "error": "$.error"
+          },
+          "maxBytes": 10000
+        }
+      }
+    }
+  ]
+}

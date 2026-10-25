@@ -1,0 +1,1065 @@
+{
+  "slug": "heygen",
+  "name": "HeyGen",
+  "description": "Let your AI make HeyGen avatar videos with your own key: pick avatars and voices, turn a script or a prompt into a talking video, fill your templates, translate videos into other languages with lip-sync, create photo avatars, and check renders and your balance.",
+  "instructions": "## HeyGen\nThis connector works with **HeyGen** (AI avatar videos) through the HeyGen API v3 at `https://api.heygen.com` with the user's own API key: avatars and their looks, voices, talking avatar videos, template videos, prompt-to-video with the Video Agent, video translation with voice cloning and lip-sync, photo avatars, and the account balance.\n\n**Spending**: making videos, translations and avatars is paid from the HeyGen API balance (pay-as-you-go wallet, or the plan's credits). HeyGen bills video by length and engine; its current prices are on the API dashboard (https://app.heygen.com/developers/api). Before any call that creates something, tell the user what will be made (length, languages, engine) and wait for a yes; `heygen_get_account` shows what is left. Listing and checking is free.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://app.heygen.com and open the API dashboard: https://app.heygen.com/developers/api.\n2. Generate an API key and copy it. API usage is billed separately from a HeyGen web subscription; add balance or a payment method there if the account has none.\n3. Paste the key into `HEYGEN_API_KEY` and install the connector. It is sent as the `X-Api-Key` header, only to HeyGen. A key restricted to some scopes needs read access to avatars, voices, videos, templates, translations and the user, and write access for the tools that create.\n\n**How a video is made**\n1. Pick a presenter: `heygen_list_avatar_groups` (characters), then `heygen_list_avatar_looks` with `group_id`. The look `id` is the `avatar_id`. Pick a voice with `heygen_list_voices` (or leave it out to use the avatar's default voice).\n2. `heygen_create_video` with `avatar_id`, `script` (up to 5,000 characters) and optionally `voice_id`, `aspect_ratio` (9:16 for shorts), `engine`. It returns `video_id` right away; the video renders in the background.\n3. Poll `heygen_get_video` about every 30 seconds (rendering takes from a minute to several minutes, longer for long scripts). At `completed`, give the user `video_url` (MP4), `captioned_video_url`, `subtitle_url` and `video_page_url`. At `failed`, read `failure_message`. Download links are signed and expire: call `heygen_get_video` again for fresh ones.\n- Templates: `heygen_list_templates`, `heygen_get_template` (variables and their current values), then `heygen_generate_from_template` with every text variable filled; follow the returned video id with `heygen_get_video`.\n- Video Agent: `heygen_create_agent_video` with a prompt makes the whole video (script, scenes, avatar). Follow `heygen_get_agent_session` until it has a `video_id`, then `heygen_get_video`.\n- Translation: `heygen_list_translation_languages`, then `heygen_translate_video` with a public video link and the language names. It returns one id per language; poll `heygen_get_video_translation` every 30 to 60 seconds. `heygen_list_video_translations` lists past jobs.\n- Photo avatar: `heygen_create_photo_avatar` with a portrait link (only a person who agreed, such as the user), then `heygen_get_avatar_look` until `status` is `completed`; the look id works in `heygen_create_video`.\n- Library: `heygen_list_videos` lists finished and running videos; `heygen_delete_video` is installed switched off.\n\n**Engines**: `avatar_iv` is the default; `avatar_v` gives the most natural motion but only for looks whose `supported_api_engines` lists it; `avatar_iii` supports 4K for digital twins and studio avatars but no `motion_prompt`. Pass it as `engine: {\"type\": \"avatar_v\"}`.\n\n**Limits**: 10 videos, translations or agent sessions rendering at once on pay-as-you-go (more on Enterprise); 300 list calls and 500 status checks a minute; source files must be public links (video up to 100 MB, audio up to 50 MB and 10 minutes).\n\n**Common errors** (the reason is in `error.code` and `error.message`)\n- 401 `unauthorized`: the key is wrong or revoked.\n- 402 `insufficient_credit`: the balance does not cover this video; the message says how much is needed. `usage_limit_reached` or `trial_limit_exceeded`: a workspace or trial limit; an admin or a paid plan lifts it.\n- 403 `insufficient_api_key_scope`: the key is restricted; give it the scopes above.\n- 400 `invalid_parameter`: `param` names the field (for example an engine the look does not support).\n- 404 `video_not_found`, `avatar_not_found`, `voice_not_found`, `template_not_found`: check the id with the list tools.\n- 429 `rate_limit_exceeded` or `quota_exceeded`: wait and retry once later, do not loop.\n\n**Out of scope here**: multi-scene studio videos, image-to-video and prompt video models, lipsync of existing videos, voice cloning and voice design, text to speech on its own, interactive streaming avatars, uploading files (sources must be public links), proofreading translations, webhooks, brand kits and glossaries, folders, batches, and the older v1 and v2 endpoints (retired by HeyGen on 31 October 2026).",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "heygen",
+  "docsUrl": "https://developers.heygen.com/docs/quick-start",
+  "prerequisites": "A HeyGen account with API access and an API key from the API dashboard (app.heygen.com/developers/api), with balance for the videos you want to make. About 2 minutes.",
+  "requiredEnvVars": [
+    "HEYGEN_API_KEY"
+  ],
+  "envVarMeta": {
+    "HEYGEN_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "app.heygen.com, API dashboard (Developers, API), generate a key. Videos, translations and avatars made through this connector are paid from this account's API balance.",
+      "link": "https://app.heygen.com/developers/api",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste the API key as HeyGen shows it, without spaces or a prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "HeyGen refused the API key. Copy it again from the API dashboard (app.heygen.com/developers/api) and check that it was not revoked.",
+    "403": "HeyGen refused this key for the account check: it is restricted to scopes that do not include reading the user. Give it the scopes listed in the setup steps.",
+    "429": "HeyGen is rate limiting this key. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "heygen_get_account"
+  },
+  "connector": {
+    "name": "HeyGen",
+    "type": "REST",
+    "baseUrl": "https://api.heygen.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{HEYGEN_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v3/users/me"
+  },
+  "tools": [
+    {
+      "name": "heygen_list_avatar_groups",
+      "description": "List avatar characters (groups): HeyGen's public stock avatars and the user's own (digital twins, photo avatars), with id, name, gender, preview image, default voice and how many looks each has. A character's looks (outfits, poses) come from heygen_list_avatar_looks; the look id is what a video needs. Call again with token = next_token while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ownership": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "public (HeyGen's stock avatars) or private (the user's own). Leave out for both."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Characters per page, 1 to 50. Default 20.",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "token": {
+            "type": "string",
+            "description": "next_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/avatars",
+        "queryParams": {
+          "ownership": "$ownership",
+          "limit": "$limit",
+          "token": "$token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "avatar_groups": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "gender": "gender",
+                "looks_count": "looks_count",
+                "default_voice_id": "default_voice_id",
+                "preview_image_url": "preview_image_url",
+                "status": "status",
+                "consent_status": "consent_status"
+              }
+            },
+            "has_more": "$.has_more",
+            "next_token": "$.next_token"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "heygen_list_avatar_looks",
+      "description": "List avatar looks (a character's outfits, poses and styles). A look's id is the avatar_id for heygen_create_video; supported_api_engines says which engines can render it (avatar_iii, avatar_iv, avatar_v) and preferred_orientation which format suits it. Filter by character (group_id), type or ownership. Call again with token = next_token while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Only looks of this character (id from heygen_list_avatar_groups)."
+          },
+          "avatar_type": {
+            "type": "string",
+            "enum": [
+              "studio_avatar",
+              "digital_twin",
+              "photo_avatar"
+            ],
+            "description": "Type of look."
+          },
+          "ownership": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "public (stock) or private (the user's own). Leave out for both."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Looks per page, 1 to 50. Default 20.",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "token": {
+            "type": "string",
+            "description": "next_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/avatars/looks",
+        "queryParams": {
+          "group_id": "$group_id",
+          "avatar_type": "$avatar_type",
+          "ownership": "$ownership",
+          "limit": "$limit",
+          "token": "$token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "looks": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "avatar_type": "avatar_type",
+                "group_id": "group_id",
+                "gender": "gender",
+                "default_voice_id": "default_voice_id",
+                "supported_api_engines": "supported_api_engines",
+                "preferred_orientation": "preferred_orientation",
+                "preview_image_url": "preview_image_url",
+                "status": "status",
+                "error": "error"
+              }
+            },
+            "has_more": "$.has_more",
+            "next_token": "$.next_token"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "heygen_get_avatar_look",
+      "description": "Get one avatar look: type, character, default voice, supported engines, orientation, preview links and, for the user's own avatars, the training status (processing, completed or failed with the reason). Use it to wait for a photo avatar made with heygen_create_photo_avatar. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "look_id": {
+            "type": "string",
+            "description": "Look id (the avatar_id of a video)."
+          }
+        },
+        "required": [
+          "look_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/avatars/looks/{look_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "look": "$.data"
+          },
+          "exclude": [
+            "data.tags"
+          ]
+        }
+      }
+    },
+    {
+      "name": "heygen_list_voices",
+      "description": "List the voices a video can speak with: HeyGen's public voices or the user's own cloned voices, with id, name, language, gender and a preview link. Filter by language and gender. Call again with token = next_token while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "public (default, the shared library) or private (the user's cloned voices)."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language name as HeyGen writes it, e.g. English, German, Spanish."
+          },
+          "gender": {
+            "type": "string",
+            "enum": [
+              "male",
+              "female"
+            ],
+            "description": "Voice gender."
+          },
+          "engine": {
+            "type": "string",
+            "description": "Only voices of this speech engine, e.g. starfish, heygen_voice or elevenlabs."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Voices per page, 1 to 100. Default 20.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "token": {
+            "type": "string",
+            "description": "next_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/voices",
+        "queryParams": {
+          "type": "$type",
+          "language": "$language",
+          "gender": "$gender",
+          "engine": "$engine",
+          "limit": "$limit",
+          "token": "$token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "voices": {
+              "$from": "$.data[*]",
+              "$select": {
+                "voice_id": "voice_id",
+                "name": "name",
+                "language": "language",
+                "gender": "gender",
+                "type": "type",
+                "preview_audio_url": "preview_audio_url",
+                "default_engine": "default_engine",
+                "support_pause": "support_pause"
+              }
+            },
+            "has_more": "$.has_more",
+            "next_token": "$.next_token"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "heygen_create_video",
+      "description": "Make a talking avatar video: an avatar look speaks a script (or lip-syncs an audio file). Runs in the background and returns video_id; then check heygen_get_video about every 30 seconds until status is completed and video_url is there (usually a few minutes). SPENDS MONEY from the HeyGen API balance, billed by the length of the finished video and the engine used. HeyGen shows the current prices in its API dashboard, and a refused call (402 insufficient_credit) says how much was needed. Confirm the avatar, voice, script length and format with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "avatar_id": {
+            "type": "string",
+            "description": "Look id from heygen_list_avatar_looks."
+          },
+          "script": {
+            "type": "string",
+            "description": "What the avatar says, up to 5,000 characters. A pause can be written as <break time=\"1s\"/>. Leave out when audio_url is given."
+          },
+          "voice_id": {
+            "type": "string",
+            "description": "Voice id from heygen_list_voices. Leave out to use the avatar's default voice."
+          },
+          "audio_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Instead of a script: public link to a WAV or MP3 file (up to 10 minutes) the avatar lip-syncs."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title shown in the HeyGen app."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:5",
+              "5:4",
+              "auto"
+            ],
+            "description": "16:9 (default) landscape, 9:16 portrait for shorts and stories, 1:1, 4:5, 5:4, or auto to follow the avatar."
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "720p",
+              "1080p",
+              "4k"
+            ],
+            "description": "Output resolution. Default 1080p; 4k only with engine avatar_iii for digital twins and studio avatars."
+          },
+          "engine": {
+            "type": "object",
+            "description": "Rendering engine: {\"type\": \"avatar_iv\"} (default), {\"type\": \"avatar_v\"} (highest quality, only for looks that list it in supported_api_engines) or {\"type\": \"avatar_iii\"} (needed for 4k)."
+          },
+          "background": {
+            "type": "object",
+            "description": "Optional background: {\"type\": \"color\", \"value\": \"#FFFFFF\"} or {\"type\": \"image\", \"url\": \"https://...\"}."
+          },
+          "voice_settings": {
+            "type": "object",
+            "description": "Optional voice tuning: speed (0.5 to 1.5), pitch (-50 to 50), volume (0 to 1), locale (e.g. en-US)."
+          },
+          "motion_prompt": {
+            "type": "string",
+            "description": "Optional description of gestures and body movement, e.g. nods and points to the right. Photo avatars, and video avatars with engine avatar_v."
+          },
+          "expressiveness": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "How animated a photo avatar is (Avatar IV only). Default low."
+          },
+          "remove_background": {
+            "type": "boolean",
+            "description": "Remove the avatar's own background (video avatars must have been trained for it)."
+          }
+        },
+        "required": [
+          "avatar_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/videos",
+        "bodyMapping": {
+          "type": "avatar",
+          "avatar_id": "$avatar_id",
+          "script": "$script",
+          "voice_id": "$voice_id",
+          "audio_url": "$audio_url",
+          "title": "$title",
+          "aspect_ratio": "$aspect_ratio",
+          "resolution": "$resolution",
+          "engine": "$engine",
+          "background": "$background",
+          "voice_settings": "$voice_settings",
+          "motion_prompt": "$motion_prompt",
+          "expressiveness": "$expressiveness",
+          "remove_background": "$remove_background"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "heygen_get_video",
+      "description": "Check a video (also one made from a template or by the video agent): status pending, processing, completed or failed. When completed it has video_url (MP4 download link), captioned_video_url, subtitle_url (SRT), thumbnail_url, video_page_url (the video in the HeyGen app) and duration; when failed, failure_code and failure_message. Download links are signed and expire; call again for fresh ones. Poll about every 30 seconds, not faster. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "description": "video_id returned when the video was started, or id from heygen_list_videos."
+          }
+        },
+        "required": [
+          "video_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/videos/{video_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.data.id",
+            "title": "$.data.title",
+            "status": "$.data.status",
+            "created_at": "$.data.created_at",
+            "completed_at": "$.data.completed_at",
+            "duration": "$.data.duration",
+            "video_url": "$.data.video_url",
+            "captioned_video_url": "$.data.captioned_video_url",
+            "subtitle_url": "$.data.subtitle_url",
+            "thumbnail_url": "$.data.thumbnail_url",
+            "video_page_url": "$.data.video_page_url",
+            "output_language": "$.data.output_language",
+            "failure_code": "$.data.failure_code",
+            "failure_message": "$.data.failure_message"
+          }
+        }
+      }
+    },
+    {
+      "name": "heygen_list_videos",
+      "description": "List the videos in the HeyGen account, newest first, with id, title, status, duration and links. Filter by words in the title or by folder. Call again with token = next_token while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Only videos whose title contains this text."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Only videos in this folder."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Videos per page, 1 to 100. Default 10.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "token": {
+            "type": "string",
+            "description": "next_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/videos",
+        "queryParams": {
+          "title": "$title",
+          "folder_id": "$folder_id",
+          "limit": "$limit",
+          "token": "$token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "videos": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "status": "status",
+                "created_at": "created_at",
+                "duration": "duration",
+                "video_url": "video_url",
+                "thumbnail_url": "thumbnail_url",
+                "video_page_url": "video_page_url",
+                "output_language": "output_language",
+                "failure_message": "failure_message"
+              }
+            },
+            "has_more": "$.has_more",
+            "next_token": "$.next_token"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "heygen_delete_video",
+      "description": "Delete a video and its files from the HeyGen account. It cannot be undone. Confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "description": "Id of the video to delete."
+          }
+        },
+        "required": [
+          "video_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v3/videos/{video_id}"
+      }
+    },
+    {
+      "name": "heygen_list_templates",
+      "description": "List the workspace's video templates that are ready for the API (templates are designed in the HeyGen editor; only those with variables appear), with id, name, aspect ratio and thumbnail. Call again with token = next_token while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Templates per page. Default 10.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "token": {
+            "type": "string",
+            "description": "next_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/templates",
+        "queryParams": {
+          "limit": "$limit",
+          "token": "$token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "templates": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "aspect_ratio": "aspect_ratio",
+                "thumbnail_url": "thumbnail_url",
+                "updated_at": "updated_at"
+              }
+            },
+            "has_more": "$.has_more",
+            "next_token": "$.next_token"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "heygen_get_template",
+      "description": "Get a template's variables with their current values (keyed by variable name, each with its type: text, image, video, audio, character or voice) and its scenes with their scripts. The variables object has the shape heygen_generate_from_template expects. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "Template id from heygen_list_templates."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/templates/{template_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.data.id",
+            "name": "$.data.name",
+            "aspect_ratio": "$.data.aspect_ratio",
+            "variables": "$.data.variables",
+            "scene_ids": "$.data.scene_ids",
+            "scenes": "$.data.scenes"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "heygen_generate_from_template",
+      "description": "Make a video from a template by filling its variables. Returns the new video (status pending) with its id; then check heygen_get_video about every 30 seconds until it is completed. Fill every text variable: an unfilled one stays as {{name}} in the video. SPENDS MONEY from the HeyGen API balance, billed by the length of the finished video and the engine used. HeyGen shows the current prices in its API dashboard, and a refused call (402 insufficient_credit) says how much was needed. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "Template id from heygen_list_templates."
+          },
+          "variables": {
+            "type": "object",
+            "description": "Values keyed by variable name, as returned by heygen_get_template. Text: {\"name\": {\"type\": \"text\", \"content\": \"Anna\"}}. Image: {\"type\": \"image\", \"asset\": {\"type\": \"url\", \"url\": \"https://...\"}}. Avatar: {\"type\": \"character\", \"avatar_id\": \"...\"}. Voice: {\"type\": \"voice\", \"voice_id\": \"...\"}. Variables left out (except text) keep the template's value."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the new video."
+          },
+          "caption": {
+            "type": "boolean",
+            "description": "Burn captions into the video. Default false."
+          },
+          "scene_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: the template's scene ids to render, in order (repeats allowed). Default all scenes."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Folder for the new video."
+          }
+        },
+        "required": [
+          "template_id",
+          "variables"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/templates/{template_id}",
+        "bodyMapping": {
+          "variables": "$variables",
+          "title": "$title",
+          "caption": "$caption",
+          "scene_ids": "$scene_ids",
+          "folder_id": "$folder_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.data.id",
+            "title": "$.data.title",
+            "status": "$.data.status",
+            "created_at": "$.data.created_at",
+            "completed_at": "$.data.completed_at",
+            "duration": "$.data.duration",
+            "video_url": "$.data.video_url",
+            "captioned_video_url": "$.data.captioned_video_url",
+            "subtitle_url": "$.data.subtitle_url",
+            "thumbnail_url": "$.data.thumbnail_url",
+            "video_page_url": "$.data.video_page_url",
+            "output_language": "$.data.output_language",
+            "failure_code": "$.data.failure_code",
+            "failure_message": "$.data.failure_message"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "heygen_list_translation_languages",
+      "description": "List the target languages video translation supports, as the exact names heygen_translate_video expects (e.g. English, Spanish (Spain), Chinese (Cantonese, Traditional)). Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/video-translations/languages"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "languages": "$.data.languages"
+          }
+        }
+      }
+    },
+    {
+      "name": "heygen_translate_video",
+      "description": "Translate a video into one or more languages with the speaker's cloned voice and matching lip movements (or the audio only). Returns one video_translation_id per language; check each with heygen_get_video_translation every 30 to 60 seconds until completed. SPENDS MONEY from the HeyGen API balance for every minute of video and every language; HeyGen shows the current prices in its API dashboard. Tell the user the video length and languages and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public HTTPS link to the source video (MP4 or WebM)."
+          },
+          "output_languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Target language names exactly as heygen_list_translation_languages returns them, e.g. [\"German\", \"Spanish (Spain)\"]."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the translation job."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "speed",
+              "precision"
+            ],
+            "description": "speed (default, faster) or precision (better lip-sync, slower)."
+          },
+          "input_language": {
+            "type": "string",
+            "description": "Language of the original. Leave out to detect it."
+          },
+          "translate_audio_only": {
+            "type": "boolean",
+            "description": "Translate the voice only and keep the original picture (no lip-sync). Default false."
+          },
+          "speaker_num": {
+            "type": "integer",
+            "description": "Number of speakers in the video, helps to separate them."
+          },
+          "start_time": {
+            "type": "number",
+            "description": "Translate only from this second."
+          },
+          "end_time": {
+            "type": "number",
+            "description": "Translate only up to this second."
+          },
+          "disable_music_track": {
+            "type": "boolean",
+            "description": "Remove the background music. Default false."
+          },
+          "enable_speech_enhancement": {
+            "type": "boolean",
+            "description": "Clean up the speech audio. Default false."
+          }
+        },
+        "required": [
+          "video_url",
+          "output_languages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/video-translations",
+        "bodyMapping": {
+          "video": {
+            "type": "url",
+            "url": "$video_url"
+          },
+          "output_languages": "$output_languages",
+          "title": "$title",
+          "mode": "$mode",
+          "input_language": "$input_language",
+          "translate_audio_only": "$translate_audio_only",
+          "speaker_num": "$speaker_num",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "disable_music_track": "$disable_music_track",
+          "enable_speech_enhancement": "$enable_speech_enhancement"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "heygen_get_video_translation",
+      "description": "Check a video translation: status pending, running, completed or failed. When completed it has video_url (translated MP4), audio_url, and srt_caption_url and vtt_caption_url (subtitles); when failed, failure_message. Links are signed and expire; call again for fresh ones. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_translation_id": {
+            "type": "string",
+            "description": "One of the ids returned by heygen_translate_video."
+          }
+        },
+        "required": [
+          "video_translation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/video-translations/{video_translation_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.data.id",
+            "title": "$.data.title",
+            "status": "$.data.status",
+            "output_language": "$.data.output_language",
+            "input_language": "$.data.input_language",
+            "duration": "$.data.duration",
+            "translate_audio_only": "$.data.translate_audio_only",
+            "video_url": "$.data.video_url",
+            "audio_url": "$.data.audio_url",
+            "srt_caption_url": "$.data.srt_caption_url",
+            "vtt_caption_url": "$.data.vtt_caption_url",
+            "created_at": "$.data.created_at",
+            "failure_message": "$.data.failure_message"
+          }
+        }
+      }
+    },
+    {
+      "name": "heygen_list_video_translations",
+      "description": "List the video translation jobs in the account with status, languages and links. Call again with token = next_token while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Jobs per page, 1 to 100. Default 10.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "token": {
+            "type": "string",
+            "description": "next_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/video-translations",
+        "queryParams": {
+          "limit": "$limit",
+          "token": "$token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "translations": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "status": "status",
+                "output_language": "output_language",
+                "input_language": "input_language",
+                "duration": "duration",
+                "translate_audio_only": "translate_audio_only",
+                "video_url": "video_url",
+                "audio_url": "audio_url",
+                "srt_caption_url": "srt_caption_url",
+                "vtt_caption_url": "vtt_caption_url",
+                "created_at": "created_at",
+                "failure_message": "failure_message"
+              }
+            },
+            "has_more": "$.has_more",
+            "next_token": "$.next_token"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "heygen_create_agent_video",
+      "description": "Let HeyGen's Video Agent make a whole video from a prompt: it writes the script, picks an avatar (or uses the one given), builds the scenes and renders. Returns session_id and, once known, video_id; follow it with heygen_get_agent_session, then heygen_get_video for the finished file. SPENDS MONEY from the HeyGen API balance, billed by the length of the finished video and the engine used. HeyGen shows the current prices in its API dashboard, and a refused call (402 insufficient_credit) says how much was needed. A longer video costs more; confirm the idea and rough length with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "What the video should be: topic, audience, tone, length, key points, call to action (up to 10,000 characters)."
+          },
+          "avatar_id": {
+            "type": "string",
+            "description": "Optional look id of the presenter (heygen_list_avatar_looks)."
+          },
+          "voice_id": {
+            "type": "string",
+            "description": "Optional narration voice id (heygen_list_voices)."
+          },
+          "orientation": {
+            "type": "string",
+            "enum": [
+              "landscape",
+              "portrait"
+            ],
+            "description": "landscape or portrait. Leave out to let the agent decide."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Optional material to use, up to 20 items, each {\"type\": \"url\", \"url\": \"https://...\"} (images, videos, MP3/WAV audio or PDF)."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/video-agents",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "mode": "generate",
+          "avatar_id": "$avatar_id",
+          "voice_id": "$voice_id",
+          "orientation": "$orientation",
+          "files": "$files"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "session_id": "$.data.session_id",
+            "status": "$.data.status",
+            "video_id": "$.data.video_id",
+            "created_at": "$.data.created_at"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "heygen_get_agent_session",
+      "description": "Follow a Video Agent session: status (thinking, waiting_for_input, reviewing, generating, completed, failed), progress 0 to 100, title, video_id once rendering starts, the agent's latest messages and an error when it failed. When video_id is set, heygen_get_video returns the file. Poll about every 30 seconds. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "session_id from heygen_create_agent_video."
+          }
+        },
+        "required": [
+          "session_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/video-agents/{session_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "session_id": "$.data.session_id",
+            "status": "$.data.status",
+            "progress": "$.data.progress",
+            "title": "$.data.title",
+            "video_id": "$.data.video_id",
+            "error": "$.data.error",
+            "messages": {
+              "$from": "$.data.messages[*]",
+              "$select": {
+                "role": "role",
+                "type": "type",
+                "content": "content"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "heygen_create_photo_avatar",
+      "description": "Create an avatar from one photo of a person, to use as a presenter in videos. Only with a photo of someone who agreed to it, such as the user themselves: HeyGen keeps no consent record for photo avatars, so ask the user to confirm they have that right before calling. Processing takes a moment: check heygen_get_avatar_look with the returned look id until status is completed. Creating the avatar may use HeyGen credits depending on the plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the avatar."
+          },
+          "photo_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public link to a clear, front-facing JPG or PNG portrait of one person, whole head in frame."
+          },
+          "avatar_group_id": {
+            "type": "string",
+            "description": "Optional: add the photo as another look of an existing character of the user."
+          }
+        },
+        "required": [
+          "name",
+          "photo_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/avatars",
+        "bodyMapping": {
+          "type": "photo",
+          "name": "$name",
+          "file": {
+            "type": "url",
+            "url": "$photo_url"
+          },
+          "avatar_group_id": "$avatar_group_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "look_id": "$.data.avatar_item.id",
+            "look_status": "$.data.avatar_item.status",
+            "group_id": "$.data.avatar_group.id",
+            "name": "$.data.avatar_item.name",
+            "preview_image_url": "$.data.avatar_item.preview_image_url",
+            "error": "$.data.avatar_item.error"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "heygen_get_account",
+      "description": "Show the HeyGen account behind the key and what it has left to spend: billing type and, depending on it, the API wallet balance (USD or credits), the plan's remaining credits with their reset date, or the usage-based spend against its cap. Check it before costly calls. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/users/me"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "username": "$.data.username",
+            "billing_type": "$.data.billing_type",
+            "wallet": "$.data.wallet",
+            "subscription": "$.data.subscription",
+            "usage_based": "$.data.usage_based"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,507 @@
+{
+  "slug": "fr-company-data",
+  "name": "French Company Data",
+  "aliases": [
+    "Annuaire des Entreprises",
+    "Recherche d'entreprises",
+    "SIRENE",
+    "SIREN",
+    "SIRET",
+    "BODACC",
+    "BALO",
+    "INSEE entreprises",
+    "Registre national des entreprises"
+  ],
+  "description": "French company register and legal notices, no API key: search companies by name, SIREN/SIRET, activity, place, size or officer (official SIRENE and RNE data), their BODACC notices (insolvency proceedings, sales, registrations, changes, filed accounts), BALO notices and financial ratios from filed accounts.",
+  "region": "fr",
+  "category": "government",
+  "icon": "fr-company-data",
+  "docsUrl": "https://recherche-entreprises.api.gouv.fr/docs/",
+  "instructions": "## French Company Data (SIRENE, BODACC, BALO)\nThis connector answers questions about French companies from official open data, with **no account and no API key**:\n- **Company register** from the French government's *API Recherche d'entreprises* (the data behind annuaire-entreprises.data.gouv.fr: INSEE SIRENE plus the national company register RNE): identity, legal form, activity, size, head office and establishments, officers, VAT number, latest revenue, labels.\n- **BODACC** (Bulletin officiel des annonces civiles et commerciales, published by DILA): every legal notice since 2008, including insolvency proceedings, business sales, registrations, changes, deregistrations and filed accounts.\n- **BALO** (Bulletin des annonces légales obligatoires): notices of listed companies and other issuers.\n- **Financial ratios** published by the Ministry of the Economy (DGE) from the accounts filed with INPI.\n\n**Setup**: nothing to configure. Install and run `fr_company_data_get` with a SIREN to try it.\n\n**Identifiers**: a SIREN has 9 digits and identifies the company; a SIRET has 14 digits (SIREN + 5) and identifies one establishment. The NAF/APE code (e.g. `62.01Z`) is the main activity.\n\n**Workflow**\n- Identify the company: `fr_company_data_search` by name (plus `code_postal`, `departement` or `activite_principale` to narrow it down) or `fr_company_data_get` with a SIREN or SIRET. `fr_company_data_search` also finds the companies of an officer (`nom_personne`, `prenoms_personne`) and lists companies by activity, place, size or revenue for prospecting. `fr_company_data_near_point` finds companies around coordinates.\n- Check its history and health: `fr_company_data_bodacc_announcements` with the SIREN; `family` `collective` shows insolvency proceedings (sauvegarde, redressement, liquidation judiciaire), `vente` business sales, `modification` changes of officers, capital or address, `dpc` filed accounts. `fr_company_data_financial_ratios` gives revenue, margins and ratios per year; `fr_company_data_balo_announcements` covers listed companies.\n- Watch a market: `fr_company_data_bodacc_search` with `family`, `department` and dates (e.g. all new liquidations in department 69 since Monday), or `text` for a name.\n\n**Reading the data**\n- Codes in the register: `etat_administratif` A active, C ceased; `categorie_entreprise` PME, ETI or GE; `tranche_effectif_salarie` is an INSEE headcount band (e.g. `11` = 10-19 employees, `NN` = none declared); `nature_juridique` is the INSEE legal form code (5710 SAS, 5499 SARL, 5599 SA, 1000 sole trader). `finances` holds the latest published year only.\n- In BODACC, `registre` holds the SIREN with and without spaces, `familleavis_lib` names the kind of notice, and the details (`jugement`, `acte`, `listepersonnes`, `modificationsgenerales`, `depot`) are JSON text inside the record: read them as JSON. `url_complete` links the notice on bodacc.fr.\n- In the ratios, there can be several rows for one closing date with different `type_bilan` (C full, S simplified, K consolidated); compare like with like. Amounts are euros.\n- Personal data: officers' names and birth month are public register data. Use them for business purposes only, as French data protection law requires.\n\n**Limits**: the company register allows 7 requests per second; over that it answers 429 (wait a second). `fr_company_data_search` returns at most 25 results per page and 10,000 in total; BODACC, BALO and the ratios return at most 100 per page and 10,000 in total (`offset` + `limit`). A query of fewer than 3 characters without a filter answers 400.",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "fr_company_data_get",
+    "params": {
+      "siren_or_siret": "552032534"
+    }
+  },
+  "connector": {
+    "name": "French company open data",
+    "type": "REST",
+    "baseUrl": "https://recherche-entreprises.api.gouv.fr",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "fr_company_data_search",
+      "description": "Search the French company register (SIRENE, the official Annuaire des Entreprises data): by name, address, officer or SIREN/SIRET in q, and by activity (NAF), place, size, legal form, revenue or officer name. Each result: SIREN, name, legal form, NAF code, size, creation date, active or ceased, head office (SIRET, address, coordinates), officers, latest revenue and net income, labels (RGE, ESS, Qualiopi...) and the matching establishments. 1 to 25 per page; total_results is capped at 10,000.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Name, address, officer name, SIREN or SIRET. At least 3 characters, unless a filter is set."
+          },
+          "activite_principale": {
+            "type": "string",
+            "description": "NAF/APE activity code(s), comma-separated, e.g. 62.01Z or 47.11B,47.11C."
+          },
+          "section_activite_principale": {
+            "type": "string",
+            "description": "NAF section letter(s) A to U, e.g. F for construction, comma-separated."
+          },
+          "code_postal": {
+            "type": "string",
+            "description": "Postcode(s) of an establishment, comma-separated, e.g. 75009."
+          },
+          "code_commune": {
+            "type": "string",
+            "description": "INSEE commune code(s) (5 characters, not the postcode), e.g. 75109."
+          },
+          "departement": {
+            "type": "string",
+            "description": "Department number(s), e.g. 75, 2A, 971."
+          },
+          "region": {
+            "type": "string",
+            "description": "INSEE region code(s), e.g. 11 for Ile-de-France."
+          },
+          "categorie_entreprise": {
+            "type": "string",
+            "description": "Company size category.",
+            "enum": [
+              "PME",
+              "ETI",
+              "GE"
+            ]
+          },
+          "tranche_effectif_salarie": {
+            "type": "string",
+            "description": "INSEE headcount band(s), comma-separated, e.g. 11 (10-19), 21 (50-99), 42 (1000-1999), 53 (10000+)."
+          },
+          "nature_juridique": {
+            "type": "string",
+            "description": "Legal form code(s) (INSEE nomenclature), e.g. 5710 for SAS, 5499 for SARL."
+          },
+          "etat_administratif": {
+            "type": "string",
+            "description": "A active, C ceased.",
+            "enum": [
+              "A",
+              "C"
+            ]
+          },
+          "est_entrepreneur_individuel": {
+            "type": "boolean",
+            "description": "Only sole traders (true) or only companies (false)."
+          },
+          "est_association": {
+            "type": "boolean",
+            "description": "Only associations."
+          },
+          "est_ess": {
+            "type": "boolean",
+            "description": "Only social and solidarity economy (ESS) organisations."
+          },
+          "est_rge": {
+            "type": "boolean",
+            "description": "Only RGE-certified (energy renovation) companies."
+          },
+          "est_qualiopi": {
+            "type": "boolean",
+            "description": "Only Qualiopi-certified training providers."
+          },
+          "nom_personne": {
+            "type": "string",
+            "description": "Last name of an officer (dirigeant) or elected official."
+          },
+          "prenoms_personne": {
+            "type": "string",
+            "description": "First name(s) of that person."
+          },
+          "type_personne": {
+            "type": "string",
+            "description": "dirigeant for company officers, elu for elected officials.",
+            "enum": [
+              "dirigeant",
+              "elu"
+            ]
+          },
+          "ca_min": {
+            "type": "integer",
+            "description": "Minimum revenue (chiffre d'affaires) in euros, last published year."
+          },
+          "ca_max": {
+            "type": "integer",
+            "description": "Maximum revenue in euros."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 25.",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 10
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q",
+          "activite_principale": "$activite_principale",
+          "section_activite_principale": "$section_activite_principale",
+          "code_postal": "$code_postal",
+          "code_commune": "$code_commune",
+          "departement": "$departement",
+          "region": "$region",
+          "categorie_entreprise": "$categorie_entreprise",
+          "tranche_effectif_salarie": "$tranche_effectif_salarie",
+          "nature_juridique": "$nature_juridique",
+          "etat_administratif": "$etat_administratif",
+          "est_entrepreneur_individuel": "$est_entrepreneur_individuel",
+          "est_association": "$est_association",
+          "est_ess": "$est_ess",
+          "est_rge": "$est_rge",
+          "est_qualiopi": "$est_qualiopi",
+          "nom_personne": "$nom_personne",
+          "prenoms_personne": "$prenoms_personne",
+          "type_personne": "$type_personne",
+          "ca_min": "$ca_min",
+          "ca_max": "$ca_max",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "fr_company_data_get",
+      "description": "Get one French company by its SIREN (9 digits) or one establishment by its SIRET (14 digits): legal name, legal form, NAF activity, size band, creation and closure dates, status, head office address, officers (name, role, birth month), VAT number, latest revenue and net income, collective agreements and labels. With a SIRET, matching_etablissements holds that establishment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "siren_or_siret": {
+            "type": "string",
+            "description": "SIREN (9 digits) or SIRET (14 digits); spaces are allowed, e.g. 552 032 534."
+          }
+        },
+        "required": [
+          "siren_or_siret"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$siren_or_siret",
+          "per_page": 1
+        }
+      }
+    },
+    {
+      "name": "fr_company_data_near_point",
+      "description": "Find companies with an establishment within a radius of a point (latitude, longitude), optionally of a given activity: e.g. bakeries within 1 km of an address. Returns the same company records as fr_company_data_search, with the establishments inside the radius under matching_etablissements.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "Latitude, e.g. 48.8757."
+          },
+          "long": {
+            "type": "number",
+            "description": "Longitude, e.g. 2.3428."
+          },
+          "radius": {
+            "type": "number",
+            "description": "Radius in km, 0.001 to 50. Default 5.",
+            "minimum": 0.001,
+            "maximum": 50
+          },
+          "activite_principale": {
+            "type": "string",
+            "description": "NAF/APE activity code(s), comma-separated, e.g. 10.71C for bakeries."
+          },
+          "section_activite_principale": {
+            "type": "string",
+            "description": "NAF section letter(s), A to U."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1 to 25.",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 10
+          }
+        },
+        "required": [
+          "lat",
+          "long"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/near_point",
+        "queryParams": {
+          "lat": "$lat",
+          "long": "$long",
+          "radius": "$radius",
+          "activite_principale": "$activite_principale",
+          "section_activite_principale": "$section_activite_principale",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "fr_company_data_bodacc_announcements",
+      "description": "List the BODACC legal notices of one company by SIREN, newest first: insolvency proceedings and court judgments, sales and transfers of the business, registrations, changes (officers, capital, address), deregistration and annual accounts filed. Filter by kind of notice and publication date. Nested details (jugement, acte, listepersonnes, modificationsgenerales, depot) are JSON text; url_complete links the notice on bodacc.fr.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "siren": {
+            "type": "string",
+            "description": "SIREN, 9 digits without spaces, e.g. 552032534.",
+            "pattern": "^[0-9]{9}$"
+          },
+          "family": {
+            "type": "string",
+            "description": "Kind of notice: collective (insolvency: safeguard, receivership, liquidation), vente (sale or transfer of a business), immatriculation (registration), creation, modification (change of officers, capital, address...), radiation (deregistration), dpc (annual accounts filed), conciliation, retablissement_professionnel, divers.",
+            "enum": [
+              "collective",
+              "vente",
+              "immatriculation",
+              "creation",
+              "modification",
+              "radiation",
+              "dpc",
+              "conciliation",
+              "retablissement_professionnel",
+              "divers"
+            ]
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Published on or after, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Published on or before, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Notices per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging (offset + limit at most 10,000).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "siren"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/annonces-commerciales/records",
+        "queryParams": {
+          "where": [
+            "registre=\"${siren}\"",
+            "dateparution >= date'${date_from}'",
+            "dateparution <= date'${date_to}'"
+          ],
+          "refine": [
+            "familleavis:${family}"
+          ],
+          "order_by": "dateparution desc",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "fr_company_data_bodacc_search",
+      "description": "Search all BODACC legal notices (about 51 million since 2008, updated daily), newest first: e.g. new insolvency proceedings in a department this week, business sales in a city, or notices mentioning a name. Filter by kind of notice, department and publication date, and search the text. total_count gives the number of matches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Words to find anywhere in the notice, e.g. a company or person name. No double quotes."
+          },
+          "family": {
+            "type": "string",
+            "description": "Kind of notice: collective (insolvency: safeguard, receivership, liquidation), vente (sale or transfer of a business), immatriculation (registration), creation, modification (change of officers, capital, address...), radiation (deregistration), dpc (annual accounts filed), conciliation, retablissement_professionnel, divers.",
+            "enum": [
+              "collective",
+              "vente",
+              "immatriculation",
+              "creation",
+              "modification",
+              "radiation",
+              "dpc",
+              "conciliation",
+              "retablissement_professionnel",
+              "divers"
+            ]
+          },
+          "department": {
+            "type": "string",
+            "description": "Department number, e.g. 75, 69, 2A, 974."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Published on or after, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Published on or before, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Notices per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging (offset + limit at most 10,000).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/annonces-commerciales/records",
+        "queryParams": {
+          "where": [
+            "search(\"${text}\")",
+            "dateparution >= date'${date_from}'",
+            "dateparution <= date'${date_to}'"
+          ],
+          "refine": [
+            "familleavis:${family}",
+            "numerodepartement:${department}"
+          ],
+          "order_by": "dateparution desc",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "fr_company_data_balo_announcements",
+      "description": "List the BALO notices (Bulletin des annonces légales obligatoires, for listed companies and other issuers) of a company by SIREN, newest first: notices of general meetings, annual and quarterly accounts, revenue figures, securities issues, mergers. The PDF is usually at https://www.journal-officiel.gouv.fr/telechargements/BALO/pdf/YYYY/MMDD/<file> using dateparution and the file name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "siren": {
+            "type": "string",
+            "description": "SIREN, 9 digits without spaces.",
+            "pattern": "^[0-9]{9}$"
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Published on or after, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Notices per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "siren"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://journal-officiel-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/balo/records",
+        "queryParams": {
+          "where": [
+            "siren=\"${siren}\"",
+            "dateparution >= date'${date_from}'"
+          ],
+          "select": "id_annonce,dateparution,societes_noms,siren,numero_affaire,num_bulletin,categorie_code,facette_categorie_libelle,fichiers_joints_fichier_pdf_text",
+          "order_by": "dateparution desc",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "fr_company_data_financial_ratios",
+      "description": "Get the financial figures and ratios computed by the French Ministry of the Economy from the annual accounts filed with INPI, one row per closing date and type of accounts: revenue, gross margin, EBITDA (EBE), EBIT, net income, debt ratio, liquidity, financial autonomy, working capital in days of revenue, stock rotation, customer and supplier credit days. type_bilan C = full accounts, S = simplified, K = consolidated. Companies that chose confidentiality have no figures.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "siren": {
+            "type": "string",
+            "description": "SIREN, 9 digits without spaces.",
+            "pattern": "^[0-9]{9}$"
+          },
+          "type_bilan": {
+            "type": "string",
+            "description": "Only one type of accounts: C full, S simplified, K consolidated.",
+            "enum": [
+              "C",
+              "S",
+              "K"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10
+          }
+        },
+        "required": [
+          "siren"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/ratios_inpi_bce/records",
+        "queryParams": {
+          "where": [
+            "siren=\"${siren}\"",
+            "type_bilan=\"${type_bilan}\""
+          ],
+          "order_by": "date_cloture_exercice desc",
+          "limit": "$limit"
+        }
+      }
+    }
+  ]
+}

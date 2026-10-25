@@ -1,0 +1,2010 @@
+{
+  "slug": "digitalocean",
+  "name": "DigitalOcean",
+  "description": "Let your AI keep an eye on DigitalOcean: Droplets with CPU and bandwidth metrics, App Platform deployments and logs, managed databases, Kubernetes clusters, volumes, DNS, firewalls, load balancers, balance and invoices. It can power Droplets on or off, take snapshots, redeploy apps and edit DNS records after confirming with you.",
+  "instructions": "## DigitalOcean\nThis connector works with one DigitalOcean team through the **API v2** (`https://api.digitalocean.com/v2`) with a personal access token: account, balance and invoices, Droplets (with power actions, snapshots and CPU and bandwidth metrics), App Platform apps with their deployments and logs, managed databases, Kubernetes clusters, volumes, DNS domains and records, firewalls and load balancers.\n\n**Setup (about 3 minutes)**\n1. In the DigitalOcean control panel open **API, Tokens** (https://cloud.digitalocean.com/account/api/tokens) and click **Generate New Token**. The token belongs to the team selected at the top of the control panel.\n2. Pick an expiry and the scopes. **Custom Scopes** is the safest choice: read access for account, billing, droplet, app, database, kubernetes, block_storage, domain, firewall, load_balancer, monitoring, snapshot and actions; add droplet update for power actions and snapshots, app update for deployments, and domain create and update for DNS changes. **Read Only** covers every read here and refuses all changes. Avoid **Full Access**: it can also destroy resources.\n3. Copy the token (it starts with `dop_v1_` and is shown once) into `DIGITALOCEAN_TOKEN`. It is sent as `Authorization: Bearer <token>`.\n4. Check the setup with `digitalocean_get_account`.\n\n**Changes affect running infrastructure: confirm first.** `digitalocean_power_droplet` (power on, clean shutdown, hard power off, reboot, power cycle), `digitalocean_snapshot_droplet` (billed storage), `digitalocean_create_app_deployment` (rebuild and redeploy), `digitalocean_create_domain_record` and `digitalocean_update_domain_record` (live DNS) all change things people rely on. Before each call, show the user the resource and the change and wait for their yes. `digitalocean_delete_domain_record` is installed switched off. Destroying Droplets, apps, databases, clusters or volumes is not offered at all.\n\n**Secrets stay in DigitalOcean.** Database tools return host and port but never passwords, connection strings or certificates; app tools leave out environment variables; Kubernetes tools return no kubeconfig.\n\n**How to work**\n1. Overview: `digitalocean_get_account`, `digitalocean_get_balance`, `digitalocean_list_invoices`.\n2. Droplets: `digitalocean_list_droplets`, `digitalocean_get_droplet`; actions with `digitalocean_power_droplet` or `digitalocean_snapshot_droplet`, then poll `digitalocean_get_action` until completed; `digitalocean_list_droplet_snapshots`. Load: `digitalocean_get_droplet_cpu_metrics` and `digitalocean_get_droplet_bandwidth_metrics` (times in Unix seconds).\n3. Apps: `digitalocean_list_apps`, `digitalocean_get_app`, `digitalocean_list_app_deployments`, `digitalocean_get_app_deployment` (failed steps and reasons), `digitalocean_get_app_logs_url` and `digitalocean_get_app_deployment_logs_url` (temporary links to the log files), `digitalocean_create_app_deployment`.\n4. Data: `digitalocean_list_databases`, `digitalocean_get_database`, `digitalocean_list_database_replicas`; `digitalocean_list_kubernetes_clusters`, `digitalocean_get_kubernetes_cluster`; `digitalocean_list_volumes`.\n5. Network: `digitalocean_list_domains`, `digitalocean_list_domain_records`, `digitalocean_create_domain_record`, `digitalocean_update_domain_record`; `digitalocean_list_firewalls`, `digitalocean_get_firewall`; `digitalocean_list_load_balancers`, `digitalocean_get_load_balancer`.\n\n**Ids**: Droplets, actions and DNS records have numeric ids; apps, databases, clusters, volumes, firewalls and load balancers have UUIDs. Regions are slugs such as `fra1` or `nyc3`.\n\n**Paging**: lists take `per_page` (up to 200) and `page`; `meta.total` is the number of results and `next_page` is present while there are more.\n\n**Common errors**\n- 401 `Unable to authenticate you`: the token is wrong, expired or revoked.\n- 403: the token lacks the scope for this call (for example billing:read for the balance, or an update scope for a change). Generate a token with that scope.\n- 404: no such resource in this team.\n- 422: a value is invalid, e.g. a Droplet that is already off, or a DNS record that conflicts with another.\n- 429: more than 5,000 requests per hour or 250 per minute; wait.\n\n**Out of scope here**: creating or destroying Droplets, apps, databases, clusters, volumes, firewalls and load balancers, resizing, changing app settings and environment variables, database users and passwords, Spaces object storage, container registry, Functions, GenAI and reserved IPs.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "digitalocean",
+  "docsUrl": "https://docs.digitalocean.com/reference/api/digitalocean/",
+  "prerequisites": "A DigitalOcean account and a personal access token from API, Tokens, ideally with custom scopes or Read Only. About 3 minutes.",
+  "requiredEnvVars": [
+    "DIGITALOCEAN_TOKEN"
+  ],
+  "envVarMeta": {
+    "DIGITALOCEAN_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Control panel, API, Tokens, Generate New Token. Custom Scopes or Read Only; avoid Full Access. The token starts with dop_v1_ and is shown once.",
+      "link": "https://cloud.digitalocean.com/account/api/tokens",
+      "pattern": "^(?!Bearer\\s)(do[op]_v1_)?[0-9a-fA-F]{64}$",
+      "patternMessage": "Paste only the token: dop_v1_ followed by 64 hexadecimal characters, without Bearer in front."
+    }
+  },
+  "verifyHints": {
+    "401": "DigitalOcean refused the token (Unable to authenticate you): it is wrong, expired or revoked. Generate a new one under API, Tokens.",
+    "403": "DigitalOcean accepted the token but it lacks the scope for this call. Generate a token with the read scopes listed in the setup steps (account:read for this check).",
+    "429": "DigitalOcean is rate limiting this token (5,000 requests per hour, 250 per minute). Wait and verify again."
+  },
+  "probe": {
+    "tool": "digitalocean_get_account"
+  },
+  "connector": {
+    "name": "DigitalOcean API v2",
+    "type": "REST",
+    "baseUrl": "https://api.digitalocean.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{DIGITALOCEAN_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/account"
+  },
+  "tools": [
+    {
+      "name": "digitalocean_get_account",
+      "description": "Read the DigitalOcean account behind the token: email, name, uuid, status, whether the email is verified, the Droplet and reserved IP limits and the team. A quick check that the token works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "account": {
+              "email": "$.account.email",
+              "name": "$.account.name",
+              "uuid": "$.account.uuid",
+              "status": "$.account.status",
+              "status_message": "$.account.status_message",
+              "email_verified": "$.account.email_verified",
+              "droplet_limit": "$.account.droplet_limit",
+              "floating_ip_limit": "$.account.floating_ip_limit",
+              "team": {
+                "uuid": "$.account.team.uuid",
+                "name": "$.account.team.name"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_balance",
+      "description": "Read the billing balance: the balance at the start of the month, usage so far this month, month-to-date balance (what is owed now) and when it was computed, in US dollars. Needs the billing:read scope. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/my/balance"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "month_to_date_balance": "$.month_to_date_balance",
+            "account_balance": "$.account_balance",
+            "month_to_date_usage": "$.month_to_date_usage",
+            "generated_at": "$.generated_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_invoices",
+      "description": "List past invoices, newest first, with uuid, amount in US dollars, billing period (YYYY-MM) and date, plus a preview of the current month. Needs the billing:read scope. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Results per page (default 20, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/my/invoices",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "invoices": {
+              "$from": "$.invoices[*]",
+              "$select": {
+                "invoice_uuid": "invoice_uuid",
+                "invoice_id": "invoice_id",
+                "amount": "amount",
+                "invoice_period": "invoice_period",
+                "updated_at": "updated_at"
+              }
+            },
+            "invoice_preview": "$.invoice_preview",
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_droplets",
+      "description": "List Droplets (virtual machines): id, name, status (new, active, off, archive), region, size, vCPUs, memory, disk, image, public and private IP addresses, tags and creation date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag_name": {
+            "type": "string",
+            "description": "Only Droplets with this tag."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only the Droplet with exactly this name."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Results per page (default 20, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/droplets",
+        "queryParams": {
+          "tag_name": "$tag_name",
+          "name": "$name",
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "droplets": {
+              "$from": "$.droplets[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "status": "status",
+                "region": "region.slug",
+                "size_slug": "size_slug",
+                "vcpus": "vcpus",
+                "memory_mb": "memory",
+                "disk_gb": "disk",
+                "image": {
+                  "name": "image.name",
+                  "distribution": "image.distribution"
+                },
+                "networks": {
+                  "$from": "networks.v4[*]",
+                  "$select": {
+                    "ip_address": "ip_address",
+                    "type": "type"
+                  }
+                },
+                "ipv6": {
+                  "$from": "networks.v6[*]",
+                  "$select": {
+                    "ip_address": "ip_address",
+                    "type": "type"
+                  }
+                },
+                "tags": "tags",
+                "vpc_uuid": "vpc_uuid",
+                "volume_ids": "volume_ids",
+                "features": "features",
+                "locked": "locked",
+                "created_at": "created_at"
+              }
+            },
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_droplet",
+      "description": "Read one Droplet: status, region, size, vCPUs, memory, disk, image, IP addresses, tags, attached volumes, enabled features (backups, monitoring, ipv6), lock state and creation date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "droplet_id": {
+            "type": "integer",
+            "description": "Droplet id (a number) from digitalocean_list_droplets."
+          }
+        },
+        "required": [
+          "droplet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/droplets/{droplet_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "droplet": {
+              "id": "$.droplet.id",
+              "name": "$.droplet.name",
+              "status": "$.droplet.status",
+              "region": "$.droplet.region.slug",
+              "size_slug": "$.droplet.size_slug",
+              "vcpus": "$.droplet.vcpus",
+              "memory_mb": "$.droplet.memory",
+              "disk_gb": "$.droplet.disk",
+              "image": {
+                "name": "$.droplet.image.name",
+                "distribution": "$.droplet.image.distribution"
+              },
+              "networks": {
+                "$from": "$.droplet.networks.v4[*]",
+                "$select": {
+                  "ip_address": "ip_address",
+                  "type": "type"
+                }
+              },
+              "ipv6": {
+                "$from": "$.droplet.networks.v6[*]",
+                "$select": {
+                  "ip_address": "ip_address",
+                  "type": "type"
+                }
+              },
+              "tags": "$.droplet.tags",
+              "vpc_uuid": "$.droplet.vpc_uuid",
+              "volume_ids": "$.droplet.volume_ids",
+              "features": "$.droplet.features",
+              "locked": "$.droplet.locked",
+              "created_at": "$.droplet.created_at",
+              "snapshot_ids": "$.droplet.snapshot_ids",
+              "backup_ids": "$.droplet.backup_ids",
+              "next_backup_window": "$.droplet.next_backup_window",
+              "kernel": "$.droplet.kernel.name"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_power_droplet",
+      "description": "Change a Droplet's power state. power_on starts it; shutdown asks the operating system to shut down cleanly; power_off cuts the power at once like pulling the plug (unsaved data can be lost); reboot restarts it cleanly; power_cycle switches it off and on hard. Everything running on the Droplet is unavailable meanwhile. A Droplet that is off is still billed. Before calling, tell the user the Droplet (name and id) and the action and wait for their yes. Returns an action; follow it with digitalocean_get_action until status is completed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "droplet_id": {
+            "type": "integer",
+            "description": "Droplet id (a number) from digitalocean_list_droplets."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "power_on",
+              "shutdown",
+              "power_off",
+              "reboot",
+              "power_cycle"
+            ],
+            "description": "power_on, shutdown (clean), power_off (hard), reboot (clean) or power_cycle (hard)."
+          }
+        },
+        "required": [
+          "droplet_id",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/droplets/{droplet_id}/actions",
+        "bodyMapping": {
+          "type": "$type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "action": {
+              "id": "$.action.id",
+              "status": "$.action.status",
+              "type": "$.action.type",
+              "started_at": "$.action.started_at",
+              "completed_at": "$.action.completed_at",
+              "resource_id": "$.action.resource_id",
+              "resource_type": "$.action.resource_type",
+              "region": "$.action.region_slug"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_snapshot_droplet",
+      "description": "Take a snapshot (a full disk image) of a Droplet. DigitalOcean recommends powering the Droplet off first for a consistent image; a snapshot of a running Droplet may miss data being written. Snapshots are billed per GB per month until deleted. Before calling, tell the user the Droplet and the snapshot name and wait for their yes. Returns an action; follow it with digitalocean_get_action, then find the image with digitalocean_list_droplet_snapshots.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "droplet_id": {
+            "type": "integer",
+            "description": "Droplet id (a number) from digitalocean_list_droplets."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name for the snapshot, e.g. web-1 before upgrade 2026-10-15."
+          }
+        },
+        "required": [
+          "droplet_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/droplets/{droplet_id}/actions",
+        "bodyMapping": {
+          "type": "snapshot",
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "action": {
+              "id": "$.action.id",
+              "status": "$.action.status",
+              "type": "$.action.type",
+              "started_at": "$.action.started_at",
+              "completed_at": "$.action.completed_at",
+              "resource_id": "$.action.resource_id",
+              "resource_type": "$.action.resource_type",
+              "region": "$.action.region_slug"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_action",
+      "description": "Read the progress of an action (power change, snapshot and so on): status (in-progress, completed, errored), type, start and end time and the resource it acts on. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action_id": {
+            "type": "integer",
+            "description": "Action id returned by digitalocean_power_droplet or digitalocean_snapshot_droplet."
+          }
+        },
+        "required": [
+          "action_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/actions/{action_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "action": {
+              "id": "$.action.id",
+              "status": "$.action.status",
+              "type": "$.action.type",
+              "started_at": "$.action.started_at",
+              "completed_at": "$.action.completed_at",
+              "resource_id": "$.action.resource_id",
+              "resource_type": "$.action.resource_type",
+              "region": "$.action.region_slug"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_droplet_snapshots",
+      "description": "List the snapshots of a Droplet: id, name, size in GB, minimum disk size, regions and creation date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "droplet_id": {
+            "type": "integer",
+            "description": "Droplet id (a number) from digitalocean_list_droplets."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Results per page (default 20, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        },
+        "required": [
+          "droplet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/droplets/{droplet_id}/snapshots",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "snapshots": {
+              "$from": "$.snapshots[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "size_gigabytes": "size_gigabytes",
+                "min_disk_size": "min_disk_size",
+                "regions": "regions",
+                "created_at": "created_at"
+              }
+            },
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_apps",
+      "description": "List App Platform apps: id, name, region, live URL, tier, project, the active deployment (id, phase, cause) and any deployment in progress. App settings and environment variables are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with_projects": {
+            "type": "boolean",
+            "description": "Also return the project each app belongs to."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Results per page (default 20, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps",
+        "queryParams": {
+          "with_projects": "$with_projects",
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "apps": {
+              "$from": "$.apps[*]",
+              "$select": {
+                "id": "id",
+                "name": "spec.name",
+                "region": "region.slug",
+                "live_url": "live_url",
+                "default_ingress": "default_ingress",
+                "tier_slug": "tier_slug",
+                "project_id": "project_id",
+                "active_deployment": {
+                  "id": "active_deployment.id",
+                  "phase": "active_deployment.phase",
+                  "cause": "active_deployment.cause",
+                  "created_at": "active_deployment.created_at"
+                },
+                "in_progress_deployment_id": "in_progress_deployment.id",
+                "in_progress_deployment_phase": "in_progress_deployment.phase",
+                "last_deployment_active_at": "last_deployment_active_at",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            },
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_app",
+      "description": "Read one App Platform app: name, region, live URL and domains, the active, in-progress and pending deployments, and its components (services, workers, jobs, static sites) with instance size, count and source repository or image. Environment variables are left out because they can hold secrets. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "App id (a UUID) from digitalocean_list_apps."
+          }
+        },
+        "required": [
+          "app_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{app_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "app": {
+              "id": "$.app.id",
+              "name": "$.app.spec.name",
+              "region": "$.app.region.slug",
+              "live_url": "$.app.live_url",
+              "default_ingress": "$.app.default_ingress",
+              "tier_slug": "$.app.tier_slug",
+              "project_id": "$.app.project_id",
+              "active_deployment": {
+                "id": "$.app.active_deployment.id",
+                "phase": "$.app.active_deployment.phase",
+                "cause": "$.app.active_deployment.cause",
+                "created_at": "$.app.active_deployment.created_at"
+              },
+              "in_progress_deployment_id": "$.app.in_progress_deployment.id",
+              "in_progress_deployment_phase": "$.app.in_progress_deployment.phase",
+              "last_deployment_active_at": "$.app.last_deployment_active_at",
+              "created_at": "$.app.created_at",
+              "updated_at": "$.app.updated_at",
+              "domains": {
+                "$from": "$.app.domains[*]",
+                "$select": {
+                  "domain": "spec.domain",
+                  "phase": "phase"
+                }
+              },
+              "pending_deployment_id": "$.app.pending_deployment.id",
+              "services": {
+                "$from": "$.app.spec.services[*]",
+                "$select": {
+                  "name": "name",
+                  "instance_size_slug": "instance_size_slug",
+                  "instance_count": "instance_count",
+                  "github_repo": "github.repo",
+                  "github_branch": "github.branch",
+                  "gitlab_repo": "gitlab.repo",
+                  "gitlab_branch": "gitlab.branch",
+                  "image_repository": "image.repository",
+                  "image_tag": "image.tag",
+                  "http_port": "http_port",
+                  "routes": "routes"
+                }
+              },
+              "workers": {
+                "$from": "$.app.spec.workers[*]",
+                "$select": {
+                  "name": "name",
+                  "instance_size_slug": "instance_size_slug",
+                  "instance_count": "instance_count",
+                  "github_repo": "github.repo",
+                  "github_branch": "github.branch",
+                  "gitlab_repo": "gitlab.repo",
+                  "gitlab_branch": "gitlab.branch",
+                  "image_repository": "image.repository",
+                  "image_tag": "image.tag",
+                  "http_port": "http_port",
+                  "routes": "routes"
+                }
+              },
+              "jobs": {
+                "$from": "$.app.spec.jobs[*]",
+                "$select": {
+                  "name": "name",
+                  "instance_size_slug": "instance_size_slug",
+                  "instance_count": "instance_count",
+                  "github_repo": "github.repo",
+                  "github_branch": "github.branch",
+                  "gitlab_repo": "gitlab.repo",
+                  "gitlab_branch": "gitlab.branch",
+                  "image_repository": "image.repository",
+                  "image_tag": "image.tag",
+                  "http_port": "http_port",
+                  "routes": "routes",
+                  "kind": "kind"
+                }
+              },
+              "static_sites": {
+                "$from": "$.app.spec.static_sites[*]",
+                "$select": {
+                  "name": "name",
+                  "github_repo": "github.repo",
+                  "github_branch": "github.branch"
+                }
+              },
+              "databases": {
+                "$from": "$.app.spec.databases[*]",
+                "$select": {
+                  "name": "name",
+                  "engine": "engine",
+                  "production": "production",
+                  "cluster_name": "cluster_name"
+                }
+              }
+            }
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_app_deployments",
+      "description": "List the deployments of an app, newest first: id, phase (PENDING_BUILD, BUILDING, PENDING_DEPLOY, DEPLOYING, ACTIVE, SUPERSEDED, ERROR, CANCELED), cause, progress (steps done, failed, total) and dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "App id (a UUID) from digitalocean_list_apps."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Results per page (default 20, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        },
+        "required": [
+          "app_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{app_id}/deployments",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deployments": {
+              "$from": "$.deployments[*]",
+              "$select": {
+                "id": "id",
+                "phase": "phase",
+                "cause": "cause",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "phase_last_updated_at": "phase_last_updated_at",
+                "progress": {
+                  "success_steps": "progress.success_steps",
+                  "error_steps": "progress.error_steps",
+                  "total_steps": "progress.total_steps"
+                }
+              }
+            },
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_app_deployment",
+      "description": "Read one app deployment: phase, cause, progress and each step with its status and the reason it failed, for finding out why a build or deploy broke. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "App id (a UUID) from digitalocean_list_apps."
+          },
+          "deployment_id": {
+            "type": "string",
+            "description": "Deployment id from digitalocean_list_app_deployments."
+          }
+        },
+        "required": [
+          "app_id",
+          "deployment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{app_id}/deployments/{deployment_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deployment": {
+              "id": "$.deployment.id",
+              "phase": "$.deployment.phase",
+              "cause": "$.deployment.cause",
+              "created_at": "$.deployment.created_at",
+              "updated_at": "$.deployment.updated_at",
+              "phase_last_updated_at": "$.deployment.phase_last_updated_at",
+              "progress": {
+                "success_steps": "$.deployment.progress.success_steps",
+                "error_steps": "$.deployment.progress.error_steps",
+                "total_steps": "$.deployment.progress.total_steps"
+              },
+              "steps": {
+                "$from": "$.deployment.progress.steps[*]",
+                "$select": {
+                  "name": "name",
+                  "status": "status",
+                  "reason": "reason",
+                  "started_at": "started_at",
+                  "ended_at": "ended_at",
+                  "steps": {
+                    "$from": "steps[*]",
+                    "$select": {
+                      "name": "name",
+                      "status": "status",
+                      "reason": "reason",
+                      "component_name": "component_name"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "fallbackToRaw": false,
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "digitalocean_create_app_deployment",
+      "description": "Deploy an app again from its current settings and source: App Platform builds (with force_build even when nothing changed) and replaces the running version, which can briefly affect the app and uses build minutes. Before calling, tell the user the app and wait for their yes. Returns the new deployment's id and phase; follow it with digitalocean_get_app_deployment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "App id (a UUID) from digitalocean_list_apps."
+          },
+          "force_build": {
+            "type": "boolean",
+            "description": "Build again even if the source did not change."
+          }
+        },
+        "required": [
+          "app_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/apps/{app_id}/deployments",
+        "bodyMapping": {
+          "force_build": "$force_build"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deployment": {
+              "id": "$.deployment.id",
+              "phase": "$.deployment.phase",
+              "cause": "$.deployment.cause",
+              "created_at": "$.deployment.created_at",
+              "updated_at": "$.deployment.updated_at",
+              "phase_last_updated_at": "$.deployment.phase_last_updated_at",
+              "progress": {
+                "success_steps": "$.deployment.progress.success_steps",
+                "error_steps": "$.deployment.progress.error_steps",
+                "total_steps": "$.deployment.progress.total_steps"
+              }
+            }
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_app_logs_url",
+      "description": "Get links to the logs of an app's active deployment: historic_urls are files with past log lines, live_url streams new lines. The links are temporary and give read access to the logs to whoever has them; this tool does not read the lines itself. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "App id (a UUID) from digitalocean_list_apps."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "BUILD",
+              "DEPLOY",
+              "RUN",
+              "RUN_RESTARTED"
+            ],
+            "description": "BUILD for build output, DEPLOY for the deploy step, RUN for the running app, RUN_RESTARTED for the instance before its last restart."
+          },
+          "component_name": {
+            "type": "string",
+            "description": "Only this component (service, worker or job name from digitalocean_get_app). Omit for all components."
+          }
+        },
+        "required": [
+          "app_id",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{app_id}/logs",
+        "queryParams": {
+          "type": "$type",
+          "component_name": "$component_name",
+          "follow": false
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "live_url": "$.live_url",
+            "historic_urls": "$.historic_urls"
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_app_deployment_logs_url",
+      "description": "Get links to the build, deploy or run logs of one deployment of an app (for example a failed one): historic_urls are files with the log lines, live_url streams new lines. The links are temporary and give read access to the logs to whoever has them. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "App id (a UUID) from digitalocean_list_apps."
+          },
+          "deployment_id": {
+            "type": "string",
+            "description": "Deployment id from digitalocean_list_app_deployments."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "BUILD",
+              "DEPLOY",
+              "RUN",
+              "RUN_RESTARTED"
+            ],
+            "description": "BUILD for build output, DEPLOY for the deploy step, RUN for the running app, RUN_RESTARTED for the instance before its last restart."
+          },
+          "component_name": {
+            "type": "string",
+            "description": "Only this component (service, worker or job name from digitalocean_get_app). Omit for all components."
+          }
+        },
+        "required": [
+          "app_id",
+          "deployment_id",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{app_id}/deployments/{deployment_id}/logs",
+        "queryParams": {
+          "type": "$type",
+          "component_name": "$component_name",
+          "follow": false
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "live_url": "$.live_url",
+            "historic_urls": "$.historic_urls"
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_databases",
+      "description": "List managed database clusters: id, name, engine (pg, mysql, valkey, mongodb, kafka, opensearch), version, status, region, size, nodes, storage, database names, host and port, tags and maintenance window. Passwords and connection strings are never returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag_name": {
+            "type": "string",
+            "description": "Only clusters with this tag."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/databases",
+        "queryParams": {
+          "tag_name": "$tag_name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "databases": {
+              "$from": "$.databases[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "engine": "engine",
+                "version": "version",
+                "status": "status",
+                "region": "region",
+                "size": "size",
+                "num_nodes": "num_nodes",
+                "storage_size_mib": "storage_size_mib",
+                "db_names": "db_names",
+                "host": "connection.host",
+                "port": "connection.port",
+                "private_host": "private_connection.host",
+                "tags": "tags",
+                "project_id": "project_id",
+                "maintenance_window": "maintenance_window",
+                "version_end_of_life": "version_end_of_life",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_database",
+      "description": "Read one managed database cluster: engine, version, status, region, size, nodes, storage, database names, host and port, the database users (names and roles only), trusted sources and maintenance window. Passwords, connection strings and certificates are never returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database cluster id (a UUID) from digitalocean_list_databases."
+          }
+        },
+        "required": [
+          "database_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/databases/{database_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "database": {
+              "id": "$.database.id",
+              "name": "$.database.name",
+              "engine": "$.database.engine",
+              "version": "$.database.version",
+              "status": "$.database.status",
+              "region": "$.database.region",
+              "size": "$.database.size",
+              "num_nodes": "$.database.num_nodes",
+              "storage_size_mib": "$.database.storage_size_mib",
+              "db_names": "$.database.db_names",
+              "host": "$.database.connection.host",
+              "port": "$.database.connection.port",
+              "private_host": "$.database.private_connection.host",
+              "tags": "$.database.tags",
+              "project_id": "$.database.project_id",
+              "maintenance_window": "$.database.maintenance_window",
+              "version_end_of_life": "$.database.version_end_of_life",
+              "created_at": "$.database.created_at",
+              "users": {
+                "$from": "$.database.users[*]",
+                "$select": {
+                  "name": "name",
+                  "role": "role"
+                }
+              },
+              "trusted_sources": {
+                "$from": "$.database.rules[*]",
+                "$select": {
+                  "type": "type",
+                  "value": "value"
+                }
+              },
+              "private_network_uuid": "$.database.private_network_uuid"
+            }
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_database_replicas",
+      "description": "List the read-only replicas of a database cluster: id, name, region, size, status, storage, host and creation date. Passwords and connection strings are never returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database cluster id (a UUID) from digitalocean_list_databases."
+          }
+        },
+        "required": [
+          "database_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/databases/{database_id}/replicas"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "replicas": {
+              "$from": "$.replicas[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "region": "region",
+                "size": "size",
+                "status": "status",
+                "storage_size_mib": "storage_size_mib",
+                "host": "connection.host",
+                "port": "connection.port",
+                "private_host": "private_connection.host",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_kubernetes_clusters",
+      "description": "List Kubernetes (DOKS) clusters: id, name, region, Kubernetes version, state (running, provisioning, degraded, error...), API endpoint, high availability, auto upgrade, node pools with size and node count, and tags. No kubeconfig or credentials. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Results per page (default 20, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kubernetes/clusters",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "kubernetes_clusters": {
+              "$from": "$.kubernetes_clusters[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "region": "region",
+                "version": "version",
+                "status": "status.state",
+                "status_message": "status.message",
+                "endpoint": "endpoint",
+                "ha": "ha",
+                "auto_upgrade": "auto_upgrade",
+                "node_pools": {
+                  "$from": "node_pools[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "name",
+                    "size": "size",
+                    "count": "count",
+                    "auto_scale": "auto_scale",
+                    "min_nodes": "min_nodes",
+                    "max_nodes": "max_nodes"
+                  }
+                },
+                "maintenance_policy": "maintenance_policy",
+                "tags": "tags",
+                "vpc_uuid": "vpc_uuid",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            },
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_kubernetes_cluster",
+      "description": "Read one Kubernetes cluster: version, state and message, endpoint, node pools with each node's name and status, maintenance window, high availability and auto upgrade. No kubeconfig or credentials. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cluster_id": {
+            "type": "string",
+            "description": "Cluster id (a UUID) from digitalocean_list_kubernetes_clusters."
+          }
+        },
+        "required": [
+          "cluster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kubernetes/clusters/{cluster_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "kubernetes_cluster": {
+              "id": "$.kubernetes_cluster.id",
+              "name": "$.kubernetes_cluster.name",
+              "region": "$.kubernetes_cluster.region",
+              "version": "$.kubernetes_cluster.version",
+              "status": "$.kubernetes_cluster.status.state",
+              "status_message": "$.kubernetes_cluster.status.message",
+              "endpoint": "$.kubernetes_cluster.endpoint",
+              "ha": "$.kubernetes_cluster.ha",
+              "auto_upgrade": "$.kubernetes_cluster.auto_upgrade",
+              "maintenance_policy": "$.kubernetes_cluster.maintenance_policy",
+              "tags": "$.kubernetes_cluster.tags",
+              "vpc_uuid": "$.kubernetes_cluster.vpc_uuid",
+              "created_at": "$.kubernetes_cluster.created_at",
+              "updated_at": "$.kubernetes_cluster.updated_at",
+              "node_pools": {
+                "$from": "$.kubernetes_cluster.node_pools[*]",
+                "$select": {
+                  "id": "id",
+                  "name": "name",
+                  "size": "size",
+                  "count": "count",
+                  "auto_scale": "auto_scale",
+                  "min_nodes": "min_nodes",
+                  "max_nodes": "max_nodes",
+                  "nodes": {
+                    "$from": "nodes[*]",
+                    "$select": {
+                      "name": "name",
+                      "status": "status.state",
+                      "droplet_id": "droplet_id"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_volumes",
+      "description": "List block storage volumes: id, name, size in GB, region, the Droplets they are attached to, filesystem, tags and creation date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only volumes with this name (with region when names repeat)."
+          },
+          "region": {
+            "type": "string",
+            "description": "Only volumes in this region slug, e.g. fra1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Results per page (default 20, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/volumes",
+        "queryParams": {
+          "name": "$name",
+          "region": "$region",
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "volumes": {
+              "$from": "$.volumes[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "size_gigabytes": "size_gigabytes",
+                "region": "region.slug",
+                "droplet_ids": "droplet_ids",
+                "filesystem_type": "filesystem_type",
+                "description": "description",
+                "tags": "tags",
+                "created_at": "created_at"
+              }
+            },
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_domains",
+      "description": "List the domains managed in DigitalOcean DNS: name and default TTL. Records are read with digitalocean_list_domain_records. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Results per page (default 20, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domains",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "domains": {
+              "$from": "$.domains[*]",
+              "$select": {
+                "name": "name",
+                "ttl": "ttl"
+              }
+            },
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_domain_records",
+      "description": "List the DNS records of a domain: id, type (A, AAAA, CNAME, MX, TXT, NS, SRV, CAA), name (@ for the domain itself), data, priority, port, TTL, weight, flags and tag. Filter by type, or by name (the full name, e.g. www.example.com). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_name": {
+            "type": "string",
+            "description": "Domain name as listed by digitalocean_list_domains, e.g. example.com."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CAA",
+              "CNAME",
+              "MX",
+              "NS",
+              "SOA",
+              "SRV",
+              "TXT"
+            ],
+            "description": "Only records of this type."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only records with this fully qualified name, e.g. www.example.com (use with type)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50,
+            "description": "Results per page (default 50, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        },
+        "required": [
+          "domain_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domains/{domain_name}/records",
+        "queryParams": {
+          "type": "$type",
+          "name": "$name",
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "domain_records": {
+              "$from": "$.domain_records[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "name": "name",
+                "data": "data",
+                "priority": "priority",
+                "port": "port",
+                "ttl": "ttl",
+                "weight": "weight",
+                "flags": "flags",
+                "tag": "tag"
+              }
+            },
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_create_domain_record",
+      "description": "Add a DNS record to a domain. It goes live on DigitalOcean's name servers within seconds and can redirect traffic or email for that name, so a wrong value can take a website or mail offline. Before calling, show the user the full record (type, name, value, TTL) and wait for their yes. Returns the new record with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_name": {
+            "type": "string",
+            "description": "Domain name as listed by digitalocean_list_domains, e.g. example.com."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CAA",
+              "CNAME",
+              "MX",
+              "NS",
+              "SRV",
+              "TXT"
+            ],
+            "description": "Record type."
+          },
+          "name": {
+            "type": "string",
+            "description": "Host name relative to the domain: @ for the domain itself, www for www.example.com."
+          },
+          "data": {
+            "type": "string",
+            "description": "Value: an IP address for A and AAAA, a host name for CNAME, MX and NS (ending in a dot for a name outside the domain), the text for TXT."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Priority for MX and SRV records."
+          },
+          "port": {
+            "type": "integer",
+            "description": "Port for SRV records."
+          },
+          "ttl": {
+            "type": "integer",
+            "minimum": 30,
+            "description": "Time to live in seconds (default 1800)."
+          },
+          "weight": {
+            "type": "integer",
+            "description": "Weight for SRV records."
+          },
+          "flags": {
+            "type": "integer",
+            "description": "Flags for CAA records (0 to 255)."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Tag for CAA records: issue, issuewild or iodef."
+          }
+        },
+        "required": [
+          "domain_name",
+          "type",
+          "name",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/domains/{domain_name}/records",
+        "bodyMapping": {
+          "type": "$type",
+          "name": "$name",
+          "data": "$data",
+          "priority": "$priority",
+          "port": "$port",
+          "ttl": "$ttl",
+          "weight": "$weight",
+          "flags": "$flags",
+          "tag": "$tag"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "domain_record": {
+              "id": "$.domain_record.id",
+              "type": "$.domain_record.type",
+              "name": "$.domain_record.name",
+              "data": "$.domain_record.data",
+              "priority": "$.domain_record.priority",
+              "port": "$.domain_record.port",
+              "ttl": "$.domain_record.ttl",
+              "weight": "$.domain_record.weight",
+              "flags": "$.domain_record.flags",
+              "tag": "$.domain_record.tag"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_update_domain_record",
+      "description": "Change an existing DNS record: only the fields you pass change, and the record type must be given and stay the same. The change is live within seconds and can redirect or break traffic or email for that name. Before calling, show the user the record now and the new values and wait for their yes. Returns the updated record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_name": {
+            "type": "string",
+            "description": "Domain name as listed by digitalocean_list_domains, e.g. example.com."
+          },
+          "record_id": {
+            "type": "integer",
+            "description": "Record id from digitalocean_list_domain_records."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CAA",
+              "CNAME",
+              "MX",
+              "NS",
+              "SRV",
+              "TXT"
+            ],
+            "description": "The record's current type (required by the API, cannot be changed)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Host name relative to the domain: @ for the domain itself, www for www.example.com."
+          },
+          "data": {
+            "type": "string",
+            "description": "Value: an IP address for A and AAAA, a host name for CNAME, MX and NS (ending in a dot for a name outside the domain), the text for TXT."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Priority for MX and SRV records."
+          },
+          "port": {
+            "type": "integer",
+            "description": "Port for SRV records."
+          },
+          "ttl": {
+            "type": "integer",
+            "minimum": 30,
+            "description": "Time to live in seconds (default 1800)."
+          },
+          "weight": {
+            "type": "integer",
+            "description": "Weight for SRV records."
+          },
+          "flags": {
+            "type": "integer",
+            "description": "Flags for CAA records (0 to 255)."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Tag for CAA records: issue, issuewild or iodef."
+          }
+        },
+        "required": [
+          "domain_name",
+          "record_id",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/domains/{domain_name}/records/{record_id}",
+        "bodyMapping": {
+          "type": "$type",
+          "name": "$name",
+          "data": "$data",
+          "priority": "$priority",
+          "port": "$port",
+          "ttl": "$ttl",
+          "weight": "$weight",
+          "flags": "$flags",
+          "tag": "$tag"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "domain_record": {
+              "id": "$.domain_record.id",
+              "type": "$.domain_record.type",
+              "name": "$.domain_record.name",
+              "data": "$.domain_record.data",
+              "priority": "$.domain_record.priority",
+              "port": "$.domain_record.port",
+              "ttl": "$.domain_record.ttl",
+              "weight": "$.domain_record.weight",
+              "flags": "$.domain_record.flags",
+              "tag": "$.domain_record.tag"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_delete_domain_record",
+      "description": "Delete a DNS record. The name stops resolving to that value within seconds, which can take a website or mail offline, and the record cannot be restored. Installed switched off; an administrator turns it on deliberately. Before calling, show the user the record and wait for their yes. Returns an empty answer on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_name": {
+            "type": "string",
+            "description": "Domain name as listed by digitalocean_list_domains, e.g. example.com."
+          },
+          "record_id": {
+            "type": "integer",
+            "description": "Record id from digitalocean_list_domain_records."
+          }
+        },
+        "required": [
+          "domain_name",
+          "record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/domains/{domain_name}/records/{record_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deleted": "= true"
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "digitalocean_list_firewalls",
+      "description": "List cloud firewalls: id, name, status, inbound rules (protocol, ports, allowed sources), outbound rules, the Droplets and tags they apply to and pending changes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Results per page (default 20, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/firewalls",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "firewalls": {
+              "$from": "$.firewalls[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "status": "status",
+                "inbound_rules": {
+                  "$from": "inbound_rules[*]",
+                  "$select": {
+                    "protocol": "protocol",
+                    "ports": "ports",
+                    "sources": "sources"
+                  }
+                },
+                "outbound_rules": {
+                  "$from": "outbound_rules[*]",
+                  "$select": {
+                    "protocol": "protocol",
+                    "ports": "ports",
+                    "destinations": "destinations"
+                  }
+                },
+                "droplet_ids": "droplet_ids",
+                "tags": "tags",
+                "pending_changes": "pending_changes",
+                "created_at": "created_at"
+              }
+            },
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_firewall",
+      "description": "Read one cloud firewall: its inbound and outbound rules, the Droplets and tags it applies to, status and pending changes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firewall_id": {
+            "type": "string",
+            "description": "Firewall id (a UUID) from digitalocean_list_firewalls."
+          }
+        },
+        "required": [
+          "firewall_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/firewalls/{firewall_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "firewall": {
+              "id": "$.firewall.id",
+              "name": "$.firewall.name",
+              "status": "$.firewall.status",
+              "droplet_ids": "$.firewall.droplet_ids",
+              "tags": "$.firewall.tags",
+              "pending_changes": "$.firewall.pending_changes",
+              "created_at": "$.firewall.created_at",
+              "inbound_rules": {
+                "$from": "$.firewall.inbound_rules[*]",
+                "$select": {
+                  "protocol": "protocol",
+                  "ports": "ports",
+                  "sources": "sources"
+                }
+              },
+              "outbound_rules": {
+                "$from": "$.firewall.outbound_rules[*]",
+                "$select": {
+                  "protocol": "protocol",
+                  "ports": "ports",
+                  "destinations": "destinations"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_list_load_balancers",
+      "description": "List load balancers: id, name, public IP, status, region, size, forwarding rules (ports and protocols), health check, target Droplets or tag and HTTPS redirect. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Results per page (default 20, up to 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1. meta.total is the number of results; links.pages.next is present while there are more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/load_balancers",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "load_balancers": {
+              "$from": "$.load_balancers[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "ip": "ip",
+                "status": "status",
+                "region": "region.slug",
+                "type": "type",
+                "size_unit": "size_unit",
+                "forwarding_rules": {
+                  "$from": "forwarding_rules[*]",
+                  "$select": {
+                    "entry_protocol": "entry_protocol",
+                    "entry_port": "entry_port",
+                    "target_protocol": "target_protocol",
+                    "target_port": "target_port",
+                    "certificate_id": "certificate_id",
+                    "tls_passthrough": "tls_passthrough"
+                  }
+                },
+                "health_check": "health_check",
+                "droplet_ids": "droplet_ids",
+                "tag": "tag",
+                "redirect_http_to_https": "redirect_http_to_https",
+                "vpc_uuid": "vpc_uuid",
+                "created_at": "created_at"
+              }
+            },
+            "total": "$.meta.total",
+            "next_page": "$.links.pages.next"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_load_balancer",
+      "description": "Read one load balancer: IP, status, region, size, forwarding rules, health check, sticky sessions, target Droplets or tag and HTTPS redirect. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lb_id": {
+            "type": "string",
+            "description": "Load balancer id (a UUID) from digitalocean_list_load_balancers."
+          }
+        },
+        "required": [
+          "lb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/load_balancers/{lb_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "load_balancer": {
+              "id": "$.load_balancer.id",
+              "name": "$.load_balancer.name",
+              "ip": "$.load_balancer.ip",
+              "status": "$.load_balancer.status",
+              "region": "$.load_balancer.region.slug",
+              "type": "$.load_balancer.type",
+              "size_unit": "$.load_balancer.size_unit",
+              "health_check": "$.load_balancer.health_check",
+              "droplet_ids": "$.load_balancer.droplet_ids",
+              "tag": "$.load_balancer.tag",
+              "redirect_http_to_https": "$.load_balancer.redirect_http_to_https",
+              "vpc_uuid": "$.load_balancer.vpc_uuid",
+              "created_at": "$.load_balancer.created_at",
+              "forwarding_rules": {
+                "$from": "$.load_balancer.forwarding_rules[*]",
+                "$select": {
+                  "entry_protocol": "entry_protocol",
+                  "entry_port": "entry_port",
+                  "target_protocol": "target_protocol",
+                  "target_port": "target_port",
+                  "certificate_id": "certificate_id",
+                  "tls_passthrough": "tls_passthrough"
+                }
+              },
+              "sticky_sessions": "$.load_balancer.sticky_sessions"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_droplet_cpu_metrics",
+      "description": "Read CPU metrics of a Droplet for a time window: one series per CPU mode (user, system, idle, iowait...) with [unix time, value] pairs. The values are cumulative CPU seconds, so usage is the change between two points: busy share = 1 - (idle change / total change of all modes). Needs the metrics agent on the Droplet (monitoring enabled). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "host_id": {
+            "type": "string",
+            "description": "Droplet id as text, from digitalocean_list_droplets."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the window, Unix time in seconds, e.g. 1760486400."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the window, Unix time in seconds. Keep windows short (hours) for fine detail."
+          }
+        },
+        "required": [
+          "host_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/monitoring/metrics/droplet/cpu",
+        "queryParams": {
+          "host_id": "$host_id",
+          "start": "$start",
+          "end": "$end"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "status": "$.status",
+            "resultType": "$.data.resultType",
+            "series": {
+              "$from": "$.data.result[*]",
+              "$select": {
+                "labels": "metric",
+                "values": "values"
+              }
+            }
+          },
+          "maxBytes": 50000
+        }
+      }
+    },
+    {
+      "name": "digitalocean_get_droplet_bandwidth_metrics",
+      "description": "Read network bandwidth of a Droplet for a time window, in megabits per second, as [unix time, value] pairs, for the public or private interface and inbound or outbound traffic. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "host_id": {
+            "type": "string",
+            "description": "Droplet id as text, from digitalocean_list_droplets."
+          },
+          "interface": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "public or private network interface."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound"
+            ],
+            "description": "inbound or outbound traffic."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the window, Unix time in seconds, e.g. 1760486400."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the window, Unix time in seconds. Keep windows short (hours) for fine detail."
+          }
+        },
+        "required": [
+          "host_id",
+          "interface",
+          "direction",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/monitoring/metrics/droplet/bandwidth",
+        "queryParams": {
+          "host_id": "$host_id",
+          "interface": "$interface",
+          "direction": "$direction",
+          "start": "$start",
+          "end": "$end"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "status": "$.status",
+            "resultType": "$.data.resultType",
+            "series": {
+              "$from": "$.data.result[*]",
+              "$select": {
+                "labels": "metric",
+                "values": "values"
+              }
+            }
+          },
+          "maxBytes": 50000
+        }
+      }
+    }
+  ]
+}

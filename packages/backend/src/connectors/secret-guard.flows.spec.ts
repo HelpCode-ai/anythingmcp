@@ -2,6 +2,7 @@ import { ConnectorsController } from './connectors.controller';
 import { ToolsController } from './tools.controller';
 import { CurlParser } from './parsers/curl.parser';
 import { PostmanParser } from './parsers/postman.parser';
+import { HarParser } from './parsers/har.parser';
 import { AdaptersService } from '../adapters/adapters.service';
 import { ConnectorSetupService } from '../adapters/connector-setup.service';
 import { getAdapter } from '../adapters/catalog';
@@ -30,7 +31,7 @@ function noSecret(value: unknown): void {
   expect(text).not.toContain(GOOGLE);
 }
 
-function buildConnectors(stored: Record<string, any> = {}) {
+function buildConnectors(stored: Record<string, any> = {}, overrides: { harParser?: any } = {}) {
   const connector = {
     id: 'c1',
     name: 'Telegram',
@@ -71,6 +72,7 @@ function buildConnectors(stored: Record<string, any> = {}) {
     {} as any,
     new PostmanParser(),
     new CurlParser(),
+    overrides.harParser ?? ({} as any),
     {} as any,
     {} as any,
     {} as any,
@@ -232,6 +234,80 @@ describe('imports', () => {
     const created = prisma.mcpTool.create.mock.calls[0][0].data;
     expect(created.name).toBe('get_me');
     expect(created.description).toBe('GET /bot{{TELEGRAM_BOT_TOKEN}}/getMe');
+    noSecret(created);
+  });
+
+  it('HAR: captured headers, query and nested body credentials are dropped, never promoted to a connector variable', async () => {
+    const { controller, prisma, connectorsService } = buildConnectors(
+      { baseUrl: 'https://api.example.com' },
+      { harParser: new HarParser() },
+    );
+    const har = {
+      log: {
+        version: '1.2',
+        entries: [
+          {
+            request: {
+              method: 'POST',
+              url: `https://api.example.com/profile?key=${GOOGLE}`,
+              headers: [
+                { name: 'Cookie', value: 'session=abc' },
+                { name: 'Authorization', value: `Bearer ${TG}` },
+                { name: 'Ocp-Apim-Subscription-Key', value: 'abcdef0123456789abcdef0123456789' },
+                { name: 'X-Custom', value: 'Bearer abcDEF1234567890xyzLongEnough' },
+              ],
+              queryString: [{ name: 'key', value: GOOGLE }],
+              postData: {
+                mimeType: 'application/json',
+                text: JSON.stringify({ user: { name: 'bob', password: 'hunter2' } }),
+              },
+            },
+          },
+        ],
+      },
+    };
+    // A HAR is the user's own browser session, not a hand-typed secret: a
+    // captured credential must be dropped outright, never turned into a
+    // connector-wide variable the way cURL/Postman/JSON imports do above.
+    const out: any = await controller.importTools(req(), 'c1', { source: 'har', content: JSON.stringify(har) } as any);
+    expect(connectorsService.addEnvVars).not.toHaveBeenCalled();
+    expect(out.secretsMoved).toBeUndefined();
+
+    const created = prisma.mcpTool.create.mock.calls[0][0].data;
+    expect(created.endpointMapping.headers).toBeUndefined();
+    expect(created.endpointMapping.queryParams).toBeUndefined();
+    expect(created.parameters.properties.user_name.default).toBe('bob');
+    expect(created.parameters.properties.user_password.default).toBeUndefined();
+    noSecret(created);
+    const serialized = JSON.stringify(created);
+    expect(serialized).not.toContain(TG);
+    expect(serialized).not.toContain(GOOGLE);
+    expect(serialized).not.toContain('hunter2');
+  });
+
+  it('HAR: a token in the request path moves into a variable, as with cURL', async () => {
+    const { controller, prisma, connectorsService } = buildConnectors(
+      { baseUrl: 'https://api.telegram.org' },
+      { harParser: new HarParser() },
+    );
+    const har = {
+      log: {
+        entries: [
+          {
+            request: {
+              method: 'POST',
+              url: `https://api.telegram.org/bot${TG}/sendMessage`,
+              headers: [],
+              postData: { mimeType: 'application/json', text: '{"chat_id":"1","text":"hi"}' },
+            },
+          },
+        ],
+      },
+    };
+    await controller.importTools(req(), 'c1', { source: 'har', content: JSON.stringify(har) } as any);
+    const created = prisma.mcpTool.create.mock.calls[0][0].data;
+    expect(created.endpointMapping.path).toBe('/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage');
+    expect(connectorsService.addEnvVars).toHaveBeenCalledWith('c1', { TELEGRAM_BOT_TOKEN: TG });
     noSecret(created);
   });
 

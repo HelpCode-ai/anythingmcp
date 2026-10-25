@@ -1,0 +1,1036 @@
+{
+  "slug": "onesignal",
+  "name": "OneSignal",
+  "description": "Let your AI work with OneSignal: review sent push, email and SMS messages with their delivery results and outcomes, look up segments, users and templates, and send or schedule messages, cancel them, create segments and update user tags after you confirm.",
+  "instructions": "## OneSignal\nThis connector works with one **OneSignal** app (push notifications, email, SMS and in-app messaging) through the OneSignal REST API with an App API key: the app, its messages and delivery results, outcomes, segments, users and templates; it can send push, email and SMS, cancel scheduled messages, create segments and update user tags.\n\n**Setup (about 3 minutes)**\n1. In OneSignal open the app, then **Settings, Keys & IDs**. Copy the **App ID** (a UUID) into `ONESIGNAL_APP_ID`.\n2. On the same page click **Add Key** (App API keys), give it a name and create it. The value starts with `os_v2_app_` and is shown only once: paste it into `ONESIGNAL_APP_API_KEY`. The key works only for this app; for another app, install the connector again with that app's ID and key.\n3. Install. The connector sends the key as `Authorization: Key <key>`.\n\nThe key acts for the whole app, not for one person: whoever uses this connector sees its users and can send to its audience if the send tools are on. Share the MCP server only with people allowed to do that.\n\n**How to work**\n1. Check the setup: `onesignal_view_app` (name, subscription counts).\n2. Results: `onesignal_list_messages`, `onesignal_view_message` (with outcomes on request), `onesignal_view_outcomes` for app-wide clicks, confirmed deliveries, sessions and custom outcomes, and `onesignal_export_message_history` for a CSV of who received or clicked a message (POST, but only reads).\n3. Audience: `onesignal_list_segments` and `onesignal_view_user` (by external_id or another alias).\n4. Content: `onesignal_list_templates` and `onesignal_view_template`.\n5. Sending: `onesignal_send_push`, `onesignal_send_email` and `onesignal_send_sms` send real messages. Target segments by name (included_segments, e.g. \"Subscribed Users\") or users by alias (include_aliases with target_channel). Show the content, the audience and the time first and call only after the user confirms; for a segment or more than one recipient wait for an explicit \"yes, send\". Use send_after to schedule and `onesignal_cancel_message` to stop a scheduled message.\n6. Other writes, each only after the user confirms: `onesignal_create_segment` and `onesignal_update_user` (tags, language, timezone, country).\n7. `onesignal_delete_user` deletes a user for good and is installed switched off; an administrator turns it on deliberately.\n\nA send answers with the message id; an empty id means nobody matched the targeting (the errors list says why, for example \"All included players are not subscribed\").\n\n**Common errors**\n- 401 \"Access denied\": the key is wrong, deleted or rotated, or belongs to another app than `ONESIGNAL_APP_ID`.\n- 400 \"Failed to parse app_id\": the App ID is not a valid UUID; copy it from Keys & IDs.\n- 400 on a send: content or targeting is invalid, e.g. no English content, or segments combined with aliases.\n- 403: the key is restricted (IP allowlist) or the plan does not include the feature.\n- 429: OneSignal's rate limit is reached; wait and retry.\n\n**Out of scope here**: organization-level endpoints (all apps, creating apps, API key management, audit logs), subscriptions and aliases management, Live Activities, inbox messages, journeys, CSV exports of all subscriptions and custom events.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "onesignal",
+  "docsUrl": "https://documentation.onesignal.com/reference/rest-api-overview",
+  "prerequisites": "Access to the OneSignal app's Settings, Keys & IDs page to copy the App ID and create an App API key. About 3 minutes.",
+  "requiredEnvVars": [
+    "ONESIGNAL_APP_ID",
+    "ONESIGNAL_APP_API_KEY"
+  ],
+  "envVarMeta": {
+    "ONESIGNAL_APP_ID": {
+      "label": "App ID",
+      "kind": "setting",
+      "help": "OneSignal, your app, Settings, Keys & IDs: the App ID, a UUID.",
+      "link": "https://documentation.onesignal.com/docs/en/keys-and-ids",
+      "example": "2c1f7a8e-5b3d-4e6f-9a0b-1c2d3e4f5a6b",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "Paste the App ID from Keys & IDs: a UUID such as 2c1f7a8e-5b3d-4e6f-9a0b-1c2d3e4f5a6b."
+    },
+    "ONESIGNAL_APP_API_KEY": {
+      "label": "App API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Settings, Keys & IDs, Add Key. The value starts with os_v2_app_ and is shown only once. Paste the key alone, without the Key prefix.",
+      "link": "https://documentation.onesignal.com/docs/en/keys-and-ids#app-api-key",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste the App API key as OneSignal shows it (it starts with os_v2_app_), without spaces or a Key prefix."
+    }
+  },
+  "verifyHints": {
+    "400": "OneSignal could not read the App ID. Copy the App ID (a UUID) from Settings, Keys & IDs.",
+    "401": "OneSignal refused the App API key: it is wrong, rotated or deleted, or it belongs to a different app than the App ID.",
+    "403": "OneSignal refused this key for the request, for example because of the key's IP allowlist.",
+    "429": "OneSignal's rate limit is reached. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "onesignal_view_app"
+  },
+  "connector": {
+    "name": "OneSignal REST API",
+    "type": "REST",
+    "baseUrl": "https://api.onesignal.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Key {{ONESIGNAL_APP_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "onesignal_view_app",
+      "description": "Get the OneSignal app this connector is set up for: id, name, total and messageable subscriptions, created and updated times and organization. Push credentials are left out. Also checks that the App ID and the key belong together. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{{ONESIGNAL_APP_ID}}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "players": "$.players",
+            "messageable_players": "$.messageable_players",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "organization_id": "$.organization_id",
+            "site_name": "$.site_name",
+            "chrome_web_origin": "$.chrome_web_origin"
+          }
+        }
+      }
+    },
+    {
+      "name": "onesignal_list_messages",
+      "description": "List the app's messages (push, email, SMS), newest first, 50 at most per page: id, name, contents or subject, segments, schedule, completion, delivery counts (successful, failed, errored, converted, received) and per-platform stats. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Messages per page, up to 50. Default 20.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Messages to skip, for the next page."
+          },
+          "kind": {
+            "type": "integer",
+            "description": "Only messages created this way: 0 dashboard, 1 API, 3 automated (journeys). Default all.",
+            "enum": [
+              0,
+              1,
+              3
+            ]
+          },
+          "template_id": {
+            "type": "string",
+            "description": "Only messages that used this template."
+          },
+          "time_offset": {
+            "type": "string",
+            "description": "Start from this time (ISO 8601) or the next_time_offset token of the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notifications",
+        "queryParams": {
+          "app_id": "{{ONESIGNAL_APP_ID}}",
+          "limit": "$limit",
+          "offset": "$offset",
+          "kind": "$kind",
+          "template_id": "$template_id",
+          "time_offset": "$time_offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "total_count": "$.total_count",
+            "offset": "$.offset",
+            "limit": "$.limit",
+            "next_time_offset": "$.next_time_offset",
+            "notifications": {
+              "$from": "$.notifications[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "headings": "headings",
+                "contents": "contents",
+                "email_subject": "email_subject",
+                "included_segments": "included_segments",
+                "excluded_segments": "excluded_segments",
+                "template_id": "template_id",
+                "queued_at": "queued_at",
+                "send_after": "send_after",
+                "completed_at": "completed_at",
+                "canceled": "canceled",
+                "successful": "successful",
+                "failed": "failed",
+                "errored": "errored",
+                "converted": "converted",
+                "received": "received",
+                "remaining": "remaining",
+                "platform_delivery_stats": "platform_delivery_stats",
+                "outcomes": "outcomes",
+                "throttle_rate_per_minute": "throttle_rate_per_minute",
+                "url": "url"
+              }
+            }
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "onesignal_view_message",
+      "description": "Get one OneSignal message with its content, targeting, schedule, delivery counts, per-platform stats and, on request, outcomes (clicks, confirmed deliveries, session counts or custom outcomes). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id (UUID) from onesignal_list_messages or a send."
+          },
+          "outcome_names": {
+            "type": "string",
+            "description": "Outcomes to include, comma-separated, each with .count or .sum, e.g. os__click.count,os__confirmed_delivery.count,Purchase.sum."
+          },
+          "outcome_time_range": {
+            "type": "string",
+            "description": "Time range of the outcomes: 1h, 1d or 1mo.",
+            "enum": [
+              "1h",
+              "1d",
+              "1mo"
+            ]
+          },
+          "outcome_attribution": {
+            "type": "string",
+            "description": "direct, influenced, unattributed or total (default).",
+            "enum": [
+              "direct",
+              "influenced",
+              "unattributed",
+              "total"
+            ]
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notifications/{message_id}",
+        "queryParams": {
+          "app_id": "{{ONESIGNAL_APP_ID}}",
+          "outcome_names": "$outcome_names",
+          "outcome_time_range": "$outcome_time_range",
+          "outcome_attribution": "$outcome_attribution"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "name": "name",
+            "headings": "headings",
+            "contents": "contents",
+            "email_subject": "email_subject",
+            "included_segments": "included_segments",
+            "excluded_segments": "excluded_segments",
+            "template_id": "template_id",
+            "queued_at": "queued_at",
+            "send_after": "send_after",
+            "completed_at": "completed_at",
+            "canceled": "canceled",
+            "successful": "successful",
+            "failed": "failed",
+            "errored": "errored",
+            "converted": "converted",
+            "received": "received",
+            "remaining": "remaining",
+            "platform_delivery_stats": "platform_delivery_stats",
+            "outcomes": "outcomes",
+            "throttle_rate_per_minute": "throttle_rate_per_minute",
+            "url": "url",
+            "email_body": "$.email_body"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "onesignal_view_outcomes",
+      "description": "Get the app's outcome totals for the last hour, day or month: clicks (os__click.count), confirmed deliveries (os__confirmed_delivery.count), sessions (os__session_duration.count) or your custom outcomes, by attribution and platform. Outcomes are kept about 30 days. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outcome_names": {
+            "type": "string",
+            "description": "Comma-separated outcomes with .count or .sum. Default: os__click.count,os__confirmed_delivery.count,os__session_duration.count.",
+            "default": "os__click.count,os__confirmed_delivery.count,os__session_duration.count"
+          },
+          "outcome_time_range": {
+            "type": "string",
+            "description": "1h (default), 1d or 1mo.",
+            "enum": [
+              "1h",
+              "1d",
+              "1mo"
+            ]
+          },
+          "outcome_platforms": {
+            "type": "string",
+            "description": "Comma-separated device types: 0 iOS, 1 Android, 2 Amazon, 5 Chrome, 8 Firefox, 11 Email, 14 SMS, 17 Safari. Default all."
+          },
+          "outcome_attribution": {
+            "type": "string",
+            "description": "direct, influenced, unattributed or total (default).",
+            "enum": [
+              "direct",
+              "influenced",
+              "unattributed",
+              "total"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{{ONESIGNAL_APP_ID}}/outcomes",
+        "queryParams": {
+          "outcome_names": "$outcome_names",
+          "outcome_time_range": "$outcome_time_range",
+          "outcome_platforms": "$outcome_platforms",
+          "outcome_attribution": "$outcome_attribution"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "outcomes": "$.outcomes"
+          }
+        }
+      }
+    },
+    {
+      "name": "onesignal_export_message_history",
+      "description": "Start an export of who received (events sent) or clicked (events clicked) one message: OneSignal builds a CSV file and returns its download URL (destination_url), optionally also emailing it. Sent events exist only for messages to 1,000 or more recipients. Sent as a POST but only reads. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id (UUID) from onesignal_list_messages."
+          },
+          "events": {
+            "type": "string",
+            "description": "sent or clicked.",
+            "enum": [
+              "sent",
+              "clicked"
+            ],
+            "default": "sent"
+          },
+          "email": {
+            "type": "string",
+            "description": "Optional address that also gets the report by email."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notifications/{message_id}/history",
+        "bodyMapping": {
+          "app_id": "{{ONESIGNAL_APP_ID}}",
+          "events": "$events",
+          "email": "$email"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "success": "$.success",
+            "destination_url": "$.destination_url"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onesignal_list_segments",
+      "description": "List the app's segments: id, name, description, created and updated times, read-only and active flags. Use the names in included_segments when sending. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Segments to skip, for the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Segments per page, up to 300 (default)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{{ONESIGNAL_APP_ID}}/segments",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "total_count": "$.total_count",
+            "offset": "$.offset",
+            "limit": "$.limit",
+            "segments": "$.segments"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "onesignal_view_user",
+      "description": "Get a OneSignal user by alias (usually external_id): identity aliases, properties (tags, language, timezone, country, first and last active) and subscriptions (push, email, SMS) with their enabled state. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alias_label": {
+            "type": "string",
+            "description": "Alias that identifies the user: external_id (your user id, most common), onesignal_id or a custom alias label.",
+            "default": "external_id"
+          },
+          "alias_id": {
+            "type": "string",
+            "description": "The value of that alias for the user, e.g. the external_id."
+          }
+        },
+        "required": [
+          "alias_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{{ONESIGNAL_APP_ID}}/users/by/{alias_label}/{alias_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "identity": "$.identity",
+            "properties": "$.properties",
+            "subscriptions": "$.subscriptions"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "onesignal_list_templates",
+      "description": "List the app's message templates: id, name, created and updated times, optionally only push, email or SMS ones. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Only templates of this channel.",
+            "enum": [
+              "push",
+              "email",
+              "sms"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Templates per page, up to 50 (default)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Templates to skip, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates",
+        "queryParams": {
+          "app_id": "{{ONESIGNAL_APP_ID}}",
+          "channel": "$channel",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "total_count": "$.total_count",
+            "offset": "$.offset",
+            "limit": "$.limit",
+            "templates": "$.templates"
+          }
+        }
+      }
+    },
+    {
+      "name": "onesignal_view_template",
+      "description": "Get one OneSignal template with its channel and content (headings, contents, email subject and body, platforms). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "Template id (UUID) from onesignal_list_templates."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates/{template_id}",
+        "queryParams": {
+          "app_id": "{{ONESIGNAL_APP_ID}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "onesignal_send_push",
+      "description": "Send a push notification with OneSignal to segments (included_segments) or to specific users by alias (include_aliases with target_channel push), now or at send_after. This sends real messages to real people. Before calling, show the user the content, the audience and the time, and call only after the user confirms; for a segment or more than one recipient the user must answer with an explicit \"yes, send\". Returns the message id (empty id: nobody matched).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contents": {
+            "type": "object",
+            "description": "Message text by language; English is required: {\"en\": \"Your order shipped\", \"de\": \"...\"}."
+          },
+          "headings": {
+            "type": "object",
+            "description": "Title by language: {\"en\": \"Order update\"}. Required for web push."
+          },
+          "included_segments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Send to these segments by name, e.g. [\"Subscribed Users\"] or [\"Active Users\"]. Users in several segments get it once."
+          },
+          "excluded_segments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Leave out users in these segments."
+          },
+          "include_aliases": {
+            "type": "object",
+            "description": "Send to specific users instead of segments: {\"external_id\": [\"u1\", \"u2\"]} (up to 20,000). Do not combine with segments."
+          },
+          "send_after": {
+            "type": "string",
+            "description": "Schedule for later, e.g. 2026-10-20T09:00:00Z. Leave out to send now; a scheduled message can be stopped with onesignal_cancel_message."
+          },
+          "name": {
+            "type": "string",
+            "description": "Internal name of the message, shown in OneSignal reports only."
+          },
+          "template_id": {
+            "type": "string",
+            "description": "Use this template (from onesignal_list_templates) for the content."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Data for the template's personalization tags."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A unique key (UUID) so a retried request is not sent twice."
+          },
+          "target_channel": {
+            "type": "string",
+            "description": "push. Needed with include_aliases.",
+            "enum": [
+              "push"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "https URL opened when the notification is tapped."
+          },
+          "data": {
+            "type": "object",
+            "description": "Extra data passed to the app with the notification."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notifications",
+        "bodyMapping": {
+          "app_id": "{{ONESIGNAL_APP_ID}}",
+          "contents": "$contents",
+          "headings": "$headings",
+          "included_segments": "$included_segments",
+          "excluded_segments": "$excluded_segments",
+          "include_aliases": "$include_aliases",
+          "target_channel": "$target_channel",
+          "send_after": "$send_after",
+          "name": "$name",
+          "template_id": "$template_id",
+          "custom_data": "$custom_data",
+          "idempotency_key": "$idempotency_key",
+          "url": "$url",
+          "data": "$data"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "external_id": "$.external_id",
+            "errors": "$.errors",
+            "warnings": "$.warnings"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "onesignal_send_email",
+      "description": "Send an email with OneSignal to segments (included_segments) or to specific users by alias (include_aliases with target_channel email), now or at send_after. This sends real messages to real people. Before calling, show the user the content, the audience and the time, and call only after the user confirms; for a segment or more than one recipient the user must answer with an explicit \"yes, send\". Returns the message id (empty id: nobody matched).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_subject": {
+            "type": "string",
+            "description": "Subject of the email."
+          },
+          "email_body": {
+            "type": "string",
+            "description": "HTML body of the email. Not needed with template_id."
+          },
+          "included_segments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Send to these segments by name, e.g. [\"Subscribed Users\"] or [\"Active Users\"]. Users in several segments get it once."
+          },
+          "excluded_segments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Leave out users in these segments."
+          },
+          "include_aliases": {
+            "type": "object",
+            "description": "Send to specific users instead of segments: {\"external_id\": [\"u1\", \"u2\"]} (up to 20,000). Do not combine with segments."
+          },
+          "send_after": {
+            "type": "string",
+            "description": "Schedule for later, e.g. 2026-10-20T09:00:00Z. Leave out to send now; a scheduled message can be stopped with onesignal_cancel_message."
+          },
+          "name": {
+            "type": "string",
+            "description": "Internal name of the message, shown in OneSignal reports only."
+          },
+          "template_id": {
+            "type": "string",
+            "description": "Use this template (from onesignal_list_templates) for the content."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Data for the template's personalization tags."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A unique key (UUID) so a retried request is not sent twice."
+          },
+          "target_channel": {
+            "type": "string",
+            "description": "email. Needed with include_aliases.",
+            "enum": [
+              "email"
+            ]
+          },
+          "email_to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Send to these addresses directly (up to 20,000). Do not combine with segments or aliases."
+          },
+          "email_from_name": {
+            "type": "string",
+            "description": "Sender name; default from the app's email settings."
+          },
+          "email_from_address": {
+            "type": "string",
+            "description": "Sender address on a verified domain; default from the app's email settings."
+          },
+          "email_reply_to_address": {
+            "type": "string",
+            "description": "Reply-to address."
+          },
+          "email_preheader": {
+            "type": "string",
+            "description": "Preview text shown after the subject."
+          },
+          "include_unsubscribed": {
+            "type": "boolean",
+            "description": "Also send to unsubscribed addresses; only for required account or transactional emails. Default false."
+          }
+        },
+        "required": [
+          "email_subject"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notifications",
+        "bodyMapping": {
+          "app_id": "{{ONESIGNAL_APP_ID}}",
+          "email_subject": "$email_subject",
+          "email_body": "$email_body",
+          "included_segments": "$included_segments",
+          "excluded_segments": "$excluded_segments",
+          "include_aliases": "$include_aliases",
+          "target_channel": "$target_channel",
+          "email_to": "$email_to",
+          "send_after": "$send_after",
+          "name": "$name",
+          "template_id": "$template_id",
+          "custom_data": "$custom_data",
+          "idempotency_key": "$idempotency_key",
+          "email_from_name": "$email_from_name",
+          "email_from_address": "$email_from_address",
+          "email_reply_to_address": "$email_reply_to_address",
+          "email_preheader": "$email_preheader",
+          "include_unsubscribed": "$include_unsubscribed"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "external_id": "$.external_id",
+            "errors": "$.errors",
+            "warnings": "$.warnings"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "onesignal_send_sms",
+      "description": "Send an SMS with OneSignal to segments (included_segments) or to specific users by alias (include_aliases with target_channel sms), now or at send_after. This sends real messages to real people. Before calling, show the user the content, the audience and the time, and call only after the user confirms; for a segment or more than one recipient the user must answer with an explicit \"yes, send\". Returns the message id (empty id: nobody matched).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contents": {
+            "type": "object",
+            "description": "Message text by language; English is required: {\"en\": \"Your code is 123456\"}. Long texts are split and billed as several SMS."
+          },
+          "included_segments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Send to these segments by name, e.g. [\"Subscribed Users\"] or [\"Active Users\"]. Users in several segments get it once."
+          },
+          "excluded_segments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Leave out users in these segments."
+          },
+          "include_aliases": {
+            "type": "object",
+            "description": "Send to specific users instead of segments: {\"external_id\": [\"u1\", \"u2\"]} (up to 20,000). Do not combine with segments."
+          },
+          "send_after": {
+            "type": "string",
+            "description": "Schedule for later, e.g. 2026-10-20T09:00:00Z. Leave out to send now; a scheduled message can be stopped with onesignal_cancel_message."
+          },
+          "name": {
+            "type": "string",
+            "description": "Internal name of the message, shown in OneSignal reports only."
+          },
+          "template_id": {
+            "type": "string",
+            "description": "Use this template (from onesignal_list_templates) for the content."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Data for the template's personalization tags."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A unique key (UUID) so a retried request is not sent twice."
+          },
+          "target_channel": {
+            "type": "string",
+            "description": "sms. Always sent for SMS.",
+            "enum": [
+              "sms"
+            ],
+            "default": "sms"
+          },
+          "include_phone_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Send to these numbers directly, E.164 format such as +4915112345678. Do not combine with segments or aliases."
+          },
+          "sms_from": {
+            "type": "string",
+            "description": "Sender phone number or messaging service id; default from the app's SMS settings."
+          },
+          "sms_media_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Image URLs to send as MMS (extra cost)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notifications",
+        "bodyMapping": {
+          "app_id": "{{ONESIGNAL_APP_ID}}",
+          "contents": "$contents",
+          "included_segments": "$included_segments",
+          "excluded_segments": "$excluded_segments",
+          "include_aliases": "$include_aliases",
+          "target_channel": "$target_channel",
+          "include_phone_numbers": "$include_phone_numbers",
+          "send_after": "$send_after",
+          "name": "$name",
+          "template_id": "$template_id",
+          "custom_data": "$custom_data",
+          "idempotency_key": "$idempotency_key",
+          "sms_from": "$sms_from",
+          "sms_media_urls": "$sms_media_urls"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "external_id": "$.external_id",
+            "errors": "$.errors",
+            "warnings": "$.warnings"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "onesignal_cancel_message",
+      "description": "Stop a scheduled or still outgoing OneSignal message; what was already delivered stays delivered. Confirm the message (show its name, content and schedule from onesignal_view_message) with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Id (UUID) of the scheduled or sending message."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/notifications/{message_id}",
+        "queryParams": {
+          "app_id": "{{ONESIGNAL_APP_ID}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "success": "$.success"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "onesignal_create_segment",
+      "description": "Create a segment in the OneSignal app from filters on tags, sessions, language, app version, location or country. A new segment changes nothing by itself, but can be used for sends; confirm its name and filters with the user before calling. Returns the segment id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Segment name, up to 128 characters."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description, up to 255 characters."
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Filters joined by AND unless an {\"operator\": \"OR\"} sits between them, e.g. [{\"field\": \"tag\", \"key\": \"plan\", \"relation\": \"=\", \"value\": \"pro\"}, {\"operator\": \"OR\"}, {\"field\": \"session_count\", \"relation\": \">\", \"value\": \"10\"}]. Fields: tag, last_session, first_session, session_count, session_time, language, app_version, location, country.",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "name",
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/apps/{{ONESIGNAL_APP_ID}}/segments",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "success": "$.success",
+            "id": "$.id",
+            "errors": "$.errors"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "onesignal_update_user",
+      "description": "Update a OneSignal user's properties by alias (usually external_id): set tags (string key-value pairs) and language, timezone or country. Tags drive segments and journeys, so show the user the changes and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alias_label": {
+            "type": "string",
+            "description": "Alias that identifies the user: external_id (your user id, most common), onesignal_id or a custom alias label.",
+            "default": "external_id"
+          },
+          "alias_id": {
+            "type": "string",
+            "description": "The value of that alias for the user, e.g. the external_id."
+          },
+          "tags": {
+            "type": "object",
+            "description": "Tags to set or change, string values only, no nested objects: {\"plan\": \"pro\", \"region\": \"eu\"}."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language code, ISO 639-1 lower case, e.g. de."
+          },
+          "timezone_id": {
+            "type": "string",
+            "description": "Time zone, e.g. Europe/Berlin."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code, ISO 3166-1 alpha-2 upper case, e.g. DE."
+          }
+        },
+        "required": [
+          "alias_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/apps/{{ONESIGNAL_APP_ID}}/users/by/{alias_label}/{alias_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "properties": {
+            "tags": "$tags",
+            "language": "$language",
+            "timezone_id": "$timezone_id",
+            "country": "$country"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "properties": "$.properties",
+            "errors": "$.errors"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "onesignal_delete_user",
+      "description": "Permanently delete a OneSignal user with all aliases, properties and subscriptions, by alias. Cannot be undone. Installed switched off: an administrator turns it on deliberately. Show the user with onesignal_view_user first and only call this after the user confirms the exact alias.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alias_label": {
+            "type": "string",
+            "description": "Alias that identifies the user: external_id (your user id, most common), onesignal_id or a custom alias label.",
+            "default": "external_id"
+          },
+          "alias_id": {
+            "type": "string",
+            "description": "The value of that alias for the user to delete, exactly as confirmed by the user."
+          }
+        },
+        "required": [
+          "alias_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/apps/{{ONESIGNAL_APP_ID}}/users/by/{alias_label}/{alias_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "identity": "$.identity",
+            "errors": "$.errors"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -6,7 +6,7 @@
   "category": "erp",
   "icon": "weclapp",
   "docsUrl": "https://www.weclapp.com/api/",
-  "instructions": "weclapp is a cloud ERP for small and mid-sized companies. This connector reads and writes weclapp through the REST API v2: parties (customers, suppliers, contact persons, leads), quotations, sales orders, sales invoices, articles and stock, purchase orders, tasks, comments and time records. Recurring invoices and opportunities are read-only.\n\n**Getting credentials**\n1. In weclapp, open your user menu → **My settings** → **API** and copy the API token into `WECLAPP_API_TOKEN`. Each user has one token; generating a new one invalidates the old one.\n2. Set `WECLAPP_TENANT` to the first part of your weclapp address only: for `acme.weclapp.com`, enter `acme`. Requests go to `https://acme.weclapp.com/webapp/api/v2` with the token in the `AuthenticationToken` header.\n\n**Permissions follow the user**: the token acts as the weclapp user it belongs to, so records that user's role cannot see are missing from the results. Use a user with read access to sales, CRM and articles, and write access to whatever the AI should change. A write the user's role does not allow answers 403.\n\n**Finding records**: get tools take the internal id, a numeric string such as `\"3346\"`, not the document number. To find a document by its number, filter the list tool: `orderNumber-eq=SO-1042`, `invoiceNumber-eq=RE-1042`, `quotationNumber-eq=AN-1042`, `articleNumber-eq=A5101`. Customers and suppliers both live under `/party`: filter with `customer-eq=true` or `supplier-eq=true`.\n\n**Filter syntax**: `filter` is sent as query parameters written `property-operator=value` and joined with `&`, e.g. `paymentStatus-eq=OPEN&dueDate-lt=1767225600000`. Operators: `eq`, `ne`, `lt`, `gt`, `le`, `ge`, `like`, `ilike`, `in`, `notin`, `null`, `notnull`. `-null` and `-notnull` take an empty value (`customerNumber-notnull=`); `-in` takes a bracketed list. A property name that does not exist returns HTTP 400, in `filter` and in `properties` alike. Sales documents have no `customerName`: the name is in `recordAddress`, the link is `customerId`.\n\n**Data formats**: dates are Unix epoch milliseconds, in responses and in filters (2026-01-01 00:00 UTC is `1767225600000`). Prices and quantities come back as decimal strings such as `\"119.00\"`. Unpaid invoices are `paymentStatus-eq=OPEN`, cancelled ones `status-eq=CANCELLED`, credit notes `salesInvoiceType-eq=CREDIT_NOTE`: leave credit notes out when adding up revenue.\n\n**Pagination and limits**: `page` starts at 1; `pageSize` defaults to 100 and is capped at 1000. Fetch the next page until a page returns fewer rows than `pageSize`, and pass only the fields you need in `properties` on large lists. weclapp has no fixed rate limit, but it queues requests under heavy load and answers HTTP 429 after 30 seconds in the queue: wait, then retry.\n\n**Recurring invoices**: `/recurringInvoice` is not part of weclapp's published OpenAPI file. If `weclapp_list_recurring_invoices` returns 404 on a tenant, the resource is not available there; invoices generated from a recurring invoice still carry its `recurringInvoiceId`.\n\n**Writing to weclapp**: every write tool changes the live ERP. Read the record first, tell the user what will change, and wait for their confirmation. The delete tools are installed switched off. If a write tool named here is missing, the connector was set up before it existed: ask the user to apply the connector update in AnythingMCP.\n- Partial updates: the `weclapp_edit_*` tools send `PUT` with `ignoreMissingProperties=true`, weclapp's documented way to change single fields, so fields you leave out keep their values. Send only what changes: read-only fields such as `createdDate`, `statusHistory` or amounts are refused with HTTP 400 (\"property ... is read-only\"), so never copy a whole record back.\n- Lists are replaced, not merged: when you send `addresses`, `contacts`, `partyEmailAddresses`, `orderItems`, `quotationItems` or `articlePrices`, include every entry to keep by its `id` (the id alone keeps it unchanged) and new entries without an id. An entry you leave out is deleted.\n- Optimistic locking: pass the record's `version` from your last read and weclapp refuses the change with HTTP 409 \"optimistic lock error\" if someone changed it meanwhile; read again and retry. Without `version` the check is skipped.\n- `dryRun: true` on create, edit and delete tools makes weclapp validate the request and answer without saving.\n- References are ids (`customerId`, `responsibleUserId`, `unitId`, `warehouseId`...). `weclapp_list_reference_data` lists users, warehouses, storage places, units, taxes, currencies, payment terms and the other lists those ids point to.\n- Decimals are sent as strings (`\"quantity\": \"2\"`, `\"unitPrice\": \"119.00\"`) and dates as epoch milliseconds. A position with your own price needs `manualUnitPrice: true` next to `unitPrice`.\n- Status changes: `weclapp_set_sales_order_status` sends the status alone (weclapp refuses a reopen combined with other changes), `weclapp_cancel_sales_order` cancels or closes an order, `weclapp_set_quotation_status` uses weclapp's quotation status action. `weclapp_invoice_sales_order` creates a draft invoice from an order; every call creates another one.\n- Stock is changed by bookings (`weclapp_book_stock_in`, `weclapp_book_stock_out`), not by editing the article; they take effect at once.\n\n**Cloud reachability**: `*.weclapp.com` is publicly reachable over HTTPS.",
+  "instructions": "weclapp is a cloud ERP for small and mid-sized companies. This connector reads and writes weclapp through the REST API v2: parties (customers, suppliers, contact persons, leads), quotations, sales orders, sales invoices, articles and stock, purchase orders, tasks, comments and time records. Recurring invoices and opportunities are read-only. Open items, stock movements, production orders and the translated texts of a record are read with `weclapp_list_sales_open_items`, `weclapp_list_warehouse_stock_movements`, `weclapp_list_production_orders` and `weclapp_get_property_translations`.\n\n**Getting credentials**\n1. In weclapp, open your user menu → **My settings** → **API** and copy the API token into `WECLAPP_API_TOKEN`. Each user has one token; generating a new one invalidates the old one.\n2. Set `WECLAPP_TENANT` to the first part of your weclapp address only: for `acme.weclapp.com`, enter `acme`. Requests go to `https://acme.weclapp.com/webapp/api/v2` with the token in the `AuthenticationToken` header.\n\n**Permissions follow the user**: the token acts as the weclapp user it belongs to, so records that user's role cannot see are missing from the results. Use a user with read access to sales, CRM and articles, and write access to whatever the AI should change. A write the user's role does not allow answers 403.\n\n**Finding records**: get tools take the internal id, a numeric string such as `\"3346\"`, not the document number. To find a document by its number, filter the list tool: `orderNumber-eq=SO-1042`, `invoiceNumber-eq=RE-1042`, `quotationNumber-eq=AN-1042`, `articleNumber-eq=A5101`. Customers and suppliers both live under `/party`: filter with `customer-eq=true` or `supplier-eq=true`.\n\n**Filter syntax**: `filter` is sent as query parameters written `property-operator=value` and joined with `&`, e.g. `paymentStatus-eq=OPEN&dueDate-lt=1767225600000`. Operators: `eq`, `ne`, `lt`, `gt`, `le`, `ge`, `like`, `ilike`, `in`, `notin`, `null`, `notnull`. `-null` and `-notnull` take an empty value (`customerNumber-notnull=`); `-in` takes a bracketed list. A property name that does not exist returns HTTP 400, in `filter` and in `properties` alike. Sales documents have no `customerName`: the name is in `recordAddress`, the link is `customerId`.\n\n**Data formats**: dates are Unix epoch milliseconds, in responses and in filters (2026-01-01 00:00 UTC is `1767225600000`). Prices and quantities come back as decimal strings such as `\"119.00\"`. Unpaid invoices are `paymentStatus-eq=OPEN`, cancelled ones `status-eq=CANCELLED`, credit notes `salesInvoiceType-eq=CREDIT_NOTE`: leave credit notes out when adding up revenue.\n\n**Pagination and limits**: `page` starts at 1; `pageSize` defaults to 100 and is capped at 1000. Fetch the next page until a page returns fewer rows than `pageSize`. Leave `properties` empty: every field comes back, and a guessed field name fails the whole call with 400 \"unknown property\". When a list must be trimmed, use only the field names listed in that tool's `properties` description. weclapp has no fixed rate limit, but it queues requests under heavy load and answers HTTP 429 after 30 seconds in the queue: wait, then retry.\n\n**Recurring invoices**: `/recurringInvoice` is not part of weclapp's published OpenAPI file. If `weclapp_list_recurring_invoices` returns 404 on a tenant, the resource is not available there; invoices generated from a recurring invoice still carry its `recurringInvoiceId`.\n\n**Writing to weclapp**: every write tool changes the live ERP. Read the record first, tell the user what will change, and wait for their confirmation. The delete tools are installed switched off. If a write tool named here is missing, the connector was set up before it existed: ask the user to apply the connector update in AnythingMCP.\n- Partial updates: the `weclapp_edit_*` tools send `PUT` with `ignoreMissingProperties=true`, weclapp's documented way to change single fields, so fields you leave out keep their values. Send only what changes: read-only fields such as `createdDate`, `statusHistory` or amounts are refused with HTTP 400 (\"property ... is read-only\"), so never copy a whole record back.\n- Lists are replaced, not merged: when you send `addresses`, `contacts`, `partyEmailAddresses`, `orderItems`, `quotationItems` or `articlePrices`, include every entry to keep by its `id` (the id alone keeps it unchanged) and new entries without an id. An entry you leave out is deleted.\n- Optimistic locking: pass the record's `version` from your last read and weclapp refuses the change with HTTP 409 \"optimistic lock error\" if someone changed it meanwhile; read again and retry. Without `version` the check is skipped.\n- `dryRun: true` on create, edit and delete tools makes weclapp validate the request and answer without saving.\n- References are ids (`customerId`, `responsibleUserId`, `unitId`, `warehouseId`...). `weclapp_get_current_user` returns the token's own user. `weclapp_list_reference_data` lists users, warehouses, storage places, units, taxes, currencies, payment terms and the other lists those ids point to.\n- Decimals are sent as strings (`\"quantity\": \"2\"`, `\"unitPrice\": \"119.00\"`) and dates as epoch milliseconds. A position with your own price needs `manualUnitPrice: true` next to `unitPrice`.\n- Status changes: `weclapp_set_sales_order_status` sends the status alone (weclapp refuses a reopen combined with other changes), `weclapp_cancel_sales_order` cancels or closes an order, `weclapp_set_quotation_status` uses weclapp's quotation status action. `weclapp_invoice_sales_order` creates a draft invoice from an order; every call creates another one.\n- Single-field shortcuts: `weclapp_set_sales_invoice_responsible`, `weclapp_set_sales_order_responsible` and `weclapp_set_party_responsible` change only the responsible user. They do the same as the `weclapp_edit_*` tools with `{\"responsibleUserId\": ...}`, with less room for a wrong body.\n- Purchasing master data: `weclapp_add_supply_source` (supplier + purchase price for an article), `weclapp_add_manufacturer` and `weclapp_add_article_item_group` create records that articles and documents then reference by id.\n- Receivables: `weclapp_list_sales_open_items` lists the open items of sales invoices (filter `salesInvoiceId-eq=...`). `weclapp_set_sales_open_item_payment_state` marks one as PAID or UNPAID; it is installed switched off because it changes what customers owe, so turn it on only for users who reconcile payments, and only after the payment was checked.\n- E-mail addresses for documents: `weclapp_set_party_emails` maintains a party's `partyEmailAddresses` and picks the entry used for orders, invoices, quotations, delivery notes, dunning and purchasing. A new address takes two calls: add the entry, then assign its new id.\n- Stock is changed by bookings (`weclapp_book_stock_in`, `weclapp_book_stock_out`), not by editing the article; they take effect at once.\n\n**Cloud reachability**: `*.weclapp.com` is publicly reachable over HTTPS.",
   "requiredEnvVars": [
     "WECLAPP_TENANT",
     "WECLAPP_API_TOKEN"
@@ -36,7 +36,7 @@
   "tools": [
     {
       "name": "weclapp_list_customers",
-      "description": "List parties (customers/suppliers/contacts) from weclapp ERP. In API v2 customers and suppliers are unified under /party: pass filter='customerNumber-notnull=' to restrict to customers, or filter='supplierNumber-notnull=' for suppliers (the -null/-notnull operators take an EMPTY value, NOT '=true'). Use `properties` to limit returned fields (e.g. 'id,customerNumber,company,firstName,lastName,email') to reduce payload size.",
+      "description": "List parties (customers/suppliers/contacts) from weclapp ERP. In API v2 customers and suppliers are unified under /party: pass filter='customerNumber-notnull=' to restrict to customers, or filter='supplierNumber-notnull=' for suppliers (the -null/-notnull operators take an EMPTY value, NOT '=true'). Leave `properties` empty unless the user asks for specific fields: a guessed field name fails the call (the address, city included, is inside `addresses`).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -50,7 +50,7 @@
           },
           "properties": {
             "type": "string",
-            "description": "Comma-separated list of fields to return, e.g. 'id,customerNumber,company,firstName,lastName,email'"
+            "description": "Leave empty (the default): weclapp then returns every field, which is what almost every question needs. Set it only when the user asks for specific fields or a large list must be trimmed, and then use only names from the list below: any other name fails with 400 \"unknown property\". Top-level names only: nested objects (addresses, contacts) come back whole, and a dotted path such as addresses.city is rejected. Valid party (customers, suppliers, contacts, leads) fields (weclapp API v2): id, partyType, customer, supplier, customerNumber, supplierNumber, company, company2, salutation, firstName, lastName, email, phone, mobilePhone1, fax, website, addresses, contacts, primaryAddressId, invoiceAddressId, deliveryAddressId, responsibleUserId, customerCategoryId, customerCurrentSalesStageId, customerTermOfPaymentId, customerPaymentMethodId, customerSalesChannel, customerBlocked, customerActive, supplierActive, leadStatus, leadSourceId, leadRatingId, sectorId, vatIdentificationNumber, tags, description, createdDate, lastModifiedDate. Not party fields: city/street/zipcode (inside `addresses`), mobilePhone (`mobilePhone1`), paymentMethodId (`customerPaymentMethodId`), termOfPaymentId (`customerTermOfPaymentId`), salesChannel (`customerSalesChannel`), salesStageId (`customerCurrentSalesStageId`), contactType."
           },
           "filter": {
             "type": "string",
@@ -96,7 +96,7 @@
     },
     {
       "name": "weclapp_list_sales_orders",
-      "description": "List sales orders from weclapp ERP. Returns order numbers, amounts, status and the record address. NOTE: salesOrder has NO 'customerName' field: do not request it in `properties` (weclapp returns 400). The customer's name is in `recordAddress`; the customer link is `customerId`. Use `properties` to limit fields and `filter` to narrow results (e.g. 'orderNumber-eq=SO-1042'). Date fields are Unix epoch milliseconds (e.g. 'orderDate-gt=1767225600000').",
+      "description": "List sales orders from weclapp ERP. Returns order numbers, amounts, status and the record address. NOTE: salesOrder has NO 'customerName' field: do not request it in `properties` (weclapp returns 400). The customer's name is in `recordAddress`; the customer link is `customerId`. Use `filter` to narrow results and leave `properties` empty (e.g. 'orderNumber-eq=SO-1042'). Date fields are Unix epoch milliseconds (e.g. 'orderDate-gt=1767225600000').",
       "parameters": {
         "type": "object",
         "properties": {
@@ -110,7 +110,7 @@
           },
           "properties": {
             "type": "string",
-            "description": "Comma-separated list of fields to return"
+            "description": "Leave empty (the default): weclapp then returns every field, which is what almost every question needs. Set it only when the user asks for specific fields or a large list must be trimmed, and then use only names from the list below: any other name fails with 400 \"unknown property\". Top-level names only: nested objects (recordAddress, deliveryAddress, orderItems) come back whole, and a dotted path such as orderItems.articleNumber is rejected. Valid salesOrder fields (weclapp API v2): id, orderNumber, orderDate, status, customerId, orderNumberAtCustomer, recordAddress, invoiceAddress, deliveryAddress, orderItems, netAmount, grossAmount, netAmountInCompanyCurrency, recordCurrencyId, quotationId, invoiced, shipped, plannedDeliveryDate, plannedShippingDate, warehouseId, shipmentMethodId, defaultShippingCarrierId, paymentMethodId, termOfPaymentId, salesChannel, responsibleUserId, creatorId, commission, description, tags, createdDate, lastModifiedDate. Not sales order fields: customerNumber (filter by `customerId`), salesOrderItems (`orderItems`), shippingAddress (`deliveryAddress`), shippingCarrierId (`defaultShippingCarrierId`), currencyId (`recordCurrencyId`), quotationNumber (`quotationId`), customerPurchaseOrderNumber (`orderNumberAtCustomer`), customerContactId."
           },
           "filter": {
             "type": "string",
@@ -150,7 +150,7 @@
           },
           "properties": {
             "type": "string",
-            "description": "Comma-separated list of fields to return"
+            "description": "Leave empty (the default): weclapp then returns every field, which is what almost every question needs. Set it only when the user asks for specific fields or a large list must be trimmed, and then use only names from the list below: any other name fails with 400 \"unknown property\". Top-level names only: nested objects (recordAddress, salesInvoiceItems) come back whole, and a dotted path such as recordAddress.company is rejected. Valid salesInvoice fields (weclapp API v2): id, invoiceNumber, invoiceDate, dueDate, status, paymentStatus, paid, salesInvoiceType, customerId, recordAddress, deliveryAddress, salesInvoiceItems, netAmount, grossAmount, vatAmount, netAmountInCompanyCurrency, grossAmountInCompanyCurrency, recordCurrencyId, salesOrderId, salesOrders, quotationId, recurringInvoiceId, orderNumberAtCustomer, deliveryDate, bookingDate, cancellationNumber, dunningBlockState, paymentMethodId, termOfPaymentId, salesChannel, responsibleUserId, creatorId, commission, description, tags, createdDate, lastModifiedDate. Not invoice fields: openAmount and paidAmount (an invoice has no open amount; `paymentStatus` and `paid` say whether it is settled), customerNumber (filter by `customerId`), createdById (`creatorId`), recordCurrencyName (`recordCurrencyId`), salesOrderNumber (`salesOrderId`), dunningLevel, shipments."
           },
           "filter": {
             "type": "string",
@@ -176,7 +176,7 @@
     },
     {
       "name": "weclapp_list_articles",
-      "description": "List articles (products) from weclapp ERP. Returns article numbers, names, and stock info. Use `filter` like 'articleNumber-eq=ABC123' for SKU lookups. NOTE on prices: an article has NO direct `salesPrice`/`purchasePrice`/`lastPurchasePrice`/`averagePurchasePrice`/`valuationPrice` property (those return 400 'unknown property'). Sales prices live in the `articlePrices` sub-entity and purchase prices in `supplySources` (note: `supplySources`, not `articleSupplySources`); request those names in `properties` to get the nested price objects.",
+      "description": "List articles (products) from weclapp ERP. Returns article numbers, names, prices and stock settings (minimum and target stock; the quantity on hand is not an article field, so do not ask for stockQuantity or availableQuantity). Use `filter` like 'articleNumber-eq=ABC123' for SKU lookups. NOTE on prices: an article has NO direct `salesPrice`/`purchasePrice`/`lastPurchasePrice`/`averagePurchasePrice`/`valuationPrice` property (those return 400 'unknown property'). Sales prices live in the `articlePrices` sub-entity and purchase prices in `supplySources` (note: `supplySources`, not `articleSupplySources`); request those names in `properties` to get the nested price objects.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -190,7 +190,7 @@
           },
           "properties": {
             "type": "string",
-            "description": "Comma-separated list of fields to return"
+            "description": "Leave empty (the default): weclapp then returns every field, which is what almost every question needs. Set it only when the user asks for specific fields or a large list must be trimmed, and then use only names from the list below: any other name fails with 400 \"unknown property\". Top-level names only: nested objects (articlePrices, supplySources) come back whole, and a dotted path such as articlePrices.price is rejected. Valid article fields (weclapp API v2): id, articleNumber, name, description, shortDescription1, shortDescription2, articleType, active, unitId, ean, barcode, manufacturerPartNumber, manufacturerId, articleCategoryId, articlePrices, articleCalculationPrices, taxRateType, availableInSale, supplySources, primarySupplySourceId, minimumStockQuantity, targetStockQuantity, defaultStoragePlaces, batchNumberRequired, serialNumberRequired, productionArticle, articleNetWeight, articleGrossWeight, customsTariffNumberId, countryOfOriginCode, tags, createdDate, lastModifiedDate. Not article fields: unitName (`unitId`; the unit's name comes from weclapp_list_reference_data with resource=unit), stockQuantity, availableQuantity and availableStockQuantity (stock is not stored on the article), salesDescription, descriptionFixed."
           },
           "filter": {
             "type": "string",
@@ -216,7 +216,7 @@
     },
     {
       "name": "weclapp_get_article",
-      "description": "Get a specific article (product) by ID, including stock, pricing, and warehouse data.",
+      "description": "Get a specific article (product) by ID, including pricing, supply sources and stock settings (not the quantity on hand).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -250,7 +250,7 @@
           },
           "properties": {
             "type": "string",
-            "description": "Comma-separated weclapp field names to limit the response (omit to return all fields). Use real field names only: requesting a non-existent property returns a 400."
+            "description": "Leave empty (the default): weclapp then returns every field, which is what almost every question needs. Set it only when the user asks for specific fields or a large list must be trimmed, and then use only names from the list below: any other name fails with 400 \"unknown property\". Top-level names only: nested objects (recordAddress, quotationItems) come back whole, and a dotted path such as recordAddress.contactId is rejected. Valid quotation fields (weclapp API v2): id, quotationNumber, quotationDate, quotationVersion, status, customerId, opportunityId, recordAddress, invoiceAddress, deliveryAddress, quotationItems, netAmount, grossAmount, netAmountInCompanyCurrency, recordCurrencyId, validFrom, validTo, salesProbability, salesStageId, expectedSignatureDate, publicLink, rejectionReason, responsibleUserId, creatorId, description, tags, createdDate, lastModifiedDate. Not quotation fields: validUntil (`validTo`), publicPageUrl (`publicLink`), contactId and customerContactId (a quotation has no contact-person field)."
           },
           "filter": {
             "type": "string",
@@ -310,7 +310,7 @@
           },
           "properties": {
             "type": "string",
-            "description": "Comma-separated weclapp field names to limit the response (omit to return all fields). Use real field names only: requesting a non-existent property returns a 400."
+            "description": "Leave empty (the default): weclapp then returns every field. Set it only when the user asks for specific fields, with names you have seen in a response of this tool: a name the record does not have fails with 400 \"unknown property\"."
           },
           "filter": {
             "type": "string",
@@ -370,7 +370,7 @@
           },
           "properties": {
             "type": "string",
-            "description": "Comma-separated weclapp field names to limit the response (omit to return all fields). Use real field names only: requesting a non-existent property returns a 400."
+            "description": "Leave empty (the default): weclapp then returns every field, which is what almost every question needs. Set it only when the user asks for specific fields or a large list must be trimmed, and then use only names from the list below: any other name fails with 400 \"unknown property\". Top-level names only: nested objects (salesStageHistory) come back whole, and a dotted path such as salesStageHistory.salesStageId is rejected. Valid opportunity fields (weclapp API v2): id, opportunityNumber, name, customerId, contactId, description, revenue, salesProbability, salesStageId, salesStageHistory, salesChannel, hotLead, startDate, expectedSignatureDate, expectedDeliveryDate, nextCallDate, responsibleUserId, creatorId, winLossReasonId, winLossDescription, topics, tags, createdDate, lastModifiedDate. Not opportunity fields: expectedCloseDate (`expectedSignatureDate`), salesStage (`salesStageId`), expectedValue (`revenue`)."
           },
           "filter": {
             "type": "string",
@@ -396,7 +396,7 @@
     },
     {
       "name": "weclapp_list_reference_data",
-      "description": "Look up the records other weclapp records point to by id, to turn a name into the id a write tool needs: users (responsibleUserId, task assignees, time records), warehouses and storage places, units, tax rates, currencies, terms of payment, payment and shipment methods, carriers, customer categories, sectors, lead sources and ratings, sales stages, titles, departments and roles of contact persons, cost centers, article categories and task lists. Read-only. Example: resource=user with filter='lastName-ilike=%meier%' to find a user's id.",
+      "description": "Look up the records other weclapp records point to by id, to turn a name into the id a write tool needs: users (responsibleUserId, task assignees, time records), warehouses and storage places, units, tax rates, currencies, terms of payment, payment and shipment methods, carriers, customer categories, sectors, lead sources and ratings, sales stages, titles, departments and roles of contact persons, cost centers, article categories and task lists, plus the custom attribute definitions (the meaning of the customAttributes ids on records) and serial numbers (serialNumber-eq=... gives the articleId). Read-only. Example: resource=user with filter='lastName-ilike=%meier%' to find a user's id.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -429,7 +429,12 @@
               "costCenter",
               "placeOfService",
               "articleCategory",
-              "taskList"
+              "taskList",
+              "manufacturer",
+              "articleSupplySource",
+              "articleItemGroup",
+              "customAttributeDefinition",
+              "serialNumber"
             ],
             "description": "Which list to read."
           },
@@ -443,7 +448,7 @@
           },
           "properties": {
             "type": "string",
-            "description": "Comma-separated fields to return, e.g. 'id,firstName,lastName,email' for users or 'id,name' for most lists."
+            "description": "Leave empty (the default): every field comes back. Most lists have `id` and `name`; users have `id,firstName,lastName,email,username`. A name the list does not have fails with 400 \"unknown property\"."
           },
           "filter": {
             "type": "string",
@@ -511,6 +516,180 @@
           "entityId": "$entityId",
           "page": "$page",
           "pageSize": "$pageSize",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "weclapp_list_sales_open_items",
+      "description": "List the open items (Offene Posten) of sales invoices and credit notes: amount, amountOpen, amountPaid, amountDiscount, cleared, clearanceDate, openItemNumber, openItemType, the payments applied to it and salesInvoiceId. Use it to see what a customer still owes, or to get the open item id that weclapp_set_sales_open_item_payment_state needs (that tool takes the open item id, not the invoice id). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (1-based)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 100, max: 1000)"
+          },
+          "properties": {
+            "type": "string",
+            "description": "Leave empty (the default): every field comes back. Set it only to trim a large list, and then use only names from this list: any other name fails with 400 \"unknown property\". Valid fields (weclapp API v2): id, version, createdDate, lastModifiedDate, amount, amountDiscount, amountOpen, amountPaid, clearanceDate, cleared, openItemNumber, openItemType, paymentApplications, salesInvoiceId."
+          },
+          "filter": {
+            "type": "string",
+            "description": "weclapp filter as query parameters: `property-operator=value`, joined with `&` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull; -null/-notnull take an EMPTY value, -in/-notin a bracketed list (`id-in=[1,2]`). Examples: 'name-ilike=%netto%', 'email-eq=anna@example.com'. Examples: 'salesInvoiceId-eq=4711', 'salesInvoiceId-in=[4711,4712]', 'cleared-eq=false' for items not settled yet."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, prefix with '-' for descending"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/salesOpenItem",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize",
+          "properties": "$properties",
+          "__rawquery": "$filter",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "weclapp_get_current_user",
+      "description": "Return the weclapp user the API token belongs to: id, name, e-mail, username, status and roles. Use its id as responsibleUserId or task assignee when the user means themselves, and to check whose permissions the connector has. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/currentUser"
+      }
+    },
+    {
+      "name": "weclapp_get_property_translations",
+      "description": "Read the translated texts of one record, e.g. an article's name and descriptions in English or French as maintained in weclapp. Returns per property its texts per locale. weclapp marks this endpoint as deprecated but still serves it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entityName": {
+            "type": "string",
+            "description": "The weclapp entity, e.g. article, articleCategory, unit, termOfPayment."
+          },
+          "entityId": {
+            "type": "string",
+            "description": "Id of the record (numeric string)."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Optional language code, e.g. en or fr. Leave out for every language."
+          },
+          "propertyNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional property names to read, e.g. [\"name\", \"description\"]. Leave out for every translated property."
+          }
+        },
+        "required": [
+          "entityName",
+          "entityId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/propertyTranslation/readPropertyTranslations",
+        "queryParams": {
+          "entityName": "$entityName",
+          "entityId": "$entityId",
+          "locale": "$locale",
+          "propertyNames": "$propertyNames"
+        }
+      }
+    },
+    {
+      "name": "weclapp_list_warehouse_stock_movements",
+      "description": "List warehouse stock movements (Lagerbewegungen): which article moved, how much, in or out, when, from or to which storage place, and the order, shipment, production order or user behind it. Use it to explain a stock level or trace a serial or batch number. Filter by article and date, the full history is long. Read-only; stock is booked with weclapp_book_stock_in and weclapp_book_stock_out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (1-based)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 100, max: 1000)"
+          },
+          "properties": {
+            "type": "string",
+            "description": "Leave empty (the default): every field comes back. Set it only to trim a large list, and then use only names from this list: any other name fails with 400 \"unknown property\". Valid fields (weclapp API v2): id, version, createdDate, lastModifiedDate, customAttributes, articleId, batchNumberId, costCenterId, incomingGoodsItemId, internalTransportReferenceId, movementNote, movementNumber, postingDate, productionOrderId, quantity, salesOrderItemId, serialNumbers, shipmentItemId, stockMovementType, storagePlaceId, transportationOrderId, userId, valuationPrice."
+          },
+          "filter": {
+            "type": "string",
+            "description": "weclapp filter as query parameters: `property-operator=value`, joined with `&` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull; -null/-notnull take an EMPTY value, -in/-notin a bracketed list (`id-in=[1,2]`). Examples: 'name-ilike=%netto%', 'email-eq=anna@example.com'. Examples: 'articleId-eq=5101&postingDate-ge=1767225600000', 'stockMovementType-eq=OUT_SHIPMENT'. stockMovementType values start with IN or OUT, e.g. IN_PURCHASE_ORDER, IN_INVENTORY, OUT_SHIPMENT, OUT_PRODUCTION_ORDER, IN_TRANSFER."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, prefix with '-' for descending"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouseStockMovement",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize",
+          "properties": "$properties",
+          "__rawquery": "$filter",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "weclapp_list_production_orders",
+      "description": "List production orders (Fertigungsaufträge): number, article, target and actual quantity, target and actual start and end dates, status, warehouse, the components to pick (productionOrderItems) and work items, and the sales or purchase order item it was created for. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (1-based)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 100, max: 1000)"
+          },
+          "properties": {
+            "type": "string",
+            "description": "Leave empty (the default): every field comes back. Set it only to trim a large list, and then use only names from this list: any other name fails with 400 \"unknown property\". Valid fields (weclapp API v2): id, version, createdDate, lastModifiedDate, customAttributes, actualEndDate, actualQuantity, actualStartDate, articleId, assemblyStoragePlaceId, pickingInstructions, picksComplete, productionOrderItems, productionOrderNumber, purchaseOrderItemId, salesOrderItemId, status, statusHistory, targetEndDate, targetQuantity, targetStartDate, warehouseId, workItems."
+          },
+          "filter": {
+            "type": "string",
+            "description": "weclapp filter as query parameters: `property-operator=value`, joined with `&` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull; -null/-notnull take an EMPTY value, -in/-notin a bracketed list (`id-in=[1,2]`). Examples: 'name-ilike=%netto%', 'email-eq=anna@example.com'. Examples: 'productionOrderNumber-eq=FA-1001', 'status-in=[NEW,STARTED]', 'articleId-eq=5101'. Status values: NEW, ENTRY_IN_PROGRESS, DOCUMENTS_PRINTED, STARTED, INTERRUPTED, CLOSED, CANCELLED."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, prefix with '-' for descending"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/productionOrder",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize",
+          "properties": "$properties",
+          "__rawquery": "$filter",
           "sort": "$sort"
         }
       }
@@ -2361,6 +2540,414 @@
           "salesOrderId": "$salesOrderId",
           "purchaseOrderType": "$purchaseOrderType"
         }
+      }
+    },
+    {
+      "name": "weclapp_set_sales_invoice_responsible",
+      "description": "Set the responsible user (e.g. the field sales rep) of a sales invoice and nothing else; every other field keeps its value (partial PUT with ignoreMissingProperties=true). Get user ids from weclapp_list_reference_data with resource=user. weclapp refuses most changes to a booked invoice, but the responsible user can usually still be set. Confirm with the user before changing it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "salesInvoiceId": {
+            "type": "string",
+            "description": "The weclapp sales invoice ID (numeric string), not the document number."
+          },
+          "responsibleUserId": {
+            "type": "string",
+            "description": "ID of the user to make responsible."
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "true makes weclapp check the request and answer as if it had saved it, without saving anything."
+          }
+        },
+        "required": [
+          "salesInvoiceId",
+          "responsibleUserId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/salesInvoice/id/{salesInvoiceId}",
+        "encodePathParams": true,
+        "queryParams": {
+          "ignoreMissingProperties": "true",
+          "dryRun": "$dryRun"
+        },
+        "bodyMapping": {
+          "responsibleUserId": "$responsibleUserId"
+        }
+      }
+    },
+    {
+      "name": "weclapp_set_sales_order_responsible",
+      "description": "Set the responsible user (e.g. the field sales rep) of a sales order and nothing else; every other field keeps its value (partial PUT with ignoreMissingProperties=true). Get user ids from weclapp_list_reference_data with resource=user. Confirm with the user before changing it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "salesOrderId": {
+            "type": "string",
+            "description": "The weclapp sales order ID (numeric string), not the document number."
+          },
+          "responsibleUserId": {
+            "type": "string",
+            "description": "ID of the user to make responsible."
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "true makes weclapp check the request and answer as if it had saved it, without saving anything."
+          }
+        },
+        "required": [
+          "salesOrderId",
+          "responsibleUserId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/salesOrder/id/{salesOrderId}",
+        "encodePathParams": true,
+        "queryParams": {
+          "ignoreMissingProperties": "true",
+          "dryRun": "$dryRun"
+        },
+        "bodyMapping": {
+          "responsibleUserId": "$responsibleUserId"
+        }
+      }
+    },
+    {
+      "name": "weclapp_set_party_responsible",
+      "description": "Set the responsible user (e.g. the field sales rep) of a customer, supplier or lead and, optionally, its fixed-responsible flag (fixedResponsibleUser), nothing else; every other field keeps its value (partial PUT with ignoreMissingProperties=true). Get user ids from weclapp_list_reference_data with resource=user. Confirm with the user before changing it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "description": "The weclapp party ID (numeric string), not the document number."
+          },
+          "responsibleUserId": {
+            "type": "string",
+            "description": "ID of the user to make responsible."
+          },
+          "fixedResponsibleUser": {
+            "type": "boolean",
+            "description": "Optional. weclapp's \"fixed responsible user\" flag of the party (fixedResponsibleUser). Send true to fix this user as the party's responsible user, false to clear the flag; leave it out to keep the current setting."
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "true makes weclapp check the request and answer as if it had saved it, without saving anything."
+          }
+        },
+        "required": [
+          "partyId",
+          "responsibleUserId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/party/id/{partyId}",
+        "encodePathParams": true,
+        "queryParams": {
+          "ignoreMissingProperties": "true",
+          "dryRun": "$dryRun"
+        },
+        "bodyMapping": {
+          "responsibleUserId": "$responsibleUserId",
+          "fixedResponsibleUser": "$fixedResponsibleUser"
+        }
+      }
+    },
+    {
+      "name": "weclapp_add_supply_source",
+      "description": "Create a supply source (Lieferquelle) for purchasing: which supplier sells the article, under which number, at which purchase price. Returns the new supply source with its id, which an article references in `supplySources` ([{\"articleSupplySourceId\": \"<id>\"}]) and `primarySupplySourceId` (pass them in weclapp_add_article or weclapp_edit_article). Check existing ones with weclapp_list_reference_data resource=articleSupplySource first, and confirm supplier and price with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supplierId": {
+            "type": "string",
+            "description": "weclapp party ID of the supplier (a party with supplier=true)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Article name at the supplier, usually the same as the article."
+          },
+          "unitId": {
+            "type": "string",
+            "description": "Unit ID (weclapp_list_reference_data resource=unit)."
+          },
+          "articleNumber": {
+            "type": "string",
+            "description": "The supplier's article number, optional."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN/GTIN, optional."
+          },
+          "articlePrices": {
+            "type": "array",
+            "description": "Purchase prices, e.g. [{\"price\": \"0.28\", \"currencyId\": \"<currency id>\", \"priceScaleType\": \"SCALE_FROM\", \"priceScaleValue\": \"0\"}]. Prices are decimal strings.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "true makes weclapp check the request and answer as if it had saved it, without saving anything."
+          }
+        },
+        "required": [
+          "supplierId",
+          "name",
+          "unitId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/articleSupplySource",
+        "queryParams": {
+          "dryRun": "$dryRun"
+        },
+        "bodyMapping": {
+          "supplierId": "$supplierId",
+          "name": "$name",
+          "unitId": "$unitId",
+          "articleNumber": "$articleNumber",
+          "ean": "$ean",
+          "articlePrices": "$articlePrices"
+        }
+      }
+    },
+    {
+      "name": "weclapp_add_manufacturer",
+      "description": "Create a manufacturer (Hersteller) in the master data. Returns it with its id, which an article references as `manufacturerId` (weclapp_add_article, or weclapp_edit_article to set it on an existing article). Check with weclapp_list_reference_data resource=manufacturer that it does not exist yet, and confirm the name with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Manufacturer name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address, optional."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Default true."
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "true makes weclapp check the request and answer as if it had saved it, without saving anything."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/manufacturer",
+        "queryParams": {
+          "dryRun": "$dryRun"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "active": "$active"
+        }
+      }
+    },
+    {
+      "name": "weclapp_add_article_item_group",
+      "description": "Create an item group (Positionsgruppe): a named set of articles with quantities that is added to quotations and orders in one step. Returns the new group with its id. Check with weclapp_list_reference_data resource=articleItemGroup first, and confirm the positions with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the group."
+          },
+          "items": {
+            "type": "array",
+            "description": "Positions in order: [{\"articleId\": \"<article id>\", \"quantity\": \"1\"}, ...]. Quantities are decimal strings.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "articleId": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "articleId",
+                "quantity"
+              ]
+            }
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "true makes weclapp check the request and answer as if it had saved it, without saving anything."
+          }
+        },
+        "required": [
+          "name",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/articleItemGroup",
+        "queryParams": {
+          "dryRun": "$dryRun"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "weclapp_set_party_emails",
+      "description": "Maintain a customer's or supplier's e-mail addresses for documents (master data, E-Mail-Adressen) and choose which entry weclapp uses for sales orders, invoices, quotations, delivery notes, dunning letters and purchase documents. Partial PUT with ignoreMissingProperties=true: fields you do not send keep their values. It is two steps when the address is new: (1) send `partyEmailAddresses` with every entry to keep by its `id` plus the new entry without an id, then read the id weclapp gave the new entry from the answer; (2) call again with that id in `salesOrderEmailAddressesId`, `salesInvoiceEmailAddressesId` or another `...EmailAddressesId` field. `partyEmailAddresses` replaces the whole list: an existing entry you leave out is deleted, so read the party first (weclapp_get_customer). The plain `email` field of the party is changed with weclapp_edit_party. Tell the user what will change and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "description": "The weclapp party ID (numeric string), not the customer number."
+          },
+          "partyEmailAddresses": {
+            "type": "array",
+            "description": "Optional. The full list of e-mail address entries. Existing entries by `id` (with their addresses), new ones without an id. Each entry has `toAddresses` and optionally `ccAddresses` and `bccAddresses`; several addresses in one field are separated by a semicolon.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Id of an existing entry; leave out for a new one."
+                },
+                "toAddresses": {
+                  "type": "string",
+                  "description": "Recipient address(es), e.g. rechnung@example.com."
+                },
+                "ccAddresses": {
+                  "type": "string",
+                  "description": "CC address(es)."
+                },
+                "bccAddresses": {
+                  "type": "string",
+                  "description": "BCC address(es)."
+                }
+              }
+            }
+          },
+          "salesOrderEmailAddressesId": {
+            "type": "string",
+            "description": "Optional. Id of the partyEmailAddresses entry used for sales orders (order confirmations)."
+          },
+          "salesInvoiceEmailAddressesId": {
+            "type": "string",
+            "description": "Optional. Id of the entry used for sales invoices."
+          },
+          "quotationEmailAddressesId": {
+            "type": "string",
+            "description": "Optional. Id of the entry used for quotations."
+          },
+          "deliveryEmailAddressesId": {
+            "type": "string",
+            "description": "Optional. Id of the entry used for delivery notes and shipments."
+          },
+          "dunningEmailAddressesId": {
+            "type": "string",
+            "description": "Optional. Id of the entry used for dunning letters."
+          },
+          "purchaseEmailAddressesId": {
+            "type": "string",
+            "description": "Optional. Id of the entry used for purchase orders to a supplier."
+          },
+          "version": {
+            "type": "string",
+            "description": "The record's `version` from your last read. weclapp then refuses the change (409 optimistic lock error) if someone else changed the record in the meantime. Leave it out to skip that check."
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "true makes weclapp check the request and answer as if it had saved it, without saving anything."
+          }
+        },
+        "required": [
+          "partyId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/party/id/{partyId}",
+        "encodePathParams": true,
+        "queryParams": {
+          "ignoreMissingProperties": "true",
+          "dryRun": "$dryRun"
+        },
+        "bodyMapping": {
+          "partyEmailAddresses": "$partyEmailAddresses",
+          "salesOrderEmailAddressesId": "$salesOrderEmailAddressesId",
+          "salesInvoiceEmailAddressesId": "$salesInvoiceEmailAddressesId",
+          "quotationEmailAddressesId": "$quotationEmailAddressesId",
+          "deliveryEmailAddressesId": "$deliveryEmailAddressesId",
+          "dunningEmailAddressesId": "$dunningEmailAddressesId",
+          "purchaseEmailAddressesId": "$purchaseEmailAddressesId",
+          "version": "$version"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "weclapp_set_sales_open_item_payment_state",
+      "description": "Mark one sales open item as paid (PAID, with the payment date) or back to unpaid (UNPAID), through weclapp's updatePaymentState action. It changes the receivables of the company: it records no amount and no cash discount, the open item simply counts as settled or open again, and it does not book a bank transaction. Take the id from weclapp_list_sales_open_items (filter by salesInvoiceId), not the invoice id. Only after the payment has been checked against the bank or remittance advice: show the user the open item and the date, and confirm before calling. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "salesOpenItemId": {
+            "type": "string",
+            "description": "Id of the open item (numeric string) from weclapp_list_sales_open_items, not the invoice id."
+          },
+          "paymentState": {
+            "type": "string",
+            "enum": [
+              "PAID",
+              "UNPAID"
+            ],
+            "description": "PAID to settle the open item, UNPAID to reopen it."
+          },
+          "datePaid": {
+            "type": "integer",
+            "description": "Payment date as Unix epoch milliseconds, e.g. 1767225600000 for 2026-01-01. Send it with PAID."
+          }
+        },
+        "required": [
+          "salesOpenItemId",
+          "paymentState"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/salesOpenItem/id/{salesOpenItemId}/updatePaymentState",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "paymentState": "$paymentState",
+          "datePaid": "$datePaid"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
       }
     },
     {

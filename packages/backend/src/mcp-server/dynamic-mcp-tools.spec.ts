@@ -175,6 +175,21 @@ describe('DynamicMcpTools — actionable hint on upstream errors', () => {
     expect(audit.logInvocation.mock.calls[0][0].error).not.toMatch(/fetch ONE record/);
   });
 
+  it("returns the engine's own hint (a refused refresh token) to the model", async () => {
+    const { executor, restEngine } = build(makeTool());
+    const hint =
+      "Google revoked the sign-in 7 days after it was granted. This happens when the OAuth app in your Google Cloud project is in 'Testing'.";
+    restEngine.execute.mockRejectedValueOnce(
+      Object.assign(new Error(`OAuth2: the provider refused this connector's refresh token. ${hint}`), {
+        status: 401,
+        hint,
+      }),
+    );
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBe(true);
+    expect(JSON.parse(res.content[0].text).hint).toBe(hint);
+  });
+
   it('adds no hint for an ordinary failure on an unknown host', async () => {
     const { executor, restEngine } = build(makeTool());
     restEngine.execute.mockRejectedValueOnce(new Error('boom'));
@@ -582,5 +597,110 @@ describe('DynamicMcpTools: images in the response', () => {
     const res = await executor.executeTool('list_devices', {});
     expect(res.content).toHaveLength(1);
     expect(res.content[0].text).toBe(JSON.stringify(GENERATED, null, 2));
+  });
+});
+
+describe('DynamicMcpTools: binary responses', () => {
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
+  const PDF = Buffer.from('%PDF-1.7 not really a pdf but binary enough');
+  const file = (buf: Buffer, contentType: string, filename?: string) => ({
+    __amcpBinary: 1,
+    contentType,
+    bytes: buf.length,
+    ...(filename ? { filename } : {}),
+    base64: buf.toString('base64'),
+  });
+
+  it('attaches a downloaded image as image content and keeps the bytes out of the text and the audit log', async () => {
+    const { executor, audit } = build(makeTool(), { engineResult: file(JPEG, 'application/octet-stream') });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].type).toBe('text');
+    expect(res.content[0].text).not.toContain(JPEG.toString('base64'));
+    expect(JSON.parse(res.content[0].text).file).toMatchObject({ contentType: 'application/octet-stream', bytes: JPEG.length });
+    expect(res.content[1]).toEqual({ type: 'image', data: JPEG.toString('base64'), mimeType: 'image/jpeg' });
+    const logged = JSON.stringify(audit.logInvocation.mock.calls[0][0].output);
+    expect(logged).not.toContain(JPEG.toString('base64'));
+    expect(logged).toContain('binary data not stored');
+  });
+
+  it('attaches any other file as an embedded resource, and the response mapping does not touch it', async () => {
+    const tool = makeTool({ transform: { mode: 'select', select: { id: '$.id' } } });
+    const { executor } = build(tool, { engineResult: file(PDF, 'application/pdf', 'invoice.pdf') });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.content[1]).toEqual({
+      type: 'resource',
+      resource: { uri: 'file:///invoice.pdf', mimeType: 'application/pdf', blob: PDF.toString('base64') },
+    });
+    expect(JSON.parse(res.content[0].text).file.filename).toBe('invoice.pdf');
+  });
+
+  it('renders a cached binary body the same way', async () => {
+    const cached = JSON.stringify(file(JPEG, 'image/jpeg'));
+    const { executor } = build(makeTool({ cacheTtl: 60 }), { cached });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.content[1]).toMatchObject({ type: 'image', mimeType: 'image/jpeg' });
+  });
+});
+
+describe('DynamicMcpTools: the connector id reaches the engine', () => {
+  function bridgeTool(authConfig: Record<string, unknown>): RegisteredTool {
+    return {
+      id: 'tool-c',
+      connectorId: 'cmv-cloudinary',
+      organizationId: 'org-1',
+      name: 'cloudinary_list_images',
+      description: 'List images',
+      parameters: { type: 'object', properties: {} },
+      connectorType: 'MCP',
+      connectorConfig: {
+        baseUrl: 'https://asset-management.mcp.cloudinary.com/mcp',
+        authType: 'OAUTH2',
+        // The registry holds the decrypted authConfig as a JSON string.
+        authConfig: JSON.stringify(authConfig),
+      },
+      endpointMapping: { method: 'list-images', path: '/mcp' },
+    };
+  }
+
+  function run(tool: RegisteredTool) {
+    const mcpClientEngine = { execute: jest.fn().mockResolvedValue({ content: [] }) };
+    const executor = new DynamicMcpTools(
+      { getTool: () => tool, getToolForOrg: () => tool } as any,
+      { logInvocation: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: jest.fn().mockResolvedValue(null), set: jest.fn() } as any,
+      { checkLicenseActive: jest.fn().mockResolvedValue(undefined) } as any,
+      { isCloud: () => false } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      mcpClientEngine as any,
+      {} as any,
+      { scheduleObservationalIngest: jest.fn() } as any,
+    );
+    return { executor, mcpClientEngine };
+  }
+
+  // Without it the OAuth2 token service could neither cache a renewed token
+  // nor store the rotated refresh token, and the next renewal replayed the
+  // spent one (Cloudinary: invalid_grant minutes after each authorization).
+  it('passes the connector id, so OAuth2 renewals are cached, locked and stored', async () => {
+    const { executor, mcpClientEngine } = run(
+      bridgeTool({ tokenUrl: 'https://x/token', accessToken: 'at', refreshToken: 'rt' }),
+    );
+    await executor.executeTool('cloudinary_list_images', {});
+    expect(mcpClientEngine.execute.mock.calls[0][0]).toMatchObject({
+      connectorId: 'cmv-cloudinary',
+      authType: 'OAUTH2',
+    });
+  });
+
+  it('leaves credentials that depend on the caller ({{amcp.*}}) unkeyed', async () => {
+    const { executor, mcpClientEngine } = run(
+      bridgeTool({ tokenUrl: 'https://x/token', username: '{{amcp.user_email}}', password: 'p' }),
+    );
+    await executor.executeTool('cloudinary_list_images', {});
+    expect(mcpClientEngine.execute.mock.calls[0][0].connectorId).toBeUndefined();
   });
 });

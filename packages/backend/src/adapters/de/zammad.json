@@ -1,12 +1,12 @@
 {
   "slug": "zammad",
   "name": "Zammad",
-  "description": "Zammad open-source helpdesk: tickets, their articles, users, organizations and groups, plus full-text search across the ticket base. REST API v1 on your own Zammad instance, token auth.",
+  "description": "Zammad open-source helpdesk: tickets, their articles, users, organizations and groups, full-text search across the ticket base, and ticket updates and merges. REST API v1 on your own Zammad instance, token auth.",
   "region": "de",
   "category": "support",
   "icon": "zammad",
   "docsUrl": "https://docs.zammad.org/en/latest/api/intro.html",
-  "instructions": "**Getting a token**\n1. Sign in to Zammad, open your avatar → **Profile → Token Access**, and switch token access on if an admin has not already.\n2. Create a token with the permissions the agent needs — `ticket.agent` to read and answer tickets, `admin` only if you really want the agent to change configuration.\n3. Put it in `ZAMMAD_API_TOKEN` and your instance's base URL (no trailing slash, no `/api`) in `ZAMMAD_URL`.\n\n**The Authorization header is `Token token=…`**, Zammad's own scheme — not `Bearer`. This adapter sends it correctly; it is the first thing to check when hand-building a Zammad connector that 401s with a token you know is good.\n\n**Permissions are per-token *and* per-group.** A token whose user is not a member of a group cannot see that group's tickets, and Zammad reports this as an empty list rather than an error. An agent that says 'there are no tickets' may simply be looking through the wrong account.\n\n**Search syntax** is Elasticsearch-flavoured when Zammad has Elasticsearch attached, and falls back to a much simpler SQL LIKE otherwise. `state.name:open AND group.name:Support` works on the former and not the latter, so keep queries simple if you are unsure.\n\n**expand=true** turns id references (`state_id`, `owner_id`) into readable names. The list tools below pass it through; it costs a little latency and saves several follow-up calls.\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`zammad.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n\n**Writes**: `zammad_create_ticket` opens a real ticket that notifies the customer, and `zammad_add_article` sends a real reply if `type` is `email`. Use `type: note` with `internal: true` for anything the customer should not see.",
+  "instructions": "**Getting a token**\n1. Sign in to Zammad, open your avatar → **Profile → Token Access**, and switch token access on if an admin has not already.\n2. Create a token with the permissions the agent needs — `ticket.agent` to read and answer tickets, `admin` only if you really want the agent to change configuration.\n3. Put it in `ZAMMAD_API_TOKEN` and your instance's base URL (no trailing slash, no `/api`) in `ZAMMAD_URL`.\n\n**The Authorization header is `Token token=…`**, Zammad's own scheme — not `Bearer`. This adapter sends it correctly; it is the first thing to check when hand-building a Zammad connector that 401s with a token you know is good.\n\n**Permissions are per-token *and* per-group.** A token whose user is not a member of a group cannot see that group's tickets, and Zammad reports this as an empty list rather than an error. An agent that says 'there are no tickets' may simply be looking through the wrong account.\n\n**Search syntax** is Elasticsearch-flavoured when Zammad has Elasticsearch attached, and falls back to a much simpler SQL LIKE otherwise. `state.name:open AND group.name:Support` works on the former and not the latter, so keep queries simple if you are unsure.\n\n**expand=true** turns id references (`state_id`, `owner_id`) into readable names. The list tools below pass it through; it costs a little latency and saves several follow-up calls.\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`zammad.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n\n**Writes**: `zammad_create_ticket` opens a real ticket that notifies the customer, and `zammad_add_article` sends a real reply if `type` is `email`. Use `type: note` with `internal: true` for anything the customer should not see. `zammad_edit_ticket` changes state, owner, group or priority (a state change can trigger Zammad's notifications and triggers), and `zammad_merge_ticket` merges one ticket into another, which cannot be undone.",
   "requiredEnvVars": [
     "ZAMMAD_URL",
     "ZAMMAD_API_TOKEN"
@@ -358,6 +358,83 @@
           "internal": "$internal",
           "subject": "$subject"
         }
+      }
+    },
+    {
+      "name": "zammad_edit_ticket",
+      "description": "Change a ticket: state, owner, group, priority, title or pending time. Only the fields you send change. Names are accepted instead of ids for state (\"new\", \"open\", \"pending reminder\", \"pending close\", \"closed\"), group and priority (\"1 low\", \"2 normal\", \"3 high\"); the owner is set by owner_id (ids from zammad_list_users or zammad_search_users). A pending state needs pending_time. To add a reply or note, use zammad_add_article instead. Confirm the change with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric ticket id (not the ticket number)."
+          },
+          "state": {
+            "type": "string",
+            "description": "State name, e.g. open or closed."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "User id of the new owner (agent)."
+          },
+          "group": {
+            "type": "string",
+            "description": "Group name, e.g. Sales."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Priority name: 1 low, 2 normal, 3 high."
+          },
+          "title": {
+            "type": "string",
+            "description": "New ticket title."
+          },
+          "pending_time": {
+            "type": "string",
+            "description": "ISO 8601 date-time for pending reminder / pending close, e.g. 2026-10-26T07:00:00Z."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tickets/{id}",
+        "bodyMapping": {
+          "state": "$state",
+          "owner_id": "$owner_id",
+          "group": "$group",
+          "priority": "$priority",
+          "title": "$title",
+          "pending_time": "$pending_time"
+        }
+      }
+    },
+    {
+      "name": "zammad_merge_ticket",
+      "description": "Merge a ticket into another one: the source ticket's articles move to the target and the source is closed as merged. Cannot be undone. Note the asymmetry: the source is given by its numeric id, the target by its ticket number (the number shown in Zammad, e.g. 335269). Confirm both tickets with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_ticket_id": {
+            "type": "integer",
+            "description": "Numeric id of the ticket to merge away."
+          },
+          "target_ticket_number": {
+            "type": "string",
+            "description": "Ticket number (not id) of the ticket that remains."
+          }
+        },
+        "required": [
+          "source_ticket_id",
+          "target_ticket_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ticket_merge/{source_ticket_id}/{target_ticket_number}"
       }
     }
   ]

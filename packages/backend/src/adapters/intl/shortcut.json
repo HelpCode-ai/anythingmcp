@@ -1,0 +1,1188 @@
+{
+  "slug": "shortcut",
+  "name": "Shortcut",
+  "aliases": [
+    "Clubhouse",
+    "Shortcut.com"
+  ],
+  "description": "Let your AI work in Shortcut: search stories with Shortcut's search operators, read stories with tasks, comments and history, epics, iterations, objectives, teams, workflows and labels, and create, update and comment on stories after you confirm. Personal API token.",
+  "instructions": "## Shortcut\nThis connector works with **Shortcut** (formerly Clubhouse), the project management tool for software teams, through the official **REST API v3** (`https://api.app.shortcut.com/api/v3`). It reads stories, epics, iterations, objectives, teams, workflows, labels and members, searches stories with Shortcut's search operators, reads a story's change history, and can create and update stories and add comments.\n\n**Setup (about 2 minutes)**\n1. In Shortcut, click your avatar, then **Settings**, **Your Account**, **API Tokens** (https://app.shortcut.com/settings/account/api-tokens).\n2. Enter a name such as AnythingMCP and click **Generate Token**. Shortcut shows the token once.\n3. Paste it into `SHORTCUT_API_TOKEN`, install, and run `shortcut_get_current_member`.\n\n**Whose rights**: the token acts as you, in the workspace it was created in, with your permissions. Stories, comments and changes made through this connector appear under your name. A workspace with several organizations needs one token per workspace.\n\n**Writes: confirm first.** `shortcut_create_story`, `shortcut_update_story` and `shortcut_add_story_comment` change the workspace at once and notify followers. Show the user what will be created or changed (story, fields, comment text) and wait for a clear yes before calling. `shortcut_delete_story` is installed switched off: deleting a story cannot be undone; archiving it with `shortcut_update_story` (`archived: true`) is the safer choice.\n\n**How to work**\n1. `shortcut_get_current_member` tells you who you are (your `mention_name` for `owner:` searches) and the workspace's default workflow.\n2. Ids first: `shortcut_list_workflows` (workflow state ids for moving stories), `shortcut_list_teams`, `shortcut_list_members` (member UUIDs for owners), `shortcut_list_labels`, `shortcut_list_iterations`, `shortcut_list_epics`, `shortcut_list_objectives`, `shortcut_list_projects`.\n3. Find stories with `shortcut_search_stories`, then `shortcut_get_story` for the description, tasks, comments and links, and `shortcut_get_story_history` for who changed what. Stories of one epic or iteration: `shortcut_list_epic_stories`, `shortcut_list_iteration_stories`. Find epics by text with `shortcut_search_epics`; `shortcut_get_epic` reads one.\n4. Change things with `shortcut_create_story`, `shortcut_update_story` (move it by setting `workflow_state_id`) and `shortcut_add_story_comment`.\n\n**Search operators** (`query` of `shortcut_search_stories` and `shortcut_search_epics`): combine words and operators with spaces, quote values with spaces.\n- `owner:jane` and `requester:jane` (mention name without @), `team:\"Mobile\"`, `epic:\"Checkout redesign\"` or `epic:123`, `iteration:\"Sprint 12\"`, `label:\"customer\"`, `state:\"In Progress\"`, `type:bug` (feature, bug, chore), `estimate:3`, `id:123`, `project:\"Backend\"`, `objective:\"Q4\"`.\n- `is:started`, `is:unstarted`, `is:done`, `is:blocked`, `is:blocker`, `is:archived`, `is:overdue`; `has:owner`, `has:epic`, `has:deadline`, `has:comment`, `has:task`.\n- Dates: `created:2026-10-01..2026-10-15`, `updated:today`, `completed:yesterday`, `due:*..2026-10-31` (`*` is open-ended).\n- `title:\"login\"`, `description:\"timeout\"`, `comment:\"customer\"` search one field. Put `!` in front of an operator to exclude, e.g. `!is:done`.\n- Example: `owner:jane is:started !is:archived type:bug`.\n\n**Paging**: searches return 25 results by default (at most 250); when `next` is present, call again with `next` set to the token after `next=` in that value. Only the first 1000 matches can be paged through, so narrow the query instead. `shortcut_list_epics` pages with `page` while `next` is a number.\n\n**Ids**: stories, epics, iterations, objectives, labels, projects and workflow states have numeric ids; members and teams have UUIDs. Dates are ISO 8601 in UTC.\n\n**Rate limit**: 200 requests per minute per token; on 429 wait a minute.\n\n**Common errors**\n- 401: the token is wrong or was deleted. Generate a new one under Settings, API Tokens.\n- 404: the id does not exist in this workspace.\n- 400 or 422: a field value is not accepted, e.g. a workflow state id from another workflow; Shortcut says which in the message.\n\n**Out of scope**: deleting epics, iterations, labels or comments, documents (Docs), files and attachments, custom fields editing, story templates, webhooks and integrations, tasks and story links.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "shortcut",
+  "docsUrl": "https://developer.shortcut.com/api/rest/v3",
+  "prerequisites": "A Shortcut account in the workspace you want to use, to create a personal API token under Settings, Your Account, API Tokens. About 2 minutes.",
+  "appRegistrationUrl": "https://app.shortcut.com/settings/account/api-tokens",
+  "requiredEnvVars": [
+    "SHORTCUT_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "SHORTCUT_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shortcut, Settings, Your Account, API Tokens, Generate Token. Shortcut shows it once. It acts as you in that workspace.",
+      "link": "https://app.shortcut.com/settings/account/api-tokens",
+      "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "pattern": "^[A-Za-z0-9-]{20,}$",
+      "patternMessage": "Paste only the token: letters, digits and dashes, no spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Shortcut does not accept this token: it is wrong or was deleted. Generate a new one under Settings, Your Account, API Tokens.",
+    "404": "Shortcut does not know this id in this workspace.",
+    "429": "Shortcut allows 200 requests per minute per token. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "shortcut_get_current_member"
+  },
+  "connector": {
+    "name": "Shortcut REST API v3",
+    "type": "REST",
+    "baseUrl": "https://api.app.shortcut.com/api/v3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Shortcut-Token",
+      "apiKey": "{{SHORTCUT_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/member"
+  },
+  "tools": [
+    {
+      "name": "shortcut_get_current_member",
+      "description": "Read who the API token belongs to: member id (UUID), name, mention name (for owner: searches), role, and the workspace with its name, URL slug, default workflow id and point scale. Use it first to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/member"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "mention_name": "$.mention_name",
+            "role": "$.role",
+            "is_owner": "$.is_owner",
+            "workspace": {
+              "name": "$.workspace2.name",
+              "url_slug": "$.workspace2.url_slug",
+              "default_workflow_id": "$.workspace2.default_workflow_id",
+              "estimate_scale": "$.workspace2.estimate_scale",
+              "utc_offset": "$.workspace2.utc_offset"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "shortcut_list_members",
+      "description": "List the members of the workspace: id (UUID, used for owner_ids and requested_by_id), name, mention name, role and whether they are disabled. E-mail addresses are left out. Active members only unless disabled is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "disabled": {
+            "type": "boolean",
+            "description": "true lists only disabled members; default false lists active members.",
+            "default": false
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members",
+        "queryParams": {
+          "disabled": "$disabled"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "members": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "profile.name",
+                "mention_name": "profile.mention_name",
+                "role": "role",
+                "state": "state",
+                "disabled": "disabled",
+                "group_ids": "group_ids"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_list_workflows",
+      "description": "List the workflows of the workspace with their states: workflow id and name, default state, team, and each state's id, name, type (unstarted, started, done) and position. Use a state id as workflow_state_id to create or move a story.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workflows"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "workflows": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "default_state_id": "default_state_id",
+                "team_id": "team_id",
+                "project_ids": "project_ids",
+                "states": {
+                  "$from": "states[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "name",
+                    "type": "type",
+                    "position": "position",
+                    "num_stories": "num_stories"
+                  }
+                }
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_list_teams",
+      "description": "List the teams (called groups in the API): id (UUID, used as group_id), name, mention name, description, archived, workflow ids, member ids and story counts. Active teams only unless archived is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean",
+            "description": "true lists only archived teams; default false lists active ones.",
+            "default": false
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups",
+        "queryParams": {
+          "archived": "$archived"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "teams": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "mention_name": "mention_name",
+                "description": "description",
+                "archived": "archived",
+                "default_workflow_id": "default_workflow_id",
+                "workflow_ids": "workflow_ids",
+                "member_ids": "member_ids",
+                "num_stories": "num_stories",
+                "num_stories_started": "num_stories_started",
+                "num_epics_started": "num_epics_started",
+                "app_url": "app_url"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_list_projects",
+      "description": "List the projects of the workspace (an older way to group stories; many workspaces use teams instead): id, name, abbreviation, archived, team and workflow, and story counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "projects": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "abbreviation": "abbreviation",
+                "description": "description",
+                "archived": "archived",
+                "team_id": "team_id",
+                "workflow_id": "workflow_id",
+                "num_stories": "stats.num_stories",
+                "app_url": "app_url"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "shortcut_list_epics",
+      "description": "List epics page by page: id, name, state (to do, in progress, done), dates, owners, teams, objectives and story counts. Descriptions are left out unless includes_description is true. More: call again with page = next while next is a number; total is the number of epics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Epics per page, 1 to 250. Default 25 here.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25
+          },
+          "includes_description": {
+            "type": "boolean",
+            "description": "Include each epic's description. Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/epics/paginated",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "includes_description": "$includes_description"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "epics": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "state": "state",
+                "epic_state_id": "epic_state_id",
+                "started": "started",
+                "completed": "completed",
+                "deadline": "deadline",
+                "planned_start_date": "planned_start_date",
+                "owner_ids": "owner_ids",
+                "group_ids": "group_ids",
+                "objective_ids": "objective_ids",
+                "app_url": "app_url",
+                "updated_at": "updated_at",
+                "description": "description",
+                "num_stories_total": "stats.num_stories_total",
+                "num_stories_done": "stats.num_stories_done",
+                "num_points": "stats.num_points",
+                "num_points_done": "stats.num_points_done"
+              }
+            },
+            "next": "$.next",
+            "total": "$.total"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_search_epics",
+      "description": "Search epics with text and Shortcut search operators (see the connector instructions), e.g. 'checkout is:started'. Returns up to page_size epics with id, name, state, dates and owners. More: pass the next token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words and operators, e.g. 'team:Mobile !is:done'.",
+            "minLength": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250. Default 25.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25
+          },
+          "next": {
+            "type": "string",
+            "description": "Token for the next page: the value after next= in the previous answer's next."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/epics",
+        "queryParams": {
+          "query": "$query",
+          "page_size": "$page_size",
+          "next": "$next",
+          "detail": "slim"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "epics": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "state": "state",
+                "epic_state_id": "epic_state_id",
+                "started": "started",
+                "completed": "completed",
+                "deadline": "deadline",
+                "planned_start_date": "planned_start_date",
+                "owner_ids": "owner_ids",
+                "group_ids": "group_ids",
+                "objective_ids": "objective_ids",
+                "app_url": "app_url",
+                "updated_at": "updated_at"
+              }
+            },
+            "total": "$.total",
+            "next": "$.next"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_get_epic",
+      "description": "Read one epic: name, description, state, dates, owners, teams, objectives, labels, health and story counts, plus its comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "epic_id": {
+            "type": "integer",
+            "description": "The epic's numeric id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "epic_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/epics/{epic_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "state": "$.state",
+            "epic_state_id": "$.epic_state_id",
+            "started": "$.started",
+            "completed": "$.completed",
+            "deadline": "$.deadline",
+            "planned_start_date": "$.planned_start_date",
+            "owner_ids": "$.owner_ids",
+            "group_ids": "$.group_ids",
+            "objective_ids": "$.objective_ids",
+            "app_url": "$.app_url",
+            "updated_at": "$.updated_at",
+            "description": "$.description",
+            "labels": "$.labels[*].name",
+            "health": "$.health.status",
+            "stats": "$.stats",
+            "comments": {
+              "$from": "$.comments[*]",
+              "$select": {
+                "id": "id",
+                "author_id": "author_id",
+                "text": "text",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "maxBytes": 50000
+        }
+      }
+    },
+    {
+      "name": "shortcut_list_epic_stories",
+      "description": "List the stories of one epic with id, name, type, state, owners, estimate and dates. Descriptions are left out unless includes_description is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "epic_id": {
+            "type": "integer",
+            "description": "The epic's numeric id.",
+            "minimum": 1
+          },
+          "includes_description": {
+            "type": "boolean",
+            "description": "Include each story's description. Default false."
+          }
+        },
+        "required": [
+          "epic_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/epics/{epic_id}/stories",
+        "queryParams": {
+          "includes_description": "$includes_description"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "stories": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "story_type": "story_type",
+                "workflow_state_id": "workflow_state_id",
+                "epic_id": "epic_id",
+                "iteration_id": "iteration_id",
+                "group_id": "group_id",
+                "owner_ids": "owner_ids",
+                "estimate": "estimate",
+                "deadline": "deadline",
+                "started": "started",
+                "completed": "completed",
+                "blocked": "blocked",
+                "archived": "archived",
+                "app_url": "app_url",
+                "updated_at": "updated_at",
+                "description": "description"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_list_iterations",
+      "description": "List all iterations (sprints): id, name, status (unstarted, started, done), start and end date, teams and point and story counts. Use the id with shortcut_list_iteration_stories.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/iterations"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "iterations": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "status": "status",
+                "start_date": "start_date",
+                "end_date": "end_date",
+                "group_ids": "group_ids",
+                "num_points": "stats.num_points",
+                "num_points_done": "stats.num_points_done",
+                "num_stories_done": "stats.num_stories_done",
+                "num_stories_unstarted": "stats.num_stories_unstarted",
+                "num_stories_started": "stats.num_stories_started",
+                "app_url": "app_url"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_list_iteration_stories",
+      "description": "List the stories of one iteration (sprint) with id, name, type, state, owners, estimate and dates. Descriptions are left out unless includes_description is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "iteration_id": {
+            "type": "integer",
+            "description": "The iteration's numeric id.",
+            "minimum": 1
+          },
+          "includes_description": {
+            "type": "boolean",
+            "description": "Include each story's description. Default false."
+          }
+        },
+        "required": [
+          "iteration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/iterations/{iteration_id}/stories",
+        "queryParams": {
+          "includes_description": "$includes_description"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "stories": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "story_type": "story_type",
+                "workflow_state_id": "workflow_state_id",
+                "epic_id": "epic_id",
+                "iteration_id": "iteration_id",
+                "group_id": "group_id",
+                "owner_ids": "owner_ids",
+                "estimate": "estimate",
+                "deadline": "deadline",
+                "started": "started",
+                "completed": "completed",
+                "blocked": "blocked",
+                "archived": "archived",
+                "app_url": "app_url",
+                "updated_at": "updated_at",
+                "description": "description"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_list_objectives",
+      "description": "List objectives (the successor of milestones): id, name, state (to do, in progress, done), whether started or completed, categories and app link.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/objectives"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "objectives": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "state": "state",
+                "started": "started",
+                "completed": "completed",
+                "archived": "archived",
+                "categories": "categories[*].name",
+                "app_url": "app_url",
+                "updated_at": "updated_at"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "shortcut_list_labels",
+      "description": "List the labels of the workspace: id, name, color, description and archived. Use a label name in create or update (labels: [{name}]) or in a label: search.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/labels",
+        "queryParams": {
+          "slim": "true"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "labels": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "color": "color",
+                "description": "description",
+                "archived": "archived"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "shortcut_search_stories",
+      "description": "Search stories with text and Shortcut search operators (see the connector instructions), e.g. 'owner:jane is:started type:bug'. Returns id, name, type, state, epic, iteration, team, owners, estimate, deadline and link. More: pass the next token; only the first 1000 matches can be paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words and operators, e.g. 'label:customer !is:done updated:2026-10-01..*'.",
+            "minLength": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250. Default 25.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25
+          },
+          "next": {
+            "type": "string",
+            "description": "Token for the next page: the value after next= in the previous answer's next."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/stories",
+        "queryParams": {
+          "query": "$query",
+          "page_size": "$page_size",
+          "next": "$next",
+          "detail": "slim"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "stories": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "story_type": "story_type",
+                "workflow_state_id": "workflow_state_id",
+                "epic_id": "epic_id",
+                "iteration_id": "iteration_id",
+                "group_id": "group_id",
+                "owner_ids": "owner_ids",
+                "estimate": "estimate",
+                "deadline": "deadline",
+                "started": "started",
+                "completed": "completed",
+                "blocked": "blocked",
+                "archived": "archived",
+                "app_url": "app_url",
+                "updated_at": "updated_at",
+                "labels": "labels[*].name"
+              }
+            },
+            "total": "$.total",
+            "next": "$.next"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_get_story",
+      "description": "Read one story in full: name, description, type, state, epic, iteration, team, owners, requester, estimate, deadline, labels, tasks, comments, linked stories and external links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "integer",
+            "description": "The story's number, e.g. 123 (the number in the story URL, also shown as sc-123).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "story_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stories/{story_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "story_type": "$.story_type",
+            "workflow_state_id": "$.workflow_state_id",
+            "epic_id": "$.epic_id",
+            "iteration_id": "$.iteration_id",
+            "group_id": "$.group_id",
+            "owner_ids": "$.owner_ids",
+            "estimate": "$.estimate",
+            "deadline": "$.deadline",
+            "started": "$.started",
+            "completed": "$.completed",
+            "blocked": "$.blocked",
+            "archived": "$.archived",
+            "app_url": "$.app_url",
+            "updated_at": "$.updated_at",
+            "description": "$.description",
+            "requested_by_id": "$.requested_by_id",
+            "follower_ids": "$.follower_ids",
+            "labels": "$.labels[*].name",
+            "external_links": "$.external_links",
+            "parent_story_id": "$.parent_story_id",
+            "created_at": "$.created_at",
+            "completed_at": "$.completed_at",
+            "tasks": {
+              "$from": "$.tasks[*]",
+              "$select": {
+                "id": "id",
+                "description": "description",
+                "complete": "complete",
+                "owner_ids": "owner_ids"
+              }
+            },
+            "comments": {
+              "$from": "$.comments[*]",
+              "$select": {
+                "id": "id",
+                "author_id": "author_id",
+                "text": "text",
+                "created_at": "created_at",
+                "parent_id": "parent_id"
+              }
+            },
+            "story_links": {
+              "$from": "$.story_links[*]",
+              "$select": {
+                "verb": "verb",
+                "subject_id": "subject_id",
+                "object_id": "object_id",
+                "type": "type"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_get_story_history",
+      "description": "Read the change history of one story: each change with time, who made it (member id and name) and the actions, e.g. state moves, owner, estimate or epic changes, with old and new values. Newest changes are at the end.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "integer",
+            "description": "The story's number, e.g. 123 (the number in the story URL, also shown as sc-123).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "story_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stories/{story_id}/history",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "history": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "changed_at": "changed_at",
+                "member_id": "member_id",
+                "actor_name": "actor_name",
+                "actions": {
+                  "$from": "actions[*]",
+                  "$select": {
+                    "action": "action",
+                    "entity_type": "entity_type",
+                    "id": "id",
+                    "name": "name",
+                    "changes": "changes"
+                  }
+                },
+                "references": {
+                  "$from": "references[*]",
+                  "$select": {
+                    "entity_type": "entity_type",
+                    "id": "id",
+                    "name": "name",
+                    "type": "type"
+                  }
+                }
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "shortcut_create_story",
+      "description": "Create a story. Pass a name and either workflow_state_id (from shortcut_list_workflows) or a project or team whose workflow is used. Show the user the story to be created (name, type, state, owners, epic) and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Title of the story, at most 512 characters.",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "description": {
+            "type": "string",
+            "description": "Description in Markdown, at most 100000 characters."
+          },
+          "story_type": {
+            "type": "string",
+            "description": "feature (default), bug or chore.",
+            "enum": [
+              "feature",
+              "bug",
+              "chore"
+            ]
+          },
+          "workflow_state_id": {
+            "type": "integer",
+            "description": "Workflow state the story starts in, from shortcut_list_workflows."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Team (UUID) from shortcut_list_teams."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id, for workspaces that use projects."
+          },
+          "epic_id": {
+            "type": "integer",
+            "description": "Epic the story belongs to."
+          },
+          "iteration_id": {
+            "type": "integer",
+            "description": "Iteration (sprint) the story belongs to."
+          },
+          "owner_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Member UUIDs of the owners, from shortcut_list_members."
+          },
+          "requested_by_id": {
+            "type": "string",
+            "description": "Member UUID of the requester. Default: you."
+          },
+          "estimate": {
+            "type": "integer",
+            "description": "Point estimate."
+          },
+          "deadline": {
+            "type": "string",
+            "description": "Due date, ISO 8601, e.g. 2026-11-01T00:00:00Z."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            },
+            "description": "Labels to attach, e.g. [{\"name\": \"customer\"}]. Unknown names create a new label."
+          },
+          "external_links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Links to add, e.g. a support ticket URL."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stories",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "story_type": "$story_type",
+          "workflow_state_id": "$workflow_state_id",
+          "group_id": "$group_id",
+          "project_id": "$project_id",
+          "epic_id": "$epic_id",
+          "iteration_id": "$iteration_id",
+          "owner_ids": "$owner_ids",
+          "requested_by_id": "$requested_by_id",
+          "estimate": "$estimate",
+          "deadline": "$deadline",
+          "labels": "$labels",
+          "external_links": "$external_links"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "story_type": "$.story_type",
+            "workflow_state_id": "$.workflow_state_id",
+            "epic_id": "$.epic_id",
+            "iteration_id": "$.iteration_id",
+            "group_id": "$.group_id",
+            "owner_ids": "$.owner_ids",
+            "estimate": "$.estimate",
+            "deadline": "$.deadline",
+            "started": "$.started",
+            "completed": "$.completed",
+            "blocked": "$.blocked",
+            "archived": "$.archived",
+            "app_url": "$.app_url",
+            "updated_at": "$.updated_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "shortcut_update_story",
+      "description": "Change a story: name, description, type, workflow state (to move it), team, epic, iteration, owners, estimate, deadline, labels or archived. Only the fields you pass change; owner_ids and labels replace the whole list. Show the user the change and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "integer",
+            "description": "The story's number, e.g. 123 (the number in the story URL, also shown as sc-123).",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "New title.",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "description": {
+            "type": "string",
+            "description": "New description in Markdown; replaces the old one."
+          },
+          "story_type": {
+            "type": "string",
+            "description": "feature, bug or chore.",
+            "enum": [
+              "feature",
+              "bug",
+              "chore"
+            ]
+          },
+          "workflow_state_id": {
+            "type": "integer",
+            "description": "Move the story to this workflow state."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Team (UUID)."
+          },
+          "epic_id": {
+            "type": "integer",
+            "description": "Epic the story belongs to."
+          },
+          "iteration_id": {
+            "type": "integer",
+            "description": "Iteration (sprint) the story belongs to."
+          },
+          "owner_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Member UUIDs of all owners (replaces the list)."
+          },
+          "estimate": {
+            "type": "integer",
+            "description": "Point estimate."
+          },
+          "deadline": {
+            "type": "string",
+            "description": "Due date, ISO 8601."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            },
+            "description": "All labels of the story (replaces the list), e.g. [{\"name\": \"customer\"}]."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true archives the story (reversible), false restores it."
+          }
+        },
+        "required": [
+          "story_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/stories/{story_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "story_type": "$story_type",
+          "workflow_state_id": "$workflow_state_id",
+          "group_id": "$group_id",
+          "epic_id": "$epic_id",
+          "iteration_id": "$iteration_id",
+          "owner_ids": "$owner_ids",
+          "estimate": "$estimate",
+          "deadline": "$deadline",
+          "labels": "$labels",
+          "archived": "$archived"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "story_type": "$.story_type",
+            "workflow_state_id": "$.workflow_state_id",
+            "epic_id": "$.epic_id",
+            "iteration_id": "$.iteration_id",
+            "group_id": "$.group_id",
+            "owner_ids": "$.owner_ids",
+            "estimate": "$.estimate",
+            "deadline": "$.deadline",
+            "started": "$.started",
+            "completed": "$.completed",
+            "blocked": "$.blocked",
+            "archived": "$.archived",
+            "app_url": "$.app_url",
+            "updated_at": "$.updated_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "shortcut_add_story_comment",
+      "description": "Add a comment to a story, as you. Markdown and @mentions work; followers are notified. Show the user the comment text and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "integer",
+            "description": "The story's number, e.g. 123 (the number in the story URL, also shown as sc-123).",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string",
+            "description": "Comment text in Markdown, at most 100000 characters.",
+            "minLength": 1
+          },
+          "parent_id": {
+            "type": "integer",
+            "description": "Reply to this comment id instead of starting a new thread."
+          }
+        },
+        "required": [
+          "story_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stories/{story_id}/comments",
+        "bodyMapping": {
+          "text": "$text",
+          "parent_id": "$parent_id"
+        },
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "story_id": "$.story_id",
+            "author_id": "$.author_id",
+            "text": "$.text",
+            "created_at": "$.created_at",
+            "app_url": "$.app_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "shortcut_delete_story",
+      "description": "Delete a story permanently. It cannot be restored; archive it with shortcut_update_story instead when possible. Installed switched off. Only when the user explicitly asks; confirm the story id and name first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "integer",
+            "description": "The story's number, e.g. 123 (the number in the story URL, also shown as sc-123).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "story_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/stories/{story_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    }
+  ]
+}

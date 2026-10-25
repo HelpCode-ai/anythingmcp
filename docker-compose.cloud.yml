@@ -87,6 +87,15 @@ x-backend: &backend
     - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
     - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.05}
     - SENTRY_VERIFY_TOKEN=${SENTRY_VERIFY_TOKEN:-}
+    # Prometheus /metrics — a separate listener, off by default (docs/operations/observability.md).
+    # METRICS_TOKEN is required once METRICS_ENABLED=true; the listener refuses to start without it.
+    # METRICS_TOOL_LABELS is always ignored here regardless of its value — no series may carry a
+    # connector id or tool name across tenant workspaces.
+    - METRICS_ENABLED=${METRICS_ENABLED:-false}
+    - METRICS_PORT=${METRICS_PORT:-9464}
+    - METRICS_HOST=${METRICS_HOST:-0.0.0.0}
+    - METRICS_TOKEN=${METRICS_TOKEN:-}
+    - METRICS_TOOL_LABELS=${METRICS_TOOL_LABELS:-false}
     - NEXT_PUBLIC_API_URL=https://${DOMAIN}
     - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
     - REDIS_URL=redis://redis:6379
@@ -105,6 +114,10 @@ x-backend: &backend
     # bucket of three trials an hour. Must match LICENSE_SERVICE_TOKEN on the
     # website. Unset = public limit (self-host default).
     - LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN:-}
+    # Key of the address token in pricing links (`/pricing#t=…`), so the
+    # website knows who is buying and refuses a second subscription. Must
+    # match EMAIL_LINK_SECRET on the website. Unset = links without a token.
+    - EMAIL_LINK_SECRET=${EMAIL_LINK_SECRET:-}
     - CORS_ORIGIN=https://${DOMAIN}
     - SERVER_URL=https://${DOMAIN}
     - FRONTEND_URL=https://${DOMAIN}
@@ -124,6 +137,14 @@ x-backend: &backend
     # `-32001 Session not found` errors Copilot hits against stateful servers.
     - MCP_STREAMABLE_JSON_RESPONSE=${MCP_STREAMABLE_JSON_RESPONSE:-true}
     - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-true}
+    # Social sign-in (Google, Microsoft, GitHub). A provider appears on the
+    # sign-in pages only when both of its variables are set; unset = off.
+    - SOCIAL_GOOGLE_CLIENT_ID=${SOCIAL_GOOGLE_CLIENT_ID:-}
+    - SOCIAL_GOOGLE_CLIENT_SECRET=${SOCIAL_GOOGLE_CLIENT_SECRET:-}
+    - SOCIAL_MICROSOFT_CLIENT_ID=${SOCIAL_MICROSOFT_CLIENT_ID:-}
+    - SOCIAL_MICROSOFT_CLIENT_SECRET=${SOCIAL_MICROSOFT_CLIENT_SECRET:-}
+    - SOCIAL_GITHUB_CLIENT_ID=${SOCIAL_GITHUB_CLIENT_ID:-}
+    - SOCIAL_GITHUB_CLIENT_SECRET=${SOCIAL_GITHUB_CLIENT_SECRET:-}
     - LICENSE_API_URL=${LICENSE_API_URL:-https://anythingmcp.com}
     # Operator analytics — cloud build only. Leave unset on self-hosted.
     - GTM_ID=${GTM_ID:-}
@@ -163,6 +184,14 @@ x-backend: &backend
     # Where replies go when SMTP_FROM is a noreply address.
     - SMTP_REPLY_TO=${SMTP_REPLY_TO:-}
     - SMTP_SECURE=${SMTP_SECURE:-false}
+    # Live support chat (Libredesk). Unset = no widget, no triage webhook.
+    - SUPPORT_CHAT_URL=${SUPPORT_CHAT_URL:-}
+    - SUPPORT_CHAT_INBOX_ID=${SUPPORT_CHAT_INBOX_ID:-}
+    - SUPPORT_CHAT_SECRET=${SUPPORT_CHAT_SECRET:-}
+    - LIBREDESK_API_KEY=${LIBREDESK_API_KEY:-}
+    - LIBREDESK_API_SECRET=${LIBREDESK_API_SECRET:-}
+    - LIBREDESK_WEBHOOK_SECRET=${LIBREDESK_WEBHOOK_SECRET:-}
+    - LIBREDESK_AI_ASSISTANT_USER_ID=${LIBREDESK_AI_ASSISTANT_USER_ID:-}
   volumes:
     # One heap snapshot per process, written by the heap guard when the heap
     # crosses HEAP_SNAPSHOT_PERCENT. A volume so it outlives the container

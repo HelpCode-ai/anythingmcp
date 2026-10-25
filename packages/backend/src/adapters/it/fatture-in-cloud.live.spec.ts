@@ -42,7 +42,7 @@ describe('fatture-in-cloud adapter — static spec conformance', () => {
 
   it("sends list filters as `q`, the only filter parameter the API reads", () => {
     const lists = a.tools.filter((t) => t.name.startsWith('fatture_in_cloud_list_') && t.endpointMapping.queryParams);
-    expect(lists.length).toBe(6);
+    expect(lists.length).toBe(7);
     for (const t of lists) {
       const q = t.endpointMapping.queryParams as Record<string, unknown>;
       expect(q.q).toBe('$filter');
@@ -65,5 +65,36 @@ const live = process.env.RUN_FATTURE_IN_CLOUD_LIVE === '1';
     // fatture-in-cloud answers. Asserting an HTTP shape here would only restate
     // the static expectations above against a credential CI does not have.
     expect(a.probe?.tool ?? toolNames[0]).toBeTruthy();
+  });
+});
+
+const byName = (name: string) => {
+  const found = (adapter as unknown as { tools: Array<{ name: string; parameters: { required?: string[] }; endpointMapping: Record<string, unknown> }> }).tools.find((x) => x.name === name);
+  if (!found) throw new Error(`no tool ${name}`);
+  return found;
+};
+
+describe('fatture-in-cloud adapter: e-invoice XML and received documents', () => {
+  const t = (name: string) => byName(name);
+  it('downloads the FatturaPA XML of an issued document', () => {
+    expect(t('fatture_in_cloud_get_e_invoice_xml').endpointMapping).toMatchObject({
+      method: 'GET',
+      path: '/c/{FIC_COMPANY_ID}/issued_documents/{documentId}/e_invoice/xml',
+    });
+  });
+  it('lists the F24 tax payments and asks for the taxes:r scope', () => {
+    expect(t('fatture_in_cloud_list_f24').endpointMapping).toEqual({
+      method: 'GET',
+      path: '/c/{FIC_COMPANY_ID}/taxes',
+      queryParams: { q: '$filter', sort: '$sort', page: '$page', per_page: '$per_page' },
+    });
+    expect(String(a.connector.authConfig?.scopes).split(' ')).toContain('taxes:r');
+  });
+  it('reads one received document in detail', () => {
+    expect(t('fatture_in_cloud_get_received_document').endpointMapping).toMatchObject({
+      method: 'GET',
+      path: '/c/{FIC_COMPANY_ID}/received_documents/{documentId}',
+      queryParams: { fieldset: 'detailed' },
+    });
   });
 });

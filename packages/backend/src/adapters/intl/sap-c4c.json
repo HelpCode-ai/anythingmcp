@@ -1,0 +1,544 @@
+{
+  "slug": "sap-c4c",
+  "name": "SAP Sales Cloud and Service Cloud (C4C)",
+  "aliases": [
+    "SAP C4C",
+    "SAP Cloud for Customer",
+    "SAP Sales Cloud",
+    "SAP Service Cloud",
+    "SAP C4C OData"
+  ],
+  "description": "Read SAP Sales Cloud and Service Cloud (Cloud for Customer, C4C) through its OData API: accounts, contacts, leads, opportunities, sales quotes, service requests, products and employees, plus generic OData tools for every other entity set. Basic authentication, read-only.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "sap-c4c",
+  "docsUrl": "https://help.sap.com/doc/d0f9ba822c08405da7d88174b304df84/CLOUD/en-US/index.html",
+  "instructions": "## SAP Sales Cloud and Service Cloud (C4C)\nThis connector reads **SAP Sales Cloud and SAP Service Cloud** (SAP Cloud for Customer, C4C) through its standard OData V2 API, `https://<tenant>.crm.ondemand.com/sap/c4c/odata/v1/c4codataapi`: accounts, contacts, leads, opportunities, sales quotes, service requests, products, employees and every other entity set of the service. It is read-only, and SAP checks the user's authorizations on every call.\n\n**Start with `sap_c4c_guide`** (free), then a ready tool: `sap_c4c_list_accounts`, `sap_c4c_list_contacts`, `sap_c4c_list_leads`, `sap_c4c_list_opportunities`, `sap_c4c_list_sales_quotes`, `sap_c4c_list_service_requests`, `sap_c4c_list_products`, `sap_c4c_list_employees`. For any other set use the built-in OData tools: `sap_c4c_list_services`, `sap_c4c_describe_service` (all entity sets; large, cached for a day), `sap_c4c_describe_entity` (fields with labels), `sap_c4c_query` and `sap_c4c_get_entity` (one record by ObjectID).\n\n**Setup**\n1. Recommended: a technical integration user. In C4C go to **Administrator > Integration > Communication Systems**, create a communication system, then under **Communication Arrangements** create one with the scenario **OData Services for Business Objects**, authentication **User ID and Password**, and select the OData services (at least c4codataapi). The arrangement shows the user id; set its password there.\n2. Alternatively a business user with Basic authentication whose business roles grant read access to the work centers the AI should see.\n3. Fill in `SAP_C4C_HOST`, the tenant host such as `my123456.crm.ondemand.com` (without https:// or a path), `SAP_C4C_USER` and `SAP_C4C_PASSWORD`.\n4. Install and run `sap_c4c_list_accounts` with top 1 to check the access.\n\n**Queries**: filters support eq, ne, ge, le, gt, lt, and, startswith and endswith, and or only on one field; dates are `datetimeoffset'2026-01-01T00:00:00Z'`; `EntityLastChangedOn` finds changes since a moment. `search` is SAP's free-text search. Records are keyed by `ObjectID`; business ids (AccountID, ID) are separate fields. Ask for the fields you need with `select`.\n\n**Paging and limits**: at most 1000 rows per page (`top`, then `skip`); the lists return the total count. `expand` is slow on large sets.\n\n**Errors**: 401 means a wrong user or password, or a locked user. 403 means the communication arrangement or the user's business roles do not cover this business object. A 404 on every call usually means a wrong `SAP_C4C_HOST`. A 400 names a field or filter the API does not accept; check it with `sap_c4c_describe_entity`.",
+  "prerequisites": "An SAP Sales Cloud or Service Cloud (C4C) tenant and a user with Basic authentication: ideally an integration user from a communication arrangement with the scenario OData Services for Business Objects.",
+  "requiredEnvVars": [
+    "SAP_C4C_HOST",
+    "SAP_C4C_USER",
+    "SAP_C4C_PASSWORD"
+  ],
+  "envVarMeta": {
+    "SAP_C4C_HOST": {
+      "label": "Tenant host",
+      "kind": "address",
+      "help": "The host of your C4C tenant, as in the browser address bar, e.g. my123456.crm.ondemand.com, without https:// or a path.",
+      "example": "my123456.crm.ondemand.com",
+      "pattern": "^my[0-9]+(-[a-z0-9]+)?\\.crm\\.ondemand\\.com$",
+      "patternMessage": "Only the tenant host, e.g. my123456.crm.ondemand.com, without https:// or a path."
+    },
+    "SAP_C4C_USER": {
+      "label": "User",
+      "kind": "credential",
+      "help": "The user id of the integration user (shown in the communication arrangement) or of a business user with Basic authentication.",
+      "example": "_ODATA_READ"
+    },
+    "SAP_C4C_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that user, set in the communication arrangement for an integration user."
+    }
+  },
+  "verifyHints": {
+    "401": "C4C refused the user or password. Check both, and that the user is not locked and its password not expired (set it again in the communication arrangement).",
+    "403": "The user may not read this business object. Add the OData service to the communication arrangement, or a business role with access to it.",
+    "not_found": "No C4C OData API at this address. SAP_C4C_HOST is only the tenant host, e.g. my123456.crm.ondemand.com."
+  },
+  "probe": {
+    "tool": "sap_c4c_list_accounts",
+    "params": {
+      "top": 1,
+      "select": "ObjectID"
+    }
+  },
+  "connector": {
+    "name": "SAP Sales Cloud and Service Cloud (C4C)",
+    "type": "ODATA",
+    "baseUrl": "https://{{SAP_C4C_HOST}}/sap/c4c/odata/v1/c4codataapi",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{SAP_C4C_USER}}",
+      "password": "{{SAP_C4C_PASSWORD}}"
+    },
+    "config": {
+      "odata": {
+        "version": "v2",
+        "toolPrefix": "sap_c4c",
+        "maxRows": 1000
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "sap_c4c_guide",
+      "description": "How to read SAP Sales Cloud and Service Cloud (C4C) through its OData API: the workflow, filter syntax, keys and ids, paging and known limitations. Static text, costs no API call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "Chapter to read. Omit for the overview.",
+            "enum": [
+              "filters",
+              "keys",
+              "pitfalls"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "SAP Sales Cloud and Service Cloud (Cloud for Customer, C4C) OData API: how to work.\n\n1. Start with a ready tool: sap_c4c_list_accounts (corporate accounts), sap_c4c_list_contacts, sap_c4c_list_leads, sap_c4c_list_opportunities, sap_c4c_list_sales_quotes, sap_c4c_list_service_requests (tickets), sap_c4c_list_products, sap_c4c_list_employees. Each takes filter, search, select, orderby, expand, top and skip and returns the total count.\n2. For anything else (appointments, tasks, visits, phone calls, sales orders, contracts, installed bases, custom fields), use the built-ins: sap_c4c_describe_service lists every entity set of c4codataapi (the model is large; the first call takes a while and is cached for a day), sap_c4c_describe_entity shows the fields of one set with their labels, sap_c4c_query reads rows, sap_c4c_get_entity reads one record by ObjectID.\n3. Always pass select with the fields you need: a C4C record carries hundreds of fields and code texts.\n\nTopics: filters, keys, pitfalls.",
+        "staticResponses": {
+          "filters": "Filtering in the C4C OData API (OData V2 with SAP restrictions)\n\n- Comparison: eq, ne, gt, ge, lt, le; combine with and. or works only between conditions on the same field (AccountID eq '1001' or AccountID eq '1002'); for other combinations run two queries.\n- Strings in single quotes: RoleCode eq 'CRM000'. A * inside an eq value is a wildcard: Name eq '*Porter*'. startswith(Name,'Porter') and endswith(Name,'LLC') (field first) are supported; substringof, tolower and other functions are not.\n- Dates and times: CreationDateTime ge datetimeoffset'2026-01-01T00:00:00Z'. EntityLastChangedOn ge datetimeoffset'...' finds records changed since a moment (delta reads).\n- Fields of an expanded navigation cannot be filtered on. Filter the child set and expand the parent instead, e.g. OpportunityItemCollection with filter ProductID eq 'P300104' and expand Opportunity.\n- search is SAP's free-text search on search-enabled fields: whole words, * as wildcard, several words ANDed; it can be combined with filter.\n- Code fields (StatusCode, RoleCode, PriorityCode...) come with a ...Text field holding the label.",
+          "keys": "Keys and ids\n\n- Every record has ObjectID, a 32-character hex key (e.g. 00163E03A0701ED28A8644CF8D83AE76). sap_c4c_get_entity and navigation use it.\n- Business ids are separate fields: AccountID, ContactID, ID (lead, opportunity, service request, quote, product), EmployeeID. Filter on them to find the ObjectID.\n- Child records point to their parent with ParentObjectID, e.g. OpportunityItemCollection rows carry the ObjectID of the opportunity.\n- Accounts: RoleCode CRM000 is a customer, BUP002 a prospect. Individual (B2C) customers are in IndividualCustomerCollection, not in CorporateAccountCollection.",
+          "pitfalls": "Pitfalls\n\n- The service returns at most 1000 rows per page; use skip for the next page and narrow with filter. Without top the server pages by 1000 by itself.\n- expand is slow on large sets; prefer a second query on the child set.\n- 401 means a wrong user or password, or a locked or expired user. 403 means the user's business role or the communication arrangement does not grant this business object.\n- Fields from custom extensions appear with their technical names (often ending in _KUT or _SDK); sap_c4c_describe_entity shows their labels.\n- Personal data (private addresses, birth dates) should only be read when the user asks for it."
+        }
+      }
+    },
+    {
+      "name": "sap_c4c_list_accounts",
+      "description": "Corporate accounts (customers and prospects) from CorporateAccountCollection: ObjectID, AccountID, name, role (CRM000 customer, BUP002 prospect), status, ABC classification, industry, owner, main address, phone and e-mail. Filter or search to find an account and its ObjectID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, dates as datetimeoffset, e.g. RoleCode eq 'CRM000' and CountryCode eq 'DE'. Only eq, ne, ge, le, gt, lt, and, startswith and endswith; or only on the same field."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search over the search-enabled fields, e.g. 'Porter' or Port* (exact words, * as wildcard, several words are ANDed)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. ObjectID,AccountID,Name,RoleCodeText,City,CountryCode,OwnerID. Keeps answers small; names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. EntityLastChangedOn desc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (describe_entity lists them). Slows the call down."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return (default 100, at most 1000).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/CorporateAccountCollection",
+        "queryParams": {
+          "$filter": "$filter",
+          "$search": "$search",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "sap_c4c_list_contacts",
+      "description": "Contact persons from ContactCollection: ObjectID, ContactID, first and last name, job title and function, the account they belong to, e-mail and phones, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, dates as datetimeoffset, e.g. AccountID eq '1001234'. Only eq, ne, ge, le, gt, lt, and, startswith and endswith; or only on the same field."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search over the search-enabled fields, e.g. 'Porter' or Port* (exact words, * as wildcard, several words are ANDed)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. ObjectID,ContactID,FirstName,LastName,AccountID,Email,Phone. Keeps answers small; names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. EntityLastChangedOn desc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (describe_entity lists them). Slows the call down."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return (default 100, at most 1000).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ContactCollection",
+        "queryParams": {
+          "$filter": "$filter",
+          "$search": "$search",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "sap_c4c_list_leads",
+      "description": "Leads from LeadCollection: ObjectID, ID, name, life cycle status, qualification level, source, owner, account or company and contact, start and end date, creation and change times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, dates as datetimeoffset, e.g. LifeCycleStatusCode eq '2' and OwnerPartyID eq '8000000123'. Only eq, ne, ge, le, gt, lt, and, startswith and endswith; or only on the same field."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search over the search-enabled fields, e.g. 'Porter' or Port* (exact words, * as wildcard, several words are ANDed)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. ObjectID,ID,Name,LifeCycleStatusCode,QualificationLevelCode,OwnerPartyID,AccountPartyID,Company. Keeps answers small; names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. EntityLastChangedOn desc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (describe_entity lists them). Slows the call down."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return (default 100, at most 1000).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/LeadCollection",
+        "queryParams": {
+          "$filter": "$filter",
+          "$search": "$search",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "sap_c4c_list_opportunities",
+      "description": "Opportunities from OpportunityCollection: ObjectID, ID, name, account, owner, sales phase, status, probability, expected value and currency, expected close date. Use it for the sales pipeline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, dates as datetimeoffset, e.g. LifeCycleStatusCode eq '2' and ExpectedRevenueEndDate le datetimeoffset'2026-12-31T00:00:00Z'. Only eq, ne, ge, le, gt, lt, and, startswith and endswith; or only on the same field."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search over the search-enabled fields, e.g. 'Porter' or Port* (exact words, * as wildcard, several words are ANDed)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. ObjectID,ID,Name,ProspectPartyID,SalesCyclePhaseCode,ProbabilityPercent,ExpectedRevenueAmount,ExpectedRevenueAmountCurrencyCode,ExpectedRevenueEndDate. Keeps answers small; names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. EntityLastChangedOn desc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (describe_entity lists them). Slows the call down."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return (default 100, at most 1000).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/OpportunityCollection",
+        "queryParams": {
+          "$filter": "$filter",
+          "$search": "$search",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "sap_c4c_list_sales_quotes",
+      "description": "Sales quotes from SalesQuoteCollection: ObjectID, ID, name, account, status, net and gross amount with currency, valid-to date, owner and the opportunity it belongs to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, dates as datetimeoffset, e.g. BuyerPartyID eq '1001234'. Only eq, ne, ge, le, gt, lt, and, startswith and endswith; or only on the same field."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search over the search-enabled fields, e.g. 'Porter' or Port* (exact words, * as wildcard, several words are ANDed)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. ObjectID,ID,Name,BuyerPartyID,LifeCycleStatusCodeText,NetAmount,NetAmountCurrencyCode. Keeps answers small; names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. EntityLastChangedOn desc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (describe_entity lists them). Slows the call down."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return (default 100, at most 1000).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/SalesQuoteCollection",
+        "queryParams": {
+          "$filter": "$filter",
+          "$search": "$search",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "sap_c4c_list_service_requests",
+      "description": "Service requests (tickets) from ServiceRequestCollection: ObjectID, ID, subject, customer (BuyerPartyID) and contact, status, priority, processor, service category, due dates and SLA times. Use it for the service backlog.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, dates as datetimeoffset, e.g. ServiceRequestLifeCycleStatusCode eq '1' and ServicePriorityCode eq '1'. Only eq, ne, ge, le, gt, lt, and, startswith and endswith; or only on the same field."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search over the search-enabled fields, e.g. 'Porter' or Port* (exact words, * as wildcard, several words are ANDed)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. ObjectID,ID,Name,BuyerPartyID,ServiceRequestUserLifeCycleStatusCode,ServicePriorityCode,ProcessorPartyID,ResolutionDueDateTime. Keeps answers small; names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. EntityLastChangedOn desc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (describe_entity lists them). Slows the call down."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return (default 100, at most 1000).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ServiceRequestCollection",
+        "queryParams": {
+          "$filter": "$filter",
+          "$search": "$search",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "sap_c4c_list_products",
+      "description": "Products from ProductCollection: ObjectID, ProductID, description, status, product category, base unit of measure, usage and division.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, dates as datetimeoffset, e.g. ProductCategoryID eq 'BIKES'. Only eq, ne, ge, le, gt, lt, and, startswith and endswith; or only on the same field."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search over the search-enabled fields, e.g. 'Porter' or Port* (exact words, * as wildcard, several words are ANDed)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. ObjectID,ProductID,Description,Status,ProductCategoryID,BaseUOM. Keeps answers small; names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. EntityLastChangedOn desc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (describe_entity lists them). Slows the call down."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return (default 100, at most 1000).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ProductCollection",
+        "queryParams": {
+          "$filter": "$filter",
+          "$search": "$search",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "sap_c4c_list_employees",
+      "description": "Employees from EmployeeCollection: ObjectID, EmployeeID, name, job, e-mail, phone, organizational unit and user. Use it to resolve owner and processor ids to names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, dates as datetimeoffset, e.g. LastName eq 'Smith'. Only eq, ne, ge, le, gt, lt, and, startswith and endswith; or only on the same field."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search over the search-enabled fields, e.g. 'Porter' or Port* (exact words, * as wildcard, several words are ANDed)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. ObjectID,EmployeeID,FirstName,LastName,Email,UserID. Keeps answers small; names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. EntityLastChangedOn desc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (describe_entity lists them). Slows the call down."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Rows to return (default 100, at most 1000).",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/EmployeeCollection",
+        "queryParams": {
+          "$filter": "$filter",
+          "$search": "$search",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    }
+  ]
+}

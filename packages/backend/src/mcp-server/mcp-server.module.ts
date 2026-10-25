@@ -15,6 +15,10 @@ import { DatabaseEngine } from '../connectors/engines/database.engine';
 import { ODataEngine } from '../connectors/engines/odata.engine';
 import { OAuth2TokenService } from '../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../connectors/engines/login-token.service';
+import { ConnectorAuthStatusService } from '../connectors/engines/connector-auth-status.service';
+import { BearerTokenRenewalService } from '../connectors/engines/bearer-token-renewal.service';
+import { ShopeeTokenService } from '../connectors/engines/shopee-token.service';
+import { SettingsModule } from '../settings/settings.module';
 import { GraphqlSchemaService } from '../connectors/engines/graphql-schema.service';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 import { LicenseModule } from '../license/license.module';
@@ -30,9 +34,9 @@ const ENGINES = [
 ];
 
 @Module({
-  imports: [McpServersModule, LicenseModule],
+  imports: [McpServersModule, LicenseModule, SettingsModule],
   controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
-  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, GraphqlSchemaService, ...ENGINES],
-  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, OAuth2TokenService],
+  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, GraphqlSchemaService, ...ENGINES],
+  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService],
 })
 export class McpServerModule {}

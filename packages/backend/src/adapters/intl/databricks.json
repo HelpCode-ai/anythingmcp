@@ -1,0 +1,1399 @@
+{
+  "slug": "databricks",
+  "name": "Databricks",
+  "aliases": [
+    "Databricks SQL",
+    "Unity Catalog",
+    "Azure Databricks"
+  ],
+  "description": "Let your AI work with your Databricks workspace: run SQL on a warehouse, explore Unity Catalog catalogs, schemas and tables, check clusters, warehouses, jobs and runs, read notebooks, and start or stop compute or trigger jobs after your confirmation. With a personal access token.",
+  "instructions": "## Databricks\nThis connector works with a **Databricks workspace** on AWS, Azure or Google Cloud through the Databricks REST API with a personal access token: the current user, clusters, SQL warehouses, SQL statements on a warehouse (Statement Execution API), jobs and runs, Unity Catalog catalogs, schemas and tables with columns, workspace notebooks, DBFS and Unity Catalog volumes. It acts with the rights of the token's user.\n\n**Setup (about 3 minutes)**\n1. Open your workspace and copy its host from the address bar into `DATABRICKS_HOST`, without `https://`: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` (AWS), `adb-1234567890123456.7.azuredatabricks.net` (Azure) or `1234567890123456.7.gcp.databricks.com` (Google Cloud).\n2. Click your user name (top right) → **Settings** → **Developer** → **Access tokens** → **Manage** → **Generate new token**. Give it a comment and a lifetime, copy it (shown once) into `DATABRICKS_TOKEN`. The workspace admin must allow personal access tokens.\n3. For least privilege, create the token for a **service principal** with only the grants the AI needs (USE CATALOG, USE SCHEMA, SELECT on the data, CAN USE on one SQL warehouse).\n4. Install and run `databricks_get_current_user`.\n\n**Costs: Databricks bills compute in DBUs.** Running SQL on a stopped warehouse **starts it automatically**, and a running warehouse or cluster costs money until it stops (warehouses auto-stop after `auto_stop_mins`, clusters after `autotermination_minutes`). Before `databricks_execute_sql`, check the warehouse with `databricks_list_warehouses`: if its `state` is not `RUNNING`, tell the user the query will start it (size `cluster_size`, serverless or not) and ask first. Prefer a serverless warehouse when one exists: it starts in seconds.\n\n**Every write needs the user's confirmation first**: `databricks_start_cluster`, `databricks_terminate_cluster`, `databricks_start_warehouse`, `databricks_stop_warehouse`, `databricks_run_job`, `databricks_cancel_job_run` and `databricks_cancel_statement`. Say what will happen (costs, interrupted users or jobs) and wait for a clear yes. Terminating a cluster or stopping a warehouse ends the queries and notebooks running on it. Nothing is deleted by this connector.\n\n**SQL statements**\n- `databricks_execute_sql` runs one statement on a SQL warehouse: `SELECT` reads; `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `CREATE`, `ALTER`, `DROP`, `GRANT` change data or permissions. **Before any statement that is not a read, show the user the exact statement and wait for an explicit yes.** The token's Unity Catalog grants decide what is allowed.\n- Name tables fully: `catalog.schema.table` (or pass `catalog` and `schema`). Explore with `databricks_list_catalogs` → `databricks_list_schemas` → `databricks_list_tables` → `databricks_get_table` (columns and types) before writing SQL.\n- Use named parameters for values: `WHERE country = :country` plus `parameters: [{\"name\": \"country\", \"value\": \"DE\", \"type\": \"STRING\"}]`.\n- `row_limit` defaults to 200 rows (set it explicitly, at most 10,000); aggregate in SQL rather than fetching many rows. `rows` is a list of arrays in the order of `columns`; all values are strings or null.\n- The call waits up to `wait_timeout` (default 20s). If `status.state` is `PENDING` or `RUNNING`, call `databricks_get_statement` with the `statement_id` every few seconds until `SUCCEEDED`, `FAILED` or `CANCELED`. When `next_chunk_index` is present, more rows exist: `databricks_get_statement_chunk` with that index. Fetch the rows soon: Databricks keeps a statement's result only for a limited time.\n- `databricks_cancel_statement` stops a running statement (ask first).\n\n**Clusters and warehouses**: `databricks_list_clusters`, `databricks_get_cluster`, `databricks_list_warehouses` and `databricks_get_warehouse` are read-only and free; `termination_reason` explains why a cluster stopped. Spark configuration, environment variables, init scripts and tags are left out because they can contain secrets.\n\n**Jobs**: `databricks_list_jobs` and `databricks_get_job` show jobs, schedules, parameters and tasks. `databricks_run_job` triggers a run now (it costs compute; pass `job_parameters` only with the user's values). `databricks_list_job_runs` and `databricks_get_job_run` show runs and per-task state; `databricks_get_run_output` returns a **task** run's output (notebook exit value, error and logs): for a multi-task job, use the task's `run_id` from `databricks_get_job_run`, not the parent run id.\n\n**Files**: `databricks_list_workspace` browses folders, notebooks and files (`/Users/<email>`, `/Workspace/Shared`); `databricks_export_notebook` returns a notebook's source code as text (keep to small notebooks; the answer is capped at about 100 KB). `databricks_list_volume_files` lists a Unity Catalog volume (`/Volumes/<catalog>/<schema>/<volume>/...`). `databricks_list_dbfs` lists legacy DBFS paths; DBFS root and mounts are deprecated and disabled on many newer workspaces, so prefer volumes.\n\n**Common errors**\n- 403 `Invalid access token` or 401: the token is wrong, expired or revoked, or the host belongs to another workspace.\n- 403 `PERMISSION_DENIED`: the user lacks a grant (USE CATALOG, USE SCHEMA, SELECT, CAN USE on the warehouse, CAN MANAGE RUN on the job).\n- 404 / `RESOURCE_DOES_NOT_EXIST`: wrong id or name, or Unity Catalog is not enabled for the workspace.\n- 400 `INVALID_PARAMETER_VALUE`: e.g. a `wait_timeout` outside 5s to 50s, or a bad table name.\n- 429 `REQUEST_LIMIT_EXCEEDED`: wait and retry.\n\n**Out of scope here**: creating, editing or deleting clusters, warehouses, jobs, tables or files; uploading files; Delta Live Tables pipelines, MLflow, Model Serving, Genie and Vector Search (Databricks also offers its own managed MCP servers for Genie, Vector Search and Unity Catalog functions).",
+  "region": "intl",
+  "category": "database",
+  "icon": "databricks",
+  "docsUrl": "https://docs.databricks.com/api/workspace/introduction",
+  "prerequisites": "A Databricks workspace (AWS, Azure or Google Cloud) where personal access tokens are allowed, a token for a user or service principal, and for SQL a SQL warehouse it may use. Unity Catalog for the catalog tools. About 3 minutes.",
+  "requiredEnvVars": [
+    "DATABRICKS_HOST",
+    "DATABRICKS_TOKEN"
+  ],
+  "envVarMeta": {
+    "DATABRICKS_HOST": {
+      "label": "Workspace host",
+      "kind": "address",
+      "secret": false,
+      "help": "The host of your workspace URL, without https:// and without a path.",
+      "link": "https://docs.databricks.com/aws/en/workspace/workspace-details",
+      "example": "dbc-a1b2c3d4-e5f6.cloud.databricks.com",
+      "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.(cloud\\.databricks\\.com|azuredatabricks\\.net|gcp\\.databricks\\.com|cloud\\.databricks\\.us|databricks\\.azure\\.cn)$",
+      "patternMessage": "Enter only the workspace host, e.g. dbc-a1b2c3d4-e5f6.cloud.databricks.com or adb-1234567890123456.7.azuredatabricks.net: no https://, no path."
+    },
+    "DATABRICKS_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Workspace → your user name → Settings → Developer → Access tokens → Generate new token. Copy it when shown: it is displayed only once.",
+      "link": "https://docs.databricks.com/aws/en/dev-tools/auth/pat",
+      "example": "dapi1234567890abcdef...",
+      "pattern": "^[A-Za-z0-9._-]{20,}$",
+      "patternMessage": "Paste only the token as Databricks shows it (usually starting with dapi), without spaces and without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Databricks refused the token. Check DATABRICKS_TOKEN and that it belongs to this workspace.",
+    "403": "Databricks refused the token (Invalid access token) or the user lacks permission. Check that the token is valid, not expired, and created in the workspace named in DATABRICKS_HOST.",
+    "404": "Nothing answered at this address. Check DATABRICKS_HOST: only the workspace host, e.g. dbc-a1b2c3d4-e5f6.cloud.databricks.com.",
+    "rate_limited": "Databricks is rate limiting this token. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "databricks_get_current_user"
+  },
+  "connector": {
+    "name": "Databricks",
+    "type": "REST",
+    "baseUrl": "https://{{DATABRICKS_HOST}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{DATABRICKS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/2.0/preview/scim/v2/Me"
+  },
+  "tools": [
+    {
+      "name": "databricks_get_current_user",
+      "description": "Get the Databricks user or service principal behind the token: user name, display name, id, active flag, groups and entitlements. Use it to check the connection and who the AI acts as.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.0/preview/scim/v2/Me"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "userName": "$.userName",
+            "displayName": "$.displayName",
+            "active": "$.active",
+            "groups": "$.groups[*].display",
+            "entitlements": "$.entitlements[*].value"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "databricks_list_clusters",
+      "description": "List the workspace's clusters (all-purpose and job clusters) with id, name, state, Spark version, node types, size or autoscale range, auto-termination and creator.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Clusters per page, default 50.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.1/clusters/list",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "next_page_token": "$.next_page_token",
+            "clusters": {
+              "$from": "$.clusters",
+              "$select": {
+                "cluster_id": "cluster_id",
+                "cluster_name": "cluster_name",
+                "state": "state",
+                "state_message": "state_message",
+                "cluster_source": "cluster_source",
+                "spark_version": "spark_version",
+                "node_type_id": "node_type_id",
+                "driver_node_type_id": "driver_node_type_id",
+                "num_workers": "num_workers",
+                "autoscale": "autoscale",
+                "autotermination_minutes": "autotermination_minutes",
+                "data_security_mode": "data_security_mode",
+                "single_user_name": "single_user_name",
+                "creator_user_name": "creator_user_name",
+                "runtime_engine": "runtime_engine",
+                "start_time": "start_time",
+                "terminated_time": "terminated_time",
+                "termination_reason": "termination_reason.code",
+                "cluster_memory_mb": "cluster_memory_mb",
+                "cluster_cores": "cluster_cores",
+                "policy_id": "policy_id"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "databricks_get_cluster",
+      "description": "Get one cluster's state and configuration: Spark version, node types, workers or autoscale range, auto-termination, access mode, memory and cores, start and termination times and the termination reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cluster_id": {
+            "type": "string",
+            "description": "Cluster id, e.g. '0923-164208-meows279' (from databricks_list_clusters)."
+          }
+        },
+        "required": [
+          "cluster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.1/clusters/get",
+        "queryParams": {
+          "cluster_id": "$cluster_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "cluster_id": "$.cluster_id",
+            "cluster_name": "$.cluster_name",
+            "state": "$.state",
+            "state_message": "$.state_message",
+            "cluster_source": "$.cluster_source",
+            "spark_version": "$.spark_version",
+            "node_type_id": "$.node_type_id",
+            "driver_node_type_id": "$.driver_node_type_id",
+            "num_workers": "$.num_workers",
+            "autoscale": "$.autoscale",
+            "autotermination_minutes": "$.autotermination_minutes",
+            "data_security_mode": "$.data_security_mode",
+            "single_user_name": "$.single_user_name",
+            "creator_user_name": "$.creator_user_name",
+            "runtime_engine": "$.runtime_engine",
+            "start_time": "$.start_time",
+            "terminated_time": "$.terminated_time",
+            "termination_reason": "$.termination_reason",
+            "cluster_memory_mb": "$.cluster_memory_mb",
+            "cluster_cores": "$.cluster_cores",
+            "policy_id": "$.policy_id",
+            "last_restarted_time": "$.last_restarted_time"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "databricks_start_cluster",
+      "description": "Start a terminated cluster. Confirm with the user first: a running cluster bills DBUs and cloud VMs until it terminates (see autotermination_minutes). It takes a few minutes; check with databricks_get_cluster.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cluster_id": {
+            "type": "string",
+            "description": "Cluster id, e.g. '0923-164208-meows279' (from databricks_list_clusters)."
+          }
+        },
+        "required": [
+          "cluster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/2.1/clusters/start",
+        "bodyMapping": {
+          "cluster_id": "$cluster_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "ok": "= start requested"
+          }
+        }
+      }
+    },
+    {
+      "name": "databricks_terminate_cluster",
+      "description": "Terminate (stop) a running cluster. It keeps its configuration and can be started again. Confirm with the user first: notebooks and jobs running on it are interrupted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cluster_id": {
+            "type": "string",
+            "description": "Cluster id, e.g. '0923-164208-meows279' (from databricks_list_clusters)."
+          }
+        },
+        "required": [
+          "cluster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/2.1/clusters/delete",
+        "bodyMapping": {
+          "cluster_id": "$cluster_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "ok": "= termination requested"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "databricks_list_warehouses",
+      "description": "List the SQL warehouses with id, name, state (RUNNING, STOPPED, STARTING), size, type, serverless flag, cluster counts, active sessions and auto-stop minutes. Check this before running SQL: a stopped warehouse starts when queried.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Warehouses per page, default 50.",
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.0/sql/warehouses",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "next_page_token": "$.next_page_token",
+            "warehouses": {
+              "$from": "$.warehouses",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "state": "state",
+                "cluster_size": "cluster_size",
+                "warehouse_type": "warehouse_type",
+                "enable_serverless_compute": "enable_serverless_compute",
+                "min_num_clusters": "min_num_clusters",
+                "max_num_clusters": "max_num_clusters",
+                "num_clusters": "num_clusters",
+                "num_active_sessions": "num_active_sessions",
+                "auto_stop_mins": "auto_stop_mins",
+                "enable_photon": "enable_photon",
+                "spot_instance_policy": "spot_instance_policy",
+                "channel": "channel.name",
+                "creator_name": "creator_name",
+                "health": "health.status"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "databricks_get_warehouse",
+      "description": "Get one SQL warehouse: state, size, type, serverless flag, scaling range, active sessions, auto-stop minutes, health and its JDBC/ODBC connection details (host and HTTP path).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "description": "SQL warehouse id, e.g. '1234567890abcdef' (from databricks_list_warehouses)."
+          }
+        },
+        "required": [
+          "warehouse_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.0/sql/warehouses/{warehouse_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "state": "$.state",
+            "cluster_size": "$.cluster_size",
+            "warehouse_type": "$.warehouse_type",
+            "enable_serverless_compute": "$.enable_serverless_compute",
+            "min_num_clusters": "$.min_num_clusters",
+            "max_num_clusters": "$.max_num_clusters",
+            "num_clusters": "$.num_clusters",
+            "num_active_sessions": "$.num_active_sessions",
+            "auto_stop_mins": "$.auto_stop_mins",
+            "enable_photon": "$.enable_photon",
+            "spot_instance_policy": "$.spot_instance_policy",
+            "channel": "$.channel.name",
+            "creator_name": "$.creator_name",
+            "health": "$.health",
+            "odbc_params": "$.odbc_params"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "databricks_start_warehouse",
+      "description": "Start a stopped SQL warehouse. Confirm with the user first: it bills DBUs until it auto-stops. Check progress with databricks_get_warehouse.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "description": "SQL warehouse id, e.g. '1234567890abcdef' (from databricks_list_warehouses)."
+          }
+        },
+        "required": [
+          "warehouse_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/2.0/sql/warehouses/{warehouse_id}/start"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "ok": "= start requested"
+          }
+        }
+      }
+    },
+    {
+      "name": "databricks_stop_warehouse",
+      "description": "Stop a running SQL warehouse. Confirm with the user first: running queries and dashboards using it fail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "description": "SQL warehouse id, e.g. '1234567890abcdef' (from databricks_list_warehouses)."
+          }
+        },
+        "required": [
+          "warehouse_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/2.0/sql/warehouses/{warehouse_id}/stop"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "ok": "= stop requested"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "databricks_execute_sql",
+      "description": "Run one SQL statement on a SQL warehouse and return columns and up to row_limit rows (default 200). A stopped warehouse is STARTED automatically and bills DBUs: check databricks_list_warehouses and ask the user first if it is not running. Statements that change data, tables or grants need the user's explicit confirmation first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "description": "SQL warehouse id, e.g. '1234567890abcdef' (from databricks_list_warehouses)."
+          },
+          "statement": {
+            "type": "string",
+            "description": "One SQL statement, e.g. 'SELECT country, count(*) FROM main.sales.orders GROUP BY country'. Use :name placeholders for values."
+          },
+          "catalog": {
+            "type": "string",
+            "description": "Default catalog for unqualified names."
+          },
+          "schema": {
+            "type": "string",
+            "description": "Default schema for unqualified names."
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Named parameters, e.g. [{\"name\": \"country\", \"value\": \"DE\", \"type\": \"STRING\"}]."
+          },
+          "row_limit": {
+            "type": "integer",
+            "description": "Maximum rows to return, default 200, at most 10000.",
+            "default": 200,
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "wait_timeout": {
+            "type": "string",
+            "description": "How long to wait for the result: '0s' (return at once) or '5s' to '25s'. Default '20s'. A longer query keeps running; poll databricks_get_statement.",
+            "default": "20s"
+          },
+          "byte_limit": {
+            "type": "integer",
+            "description": "Maximum result size in bytes. Default 1000000 (1 MB).",
+            "default": 1000000
+          }
+        },
+        "required": [
+          "warehouse_id",
+          "statement"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/2.0/sql/statements",
+        "bodyMapping": {
+          "warehouse_id": "$warehouse_id",
+          "statement": "$statement",
+          "catalog": "$catalog",
+          "schema": "$schema",
+          "parameters": "$parameters",
+          "row_limit": "$row_limit",
+          "byte_limit": "$byte_limit",
+          "wait_timeout": "$wait_timeout",
+          "on_wait_timeout": "CONTINUE",
+          "disposition": "INLINE",
+          "format": "JSON_ARRAY"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "statement_id": "$.statement_id",
+            "status": "$.status",
+            "columns": {
+              "$from": "$.manifest.schema.columns",
+              "$select": {
+                "name": "name",
+                "type": "type_text"
+              }
+            },
+            "total_row_count": "$.manifest.total_row_count",
+            "total_chunk_count": "$.manifest.total_chunk_count",
+            "truncated": "$.manifest.truncated",
+            "chunk_index": "$.result.chunk_index",
+            "row_offset": "$.result.row_offset",
+            "row_count": "$.result.row_count",
+            "rows": {
+              "$from": "$.result.data_array",
+              "$limit": 1000
+            },
+            "next_chunk_index": "$.result.next_chunk_index"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "databricks_get_statement",
+      "description": "Get the state and result of a SQL statement started with databricks_execute_sql: status (PENDING, RUNNING, SUCCEEDED, FAILED, CANCELED), error, columns and the first chunk of rows. Poll it every few seconds while the statement runs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statement_id": {
+            "type": "string",
+            "description": "statement_id returned by databricks_execute_sql."
+          }
+        },
+        "required": [
+          "statement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.0/sql/statements/{statement_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "statement_id": "$.statement_id",
+            "status": "$.status",
+            "columns": {
+              "$from": "$.manifest.schema.columns",
+              "$select": {
+                "name": "name",
+                "type": "type_text"
+              }
+            },
+            "total_row_count": "$.manifest.total_row_count",
+            "total_chunk_count": "$.manifest.total_chunk_count",
+            "truncated": "$.manifest.truncated",
+            "chunk_index": "$.result.chunk_index",
+            "row_offset": "$.result.row_offset",
+            "row_count": "$.result.row_count",
+            "rows": {
+              "$from": "$.result.data_array",
+              "$limit": 1000
+            },
+            "next_chunk_index": "$.result.next_chunk_index"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "databricks_get_statement_chunk",
+      "description": "Get a further chunk of rows of a finished SQL statement, by chunk index (next_chunk_index of the previous answer). Rows are arrays in the order of the statement's columns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statement_id": {
+            "type": "string",
+            "description": "statement_id returned by databricks_execute_sql."
+          },
+          "chunk_index": {
+            "type": "integer",
+            "description": "Chunk to read, from next_chunk_index."
+          }
+        },
+        "required": [
+          "statement_id",
+          "chunk_index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.0/sql/statements/{statement_id}/result/chunks/{chunk_index}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "chunk_index": "$.chunk_index",
+            "row_offset": "$.row_offset",
+            "row_count": "$.row_count",
+            "rows": {
+              "$from": "$.data_array",
+              "$limit": 1000
+            },
+            "next_chunk_index": "$.next_chunk_index"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "databricks_cancel_statement",
+      "description": "Cancel a running SQL statement. Confirm with the user first. Check the outcome with databricks_get_statement (state CANCELED).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statement_id": {
+            "type": "string",
+            "description": "statement_id returned by databricks_execute_sql."
+          }
+        },
+        "required": [
+          "statement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/2.0/sql/statements/{statement_id}/cancel"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "ok": "= cancel requested"
+          }
+        }
+      }
+    },
+    {
+      "name": "databricks_list_jobs",
+      "description": "List the workspace's jobs with id, name, creator, schedule and creation time. Filter by exact name; page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only the job with exactly this name (case-insensitive)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Jobs per page, 1 to 100. Default 25.",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.2/jobs/list",
+        "queryParams": {
+          "name": "$name",
+          "limit": "$limit",
+          "page_token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "has_more": "$.has_more",
+            "next_page_token": "$.next_page_token",
+            "jobs": {
+              "$from": "$.jobs",
+              "$select": {
+                "job_id": "job_id",
+                "name": "settings.name",
+                "creator_user_name": "creator_user_name",
+                "created_time": "created_time",
+                "schedule": "settings.schedule",
+                "trigger": "settings.trigger",
+                "tags": "settings.tags"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "databricks_get_job",
+      "description": "Get one job: name, description, run-as user, schedule or trigger, job parameters, concurrency, timeout and its tasks (key, dependencies, notebook, SQL, Python or pipeline task, cluster).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "Job id (from databricks_list_jobs)."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.2/jobs/get",
+        "queryParams": {
+          "job_id": "$job_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "job_id": "$.job_id",
+            "creator_user_name": "$.creator_user_name",
+            "run_as_user_name": "$.run_as_user_name",
+            "created_time": "$.created_time",
+            "name": "$.settings.name",
+            "description": "$.settings.description",
+            "schedule": "$.settings.schedule",
+            "trigger": "$.settings.trigger",
+            "continuous": "$.settings.continuous",
+            "parameters": "$.settings.parameters",
+            "max_concurrent_runs": "$.settings.max_concurrent_runs",
+            "timeout_seconds": "$.settings.timeout_seconds",
+            "tags": "$.settings.tags",
+            "tasks": {
+              "$from": "$.settings.tasks",
+              "$select": {
+                "task_key": "task_key",
+                "description": "description",
+                "depends_on": "depends_on[*].task_key",
+                "notebook_path": "notebook_task.notebook_path",
+                "python_file": "spark_python_task.python_file",
+                "sql_task": "sql_task",
+                "pipeline_id": "pipeline_task.pipeline_id",
+                "run_job_id": "run_job_task.job_id",
+                "existing_cluster_id": "existing_cluster_id",
+                "job_cluster_key": "job_cluster_key",
+                "timeout_seconds": "timeout_seconds"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "databricks_run_job",
+      "description": "Trigger a run of an existing job now. Confirm with the user first: it uses compute and may change data. Returns the run_id; follow it with databricks_get_job_run.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "Job id (from databricks_list_jobs)."
+          },
+          "job_parameters": {
+            "type": "object",
+            "description": "Job-level parameter values, e.g. {\"date\": \"2026-10-15\"}. Only for jobs that define parameters."
+          },
+          "idempotency_token": {
+            "type": "string",
+            "description": "Optional unique token (up to 64 characters) so a retried call does not start a second run."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/2.2/jobs/run-now",
+        "bodyMapping": {
+          "job_id": "$job_id",
+          "job_parameters": "$job_parameters",
+          "idempotency_token": "$idempotency_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "run_id": "$.run_id",
+            "number_in_job": "$.number_in_job"
+          }
+        }
+      }
+    },
+    {
+      "name": "databricks_list_job_runs",
+      "description": "List job runs, newest first, with run id, job id, state, start and end time, duration and a link to the run page. Filter by job, active or completed runs and start time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "Job id (from databricks_list_jobs)."
+          },
+          "active_only": {
+            "type": "boolean",
+            "description": "Only runs that are queued, pending or running."
+          },
+          "completed_only": {
+            "type": "boolean",
+            "description": "Only finished runs."
+          },
+          "start_time_from": {
+            "type": "integer",
+            "description": "Only runs started at or after this time, milliseconds since 1970."
+          },
+          "start_time_to": {
+            "type": "integer",
+            "description": "Only runs started before this time, milliseconds since 1970."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Runs per page, 1 to 25. Default 25.",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 25
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.2/jobs/runs/list",
+        "queryParams": {
+          "job_id": "$job_id",
+          "active_only": "$active_only",
+          "completed_only": "$completed_only",
+          "start_time_from": "$start_time_from",
+          "start_time_to": "$start_time_to",
+          "limit": "$limit",
+          "page_token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "has_more": "$.has_more",
+            "next_page_token": "$.next_page_token",
+            "runs": {
+              "$from": "$.runs",
+              "$select": {
+                "run_id": "run_id",
+                "job_id": "job_id",
+                "run_name": "run_name",
+                "run_type": "run_type",
+                "run_page_url": "run_page_url",
+                "state": "state",
+                "status": "status",
+                "start_time": "start_time",
+                "end_time": "end_time",
+                "run_duration": "run_duration",
+                "queue_duration": "queue_duration",
+                "trigger": "trigger",
+                "creator_user_name": "creator_user_name"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "databricks_get_job_run",
+      "description": "Get one job run: state and result, times, trigger, parameters and each task's run_id, state and run page link. Use the task run_id with databricks_get_run_output.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "description": "Run id (from databricks_run_job or databricks_list_job_runs)."
+          }
+        },
+        "required": [
+          "run_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.2/jobs/runs/get",
+        "queryParams": {
+          "run_id": "$run_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "run_id": "$.run_id",
+            "job_id": "$.job_id",
+            "run_name": "$.run_name",
+            "run_type": "$.run_type",
+            "run_page_url": "$.run_page_url",
+            "state": "$.state",
+            "status": "$.status",
+            "start_time": "$.start_time",
+            "end_time": "$.end_time",
+            "run_duration": "$.run_duration",
+            "queue_duration": "$.queue_duration",
+            "trigger": "$.trigger",
+            "creator_user_name": "$.creator_user_name",
+            "job_parameters": "$.job_parameters",
+            "tasks": {
+              "$from": "$.tasks",
+              "$select": {
+                "task_key": "task_key",
+                "run_id": "run_id",
+                "state": "state",
+                "status": "status",
+                "start_time": "start_time",
+                "end_time": "end_time",
+                "run_page_url": "run_page_url"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "databricks_get_run_output",
+      "description": "Get the output of one task run: notebook exit value, SQL output, error message and trace, and logs. For a multi-task job pass the task's run_id from databricks_get_job_run. Outputs are kept for 60 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "description": "Run id of a single task run."
+          }
+        },
+        "required": [
+          "run_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.2/jobs/runs/get-output",
+        "queryParams": {
+          "run_id": "$run_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "notebook_output": "$.notebook_output",
+            "sql_output": "$.sql_output",
+            "dbt_output": "$.dbt_output",
+            "run_job_output": "$.run_job_output",
+            "error": "$.error",
+            "error_trace": "$.error_trace",
+            "logs": "$.logs",
+            "logs_truncated": "$.logs_truncated",
+            "info": "$.info",
+            "run": {
+              "run_id": "$.metadata.run_id",
+              "job_id": "$.metadata.job_id",
+              "state": "$.metadata.state",
+              "status": "$.metadata.status",
+              "run_page_url": "$.metadata.run_page_url"
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "databricks_cancel_job_run",
+      "description": "Cancel a job run (asynchronously). Confirm with the user first: unfinished tasks stop. Check the outcome with databricks_get_job_run.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "description": "Run id (from databricks_run_job or databricks_list_job_runs)."
+          }
+        },
+        "required": [
+          "run_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/2.2/jobs/runs/cancel",
+        "bodyMapping": {
+          "run_id": "$run_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "ok": "= cancel requested"
+          }
+        }
+      }
+    },
+    {
+      "name": "databricks_list_catalogs",
+      "description": "List the Unity Catalog catalogs the user can see, with name, type, owner and comment. Start here to explore data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_results": {
+            "type": "integer",
+            "description": "Catalogs per page, default 100.",
+            "default": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.1/unity-catalog/catalogs",
+        "queryParams": {
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "next_page_token": "$.next_page_token",
+            "catalogs": {
+              "$from": "$.catalogs",
+              "$select": {
+                "name": "name",
+                "catalog_type": "catalog_type",
+                "owner": "owner",
+                "comment": "comment",
+                "browse_only": "browse_only"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "databricks_list_schemas",
+      "description": "List the schemas of a Unity Catalog catalog with full name, owner and comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_name": {
+            "type": "string",
+            "description": "Catalog name, e.g. 'main'."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Schemas per page, default 100.",
+            "default": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page."
+          }
+        },
+        "required": [
+          "catalog_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.1/unity-catalog/schemas",
+        "queryParams": {
+          "catalog_name": "$catalog_name",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "next_page_token": "$.next_page_token",
+            "schemas": {
+              "$from": "$.schemas",
+              "$select": {
+                "name": "name",
+                "full_name": "full_name",
+                "owner": "owner",
+                "comment": "comment"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "databricks_list_tables",
+      "description": "List the tables and views of a Unity Catalog schema with full name, type (MANAGED, EXTERNAL, VIEW, MATERIALIZED_VIEW), format, owner and comment. Columns are left out: use databricks_get_table.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_name": {
+            "type": "string",
+            "description": "Catalog name, e.g. 'main'."
+          },
+          "schema_name": {
+            "type": "string",
+            "description": "Schema name, e.g. 'sales'."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Tables per page, default 100.",
+            "default": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page."
+          }
+        },
+        "required": [
+          "catalog_name",
+          "schema_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.1/unity-catalog/tables",
+        "queryParams": {
+          "catalog_name": "$catalog_name",
+          "schema_name": "$schema_name",
+          "max_results": "$max_results",
+          "page_token": "$page_token",
+          "omit_columns": "true",
+          "omit_properties": "true"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "next_page_token": "$.next_page_token",
+            "tables": {
+              "$from": "$.tables",
+              "$select": {
+                "name": "name",
+                "full_name": "full_name",
+                "table_type": "table_type",
+                "data_source_format": "data_source_format",
+                "owner": "owner",
+                "comment": "comment",
+                "updated_at": "updated_at"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "databricks_get_table",
+      "description": "Get a Unity Catalog table or view by full name: columns with types, nullability, comments and partitioning, table type, format, owner, comment, storage location and a view's SQL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "description": "Three-part name catalog.schema.table, e.g. 'main.sales.orders'."
+          }
+        },
+        "required": [
+          "full_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.1/unity-catalog/tables/{full_name}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "full_name": "$.full_name",
+            "table_type": "$.table_type",
+            "data_source_format": "$.data_source_format",
+            "owner": "$.owner",
+            "comment": "$.comment",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "storage_location": "$.storage_location",
+            "view_definition": "$.view_definition",
+            "columns": {
+              "$from": "$.columns",
+              "$select": {
+                "name": "name",
+                "type": "type_text",
+                "nullable": "nullable",
+                "comment": "comment",
+                "position": "position",
+                "partition_index": "partition_index"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "databricks_list_workspace",
+      "description": "List the contents of a workspace folder: notebooks (with language), files, folders, repos and libraries, with path, object id and modification time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute folder path, e.g. '/Users/anna@example.com' or '/Workspace/Shared'. '/' for the root."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.0/workspace/list",
+        "queryParams": {
+          "path": "$path"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "objects": {
+              "$from": "$.objects",
+              "$select": {
+                "path": "path",
+                "object_type": "object_type",
+                "language": "language",
+                "object_id": "object_id",
+                "size": "size",
+                "modified_at": "modified_at"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "databricks_export_notebook",
+      "description": "Get the source code of one notebook or workspace file as text (Python, SQL, Scala or R source). Keep to small notebooks: the answer is capped at about 100 KB. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path of the notebook or file, e.g. '/Users/anna@example.com/etl/daily_load'."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.0/workspace/export",
+        "queryParams": {
+          "path": "$path",
+          "format": "SOURCE",
+          "direct_download": "true"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "content"
+          ],
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "databricks_list_volume_files",
+      "description": "List the files and folders in a Unity Catalog volume directory, with name, size and modification time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory_path": {
+            "type": "string",
+            "description": "Absolute volume path starting with /Volumes, e.g. '/Volumes/main/raw/landing/2026'."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Entries per page, default 200.",
+            "default": 200
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page."
+          }
+        },
+        "required": [
+          "directory_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.0/fs/directories{directory_path}",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "next_page_token": "$.next_page_token",
+            "contents": {
+              "$from": "$.contents",
+              "$select": {
+                "name": "name",
+                "path": "path",
+                "is_directory": "is_directory",
+                "file_size": "file_size",
+                "last_modified": "last_modified"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "databricks_list_dbfs",
+      "description": "List a legacy DBFS directory (path, size, folder flag, modification time). DBFS root and mounts are deprecated and disabled on many newer workspaces; prefer databricks_list_volume_files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute DBFS path, e.g. '/FileStore' or 'dbfs:/databricks-datasets'."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2.0/dbfs/list",
+        "queryParams": {
+          "path": "$path"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "files": {
+              "$from": "$.files",
+              "$limit": 500,
+              "$select": {
+                "path": "path",
+                "is_dir": "is_dir",
+                "file_size": "file_size",
+                "modification_time": "modification_time"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    }
+  ]
+}

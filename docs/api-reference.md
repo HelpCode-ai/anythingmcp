@@ -84,9 +84,61 @@ curl -s http://localhost:4000/api/auth/invite \
 | POST | `/api/connectors/:id/test` | Test API connection |
 | POST | `/api/connectors/:id/import-spec` | Auto-import tools from connector's spec URL |
 | POST | `/api/connectors/:id/import` | Import tools from any source |
+| GET | `/api/connectors/export-all` | Export every connector of the organization as JSON (backup) |
+| POST | `/api/connectors/import-all` | Import connectors from an export, sent as a JSON body |
+| GET | `/api/connectors/:id/export?format=json\|yaml` | Export one connector and its tools as a JSON (default) or YAML file |
+| POST | `/api/connectors/import` | Import connectors from the text of a JSON or YAML export file (not the same as `:id/import`) |
 | PUT | `/api/connectors/:id/env-vars` | Set environment variables |
 | POST | `/api/connectors/:id/oauth/authorize` | Start OAuth2 authorization flow (returns redirect URL) |
 | GET | `/api/mcp-oauth/callback` | OAuth2 callback — exchanges code for tokens |
+
+### Export and Import a Connector
+
+`GET /api/connectors/:id/export` writes the same envelope as `export-all` with a
+single entry in `connectors`, so its file can be restored with either import
+endpoint. `authConfig` (OAuth and other stored credentials) is never exported:
+re-authorize the connector after importing it. Secret environment variables
+and headers are included only for admins; for other roles they are empty and
+named in `maskedEnvVars` / `maskedHeaders`. Per-tool `useProxy`, annotation
+overrides and role access are not exported.
+
+```bash
+curl -s "http://localhost:4000/api/connectors/$ID/export?format=yaml" \
+  -H "Authorization: Bearer $TOKEN" -OJ
+```
+
+```yaml
+version: '1.0'
+exportedAt: '2026-10-21T10:00:00.000Z'
+secretsIncluded: false
+connectors:
+  - name: Acme CRM
+    type: REST
+    baseUrl: https://api.acme.test
+    authType: OAUTH2
+    envVars:
+      ACME_API_KEY: ''
+    maskedEnvVars:
+      - ACME_API_KEY
+    tools:
+      - name: acme_list_contacts
+        isEnabled: true
+        endpointMapping:
+          method: GET
+          path: /contacts
+```
+
+`POST /api/connectors/import` takes `{ "content": "<file text>" }`, parses it as
+YAML (JSON is accepted too), validates it like `import-all` and imports into
+the caller's organization, skipping connectors whose name already exists.
+Viewers get 403. A syntax error returns 400 naming the line and column.
+
+```bash
+curl -s http://localhost:4000/api/connectors/import \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -Rs '{content: .}' acme-crm.anythingmcp.yaml)"
+```
 
 ### Create Connector
 
@@ -146,6 +198,14 @@ curl -s http://localhost:4000/api/connectors/$ID/import \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"source": "json", "content": "[{\"name\":\"tool\",\"description\":\"desc\",...}]"}'
+
+# From a HAR file (browser network capture) — the UI slims the file (strips
+# response bodies, cookies and credential headers) before upload; do the same
+# before sending one by hand.
+curl -s http://localhost:4000/api/connectors/$ID/import \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"source": "har", "content": "{\"log\":{\"version\":\"1.2\",\"entries\":[...]}}"}'
 ```
 
 ### Set Environment Variables
@@ -323,6 +383,24 @@ works only for that server: on `/mcp/<that server>`, and on the shared `/mcp`
 with that server's tools. Other servers answer `403`. The server must be one of
 an organization you belong to, and deleting it deactivates its keys. A key
 created without `mcpServerId` reaches every server of your organization.
+
+### CLI
+
+The repository includes the [`amcp` CLI](../packages/cli/README.md) for logging
+in with an MCP API key, listing and describing tools, and calling them on a
+specific server. Build it with
+`npm run build -w packages/cli`, then run:
+
+```bash
+node packages/cli/dist/index.js login --url http://localhost:4000 --server YOUR_SERVER_ID
+node packages/cli/dist/index.js tools ls
+node packages/cli/dist/index.js tools describe YOUR_TOOL_NAME
+node packages/cli/dist/index.js tools call YOUR_TOOL_NAME --args '{"id":"123"}' --json
+```
+
+The CLI constructs `/mcp/<serverId>` from the instance URL and server ID.
+The `/api/*` endpoints in this reference use a JWT, while the CLI connects to
+MCP with an MCP API key.
 
 ---
 

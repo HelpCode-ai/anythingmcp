@@ -57,3 +57,22 @@ const live = process.env.RUN_ZAMMAD_LIVE === '1';
     expect(a.probe?.tool ?? toolNames[0]).toBeTruthy();
   });
 });
+
+const byName = (name: string) => {
+  const found = (adapter as unknown as { tools: Array<{ name: string; parameters: { required?: string[] }; endpointMapping: Record<string, unknown> }> }).tools.find((x) => x.name === name);
+  if (!found) throw new Error(`no tool ${name}`);
+  return found;
+};
+
+describe('zammad adapter: ticket update and merge', () => {
+  const t = (name: string) => byName(name);
+  it('updates a ticket by numeric id', () => {
+    expect(t('zammad_edit_ticket').endpointMapping).toMatchObject({ method: 'PUT', path: '/tickets/{id}' });
+  });
+  it('merges by source id into a target ticket number', () => {
+    expect(t('zammad_merge_ticket').endpointMapping).toMatchObject({
+      method: 'PUT',
+      path: '/ticket_merge/{source_ticket_id}/{target_ticket_number}',
+    });
+  });
+});

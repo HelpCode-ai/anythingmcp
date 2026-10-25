@@ -79,7 +79,14 @@ rate-limited APIs. Default is `false`.
 
 Adapters shipped with `useProxy: true` today: Deutsche Bahn, Sorare,
 OpenTable, Resy, Untappd, idealista, Trenitalia, ImmobilienScout24, Etsy,
-Mercado Libre.
+Mercado Libre, Playtomic.
+
+A `LOGIN_TOKEN` connector logs in through the proxy when the tool call that
+needs the token is proxied, so the login leaves from the same address as the
+call. Playtomic is why: it answers a login from a datacenter IP with a 403
+page, so a proxied tool whose login went out directly never got a token.
+Like every proxied request, the login's TLS is terminated by the proxy, so
+the credentials in its body pass through it.
 
 For GraphQL adapters, if any tool opts in, the auto-injected
 `<slug>_graphql_query` / `_mutation` / `_subscription` helpers inherit the

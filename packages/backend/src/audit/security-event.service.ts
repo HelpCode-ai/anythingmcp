@@ -35,6 +35,19 @@ export const SecurityEvents = {
   IDENTITY_LINKED: 'IDENTITY_LINKED',
   IDENTITY_UNLINKED: 'IDENTITY_UNLINKED',
   JIT_PROVISIONED: 'JIT_PROVISIONED',
+  /** Cloud social sign-in (Google, Microsoft, GitHub). */
+  SOCIAL_LOGIN_SUCCESS: 'SOCIAL_LOGIN_SUCCESS',
+  SOCIAL_LOGIN_FAILED: 'SOCIAL_LOGIN_FAILED',
+  /** A workspace was created through a social provider. */
+  SOCIAL_SIGNUP: 'SOCIAL_SIGNUP',
+  SOCIAL_IDENTITY_LINKED: 'SOCIAL_IDENTITY_LINKED',
+  SOCIAL_IDENTITY_UNLINKED: 'SOCIAL_IDENTITY_UNLINKED',
+  /**
+   * A provider-verified email took over a local account whose address had
+   * never been verified: its password and sessions were dropped, because
+   * whoever set them never proved they own the mailbox.
+   */
+  SOCIAL_ACCOUNT_RECLAIMED: 'SOCIAL_ACCOUNT_RECLAIMED',
   /** A bearer token was refused — e.g. an MCP-issued token sent to the dashboard API. */
   TOKEN_REJECTED: 'TOKEN_REJECTED',
   /** A request to /api/scim/v2 carried no valid bearer. */
@@ -74,6 +87,19 @@ export const SecurityEvents = {
    */
   WORKSPACE_SESSIONS_REVOKED: 'WORKSPACE_SESSIONS_REVOKED',
   API_KEY_DEACTIVATED: 'API_KEY_DEACTIVATED',
+  /**
+   * Whether a member's requests may feed skill learning changed: an admin set
+   * their mode, or the member opted out / back in. One row per member.
+   */
+  LEARNING_CHANGED: 'LEARNING_CHANGED',
+  /** An admin changed what a member may do with workspace memory. One row per member. */
+  MEMORY_ACCESS_CHANGED: 'MEMORY_ACCESS_CHANGED',
+  /** The workspace's memory default access or organization write mode changed. */
+  MEMORY_SETTINGS_CHANGED: 'MEMORY_SETTINGS_CHANGED',
+  /** An admin erased a member's personal memory (without reading it). */
+  MEMORY_ERASED: 'MEMORY_ERASED',
+  /** The roles a knowledge folder (and its subtree) is limited to changed. */
+  KNOWLEDGE_FOLDER_ACCESS_CHANGED: 'KNOWLEDGE_FOLDER_ACCESS_CHANGED',
 
   // ── Consent plane: which AI client was authorized, by whom ──────────────
   CONSENT_GRANTED: 'CONSENT_GRANTED',

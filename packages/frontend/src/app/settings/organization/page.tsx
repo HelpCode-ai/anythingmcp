@@ -268,7 +268,7 @@ export default function OrganizationSettingsPage() {
 
         <FeatureToggle
           label="Capture user intent"
-          description="Adds an optional parameter to every MCP tool asking the agent for the user's original request. Captures the context behind each call so the graph can be optimized and skills suggested over time."
+          description="Adds an optional parameter to every MCP tool asking the agent for the user's original request. Captures the context behind each call so the graph can be optimized and skills suggested over time. This is the default for every user: override it per user under Settings → Users (Skill learning), and each user can opt out in their own settings."
           checked={!!kg?.captureIntent}
           disabled={!isAdmin || kgSaving || !kg?.enabled}
           isAdmin={isAdmin}

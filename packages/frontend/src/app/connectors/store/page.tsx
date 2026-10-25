@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Suspense, useEffect, useMemo, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { adapters } from '@/lib/api';
+import { adapters, type SetupEffort, type SetupEffortKind } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { adapterAuthLabel, adapterNeedsCredentials, cn } from '@/lib/utils';
 import { searchCatalog } from '@/lib/catalog-search';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { useCatalogSearchReport } from '@/lib/use-catalog-search-report';
+import { EFFORT_FILTERS, effortLabel, effortTone } from '@/lib/setup-effort';
 
 const REGION_LABELS: Record<string, string> = {
   de: 'Germany',
@@ -229,6 +230,8 @@ interface AdapterItem {
   optionalEnvVars?: string[];
   toolCount: number;
   authType?: string;
+  /** What setting it up takes ("API key · 3 min"); from the adapters API. */
+  setupEffort?: SetupEffort;
 }
 
 export default function AdapterStorePage() {
@@ -247,6 +250,9 @@ function AdapterStoreContent() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeEffort, setActiveEffort] = useState<SetupEffortKind | null>(null);
+  /** The apps workspaces set up and get working most (see /welcome). */
+  const [popular, setPopular] = useState<Set<string>>(new Set());
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -260,6 +266,10 @@ function AdapterStoreContent() {
       .then(setList)
       .catch(() => {})
       .finally(() => setLoading(false));
+    adapters
+      .popularConnectors(token)
+      .then((r) => setPopular(new Set(r.items.map((i) => i.slug))))
+      .catch(() => {});
   }, [token]);
 
   // Every install goes through the guided setup: it asks for what the
@@ -337,8 +347,17 @@ function AdapterStoreContent() {
   );
 
   const filtered = (searchResult ? searchResult.hits.map((h) => h.entry) : list).filter(
-    (a) => !activeCategory || a.category === activeCategory,
+    (a) =>
+      (!activeCategory || a.category === activeCategory) &&
+      (!activeEffort || a.setupEffort?.effort === activeEffort),
   );
+
+  // Only the kinds of setup the catalog has, with how many each.
+  const effortCounts = useMemo(() => {
+    const counts = new Map<SetupEffortKind, number>();
+    for (const a of list) if (a.setupEffort) counts.set(a.setupEffort.effort, (counts.get(a.setupEffort.effort) ?? 0) + 1);
+    return EFFORT_FILTERS.filter((f) => counts.has(f.effort)).map((f) => ({ ...f, count: counts.get(f.effort)! }));
+  }, [list]);
 
   // Reported across the whole catalog, not the category chip: the question
   // is whether we have the app at all.
@@ -348,7 +367,7 @@ function AdapterStoreContent() {
     <AppShell
       backTo={{ label: 'Connectors', href: '/connectors' }}
       title="Marketplace"
-      subtitle="Pre-configured connector recipes for popular APIs. Import with one click and just add your API key."
+      subtitle="Ready-made connectors for popular apps. Each card says what setting it up takes."
       actions={
         <Link href="/connectors/new">
           <Button>
@@ -390,6 +409,30 @@ function AdapterStoreContent() {
               className="h-9 w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] pl-9 pr-3 text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--border-strong)] focus:outline-none"
             />
           </div>
+
+          {effortCounts.length > 1 && (
+            <div
+              role="group"
+              aria-label="Setup"
+              className="flex items-center gap-2 max-sm:scrollbar-none max-sm:-mx-4 max-sm:overflow-x-auto max-sm:px-4 sm:flex-wrap"
+            >
+              <span className="flex-shrink-0 text-[11.5px] font-medium text-[var(--text-3)]">Setup</span>
+              {effortCounts.map((f) => {
+                const active = activeEffort === f.effort;
+                return (
+                  <button
+                    key={f.effort}
+                    onClick={() => setActiveEffort(active ? null : f.effort)}
+                    aria-pressed={active}
+                    className={cn(CHIP, active ? CHIP_ON : CHIP_OFF)}
+                  >
+                    {f.label}
+                    <span className={cn('tabular-nums', active ? 'opacity-70' : 'text-[var(--text-3)]')}>{f.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {categories.length > 1 && (
             <div className="flex flex-col gap-2">
@@ -458,6 +501,7 @@ function AdapterStoreContent() {
                   ? `${list.length} adapters`
                   : `${filtered.length} of ${list.length} adapters`}
                 {activeCategory && ` · ${categoryLabel(activeCategory)}`}
+                {activeEffort && ` · ${EFFORT_FILTERS.find((f) => f.effort === activeEffort)?.label}`}
                 {searchResult?.match === 'fuzzy' && ` · no exact match, showing similar names`}
                 {searchResult?.match === 'partial' && ` · matching some of the words`}
               </p>
@@ -483,7 +527,8 @@ function AdapterStoreContent() {
               <>
                 <p className="text-sm text-[var(--text-2)]">
                   Nothing matches{search ? ` “${search}”` : ''}
-                  {activeCategory ? ` in ${categoryLabel(activeCategory)}` : ''}.
+                  {activeCategory ? ` in ${categoryLabel(activeCategory)}` : ''}
+                  {activeEffort ? ` with ${EFFORT_FILTERS.find((f) => f.effort === activeEffort)?.label.toLowerCase()}` : ''}.
                 </p>
                 <p className="mx-auto mt-1 max-w-[46ch] text-[13px] text-[var(--text-3)]">
                   Any REST, SOAP, GraphQL or SQL system can still become a
@@ -496,6 +541,7 @@ function AdapterStoreContent() {
                     onClick={() => {
                       setSearch('');
                       setActiveCategory(null);
+                      setActiveEffort(null);
                     }}
                   >
                     Clear filters
@@ -531,6 +577,11 @@ function AdapterStoreContent() {
                         <span aria-hidden className="shrink-0 text-sm">
                           {REGION_FLAGS[adapter.region] || '🌐'}
                         </span>
+                        {popular.has(adapter.slug) && (
+                          <Badge tone="brand" className="shrink-0">
+                            Popular
+                          </Badge>
+                        )}
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-wider text-[var(--text-3)]">
                         <span>
@@ -563,7 +614,15 @@ function AdapterStoreContent() {
                       </span>
                     </div>
                     <div className="flex min-w-0 items-center gap-1.5">
-                      {adapter.authType && (
+                      {adapter.setupEffort ? (
+                        <Badge
+                          tone={effortTone(adapter.setupEffort)}
+                          className="max-w-full min-w-0 truncate"
+                          title="What setting it up takes"
+                        >
+                          {effortLabel(adapter.setupEffort)}
+                        </Badge>
+                      ) : adapter.authType && (
                         <Badge
                           tone={isPublic ? 'emerald' : 'neutral'}
                           className="max-w-full min-w-0 gap-1 truncate font-mono uppercase tracking-wider"

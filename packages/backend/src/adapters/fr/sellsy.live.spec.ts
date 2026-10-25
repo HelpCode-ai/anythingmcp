@@ -67,3 +67,20 @@ const live = process.env.RUN_SELLSY_LIVE === '1';
     expect(a.probe?.tool ?? toolNames[0]).toBeTruthy();
   });
 });
+
+const byName = (name: string) => {
+  const found = (adapter as unknown as { tools: Array<{ name: string; parameters: { required?: string[] }; endpointMapping: Record<string, unknown> }> }).tools.find((x) => x.name === name);
+  if (!found) throw new Error(`no tool ${name}`);
+  return found;
+};
+
+describe('sellsy adapter: contact and company edits', () => {
+  const t = (name: string) => byName(name);
+  it('lists the companies of a contact', () => {
+    expect(t('sellsy_list_contact_companies').endpointMapping).toMatchObject({ method: 'GET', path: '/contacts/{contactId}/companies' });
+  });
+  it('edits contacts and companies with a partial PUT of the given fields', () => {
+    expect(t('sellsy_edit_contact').endpointMapping).toMatchObject({ method: 'PUT', path: '/contacts/{contactId}', bodyTemplate: '${fields}' });
+    expect(t('sellsy_edit_company').endpointMapping).toMatchObject({ method: 'PUT', path: '/companies/{companyId}', bodyTemplate: '${fields}' });
+  });
+});

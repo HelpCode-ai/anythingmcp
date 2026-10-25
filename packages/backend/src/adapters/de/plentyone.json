@@ -1,0 +1,969 @@
+{
+  "slug": "plentyone",
+  "name": "PlentyONE",
+  "aliases": [
+    "plentymarkets",
+    "plenty markets",
+    "plentysystems",
+    "Plenty ONE"
+  ],
+  "description": "PlentyONE (plentymarkets) e-commerce ERP: orders with items and addresses, order statuses and sales channels, items and variations with prices, barcodes and texts, stock per warehouse, categories, manufacturers, sales prices and contacts. Creating items and changing variations are included, installed switched off.",
+  "region": "de",
+  "category": "e-commerce",
+  "icon": "plentyone",
+  "docsUrl": "https://developers.plentymarkets.com/en-gb/plentymarkets-rest-api/index.html",
+  "instructions": "## PlentyONE (plentymarkets)\nThis connector uses the **plentyONE REST API** (formerly plentymarkets) of your own plentyONE system: orders, order statuses and sales channels (referrers), items and variations with prices, barcodes and texts, stock per warehouse, categories, manufacturers, units, sales prices and contacts. Creating an item and changing a variation are included, installed switched off.\n\n**Setup (about 5 minutes)**\n1. REST access needs a plentyONE plan above Lite. In plentyONE open **Setup > Account management > Roles**, create a role for the AI, switch to **Advanced** and tick the REST API rights it needs, e.g. Items (show), Stock management (show), Categories (show), Orders and Order statuses (show), CRM contacts (show). No REST right is active by default.\n2. Under **Setup > Account management > Accounts** create a user with access **Only API user**, give it that role and a password.\n3. `PLENTYONE_URL` is the address of your system without `/rest`, e.g. `https://p12345.my.plentysystems.com` (plentyONE shows it under Setup > Client > Settings, or use the address you sign in at). `PLENTYONE_USERNAME` and `PLENTYONE_PASSWORD` are that API user's sign-in.\n4. Install and run `plentyone_list_webstores` to check the sign-in.\n\nThe connector signs in at `/rest/login` and keeps the access token (valid 24 hours) until it expires. plentyONE allows only a few signed-in sessions per user at the same time (3 by default, shared with the back end), so use a dedicated API user rather than a person's account.\n\n**Workflow**\n- Products: `plentyone_search_variations` finds a SKU by exact number, part of the number, barcode, item name or category; `plentyone_get_variation` with `with=variationSalesPrices,variationBarcodes,stock` adds prices, EANs and stock. `plentyone_search_items` / `plentyone_get_item` read the item (the article) and `plentyone_get_item_texts` its names and descriptions per language.\n- Stock: `plentyone_list_warehouses`, then `plentyone_get_stock` (all warehouses, by variation) or `plentyone_get_warehouse_stock` (one warehouse). `stockNet` is what can be sold; `stockPhysical` what is on the shelf; `reservedStock` what open orders hold.\n- Orders: `plentyone_search_orders` with plentyONE's filter syntax (`statusId` `in:3,4`, `createdAt` `between:<from>,<to>` in ISO 8601 with offset), then `plentyone_get_order` with `with` [\"addresses\",\"orderItems.variation\"]. `plentyone_list_order_statuses` and `plentyone_list_referrers` explain status and channel ids.\n- Master data: `plentyone_list_categories`, `plentyone_list_manufacturers`, `plentyone_list_units`, `plentyone_list_sales_prices`, `plentyone_search_contacts`, `plentyone_list_webstores`.\n\n**Paging**: list answers carry `page`, `totalsCount`, `isLastPage` and `lastPageNumber`; ask for the next page until `isLastPage` is true.\n\n**Writes switched off**: `plentyone_create_item` creates an item with one (inactive) variation and `plentyone_update_variation` changes a variation's name, number, model, active flag, weight or dimensions. Both change the live catalogue that feeds your shop and marketplaces, so an admin turns them on deliberately and the AI shows the change and waits for a yes.\n\n**Limits and errors**: plentyONE allows about 200 reads and 80 writes per user and minute on Expand and Scale plans and answers 429 above that; wait a minute. 401 means a wrong username or password, or a user without API access. 403 lists the missing right in `missing_permissions` (e.g. `order.show`): add it to the user's role. 404 on every call means a wrong `PLENTYONE_URL`.",
+  "prerequisites": "A plentyONE system on a plan with REST access (above Lite) and a back-end user with access \"Only API user\" and a role with the REST API rights to read.",
+  "requiredEnvVars": [
+    "PLENTYONE_URL",
+    "PLENTYONE_USERNAME",
+    "PLENTYONE_PASSWORD"
+  ],
+  "envVarMeta": {
+    "PLENTYONE_URL": {
+      "label": "System address",
+      "kind": "address",
+      "help": "The address of your plentyONE system without /rest, e.g. https://p12345.my.plentysystems.com.",
+      "example": "https://p12345.my.plentysystems.com",
+      "pattern": "^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?/?$",
+      "patternMessage": "Only the https address of the system, e.g. https://p12345.my.plentysystems.com, without /rest."
+    },
+    "PLENTYONE_USERNAME": {
+      "label": "API username",
+      "kind": "credential",
+      "help": "Username of a plentyONE back-end user with access \"Only API user\" (Setup > Account management > Accounts).",
+      "link": "https://knowledge.plentyone.com/en-gb/manual/main/data/rest-api.html"
+    },
+    "PLENTYONE_PASSWORD": {
+      "label": "API password",
+      "kind": "credential",
+      "secret": true,
+      "help": "That user's password.",
+      "link": "https://knowledge.plentyone.com/en-gb/manual/main/data/rest-api.html"
+    }
+  },
+  "verifyHints": {
+    "401": "plentyONE refused the sign-in. Check username and password, and that the user has access \"Only API user\" or back-end access.",
+    "403": "Signed in, but the user lacks a REST right for this (missing_permissions names it). Add it to the user's role under Setup > Account management > Roles.",
+    "404": "No plentyONE REST API at this address. PLENTYONE_URL is the system address without /rest, e.g. https://p12345.my.plentysystems.com.",
+    "rate_limited": "plentyONE limits calls per minute, and signed-in sessions per user (3 by default). Wait a minute, or use a dedicated API user."
+  },
+  "probe": {
+    "tool": "plentyone_list_webstores"
+  },
+  "connector": {
+    "name": "PlentyONE REST API",
+    "type": "REST",
+    "baseUrl": "{{PLENTYONE_URL}}/rest",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{PLENTYONE_URL}}/rest/login",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "username": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{PLENTYONE_USERNAME}}",
+      "password": "{{PLENTYONE_PASSWORD}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 86400,
+      "proactiveRefreshSeconds": 1800,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "plentyone_list_webstores",
+      "description": "List the clients (webstores) of the plentyONE system: id, plentyId (storeIdentifier, used as plentyId in other filters), name, type and default language. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webstores"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{id: id, plentyId: storeIdentifier, name: name, type: type, defaultLanguage: configuration.defaultLanguage}"
+        }
+      }
+    },
+    {
+      "name": "plentyone_search_orders",
+      "description": "Search orders: id, type, status id, referrer (sales channel), plentyId, dates, amounts and, with with, addresses and order items. Filters take plentyONE's operator syntax: statusId \"5\" or \"in:3,4\" or \"between:3,5\", createdAt \"between:2026-10-01T00:00:00+02:00,2026-10-21T23:59:59+02:00\". Needs the Orders > Show right for the API user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "description": "One order id, or \"in:1001,1002\"."
+          },
+          "statusId": {
+            "type": "string",
+            "description": "Status id or range, e.g. 5, in:3,4, between:3,5.9."
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Creation date range, e.g. between:2026-10-01T00:00:00+02:00,2026-10-21T23:59:59+02:00."
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Last update range, same syntax as createdAt."
+          },
+          "referrerId": {
+            "type": "string",
+            "description": "Order referrer (sales channel) id from plentyone_list_referrers, e.g. 1 for the webshop or \"in:4,4.01\"."
+          },
+          "orderTypeId": {
+            "type": "string",
+            "description": "Order type: 1 sales order, 2 delivery, 3 return, 4 credit note, 5 warranty, 6 repair, 7 offer, 8 advance order."
+          },
+          "variationNumber": {
+            "type": "string",
+            "description": "Only orders containing this variation number."
+          },
+          "externalOrderId": {
+            "type": "string",
+            "description": "Order id of the marketplace or shop that sent the order."
+          },
+          "with": {
+            "type": "string",
+            "description": "Comma-separated relations, e.g. addresses,orderItems,amounts,dates,comments,shippingPackages."
+          },
+          "sortBy": {
+            "type": "string",
+            "description": "Sort field, default orderId.",
+            "enum": [
+              "orderId",
+              "createdAt",
+              "updatedAt",
+              "statusId"
+            ]
+          },
+          "sortOrder": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/search",
+        "queryParams": {
+          "orderId": "$orderId",
+          "statusId": "$statusId",
+          "createdAt": "$createdAt",
+          "updatedAt": "$updatedAt",
+          "referrerId": "$referrerId",
+          "orderTypeId": "$orderTypeId",
+          "variationNumber": "$variationNumber",
+          "externalOrderId": "$externalOrderId",
+          "with": "$with",
+          "sortBy": "$sortBy",
+          "sortOrder": "$sortOrder",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_get_order",
+      "description": "Get one order by id with its relations: addresses, order items (variation, quantity, prices, VAT), amounts, dates, properties, payments, documents and shipping packages. Needs the Orders > Show right.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "description": "Order id."
+          },
+          "with": {
+            "type": "array",
+            "description": "Relations to load, e.g. [\"addresses\",\"orderItems.variation\",\"payments\",\"documents\",\"shippingPackages\",\"comments\"].",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{orderId}",
+        "queryParams": {
+          "with[]": "$with"
+        }
+      }
+    },
+    {
+      "name": "plentyone_list_order_statuses",
+      "description": "List the order statuses of the system (e.g. 3 waiting for payment, 5 cleared for shipping, 7 outgoing items booked) with their names per language. Needs the Orders > Order statuses > Show right.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "description": "Language of the names, e.g. de, en."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/statuses",
+        "queryParams": {
+          "language": "$language",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_list_referrers",
+      "description": "List the order referrers (sales channels: webshop, Amazon, eBay, Otto, manual entry...) with id, name and backend name. The id is what referrerId takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/referrers"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{id: id, name: name, backendName: backendName}"
+        }
+      }
+    },
+    {
+      "name": "plentyone_search_items",
+      "description": "Search items (the article; sellable versions are its variations): id, manufacturer, condition, customs tariff number, producing country, stock type, free fields and update time. Filter by name, ids, manufacturer or update time; with=variations loads the variations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Item name (contains)."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language of the name, e.g. de."
+          },
+          "id": {
+            "type": "string",
+            "description": "Comma-separated item ids."
+          },
+          "manufacturerId": {
+            "type": "integer",
+            "description": "Manufacturer id (plentyone_list_manufacturers)."
+          },
+          "updatedBetween": {
+            "type": "string",
+            "description": "Changed between: unix timestamps or ISO dates, \"from\" or \"from,to\"."
+          },
+          "with": {
+            "type": "string",
+            "description": "Comma-separated relations: variations, itemImages, itemProperties, itemCrossSelling, itemShippingProfiles."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items",
+        "queryParams": {
+          "name": "$name",
+          "lang": "$lang",
+          "id": "$id",
+          "manufacturerId": "$manufacturerId",
+          "updatedBetween": "$updatedBetween",
+          "with": "$with",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_get_item",
+      "description": "Get one item by id: manufacturer, condition, customs tariff number, producing country, age restriction, stock type, flags and free fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language, e.g. de."
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{itemId}",
+        "queryParams": {
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "plentyone_search_variations",
+      "description": "Search variations (the sellable SKUs): id, item id, variation number, model, external id, active flag, availability, purchase price, weight and size. Find one by exact number (numberExact), part of the number, barcode (EAN), item name, category or supplier number; with loads sales prices, barcodes, stock and more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "numberExact": {
+            "type": "string",
+            "description": "Exact variation number, e.g. LEGO-60352-1244."
+          },
+          "numberFuzzy": {
+            "type": "string",
+            "description": "Part of a variation number."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Barcode, e.g. an EAN."
+          },
+          "itemId": {
+            "type": "integer",
+            "description": "Only variations of this item."
+          },
+          "itemName": {
+            "type": "string",
+            "description": "Item name (contains)."
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Only active (true) or inactive (false) variations."
+          },
+          "categoryId": {
+            "type": "integer",
+            "description": "Only variations in this category."
+          },
+          "supplierNumber": {
+            "type": "string",
+            "description": "Supplier's article number."
+          },
+          "manufacturerId": {
+            "type": "integer",
+            "description": "Manufacturer id."
+          },
+          "updatedBetween": {
+            "type": "string",
+            "description": "Changed between: unix timestamps or ISO dates, \"from\" or \"from,to\"."
+          },
+          "with": {
+            "type": "string",
+            "description": "Comma-separated relations to load, e.g. variationSalesPrices,variationBarcodes,stock,variationCategories,variationAttributeValues,images,unit,variationSuppliers,variationWarehouses."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/variations",
+        "queryParams": {
+          "numberExact": "$numberExact",
+          "numberFuzzy": "$numberFuzzy",
+          "barcode": "$barcode",
+          "itemId": "$itemId",
+          "itemName": "$itemName",
+          "isActive": "$isActive",
+          "categoryId": "$categoryId",
+          "supplierNumber": "$supplierNumber",
+          "manufacturerId": "$manufacturerId",
+          "updatedBetween": "$updatedBetween",
+          "with": "$with",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_get_variation",
+      "description": "Get one variation with optional relations: sales prices, barcodes, stock, categories, attribute values, images, unit, suppliers, warehouses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "variationId": {
+            "type": "integer",
+            "description": "Variation id."
+          },
+          "with": {
+            "type": "string",
+            "description": "Comma-separated relations to load, e.g. variationSalesPrices,variationBarcodes,stock,variationCategories,variationAttributeValues,images,unit,variationSuppliers,variationWarehouses."
+          }
+        },
+        "required": [
+          "itemId",
+          "variationId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{itemId}/variations/{variationId}",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "plentyone_get_item_texts",
+      "description": "Get the texts of an item per language: name (name, name2, name3), preview and full description, technical data, meta title, description and keywords, URL path. The texts belong to the item and are the same for all its variations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "variationId": {
+            "type": "integer",
+            "description": "Any variation id of the item (the main variation works)."
+          }
+        },
+        "required": [
+          "itemId",
+          "variationId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{itemId}/variations/{variationId}/descriptions"
+      }
+    },
+    {
+      "name": "plentyone_list_warehouses",
+      "description": "List the warehouses with id, name, type (0 sales, 1 repair, 2 corrections, 3 transit, 4 distribution, 5 other), logistics type and notes. The id is what warehouseId takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockmanagement/warehouses"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{id: id, name: name, typeId: typeId, logisticsType: logisticsType, note: note, isInventoryModeActive: isInventoryModeActive}"
+        }
+      }
+    },
+    {
+      "name": "plentyone_get_stock",
+      "description": "Get stock per variation and warehouse: physical stock, reserved stock, net (sellable) stock, reorder delta, average purchase price and update time. Filter by variation or by update time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variationId": {
+            "type": "integer",
+            "description": "Only this variation."
+          },
+          "updatedAtFrom": {
+            "type": "string",
+            "description": "Changed at or after, ISO 8601, e.g. 2026-10-01T00:00:00+02:00."
+          },
+          "updatedAtTo": {
+            "type": "string",
+            "description": "Changed at or before, ISO 8601."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockmanagement/stock",
+        "queryParams": {
+          "variationId": "$variationId",
+          "updatedAtFrom": "$updatedAtFrom",
+          "updatedAtTo": "$updatedAtTo",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_get_warehouse_stock",
+      "description": "Get the stock of one warehouse per variation: physical, reserved and net stock, reorder delta and average purchase price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouseId": {
+            "type": "integer",
+            "description": "Warehouse id from plentyone_list_warehouses."
+          },
+          "variationId": {
+            "type": "integer",
+            "description": "Only this variation."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        },
+        "required": [
+          "warehouseId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockmanagement/warehouses/{warehouseId}/stock",
+        "queryParams": {
+          "variationId": "$variationId",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_list_categories",
+      "description": "List categories with id, parent, level, type and, with with=details, their names and paths per language. Filter by type, name, parent or level. The id is what categoryId takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Category type.",
+            "enum": [
+              "item",
+              "container",
+              "content",
+              "blog"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Category name (contains)."
+          },
+          "parentId": {
+            "type": "integer",
+            "description": "Only children of this category."
+          },
+          "level": {
+            "type": "integer",
+            "description": "Only this level, 1 = top level."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Only categories with details in this language, e.g. de."
+          },
+          "with": {
+            "type": "string",
+            "description": "details for names and paths per language; also clients, tags.",
+            "default": "details"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "type": "$type",
+          "name": "$name",
+          "parentId": "$parentId",
+          "level": "$level",
+          "lang": "$lang",
+          "with": "$with",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_list_manufacturers",
+      "description": "List manufacturers (brands) with id, name, legal name, URL and address. The id is what manufacturerId takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Manufacturer name."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/manufacturers",
+        "queryParams": {
+          "name": "$name",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_list_units",
+      "description": "List the units of measurement (piece, kg, litre...) with id and ISO unit code. unitId in an item's variation refers to them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/units",
+        "queryParams": {
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_list_sales_prices",
+      "description": "List the sales price definitions (default price, RRP, special prices per channel or customer class) with id, type, position, names, minimum order quantity and interval. A variation's variationSalesPrices refer to them by salesPriceId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/sales_prices",
+        "queryParams": {
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "page": "$.page",
+            "totalsCount": "$.totalsCount",
+            "isLastPage": "$.isLastPage",
+            "lastPageNumber": "$.lastPageNumber",
+            "entries": {
+              "$from": "$.entries[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "position": "position",
+                "names": "names",
+                "isCustomerPrice": "isCustomerPrice",
+                "minimumOrderQuantity": "minimumOrderQuantity",
+                "interval": "interval",
+                "isDisplayedByDefault": "isDisplayedByDefault"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "plentyone_search_contacts",
+      "description": "Search contacts (customers, suppliers, partners): id, number, name, e-mail, type, class and, with with, addresses and order summary. Needs the contact read rights for the API user; a 403 names the missing right in missing_permissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fullText": {
+            "type": "string",
+            "description": "Free text over name, e-mail, number and address."
+          },
+          "email": {
+            "type": "string",
+            "description": "Exact e-mail address."
+          },
+          "number": {
+            "type": "string",
+            "description": "Customer number."
+          },
+          "typeId": {
+            "type": "integer",
+            "description": "Contact type: 1 customer, 2 sales lead, 3 sales representative, 4 supplier, 5 manufacturer, 6 partner."
+          },
+          "with": {
+            "type": "string",
+            "description": "Comma-separated relations: addresses, accounts, options, orderSummary, primaryBillingAddress."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/contacts",
+        "queryParams": {
+          "fullText": "$fullText",
+          "email": "$email",
+          "number": "$number",
+          "typeId": "$typeId",
+          "with": "$with",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_create_item",
+      "description": "Create a new item with its first variation. plentyONE creates the variation inactive; set texts, prices and stock afterwards in plentyONE or with plentyone_update_variation. Installed switched off: an admin turns it on. Show the user the variation number, name, category and unit and wait for a yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variations": {
+            "type": "array",
+            "description": "The first variation, as a one-element list, e.g. [{\"number\":\"SKU-001\",\"name\":\"Red, size M\",\"unit\":{\"unitId\":1,\"content\":1},\"variationCategories\":[{\"categoryId\":17}],\"isActive\":false}]. unit and variationCategories are required.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "manufacturerId": {
+            "type": "integer",
+            "description": "Manufacturer id (plentyone_list_manufacturers)."
+          }
+        },
+        "required": [
+          "variations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items",
+        "bodyMapping": {
+          "variations": "$variations",
+          "manufacturerId": "$manufacturerId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "plentyone_update_variation",
+      "description": "Change fields of one variation: name, model, variation number, active flag, weight and dimensions. Only the fields sent are changed. Installed switched off: an admin turns it on. Show the user the variation and the new values and wait for a yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "variationId": {
+            "type": "integer",
+            "description": "Variation id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Variation name."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model."
+          },
+          "number": {
+            "type": "string",
+            "description": "Variation number (SKU)."
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Active (sellable) or not."
+          },
+          "weightG": {
+            "type": "integer",
+            "description": "Gross weight in grams."
+          },
+          "widthMM": {
+            "type": "integer",
+            "description": "Width in mm."
+          },
+          "heightMM": {
+            "type": "integer",
+            "description": "Height in mm."
+          },
+          "lengthMM": {
+            "type": "integer",
+            "description": "Length in mm."
+          }
+        },
+        "required": [
+          "itemId",
+          "variationId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{itemId}/variations/{variationId}",
+        "bodyMapping": {
+          "name": "$name",
+          "model": "$model",
+          "number": "$number",
+          "isActive": "$isActive",
+          "weightG": "$weightG",
+          "widthMM": "$widthMM",
+          "heightMM": "$heightMM",
+          "lengthMM": "$lengthMM"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

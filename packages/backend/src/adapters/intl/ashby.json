@@ -1,0 +1,1555 @@
+{
+  "slug": "ashby",
+  "name": "Ashby",
+  "aliases": [
+    "Ashby ATS",
+    "AshbyHQ"
+  ],
+  "description": "Let your AI work in Ashby: find candidates, review applications, interview feedback and offers, look up jobs and pipeline stages, add candidates and notes, and move applications through the hiring process.",
+  "instructions": "## Ashby\nThis connector works with **Ashby** (applicant tracking and recruiting) through the Ashby API (`https://api.ashbyhq.com`) with an API key created by an Ashby admin: candidates, applications and their pipeline stages, jobs and job postings, interview plans, schedules and feedback, offers, users, sources, tags, departments and locations, plus the main recruiting writes (create and update candidates, notes and tags, consider a candidate for a job, move or transfer an application).\n\n**Setup (about 5 minutes, needs an Ashby admin)**\n1. In Ashby open **Admin → Integrations → API Keys** (https://app.ashbyhq.com/admin/api/credentials) and create a key.\n2. Give it the permissions the connector should have. For everything here: Candidates read and write, Jobs read, Interviews read, Hiring Process read, Organization read, Offers read and API Keys read. Leave out write access for a read-only setup; the write tools then answer 403. Confidential jobs and private fields need their own two switches on the key.\n3. Copy the key, paste it into `ASHBY_API_KEY` and install. It is sent as the HTTP Basic user name with an empty password, and only to Ashby.\n\nThe key acts for the whole organization, not for one recruiter: whoever uses this connector sees every candidate the key can reach. Share the MCP server only with people allowed to see that.\n\n**How Ashby's API works**: every endpoint is a `POST` with a JSON body, also the ones that only read (`candidate.list`, `job.info`). The tools say which ones change data. Lists come in pages: when `moreDataAvailable` is true, call again with `cursor` = `nextCursor`. Times in filters such as `created_after` are Unix time in **milliseconds**. Ids are UUIDs.\n\n**How to work**\n1. Find people: `ashby_search_candidates` by email or name; `ashby_get_candidate` for the profile with its application ids; `ashby_list_candidate_notes` for notes; `ashby_list_candidates` pages through everyone, e.g. those created since a date.\n2. Pipeline: `ashby_list_applications` (filter by `job_id` and `status`), `ashby_get_application` for the current stage, source, archive reason and hiring team, `ashby_list_application_history` for the stage changes, `ashby_list_application_feedback` for interview scorecards.\n3. Jobs: `ashby_search_jobs` by title or requisition id, `ashby_list_jobs`, `ashby_get_job`, `ashby_list_job_postings`.\n4. Stages: an application moves between the stages of its job's interview plan. Get the plan id from `ashby_get_application` (or `ashby_list_interview_plans`), then the stage ids from `ashby_list_interview_stages`. Moving to an Archived stage needs an archive reason from `ashby_list_archive_reasons`.\n5. Interviews: `ashby_list_interview_schedules` for an application, `ashby_list_interview_events` for one schedule, `ashby_list_interviews` for the interview types.\n6. Lookups: `ashby_list_users`, `ashby_search_users`, `ashby_list_sources`, `ashby_list_candidate_tags`, `ashby_list_departments`, `ashby_list_locations`, `ashby_list_offers`; `ashby_get_api_key_info` shows which permissions the key has.\n\n**Writes**: `ashby_create_candidate`, `ashby_update_candidate`, `ashby_add_candidate_note`, `ashby_add_candidate_tag`, `ashby_create_application`, `ashby_change_application_stage` and `ashby_transfer_application` change the recruiting record that the whole hiring team sees, and a stage change can start automatic emails or a rejection email to the candidate. Confirm each one with the user before calling it, and search before creating a candidate so no duplicate is made. `ashby_delete_application` deletes an application for good and is installed switched off.\n\n**Common errors**\n- 401: no key reached Ashby, or it is wrong. Copy it again from Admin → API Keys.\n- 403: the key is deactivated, or it lacks the permission for this endpoint (`missing_endpoint_permission`): add the permission to the key in Admin → API Keys.\n- Ashby reports most other problems with HTTP 200 and `success: false`; the connector turns them into errors with Ashby's `errorInfo.code` and message, e.g. `application_not_found` (wrong id or a confidential job the key cannot see).\n\n**Out of scope here**: offers and approvals writes, interview scheduling, job and posting edits, custom fields, files and resumes, sequences, surveys, reports, webhooks and the public job board API.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "ashby",
+  "docsUrl": "https://developers.ashbyhq.com/reference/introduction",
+  "prerequisites": "An Ashby admin who can create an API key under Admin, Integrations, API Keys and choose its permissions. About 5 minutes.",
+  "requiredEnvVars": [
+    "ASHBY_API_KEY"
+  ],
+  "envVarMeta": {
+    "ASHBY_API_KEY": {
+      "label": "Ashby API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Ashby, Admin, Integrations, API Keys: create a key and tick the permissions (Candidates read and write, Jobs, Interviews, Hiring Process, Organization, Offers and API Keys read). The key is shown once.",
+      "link": "https://app.ashbyhq.com/admin/api/credentials",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the key as Ashby shows it, without spaces and without a colon."
+    }
+  },
+  "verifyHints": {
+    "401": "Ashby did not accept the API key. Copy it again from Admin, Integrations, API Keys (https://app.ashbyhq.com/admin/api/credentials).",
+    "403": "Ashby refused the key: it is deactivated, or it lacks the Jobs read permission this check uses. Edit the key's permissions under Admin, Integrations, API Keys.",
+    "429": "Ashby is rate limiting this key. Wait a minute and verify again."
+  },
+  "unlisted": true,
+  "probe": {
+    "tool": "ashby_list_jobs",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Ashby",
+    "type": "REST",
+    "baseUrl": "https://api.ashbyhq.com",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{ASHBY_API_KEY}}",
+      "password": ""
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/apiKey.info",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "errorInfo.code",
+          "matches": "not_found",
+          "messagePath": [
+            "errorInfo.code",
+            "errorInfo.message",
+            "errors"
+          ],
+          "status": 404
+        },
+        {
+          "path": "errorInfo.code",
+          "matches": "permission|forbidden|unauthori[sz]ed",
+          "messagePath": [
+            "errorInfo.code",
+            "errorInfo.message",
+            "errors"
+          ],
+          "status": 403
+        },
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": [
+            "errorInfo.code",
+            "errorInfo.message",
+            "errors"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "ashby_get_api_key_info",
+      "description": "Show the Ashby API key this connector uses: its title, creation date, API version and the permission scopes it has (e.g. candidates:read). Use it when a tool answers 403 to see what is missing. Sent as a POST, as every Ashby call, but only reads. Needs the API Keys read permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/apiKey.info",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_search_candidates",
+      "description": "Find Ashby candidates by email and/or name (up to 100 matches, not paginated): id, name, emails, phone, current company and title, tags, application ids. The fastest way to find a person, and the check to run before creating one. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The candidate's email address."
+          },
+          "name": {
+            "type": "string",
+            "description": "The candidate's name or part of it."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Most matches to return, 1 to 100 (Ashby default 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidate.search",
+        "bodyMapping": {
+          "email": "$email",
+          "name": "$name",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_candidates",
+      "description": "List all Ashby candidates page by page, optionally only those created in a time window. For a specific person use ashby_search_candidates. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "integer",
+            "description": "Only records created at or after this moment, as Unix time in milliseconds (e.g. 1759276800000 for 2025-10-01 00:00 UTC)."
+          },
+          "created_before": {
+            "type": "integer",
+            "description": "Only records created at or before this moment, Unix time in milliseconds, not in the future."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidate.list",
+        "bodyMapping": {
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_get_candidate",
+      "description": "Get one Ashby candidate by id (or by the id an HR system gave them): contact details, social links, location, source, tags, files, custom fields and the ids of their applications. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Ashby candidate id (UUID)."
+          },
+          "external_mapping_id": {
+            "type": "string",
+            "description": "Instead of id: the candidate's id in an external system such as an HRIS."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidate.info",
+        "bodyMapping": {
+          "id": "$id",
+          "externalMappingId": "$external_mapping_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_candidate_notes",
+      "description": "List the notes on an Ashby candidate, newest first, with author, date and content. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "description": "Ashby candidate id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        },
+        "required": [
+          "candidate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidate.listNotes",
+        "bodyMapping": {
+          "candidateId": "$candidate_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_applications",
+      "description": "List Ashby applications (a candidate considered for a job) page by page, filtered by job, status (Active, Hired, Archived, Lead) or creation time, with candidate, job, current stage, source and dates. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Only applications for this job id."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only applications with this status.",
+            "enum": [
+              "Active",
+              "Hired",
+              "Archived",
+              "Lead"
+            ]
+          },
+          "created_after": {
+            "type": "integer",
+            "description": "Only records created at or after this moment, as Unix time in milliseconds (e.g. 1759276800000 for 2025-10-01 00:00 UTC)."
+          },
+          "created_before": {
+            "type": "integer",
+            "description": "Only records created at or before this moment, Unix time in milliseconds, not in the future."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/application.list",
+        "bodyMapping": {
+          "jobId": "$job_id",
+          "status": "$status",
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "results": "$.results",
+            "moreDataAvailable": "$.moreDataAvailable",
+            "nextCursor": "$.nextCursor"
+          },
+          "maxBytes": 250000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_get_application",
+      "description": "Get one Ashby application: candidate, job, status, current interview stage and interview plan, source, archive reason, credited user, hiring team and dates. The interview plan id here is what ashby_list_interview_stages needs. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string",
+            "description": "Ashby application id (UUID)."
+          }
+        },
+        "required": [
+          "application_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/application.info",
+        "bodyMapping": {
+          "applicationId": "$application_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_application_history",
+      "description": "List the stage history of an Ashby application: each stage it entered, when, and who moved it. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string",
+            "description": "Ashby application id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        },
+        "required": [
+          "application_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/application.listHistory",
+        "bodyMapping": {
+          "applicationId": "$application_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_application_feedback",
+      "description": "List the interview scorecards and feedback submitted for an Ashby application: the form, each answer (text, scores, recommendation as stored values), the interviewer and the interview. Map stored values to labels with the field's selectableValues. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string",
+            "description": "Ashby application id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        },
+        "required": [
+          "application_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/applicationFeedback.list",
+        "bodyMapping": {
+          "applicationId": "$application_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "results": "$.results",
+            "moreDataAvailable": "$.moreDataAvailable",
+            "nextCursor": "$.nextCursor"
+          },
+          "maxBytes": 250000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_jobs",
+      "description": "List Ashby jobs page by page, filtered by status (Draft, Open, Closed, Archived), with title, status, department, location, hiring team, interview plan ids and job posting ids. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Draft",
+                "Open",
+                "Closed",
+                "Archived"
+              ]
+            },
+            "description": "Only jobs with these statuses, e.g. [\"Open\"]."
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "openings",
+                "location"
+              ]
+            },
+            "description": "Related data to include: openings, location."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/job.list",
+        "bodyMapping": {
+          "status": "$status",
+          "expand": "$expand",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "results": "$.results",
+            "moreDataAvailable": "$.moreDataAvailable",
+            "nextCursor": "$.nextCursor"
+          },
+          "maxBytes": 250000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_search_jobs",
+      "description": "Find Ashby jobs by title (or part of it) or requisition id, up to 100 matches. Give title or requisition_id. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "The job title or part of it."
+          },
+          "requisition_id": {
+            "type": "string",
+            "description": "The custom requisition id or part of it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/job.search",
+        "bodyMapping": {
+          "title": "$title",
+          "requisitionId": "$requisition_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_get_job",
+      "description": "Get one Ashby job: title, status, department, location, employment type, hiring team, interview plans, job posting ids and custom fields; expand adds openings, location and compensation. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Ashby job id (UUID)."
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "openings",
+                "location",
+                "compensation"
+              ]
+            },
+            "description": "Related data to include: openings, location, compensation."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/job.info",
+        "bodyMapping": {
+          "id": "$id",
+          "expand": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_job_postings",
+      "description": "List Ashby job postings (the public adverts of jobs) on the main external job board, with title, location, department, employment type and whether they are listed. Unlisted postings are included unless listed_only is true. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listed_only": {
+            "type": "boolean",
+            "description": "Only postings shown publicly on the job board."
+          },
+          "department": {
+            "type": "string",
+            "description": "Only this department name (case sensitive)."
+          },
+          "location": {
+            "type": "string",
+            "description": "Only this location name (case sensitive)."
+          },
+          "include_unpublished": {
+            "type": "boolean",
+            "description": "Also include draft postings."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobPosting.list",
+        "bodyMapping": {
+          "listedOnly": "$listed_only",
+          "department": "$department",
+          "location": "$location",
+          "includeUnpublishedJobPostings": "$include_unpublished"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_interview_plans",
+      "description": "List Ashby interview plans (the pipelines jobs use), page by page. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "boolean",
+            "description": "Also list archived plans."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/interviewPlan.list",
+        "bodyMapping": {
+          "includeArchived": "$include_archived",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_interview_stages",
+      "description": "List the stages of an Ashby interview plan in order, with id, title, type (Lead, PreInterviewScreen, Active, Offer, Hired, Archived) and position. These ids are what ashby_change_application_stage and ashby_create_application take. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "interview_plan_id": {
+            "type": "string",
+            "description": "Interview plan id, e.g. from ashby_get_application."
+          }
+        },
+        "required": [
+          "interview_plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/interviewStage.list",
+        "bodyMapping": {
+          "interviewPlanId": "$interview_plan_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_interview_schedules",
+      "description": "List Ashby interview schedules (booked interviews with their events), for one application or one stage, page by page. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string",
+            "description": "Only schedules of this application."
+          },
+          "interview_stage_id": {
+            "type": "string",
+            "description": "Only schedules in this interview stage."
+          },
+          "created_after": {
+            "type": "integer",
+            "description": "Only records created at or after this moment, as Unix time in milliseconds (e.g. 1759276800000 for 2025-10-01 00:00 UTC)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/interviewSchedule.list",
+        "bodyMapping": {
+          "applicationId": "$application_id",
+          "interviewStageId": "$interview_stage_id",
+          "createdAfter": "$created_after",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_interview_events",
+      "description": "List the interview events of one Ashby interview schedule: start and end time, interviewers, interview, location or meeting link, feedback link. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "interview_schedule_id": {
+            "type": "string",
+            "description": "Interview schedule id from ashby_list_interview_schedules."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        },
+        "required": [
+          "interview_schedule_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/interviewEvent.list",
+        "bodyMapping": {
+          "interviewScheduleId": "$interview_schedule_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_interviews",
+      "description": "List the interview types defined in Ashby (e.g. Technical screen), with title, instructions and feedback form. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "boolean",
+            "description": "Also list archived interviews."
+          },
+          "include_non_shared": {
+            "type": "boolean",
+            "description": "Also list interviews tied to one job."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/interview.list",
+        "bodyMapping": {
+          "includeArchived": "$include_archived",
+          "includeNonSharedInterviews": "$include_non_shared",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_users",
+      "description": "List the Ashby users (recruiters, hiring managers, interviewers) with id, name, email and role, page by page. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_deactivated": {
+            "type": "boolean",
+            "description": "Also list deactivated users."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/user.list",
+        "bodyMapping": {
+          "includeDeactivated": "$include_deactivated",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_search_users",
+      "description": "Find an Ashby user by email address; returns a list with the user, or an empty list. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The user's email address."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/user.search",
+        "bodyMapping": {
+          "email": "$email"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_sources",
+      "description": "List the candidate sources defined in Ashby (e.g. LinkedIn, Referral) with their ids, for creating candidates and applications. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "boolean",
+            "description": "Also list archived sources."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/source.list",
+        "bodyMapping": {
+          "includeArchived": "$include_archived"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_archive_reasons",
+      "description": "List the archive reasons defined in Ashby (why a candidate was rejected or withdrew) with their ids, needed to move an application to an Archived stage. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "boolean",
+            "description": "Also list archived reasons."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/archiveReason.list",
+        "bodyMapping": {
+          "includeArchived": "$include_archived"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_candidate_tags",
+      "description": "List the candidate tags defined in Ashby with their ids, for ashby_add_candidate_tag. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "boolean",
+            "description": "Also list archived tags."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidateTag.list",
+        "bodyMapping": {
+          "includeArchived": "$include_archived",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_offers",
+      "description": "List Ashby offers with their latest version (compensation, start date, status), filtered by application or status. Needs the Offers read permission. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string",
+            "description": "Only offers of this application."
+          },
+          "offer_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "WaitingOnOfferCreation",
+                "WaitingOnApprovalStart",
+                "WaitingOnOfferApproval",
+                "WaitingOnApprovalDefinition",
+                "WaitingOnCandidateResponse",
+                "CandidateRejected",
+                "CandidateAccepted",
+                "OfferCancelled"
+              ]
+            },
+            "description": "Only offers in these process statuses."
+          },
+          "acceptance_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Accepted",
+                "Declined",
+                "Pending",
+                "Created",
+                "Cancelled"
+              ]
+            },
+            "description": "Only offers with these candidate answers."
+          },
+          "created_after": {
+            "type": "integer",
+            "description": "Only records created at or after this moment, as Unix time in milliseconds (e.g. 1759276800000 for 2025-10-01 00:00 UTC)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offer.list",
+        "bodyMapping": {
+          "applicationId": "$application_id",
+          "offerStatus": "$offer_status",
+          "acceptanceStatus": "$acceptance_status",
+          "createdAfter": "$created_after",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_departments",
+      "description": "List the departments and teams defined in Ashby with id, name and parent. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "boolean",
+            "description": "Also list archived departments."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/department.list",
+        "bodyMapping": {
+          "includeArchived": "$include_archived",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_list_locations",
+      "description": "List the office locations defined in Ashby with id, name, address and workplace type. Sent as a POST, as every Ashby call, but only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "boolean",
+            "description": "Also list archived locations."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page, while moreDataAvailable is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/location.list",
+        "bodyMapping": {
+          "includeArchived": "$include_archived",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ashby_create_candidate",
+      "description": "Create a new candidate in Ashby. Run ashby_search_candidates with the email first so no duplicate is made, and confirm the details with the user before calling it. This only creates the person; ashby_create_application then considers them for a job. Returns the new candidate with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "First and last name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Main personal email."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Main phone number."
+          },
+          "linkedin_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          },
+          "github_url": {
+            "type": "string",
+            "description": "GitHub profile URL."
+          },
+          "website": {
+            "type": "string",
+            "description": "Personal website URL."
+          },
+          "alternate_email_addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Other email addresses."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Source id from ashby_list_sources."
+          },
+          "credited_to_user_id": {
+            "type": "string",
+            "description": "Ashby user id the candidate is credited to (e.g. the sourcer)."
+          },
+          "location": {
+            "type": "object",
+            "description": "Where the candidate lives: {\"city\": \"Berlin\", \"region\": \"Berlin\", \"country\": \"Germany\"}.",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "region": {
+                "type": "string",
+                "description": "State, province or region."
+              },
+              "country": {
+                "type": "string",
+                "description": "Country."
+              }
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidate.create",
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "phoneNumber": "$phone_number",
+          "linkedInUrl": "$linkedin_url",
+          "githubUrl": "$github_url",
+          "website": "$website",
+          "alternateEmailAddresses": "$alternate_email_addresses",
+          "sourceId": "$source_id",
+          "creditedToUserId": "$credited_to_user_id",
+          "location": "$location"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "ashby_update_candidate",
+      "description": "Update an Ashby candidate's name, contact details, links, source, credited user or location. Only the fields given change. Confirm the change with the user before calling it. Returns the updated candidate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "description": "Ashby candidate id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New first and last name."
+          },
+          "email": {
+            "type": "string",
+            "description": "New main email."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "New main phone number."
+          },
+          "linkedin_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          },
+          "github_url": {
+            "type": "string",
+            "description": "GitHub profile URL."
+          },
+          "website_url": {
+            "type": "string",
+            "description": "Personal website URL."
+          },
+          "alternate_email": {
+            "type": "string",
+            "description": "An email address to add as an alternate."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Source id from ashby_list_sources."
+          },
+          "credited_to_user_id": {
+            "type": "string",
+            "description": "Ashby user id the candidate is credited to."
+          },
+          "location": {
+            "type": "object",
+            "description": "Where the candidate lives: {\"city\": \"Berlin\", \"region\": \"Berlin\", \"country\": \"Germany\"}.",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "region": {
+                "type": "string",
+                "description": "State, province or region."
+              },
+              "country": {
+                "type": "string",
+                "description": "Country."
+              }
+            }
+          },
+          "send_notifications": {
+            "type": "boolean",
+            "description": "Notify the users who follow the candidate (Ashby default true)."
+          }
+        },
+        "required": [
+          "candidate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidate.update",
+        "bodyMapping": {
+          "candidateId": "$candidate_id",
+          "name": "$name",
+          "email": "$email",
+          "phoneNumber": "$phone_number",
+          "linkedInUrl": "$linkedin_url",
+          "githubUrl": "$github_url",
+          "websiteUrl": "$website_url",
+          "alternateEmail": "$alternate_email",
+          "sourceId": "$source_id",
+          "creditedToUserId": "$credited_to_user_id",
+          "location": "$location",
+          "sendNotifications": "$send_notifications"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ashby_add_candidate_note",
+      "description": "Add a note to an Ashby candidate, visible to the hiring team (or private). Confirm the text with the user before calling it. With on_behalf_of_user_id the note is attributed to that Ashby user (the key needs the act-on-behalf permission). Returns the note.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "description": "Ashby candidate id."
+          },
+          "note": {
+            "type": "string",
+            "description": "The note text. Plain text; for formatting set note_type to text/html."
+          },
+          "note_type": {
+            "type": "string",
+            "description": "text/plain (default) or text/html.",
+            "enum": [
+              "text/plain",
+              "text/html"
+            ],
+            "default": "text/plain"
+          },
+          "is_private": {
+            "type": "boolean",
+            "description": "Mark the note private (the key needs the private fields permission to create it)."
+          },
+          "send_notifications": {
+            "type": "boolean",
+            "description": "Notify the users who follow the candidate (Ashby default false)."
+          },
+          "on_behalf_of_user_id": {
+            "type": "string",
+            "description": "Ashby user id to attribute the note to, instead of the API key."
+          }
+        },
+        "required": [
+          "candidate_id",
+          "note"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidate.createNote",
+        "bodyMapping": {
+          "candidateId": "$candidate_id",
+          "note": {
+            "type": "$note_type",
+            "value": "$note"
+          },
+          "isPrivate": "$is_private",
+          "sendNotifications": "$send_notifications"
+        },
+        "headers": {
+          "X-On-Behalf-Of": "$on_behalf_of_user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "ashby_add_candidate_tag",
+      "description": "Add a tag to an Ashby candidate (tag ids from ashby_list_candidate_tags). Confirm with the user before calling it. Returns the updated candidate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "description": "Ashby candidate id."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id from ashby_list_candidate_tags."
+          }
+        },
+        "required": [
+          "candidate_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidate.addTag",
+        "bodyMapping": {
+          "candidateId": "$candidate_id",
+          "tagId": "$tag_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ashby_create_application",
+      "description": "Consider an Ashby candidate for a job: creates an application in the job's interview plan, in the first Lead stage unless interview_stage_id says otherwise. Confirm the candidate and the job with the user before calling it; a stage can start automatic activities. Returns the new application.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "description": "Ashby candidate id."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "Ashby job id."
+          },
+          "interview_plan_id": {
+            "type": "string",
+            "description": "Interview plan to use; leave out for the job's default plan."
+          },
+          "interview_stage_id": {
+            "type": "string",
+            "description": "Stage to start in (from ashby_list_interview_stages), or FirstPreInterviewScreen for the first screening stage. Leave out for the first Lead stage."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Source id from ashby_list_sources."
+          },
+          "credited_to_user_id": {
+            "type": "string",
+            "description": "Ashby user id the application is credited to."
+          }
+        },
+        "required": [
+          "candidate_id",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/application.create",
+        "bodyMapping": {
+          "candidateId": "$candidate_id",
+          "jobId": "$job_id",
+          "interviewPlanId": "$interview_plan_id",
+          "interviewStageId": "$interview_stage_id",
+          "sourceId": "$source_id",
+          "creditedToUserId": "$credited_to_user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "ashby_change_application_stage",
+      "description": "Move an Ashby application to another stage of its interview plan, e.g. to the next interview round, to Offer, or to an Archived stage to reject. Archiving needs archive_reason_id; archive_email schedules a rejection email to the candidate. Moving can start automatic activities set on the stage. Always confirm the application, the target stage and any email with the user before calling it. Returns the updated application.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string",
+            "description": "Ashby application id."
+          },
+          "interview_stage_id": {
+            "type": "string",
+            "description": "Target stage id from ashby_list_interview_stages (same interview plan)."
+          },
+          "archive_reason_id": {
+            "type": "string",
+            "description": "Required when the target stage is Archived: reason id from ashby_list_archive_reasons."
+          },
+          "archive_email": {
+            "type": "object",
+            "description": "Only when archiving: send a rejection email with a communication template, {\"communicationTemplateId\": \"...\", \"sendAt\": \"2026-10-14T09:30:00Z\"} (sendAt optional; Ashby defaults to the next morning).",
+            "properties": {
+              "communicationTemplateId": {
+                "type": "string",
+                "description": "Email template id."
+              },
+              "sendAt": {
+                "type": "string",
+                "description": "When to send, ISO 8601."
+              }
+            }
+          }
+        },
+        "required": [
+          "application_id",
+          "interview_stage_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/application.changeStage",
+        "bodyMapping": {
+          "applicationId": "$application_id",
+          "interviewStageId": "$interview_stage_id",
+          "archiveReasonId": "$archive_reason_id",
+          "archiveEmail": "$archive_email"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ashby_transfer_application",
+      "description": "Transfer an Ashby application to a different job, into a given interview plan and stage of that job. Confirm the job and stage with the user before calling it. Returns the updated application.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string",
+            "description": "Ashby application id."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "The job to move the application to."
+          },
+          "interview_plan_id": {
+            "type": "string",
+            "description": "Interview plan of the target job."
+          },
+          "interview_stage_id": {
+            "type": "string",
+            "description": "Stage in that plan (from ashby_list_interview_stages)."
+          },
+          "start_automatic_activities": {
+            "type": "boolean",
+            "description": "Start the automatic activities of the target stage (Ashby default true)."
+          }
+        },
+        "required": [
+          "application_id",
+          "job_id",
+          "interview_plan_id",
+          "interview_stage_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/application.transfer",
+        "bodyMapping": {
+          "applicationId": "$application_id",
+          "jobId": "$job_id",
+          "interviewPlanId": "$interview_plan_id",
+          "interviewStageId": "$interview_stage_id",
+          "startAutomaticActivities": "$start_automatic_activities"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ashby_delete_application",
+      "description": "Permanently delete an Ashby application with its history and feedback. Cannot be undone; to reject a candidate use ashby_change_application_stage to an Archived stage instead. Installed switched off; needs the Candidates delete permission. Only call it after the user confirms the exact application.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string",
+            "description": "Ashby application id, as confirmed by the user."
+          }
+        },
+        "required": [
+          "application_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/application.delete",
+        "bodyMapping": {
+          "applicationId": "$application_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

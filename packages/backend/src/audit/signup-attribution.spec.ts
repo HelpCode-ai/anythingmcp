@@ -7,6 +7,11 @@ describe('classifyTouch', () => {
     [{ utm_source: 'google', utm_medium: 'cpc' }, 'google_ads'],
     [{ utm_source: 'linkedin', utm_medium: 'paid_social' }, 'paid_other'],
     [{ utm_source: 'chatgpt.com' }, 'ai_assistant'],
+    [{ referrer_host: 'chatgpt.com' }, 'ai_assistant'],
+    [{ utm_source: 'chatgpt.com', utm_medium: 'referral', referrer_host: 'chatgpt.com' }, 'ai_assistant'],
+    [{ utm_source: 'chatgpt_ads', utm_medium: 'cpc', referrer_host: 'chatgpt.com' }, 'chatgpt_ads'],
+    [{ utm_source: 'ChatGPT_Ads' }, 'chatgpt_ads'],
+    [{ oppref: 'op-1', referrer_host: 'chatgpt.com' }, 'chatgpt_ads'],
     [{ referrer_host: 'perplexity.ai' }, 'ai_assistant'],
     [{ referrer_host: 'claude.ai' }, 'ai_assistant'],
     [{ referrer_host: 'gemini.google.com' }, 'ai_assistant'],
@@ -143,5 +148,65 @@ describe('clickIdFromAttribution', () => {
     expect(clickIdFromAttribution({ first_touch: { gclid: 'bad.id', ad_consent: 'granted' } })).toBeNull();
     expect(clickIdFromAttribution(null)).toBeNull();
     expect(clickIdFromAttribution([{ gclid: 'x', ad_consent: 'granted' }])).toBeNull();
+  });
+});
+
+describe('ChatGPT Ads oppref', () => {
+  const NOW = Date.parse('2026-10-15T10:00:00Z');
+  const OPPREF = 'opp_9f2C.x~Z=';
+
+  it('keeps an oppref only with ad consent granted, without marking the touch as a Google click', () => {
+    const out = sanitizeSignupAttribution(
+      { first_touch: { utm_source: 'chatgpt_ads', utm_medium: 'cpc', oppref: OPPREF, ad_consent: 'granted' } },
+      NOW,
+    );
+    expect(out?.first_touch).toEqual({
+      utm_source: 'chatgpt_ads',
+      utm_medium: 'cpc',
+      oppref: OPPREF,
+      ad_consent: 'granted',
+      channel: 'chatgpt_ads',
+    });
+    expect(out?.first_channel).toBe('chatgpt_ads');
+  });
+
+  it.each([['denied'], ['unknown'], [undefined]])('drops it when ad consent is %p', (adConsent) => {
+    const out = sanitizeSignupAttribution(
+      { first_touch: { utm_source: 'chatgpt_ads', utm_medium: 'cpc', oppref: OPPREF, ad_consent: adConsent } },
+      NOW,
+    );
+    expect(out?.first_touch?.oppref).toBeUndefined();
+    expect(out?.first_touch?.channel).toBe('chatgpt_ads');
+    expect(JSON.stringify(out)).not.toContain('opp_9f2C');
+  });
+
+  it.each([
+    ['a space', 'opp 1'],
+    ['a quote', 'opp"1'],
+    ['an address', 'jane@example.com'],
+    ['501 characters', 'a'.repeat(501)],
+  ])('drops an oppref with %s even with consent', (_label, oppref) => {
+    const out = sanitizeSignupAttribution({ first_touch: { oppref, ad_consent: 'granted', utm_source: 'chatgpt_ads' } }, NOW);
+    expect(out?.first_touch?.oppref).toBeUndefined();
+  });
+
+  it('keeps a 500-character oppref', () => {
+    const oppref = 'a'.repeat(500);
+    const out = sanitizeSignupAttribution({ first_touch: { oppref, ad_consent: 'granted' } }, NOW);
+    expect(out?.first_touch?.oppref).toBe(oppref);
+  });
+
+  it('is read back next to a Google click id, each from the most recent touch that has one', () => {
+    expect(
+      clickIdFromAttribution({
+        first_touch: { gclid: 'g-first', oppref: 'op-first', ad_consent: 'granted', ts: '2026-10-10T10:00:00.000Z' },
+        last_touch: { oppref: 'op-last', ad_consent: 'granted', ts: '2026-10-12T10:00:00.000Z' },
+      }),
+    ).toEqual({ gclid: 'g-first', oppref: 'op-last', ad_consent: 'granted', captured_at: '2026-10-10T10:00:00.000Z' });
+    expect(clickIdFromAttribution({ first_touch: { oppref: 'op-1', ad_consent: 'granted' } })).toEqual({
+      oppref: 'op-1',
+      ad_consent: 'granted',
+    });
+    expect(clickIdFromAttribution({ first_touch: { oppref: 'op-1', ad_consent: 'denied' } })).toBeNull();
   });
 });

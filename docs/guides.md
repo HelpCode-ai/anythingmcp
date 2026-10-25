@@ -18,6 +18,10 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 | **Cursor** | [Setup →](integrations/claude.md#cursor) | Streamable HTTP |
 | **Any MCP client** | [Setup →](integrations/claude.md#any-mcp-client) | Streamable HTTP |
 
+### Share a server with your team
+
+On an MCP server's page, the **Share this server** card gives you "Add to Cursor" and "Add to VS Code" badges to paste into a team README, wiki or onboarding page (**Copy Markdown** or **Copy HTML**). They use the editors' https install links, so they survive GitHub's Markdown sanitizer. A badge carries only the server's MCP URL, never an API key: whoever clicks it signs in with OAuth and must be a member of the workspace, so badges are shown only when `MCP_AUTH_MODE` is `oauth2` or `both`. If the URL is `localhost` or `127.0.0.1`, the badges only work on that machine. The card appears once the server's auth mode is known. The preview on the page is rendered locally and links to the same https install URLs as the snippet; only the copied snippet references remote badge images.
+
 ---
 
 ## Connector guides
@@ -40,6 +44,7 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 | [API reference](api-reference.md) | Full REST API for connectors, tools, auth, audit |
 | [Tool definition format](tool-definition.md) | Parameters, endpoint mapping, response mapping |
 | [Knowledge Graph &amp; AI skills](knowledge-graph.md) | Per-workspace data-relationship map served over MCP, plus AI skills composed into server instructions |
+| [Workspace memory](memory.md) | Personal and company memory AI clients save and search over MCP (Enterprise) |
 | [MCP resources](mcp-resources.md) | Read-only resources on per-server endpoints: URIs, role visibility, fail-closed rules |
 | [Deployment guide](deployment.md) | Docker, production setup, reverse proxy, env vars |
 | [Authentication](deployment.md#authentication) | OAuth2, JWT, API keys, MCP auth modes |
@@ -59,7 +64,7 @@ Run AnythingMCP (self-hosted or [Cloud](https://cloud.anythingmcp.com)), import 
 <details>
 <summary><strong>Can I build a ChatGPT app from my existing API?</strong></summary>
 
-Yes. As of December 2025, OpenAI calls these **apps in ChatGPT** (the term now covers both interactive apps and data connectors), and they're built on MCP via the Apps SDK. AnythingMCP generates the MCP backend from your existing API — add it as an app/connector in ChatGPT, or use it as the tool layer of an Apps SDK app. See [Turn your API into a ChatGPT app](../README.md#use-it-from-claude-chatgpt-copilot-and-gemini).
+Yes. As of December 2025, OpenAI calls these **apps in ChatGPT** (the term now covers both interactive apps and data connectors), and they're built on MCP via the Apps SDK. AnythingMCP generates the MCP backend from your existing API: add it in ChatGPT under Plugins (+, **Add custom MCP server**), or use it as the tool layer of an Apps SDK app. See [Turn your API into a ChatGPT app](../README.md#use-it-from-claude-chatgpt-copilot-and-gemini).
 </details>
 
 <details>

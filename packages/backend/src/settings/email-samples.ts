@@ -4,6 +4,7 @@ import {
   RenderedEmail,
   activationReminderEmail,
   cardTrialOfferEmail,
+  connectorAuthEmail,
   existingAccountEmail,
   invitationEmail,
   licenseKeyEmail,
@@ -61,6 +62,20 @@ export const EMAIL_SAMPLES: EmailSample[] = [
     render: (ctx, n) =>
       invitationEmail(
         { inviteUrl: `${SAMPLE_CLOUD_URL}/accept-invite?token=sample`, invitedByName: n.name, roleName: n.other },
+        ctx,
+      ),
+  },
+  {
+    id: 'connector-auth',
+    render: (ctx, n) =>
+      connectorAuthEmail(
+        {
+          name: n.name,
+          connectorName: n.other,
+          message:
+            "Google revoked the sign-in 7 days after it was granted. This happens when the OAuth app in your Google Cloud project is in 'Testing'. Publish it ('In production') under APIs & Services → OAuth consent screen, then click Authorize with Provider again.",
+          connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector`,
+        },
         ctx,
       ),
   },
@@ -218,7 +233,7 @@ export const EMAIL_SAMPLES: EmailSample[] = [
             { name: n.other, text: n.name },
           ],
           trialEndsAt: SAMPLE_TRIAL_ENDS_AT,
-          ctaUrl: `${SAMPLE_CLOUD_URL}/start-trial?source=first_success`,
+          ctaUrl: `${SAMPLE_CLOUD_URL}/start-trial?source=first_success_email`,
           cardTrial: true,
         },
         unsub(ctx),
@@ -234,7 +249,7 @@ export const EMAIL_SAMPLES: EmailSample[] = [
           connectorName: null,
           nextSteps: [],
           trialEndsAt: SAMPLE_TRIAL_ENDS_AT,
-          ctaUrl: `${SAMPLE_CLOUD_URL}/settings/license?source=first_success`,
+          ctaUrl: `${SAMPLE_CLOUD_URL}/settings/license?source=first_success_email`,
           cardTrial: false,
         },
         unsub(ctx),

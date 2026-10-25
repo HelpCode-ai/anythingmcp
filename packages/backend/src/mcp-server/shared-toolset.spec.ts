@@ -197,6 +197,34 @@ describe('shared /mcp tool set', () => {
     expect(deps.execute).not.toHaveBeenCalled();
   });
 
+  it('describes and runs a tool declared under a top-level oneOf', async () => {
+    const lookup = tool({
+      name: 'vendor_lookup',
+      connectorId: 'c-vendor',
+      connectorConfig: { baseUrl: 'https://api.example.com', authType: 'NONE', envVars: { api_key: 'k' } },
+      parameters: {
+        type: 'object',
+        oneOf: [
+          { properties: { api_key: { type: 'string' }, email: { type: 'string' } }, required: ['api_key', 'email'] },
+          { properties: { api_key: { type: 'string' }, phone: { type: 'string' } }, required: ['api_key', 'phone'] },
+        ],
+      },
+    });
+    const { client, deps } = await connect([lookup]);
+
+    const described = await call(client, 'anythingmcp_describe_tool', { tool: 'vendor_lookup' });
+    expect(described.body.inputSchema.oneOf).toBeUndefined();
+    expect(Object.keys(described.body.inputSchema.properties).sort()).toEqual(['email', 'phone']);
+    expect(described.body.inputSchema.required).toBeUndefined();
+
+    const ran = await call(client, 'anythingmcp_run_read_tool', {
+      tool: 'vendor_lookup',
+      arguments: { phone: '+49' },
+    });
+    expect(ran.isError).toBe(false);
+    expect((deps.execute as jest.Mock).mock.calls[0][1]).toEqual({ phone: '+49' });
+  });
+
   it('never reaches another workspace\'s tool of the same name', async () => {
     // Org B has a tool named exactly like org A's. The caller's scope holds
     // only org B's connector, so org A's tool must be neither found, described

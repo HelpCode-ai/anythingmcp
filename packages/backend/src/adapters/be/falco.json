@@ -1,0 +1,809 @@
+{
+  "slug": "falco",
+  "name": "Falco",
+  "aliases": [
+    "Falco app",
+    "Falco Peppol",
+    "Falco boekhouding",
+    "Falco comptabilite"
+  ],
+  "description": "Falco, Belgian accounting and Peppol e-invoicing: purchase and sale documents with their files, invoices received over Peppol, Peppol participant lookups, and the customers, articles and invoices of the Falco invoicing module. Mostly read-only; setting a purchase's payment status and Peppol invoice responses are installed switched off.",
+  "region": "be",
+  "category": "accounting",
+  "icon": "falco",
+  "docsUrl": "https://docs.falco-app.be/docs/getting-started",
+  "instructions": "## Falco\nThis connector uses the **Falco API** (docs.falco-app.be) of Falco, the Belgian accounting and e-invoicing application: purchase and sale documents, documents received over **Peppol**, Peppol participant lookups, and the customers, articles and invoices of the Falco invoicing module. It reads; setting a purchase payment status is a write, and sending a Peppol invoice response is installed switched off.\n\n**Setup (two keys, both required)**\n1. The integrator creates an application on the Falco developer portal (dev.falco-app.be), requests the scopes it needs (e.g. `documents:purchases:read`, `documents:sales:read`, `peppol:inbound:read`, `peppol:participants:read`, `customers:read`, `articles:read`, `invoices:read`) and makes it **Public**. Its production **Application Secret** (`as_live_...`) goes into `FALCO_APP_SECRET`.\n2. The Falco customer (an administrator of the organisation, plan Expert Essential or Expert Premium) opens **API access** under their initials in the Falco desktop application, picks that application by its id (`app_...`) and generates an **API key** (`sk_live_...`) for their organisation. It goes into `FALCO_API_KEY`.\n3. Install and run `falco_get_organization` to check both keys. The connector calls the production API, `https://api.falco-app.be/v1`; sandbox keys (`as_test_`, `sk_test_`) only work on the sandbox host and are refused here.\n\n**Workflow**\n- Supplier invoices: `falco_list_peppol_inbound` for what arrived over Peppol (sender, amount, due date, payment reference, bank account), `falco_get_peppol_inbound_document`, `falco_download_peppol_inbound_document` for the UBL. `falco_list_purchase_documents` and `falco_get_purchase_document` cover all purchase documents with their files; `falco_download_purchase_document_file` with `main`, `ubl` or a file id fetches one.\n- Sales: `falco_list_sale_documents`, `falco_get_sale_document`; documents made in the invoicing module: `falco_list_invoices`, `falco_get_invoice`, `falco_download_invoice_pdf`; master data: `falco_list_customers`, `falco_get_customer`, `falco_list_articles`.\n- Peppol reachability of a company: `falco_find_peppol_participant` with its VAT number, or `falco_check_peppol_participant` with a participant id such as `0208:0123456789`.\n- After paying a supplier: `falco_set_purchase_payment_status` (switched off at install; replaces the status, so show the user the document and the new status and wait for a yes).\n- `falco_send_invoice_response` (switched off) sends an accept, reject, query or paid message to the supplier over Peppol at once; before calling it show the user the document and the response and wait for a yes.\n\n**Dates and amounts**: filters take `YYYY-MM-DD`. Amounts are strings in the document currency (usually EUR). Lists are paged with `page` (from 0) and `page_size` (20 to 200, invoices up to 100); ask for the next page while a page comes back full.\n\n**Limits and errors**: 60 requests per minute per application secret (429 above that; wait and retry). Errors follow RFC 9457 with `title`, `detail` and `code`. 401 means a wrong application secret or API key, or a sandbox key on production; 403 means the key lacks the scope for that area (the customer grants scopes when creating the key); 404 on a participant lookup means the company is not reachable on Peppol.",
+  "prerequisites": "A Falco developer application (dev.falco-app.be) made Public, its production application secret, and an API key the Falco customer generates for that application under API access (Expert Essential or Expert Premium plan).",
+  "requiredEnvVars": [
+    "FALCO_APP_SECRET",
+    "FALCO_API_KEY"
+  ],
+  "envVarMeta": {
+    "FALCO_APP_SECRET": {
+      "label": "Application secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The production Application Secret of your application on the Falco developer portal (dev.falco-app.be), starting with as_live_.",
+      "link": "https://docs.falco-app.be/docs/authentication",
+      "pattern": "^as_live_\\S+$",
+      "patternMessage": "Paste the production application secret, starting with as_live_ (sandbox secrets as_test_ do not work on the production API)."
+    },
+    "FALCO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API key the Falco customer generates in the Falco desktop application under their initials, API access, for your application. It starts with sk_live_.",
+      "link": "https://docs.falco-app.be/docs/go-live-production-setup",
+      "pattern": "^sk_live_\\S+$",
+      "patternMessage": "Paste the production API key, starting with sk_live_."
+    }
+  },
+  "verifyHints": {
+    "401": "Falco refused the keys. Check that FALCO_APP_SECRET is the production secret (as_live_) of the application the customer linked the API key (sk_live_) to.",
+    "403": "The keys work, but the API key lacks the scope for this area. The customer grants scopes when generating the key under API access.",
+    "rate_limited": "Falco allows 60 requests per minute per application secret. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "falco_get_organization"
+  },
+  "connector": {
+    "name": "Falco API",
+    "type": "REST",
+    "baseUrl": "https://api.falco-app.be/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Falco-Api-Key",
+      "apiKey": "{{FALCO_API_KEY}}",
+      "extraHeaders": {
+        "X-Falco-App-Secret": "{{FALCO_APP_SECRET}}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "falco_get_organization",
+      "description": "Get the Falco organization the API key belongs to: name, VAT number, Peppol identifier, address, IBANs, profiles, plan (expert_essential or expert_premium), invoices sent over Peppol this month and whether it is linked to accounting. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organization/whoami"
+      }
+    },
+    {
+      "name": "falco_list_purchase_documents",
+      "description": "List purchase documents (supplier invoices and credit notes) in Falco, newest first: id, number, invoice and due date, currency, amount, supplier name, VAT and company number, payment status (not_paid, partially_paid, paid), Peppol status, events and attached files. Filter by creation date, invoice date or supplier name; page with page and page_size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 20 to 200 (default 50).",
+            "minimum": 20,
+            "maximum": 200
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only documents created on or after this day, YYYY-MM-DD."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only documents created on or before this day, YYYY-MM-DD."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Only documents with an invoice date on or after this day, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Only documents with an invoice date on or before this day, YYYY-MM-DD."
+          },
+          "supplier_name": {
+            "type": "string",
+            "description": "Supplier name to filter on."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by (default created_at).",
+            "enum": [
+              "created_at",
+              "invoice_date"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort direction. Default: newest first for dates.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/purchases",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "supplier_name": "$supplier_name",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction"
+        }
+      }
+    },
+    {
+      "name": "falco_get_purchase_document",
+      "description": "Get one purchase document by id: number, dates, amount, supplier, payment and Peppol status, its event history and the list of attached files (id, type pdf, image or ubl, file name, size).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Purchase document id, from falco_list_purchase_documents."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/purchases/{document_id}"
+      }
+    },
+    {
+      "name": "falco_download_purchase_document_file",
+      "description": "Download a file of a purchase document: the main file (usually the PDF), the UBL XML, or one attached file. The file is handed over as an attachment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Purchase document id, from falco_list_purchase_documents."
+          },
+          "file_identifier": {
+            "type": "string",
+            "description": "Which file: main, ubl, the position of the file in the files list, or the file id from falco_get_purchase_document."
+          }
+        },
+        "required": [
+          "document_id",
+          "file_identifier"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/purchases/{document_id}/download/{file_identifier}"
+      }
+    },
+    {
+      "name": "falco_list_sale_documents",
+      "description": "List sale documents (sales invoices and credit notes, including those imported as PDF or UBL), newest first: id, number, dates, currency, amount, customer name, payment status and Peppol send status. Filter by creation date, invoice date or customer name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 20 to 200 (default 50).",
+            "minimum": 20,
+            "maximum": 200
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only documents created on or after this day, YYYY-MM-DD."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only documents created on or before this day, YYYY-MM-DD."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Only documents with an invoice date on or after this day, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Only documents with an invoice date on or before this day, YYYY-MM-DD."
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Customer name to filter on."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by (default created_at).",
+            "enum": [
+              "created_at",
+              "invoice_date"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort direction. Default: newest first for dates.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/sales",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "customer_name": "$customer_name",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction"
+        }
+      }
+    },
+    {
+      "name": "falco_get_sale_document",
+      "description": "Get one sale document by id: number, dates, amount, customer, payment status, Peppol send status, event history and attached files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Sale document id, from falco_list_sale_documents."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/sales/{document_id}"
+      }
+    },
+    {
+      "name": "falco_list_peppol_inbound",
+      "description": "List documents received over Peppol (incoming e-invoices and credit notes), newest first: id, received date, invoice and due date, amount, currency, sender name, VAT number and Peppol id, payment reference, bank account, invoice reference, payment status and whether it is a credit note. Filter by received date, invoice date, sender or number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 20 to 200 (default 50).",
+            "minimum": 20,
+            "maximum": 200
+          },
+          "received_after": {
+            "type": "string",
+            "description": "Only documents received on or after this day, YYYY-MM-DD."
+          },
+          "received_before": {
+            "type": "string",
+            "description": "Only documents received on or before this day, YYYY-MM-DD."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Only documents with an invoice date on or after this day, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Only documents with an invoice date on or before this day, YYYY-MM-DD."
+          },
+          "sender_vat_number": {
+            "type": "string",
+            "description": "Sender VAT number, e.g. BE0123456789."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Sender name."
+          },
+          "number": {
+            "type": "string",
+            "description": "Invoice number."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by (default received_at).",
+            "enum": [
+              "received_at",
+              "invoice_date"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort direction. Default: newest first for dates.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/peppol/inbound",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "received_after": "$received_after",
+          "received_before": "$received_before",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "sender_vat_number": "$sender_vat_number",
+          "sender_name": "$sender_name",
+          "number": "$number",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction"
+        }
+      }
+    },
+    {
+      "name": "falco_get_peppol_inbound_document",
+      "description": "Get one document received over Peppol by id: sender, amounts, dates, payment reference, bank account, invoice reference and payment status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Inbound document id, from falco_list_peppol_inbound."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/peppol/inbound/{document_id}"
+      }
+    },
+    {
+      "name": "falco_download_peppol_inbound_document",
+      "description": "Download the file of a document received over Peppol (the UBL XML as received). The file is handed over as an attachment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Inbound document id, from falco_list_peppol_inbound."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/peppol/inbound/{document_id}/download"
+      }
+    },
+    {
+      "name": "falco_find_peppol_participant",
+      "description": "Look up the Peppol participant identifier registered for a VAT number, to see whether a company can receive e-invoices over Peppol. A 404 means the company is not on Peppol, or the VAT number is not supported.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vat_number": {
+            "type": "string",
+            "description": "VAT number to look up, e.g. BE0123456789."
+          },
+          "document_type": {
+            "type": "string",
+            "description": "Document type the receiver must accept.",
+            "enum": [
+              "invoice",
+              "credit_note"
+            ]
+          },
+          "test_environment": {
+            "type": "boolean",
+            "description": "true to look on the Peppol test network instead of production."
+          }
+        },
+        "required": [
+          "vat_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/peppol/participants/find",
+        "queryParams": {
+          "vat_number": "$vat_number",
+          "document_type": "$document_type",
+          "test_environment": "$test_environment"
+        }
+      }
+    },
+    {
+      "name": "falco_check_peppol_participant",
+      "description": "Check whether a Peppol participant identifier (e.g. 0208:0123456789) is registered to receive invoices or credit notes. A 404 says why it is not reachable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "participant_identifier": {
+            "type": "string",
+            "description": "Peppol participant identifier, scheme and value, e.g. 0208:0123456789."
+          },
+          "document_type": {
+            "type": "string",
+            "description": "Document type the receiver must accept.",
+            "enum": [
+              "invoice",
+              "credit_note"
+            ]
+          },
+          "test_environment": {
+            "type": "boolean",
+            "description": "true to check the Peppol test network instead of production."
+          }
+        },
+        "required": [
+          "participant_identifier"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/peppol/participants/check",
+        "queryParams": {
+          "participant_identifier": "$participant_identifier",
+          "document_type": "$document_type",
+          "test_environment": "$test_environment"
+        }
+      }
+    },
+    {
+      "name": "falco_list_customers",
+      "description": "List customers of the Falco invoicing module: id, name, VAT and company number, language, e-mails, phone, contact, address and Peppol identifier. Search by name or VAT with q, or filter by exact VAT number or e-mail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 20 to 200 (default 50).",
+            "minimum": 20,
+            "maximum": 200
+          },
+          "q": {
+            "type": "string",
+            "description": "Text search in name and VAT number."
+          },
+          "vat": {
+            "type": "string",
+            "description": "Exact VAT number."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "q": "$q",
+          "vat": "$vat",
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "falco_get_customer",
+      "description": "Get one customer of the invoicing module by id with full address, contacts and Peppol identifier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, from falco_list_customers."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}"
+      }
+    },
+    {
+      "name": "falco_list_articles",
+      "description": "List articles (products and services) of the invoicing module: id, descriptions, unit price excluding and including VAT, unit, category, type, cost code and account number. Search with q in reference and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 20 to 200 (default 50).",
+            "minimum": 20,
+            "maximum": 200
+          },
+          "q": {
+            "type": "string",
+            "description": "Text search in reference and description."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "q": "$q"
+        }
+      }
+    },
+    {
+      "name": "falco_list_invoices",
+      "description": "List sales invoices and credit notes created in the Falco invoicing module: id, number, type, status (draft, sent, locked), document and due date, customer, currency, amounts excluding and including VAT, payment, e-mail and Peppol status. Filter by type, status, customer, number or dates; at most 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 20 to 100 (default 50).",
+            "minimum": 20,
+            "maximum": 100
+          },
+          "document_type": {
+            "type": "string",
+            "description": "Invoice or credit note.",
+            "enum": [
+              "sale_invoice",
+              "sale_credit_note"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Document status.",
+            "enum": [
+              "draft",
+              "sent",
+              "locked"
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, from falco_list_customers."
+          },
+          "number": {
+            "type": "string",
+            "description": "Invoice number."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Created on or after this day, YYYY-MM-DD."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Created on or before this day, YYYY-MM-DD."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Document date on or after this day, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Document date on or before this day, YYYY-MM-DD."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by (default created_at).",
+            "enum": [
+              "created_at",
+              "document_date",
+              "number",
+              "customer_name",
+              "total_amount"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort direction. Default: newest first for dates.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "document_type": "$document_type",
+          "status": "$status",
+          "customer_id": "$customer_id",
+          "number": "$number",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction"
+        }
+      }
+    },
+    {
+      "name": "falco_get_invoice",
+      "description": "Get one invoice or credit note of the invoicing module with its lines (article, quantity, unit price, VAT rate, amounts), VAT subtotals, customer and supplier, payment details and Peppol status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id, from falco_list_invoices."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}"
+      }
+    },
+    {
+      "name": "falco_download_invoice_pdf",
+      "description": "Download the PDF of an invoice or credit note of the invoicing module. The file is handed over as an attachment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id, from falco_list_invoices."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}/pdf"
+      }
+    },
+    {
+      "name": "falco_set_purchase_payment_status",
+      "description": "Set the payment status of a purchase document to not_paid, partially_paid or paid, e.g. after paying a supplier. Replaces the current status; returns the updated document.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Purchase document id, from falco_list_purchase_documents."
+          },
+          "payment_status": {
+            "type": "string",
+            "description": "New payment status.",
+            "enum": [
+              "not_paid",
+              "partially_paid",
+              "paid"
+            ]
+          }
+        },
+        "required": [
+          "document_id",
+          "payment_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/documents/purchases/{document_id}/payment-status",
+        "bodyMapping": {
+          "payment_status": "$payment_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "falco_send_invoice_response",
+      "description": "Send a Peppol invoice response for a received document to its sender: acknowledged, in_process, under_query, conditionally_accepted, rejected, accepted or paid, with optional reasons. The supplier receives it at once and it cannot be withdrawn.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Inbound document id, from falco_list_peppol_inbound."
+          },
+          "response_code": {
+            "type": "string",
+            "description": "Response to send.",
+            "enum": [
+              "acknowledged",
+              "in_process",
+              "under_query",
+              "conditionally_accepted",
+              "rejected",
+              "accepted",
+              "paid"
+            ]
+          },
+          "status": {
+            "type": "array",
+            "description": "Optional reasons. status_reason_code is a Peppol OPStatusAction or OPStatusReason code (e.g. NOA, PIN, NIN for actions; REF, LEG, REC, QUA, DEL, PRI, QTY for reasons); status_reason is free text.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status_reason_code": {
+                  "type": "string"
+                },
+                "status_reason": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "document_id",
+          "response_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/peppol/inbound/{document_id}/response",
+        "bodyMapping": {
+          "response_code": "$response_code",
+          "status": "$status"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    }
+  ]
+}

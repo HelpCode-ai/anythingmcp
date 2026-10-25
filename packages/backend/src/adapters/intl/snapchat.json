@@ -1,0 +1,1006 @@
+{
+  "slug": "snapchat",
+  "name": "Snapchat Ads",
+  "aliases": [
+    "Snap Ads",
+    "Snapchat Marketing API"
+  ],
+  "description": "Let your AI work with your Snapchat ads: list organizations, ad accounts, campaigns, ad squads, ads, creatives and audiences, read impressions, swipes and spend per day or in total, and pause or restart a campaign after your confirmation. Signed in through an OAuth app of your own in Snap Business Manager.",
+  "instructions": "## Snapchat Ads\nThis connector works with Snapchat advertising through the **Snapchat Marketing API** (`https://adsapi.snapchat.com/v1`), signed in as one Snapchat Business user: organizations and ad accounts, campaigns, ad squads (ad sets), ads, creatives, audience segments and performance statistics. It can pause a campaign or turn it back on. It signs in with **OAuth 2.0** (authorization code) through an OAuth app of your own in Snap Business Manager. The Marketing API is open to every advertiser: no application or review by Snap is needed.\n\n**Setup (about 10 minutes)**\n1. Sign in at https://business.snapchat.com as an **Organization Admin** (only admins see the OAuth app settings).\n2. Open **Business Details** (or Business Settings) → **OAuth Apps** → create an app. Give it a name and set the **Redirect URI** to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Accept the Snap Developer Terms and Snap Business Tools Terms.\n3. Copy the **Client ID** into `SNAPCHAT_CLIENT_ID` and the **Client Secret** into `SNAPCHAT_CLIENT_SECRET`. The secret is shown only once; if it is lost, create a new app.\n4. Install the connector, click **Authorize with Provider**, sign in with the Snapchat account that has access to the ad accounts and approve.\n\n**Scope requested**: `snapchat-marketing-api`. The connector sees what the authorizing user may see in Ads Manager; ad accounts that user has no role on answer 403.\n\n**Start here**: `snapchat_list_organizations` lists the organizations with their ad accounts (ids, currency, time zone). Then `snapchat_list_campaigns` → `snapchat_list_ad_squads` → `snapchat_list_ads`, and `snapchat_get_stats` for numbers.\n\n**Money is in micro-currency**: budgets, bids, spend caps and the `spend` metric are the amount times 1,000,000 in the ad account's currency (`spend: 12345678` is 12.35). Always convert before quoting.\n\n**Statistics** (`snapchat_get_stats`): `entity_type` adaccounts, campaigns, adsquads or ads, plus its id. `granularity` TOTAL (default) or LIFETIME for one sum, DAY (at most 31 days) or HOUR (at most 7 days) for a series. DAY and HOUR need `start_time` and `end_time` on whole hours; for DAY on midnight in the ad account's time zone, e.g. `2026-10-01T00:00:00` to `2026-10-08T00:00:00`. `breakdown` splits by child entity (campaign on an ad account, adsquad on a campaign, ad on either). Default metrics are impressions, swipes and spend. Very large requests answer 400 E9001: ask for fewer fields or a shorter period. Figures become final 48 hours after the end of a day.\n\n**Changes spend money: confirm first.** `snapchat_set_campaign_status` with ACTIVE starts spending, PAUSED stops delivery. Say which campaign and what will happen, and wait for the user's yes. It changes only the status (a JSON Patch); Snapchat re-checks the whole campaign and refuses invalid ones (`sub_request_error_reason`). `snapchat_set_campaign_daily_budget` is installed switched off.\n\n**Tools**: `snapchat_get_me`, `snapchat_list_organizations`, `snapchat_list_ad_accounts`, `snapchat_get_ad_account`, `snapchat_list_campaigns`, `snapchat_get_campaign`, `snapchat_list_ad_squads`, `snapchat_get_ad_squad`, `snapchat_list_ads`, `snapchat_get_ad`, `snapchat_list_creatives`, `snapchat_get_creative`, `snapchat_get_stats`, `snapchat_list_audiences` (read); `snapchat_set_campaign_status` (change, confirm first); `snapchat_set_campaign_daily_budget` (switched off).\n\n**Paging**: list tools take `limit` (50 to 1000, default 50) and return `next_link` while more exist; pass the `cursor=` value from that link as `cursor`. Answers wrap each entity with a `sub_request_status`; the connector unwraps them.\n\n**Sign-in lifetime**: access tokens last one hour and are renewed automatically with the refresh token. Removing the user from the organization, or the app, ends the sign-in; then click **Authorize with Provider** again.\n\n**Errors**\n- 401 \"unauthorized\": the sign-in expired or was revoked; authorize again. Snapchat checks the token before the address, so a wrong id also shows as 401 when the token is bad.\n- 403: the user has no role on that organization or ad account.\n- 400 with `request_status: ERROR` and a `display_message` or `sub_request_error_reason` (e.g. E1165 or E1166 for a refused patch): read the message; it names the field.\n- 429: too many requests; wait and try again.\n\n**Out of scope**: creating or deleting campaigns, ad squads, ads and creatives, uploading media, targeting changes, the Conversions API, Public Profile API, pixels, billing and invoices, and asynchronous CSV reports.",
+  "region": "intl",
+  "category": "advertising",
+  "icon": "snapchat",
+  "docsUrl": "https://developers.snap.com/api/marketing-api/Ads-API/introduction",
+  "requiredEnvVars": [
+    "SNAPCHAT_CLIENT_ID",
+    "SNAPCHAT_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://business.snapchat.com",
+  "envVarMeta": {
+    "SNAPCHAT_CLIENT_ID": {
+      "label": "OAuth Client ID",
+      "kind": "credential",
+      "help": "Snap Business Manager → Business Details → OAuth Apps → your app: Client ID.",
+      "link": "https://business.snapchat.com",
+      "example": "4c3f2a18-1c33-4a1b-8798-0123456789ab",
+      "pattern": "^[A-Za-z0-9-]{20,64}$",
+      "patternMessage": "Paste the Client ID only (a code like 4c3f2a18-1c33-4a1b-8798-0123456789ab), without spaces."
+    },
+    "SNAPCHAT_CLIENT_SECRET": {
+      "label": "OAuth Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the OAuth app is created in Snap Business Manager. If it is lost, create a new app.",
+      "link": "https://business.snapchat.com",
+      "pattern": "^\\S{16,128}$",
+      "patternMessage": "Paste the Client Secret only, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Snapchat refused the access token. Click Authorize with Provider again; if the app was deleted or recreated, update SNAPCHAT_CLIENT_ID and SNAPCHAT_CLIENT_SECRET first.",
+    "403": "The authorizing Snapchat user has no role on this organization or ad account. Give them access in Snap Business Manager, or authorize with another user.",
+    "rate_limited": "Snapchat is rate limiting this app. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "snapchat_get_me"
+  },
+  "prerequisites": "A Snapchat Business account where you are Organization Admin, to create an OAuth app in Snap Business Manager with the redirect URI below, and a user with access to the ad accounts. About 10 minutes.",
+  "connector": {
+    "name": "Snapchat Marketing API",
+    "type": "REST",
+    "baseUrl": "https://adsapi.snapchat.com/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{SNAPCHAT_CLIENT_ID}}",
+      "clientSecret": "{{SNAPCHAT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.snapchat.com/login/oauth2/authorize",
+      "tokenUrl": "https://accounts.snapchat.com/login/oauth2/access_token",
+      "tokenAuthMethod": "client_secret_post",
+      "pkce": false,
+      "scopes": "snapchat-marketing-api"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me"
+  },
+  "tools": [
+    {
+      "name": "snapchat_get_me",
+      "description": "Read the Snapchat Business user who authorized the connector: id, email, display name, organization id and member status. A cheap check that the sign-in works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.me.id",
+            "email": "$.me.email",
+            "display_name": "$.me.display_name",
+            "organization_id": "$.me.organization_id",
+            "member_status": "$.me.member_status"
+          },
+          "maxBytes": 3000
+        }
+      }
+    },
+    {
+      "name": "snapchat_list_organizations",
+      "description": "List the organizations the user belongs to, with their ad accounts (id, name, currency, time zone, status) when with_ad_accounts is true (default). Start here to find ad account ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with_ad_accounts": {
+            "type": "boolean",
+            "description": "Include each organization's ad accounts (default true).",
+            "default": true
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/organizations",
+        "queryParams": {
+          "with_ad_accounts": "$with_ad_accounts"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "organizations": {
+              "$from": "$.organizations[*]",
+              "$select": {
+                "id": "organization.id",
+                "name": "organization.name",
+                "type": "organization.type",
+                "country": "organization.country",
+                "ad_accounts": {
+                  "$from": "organization.ad_accounts[*]",
+                  "$select": {
+                    "id": "id",
+                    "name": "name",
+                    "currency": "currency",
+                    "timezone": "timezone",
+                    "status": "status",
+                    "type": "type"
+                  }
+                }
+              }
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "snapchat_list_ad_accounts",
+      "description": "List the ad accounts of one organization: id, name, type, status, currency, time zone, advertiser and lifetime spend cap (micro-currency).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snapchat_list_organizations or snapchat_get_me."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id}/adaccounts",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "next_link": "$.paging.next_link",
+            "adaccounts": {
+              "$from": "$.adaccounts[*]",
+              "$select": {
+                "id": "adaccount.id",
+                "name": "adaccount.name",
+                "organization_id": "adaccount.organization_id",
+                "type": "adaccount.type",
+                "status": "adaccount.status",
+                "currency": "adaccount.currency",
+                "timezone": "adaccount.timezone",
+                "advertiser": "adaccount.advertiser",
+                "lifetime_spend_cap_micro": "adaccount.lifetime_spend_cap_micro",
+                "created_at": "adaccount.created_at",
+                "updated_at": "adaccount.updated_at"
+              }
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "snapchat_get_ad_account",
+      "description": "Read one ad account: name, type, status, currency, time zone, advertiser and lifetime spend cap (micro-currency).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id (a UUID) from snapchat_list_ad_accounts or snapchat_list_organizations."
+          }
+        },
+        "required": [
+          "ad_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adaccounts/{ad_account_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "adaccount": {
+              "$from": "$.adaccounts[*]",
+              "$select": {
+                "id": "adaccount.id",
+                "name": "adaccount.name",
+                "organization_id": "adaccount.organization_id",
+                "type": "adaccount.type",
+                "status": "adaccount.status",
+                "currency": "adaccount.currency",
+                "timezone": "adaccount.timezone",
+                "advertiser": "adaccount.advertiser",
+                "lifetime_spend_cap_micro": "adaccount.lifetime_spend_cap_micro",
+                "created_at": "adaccount.created_at",
+                "updated_at": "adaccount.updated_at"
+              }
+            }
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "snapchat_list_campaigns",
+      "description": "List the campaigns of an ad account: id, name, status (ACTIVE or PAUSED), delivery status, objective, start and end time, daily budget and lifetime spend cap (micro-currency: divide by 1,000,000).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id (a UUID) from snapchat_list_ad_accounts or snapchat_list_organizations."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Entities per page, 50 to 1000 (default 50).",
+            "minimum": 50,
+            "maximum": 1000,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the cursor= value inside next_link of the previous answer."
+          },
+          "read_deleted_entities": {
+            "type": "boolean",
+            "description": "true to include deleted entities."
+          }
+        },
+        "required": [
+          "ad_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adaccounts/{ad_account_id}/campaigns",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "read_deleted_entities": "$read_deleted_entities"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "next_link": "$.paging.next_link",
+            "campaigns": {
+              "$from": "$.campaigns[*]",
+              "$select": {
+                "id": "campaign.id",
+                "name": "campaign.name",
+                "ad_account_id": "campaign.ad_account_id",
+                "status": "campaign.status",
+                "delivery_status": "campaign.delivery_status",
+                "objective": "campaign.objective",
+                "objective_v2_properties": "campaign.objective_v2_properties",
+                "buy_model": "campaign.buy_model",
+                "start_time": "campaign.start_time",
+                "end_time": "campaign.end_time",
+                "daily_budget_micro": "campaign.daily_budget_micro",
+                "lifetime_spend_cap_micro": "campaign.lifetime_spend_cap_micro",
+                "pacing_level": "campaign.pacing_level",
+                "created_at": "campaign.created_at",
+                "updated_at": "campaign.updated_at"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "snapchat_get_campaign",
+      "description": "Read one campaign: name, status, delivery status, objective, schedule, budget and spend cap (micro-currency).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign id (a UUID)."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "campaign": {
+              "$from": "$.campaigns[*]",
+              "$select": {
+                "id": "campaign.id",
+                "name": "campaign.name",
+                "ad_account_id": "campaign.ad_account_id",
+                "status": "campaign.status",
+                "delivery_status": "campaign.delivery_status",
+                "objective": "campaign.objective",
+                "objective_v2_properties": "campaign.objective_v2_properties",
+                "buy_model": "campaign.buy_model",
+                "start_time": "campaign.start_time",
+                "end_time": "campaign.end_time",
+                "daily_budget_micro": "campaign.daily_budget_micro",
+                "lifetime_spend_cap_micro": "campaign.lifetime_spend_cap_micro",
+                "pacing_level": "campaign.pacing_level",
+                "created_at": "campaign.created_at",
+                "updated_at": "campaign.updated_at"
+              }
+            }
+          },
+          "maxBytes": 8000
+        }
+      }
+    },
+    {
+      "name": "snapchat_list_ad_squads",
+      "description": "List the ad squads (ad sets) of a campaign: id, name, status, delivery status, type, placement, optimization goal, bid and budget (micro-currency), schedule and targeting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign id (a UUID)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Entities per page, 50 to 1000 (default 50).",
+            "minimum": 50,
+            "maximum": 1000,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the cursor= value inside next_link of the previous answer."
+          },
+          "read_deleted_entities": {
+            "type": "boolean",
+            "description": "true to include deleted entities."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/adsquads",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "read_deleted_entities": "$read_deleted_entities"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "next_link": "$.paging.next_link",
+            "adsquads": {
+              "$from": "$.adsquads[*]",
+              "$select": {
+                "id": "adsquad.id",
+                "name": "adsquad.name",
+                "campaign_id": "adsquad.campaign_id",
+                "status": "adsquad.status",
+                "delivery_status": "adsquad.delivery_status",
+                "type": "adsquad.type",
+                "placement_v2": "adsquad.placement_v2",
+                "optimization_goal": "adsquad.optimization_goal",
+                "bid_strategy": "adsquad.bid_strategy",
+                "bid_micro": "adsquad.bid_micro",
+                "daily_budget_micro": "adsquad.daily_budget_micro",
+                "lifetime_budget_micro": "adsquad.lifetime_budget_micro",
+                "start_time": "adsquad.start_time",
+                "end_time": "adsquad.end_time",
+                "targeting": "adsquad.targeting",
+                "created_at": "adsquad.created_at",
+                "updated_at": "adsquad.updated_at"
+              }
+            }
+          },
+          "maxBytes": 50000
+        }
+      }
+    },
+    {
+      "name": "snapchat_get_ad_squad",
+      "description": "Read one ad squad: status, delivery status, placement, optimization goal, bid, budget (micro-currency), schedule and targeting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_squad_id": {
+            "type": "string",
+            "description": "Ad squad id (a UUID)."
+          }
+        },
+        "required": [
+          "ad_squad_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adsquads/{ad_squad_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "adsquad": {
+              "$from": "$.adsquads[*]",
+              "$select": {
+                "id": "adsquad.id",
+                "name": "adsquad.name",
+                "campaign_id": "adsquad.campaign_id",
+                "status": "adsquad.status",
+                "delivery_status": "adsquad.delivery_status",
+                "type": "adsquad.type",
+                "placement_v2": "adsquad.placement_v2",
+                "optimization_goal": "adsquad.optimization_goal",
+                "bid_strategy": "adsquad.bid_strategy",
+                "bid_micro": "adsquad.bid_micro",
+                "daily_budget_micro": "adsquad.daily_budget_micro",
+                "lifetime_budget_micro": "adsquad.lifetime_budget_micro",
+                "start_time": "adsquad.start_time",
+                "end_time": "adsquad.end_time",
+                "targeting": "adsquad.targeting",
+                "created_at": "adsquad.created_at",
+                "updated_at": "adsquad.updated_at"
+              }
+            }
+          },
+          "maxBytes": 15000
+        }
+      }
+    },
+    {
+      "name": "snapchat_list_ads",
+      "description": "List the ads of an ad squad: id, name, creative id, status, delivery status, type and review status with rejection reasons.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_squad_id": {
+            "type": "string",
+            "description": "Ad squad id (a UUID)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Entities per page, 50 to 1000 (default 50).",
+            "minimum": 50,
+            "maximum": 1000,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the cursor= value inside next_link of the previous answer."
+          },
+          "read_deleted_entities": {
+            "type": "boolean",
+            "description": "true to include deleted entities."
+          }
+        },
+        "required": [
+          "ad_squad_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adsquads/{ad_squad_id}/ads",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "read_deleted_entities": "$read_deleted_entities"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "next_link": "$.paging.next_link",
+            "ads": {
+              "$from": "$.ads[*]",
+              "$select": {
+                "id": "ad.id",
+                "name": "ad.name",
+                "ad_squad_id": "ad.ad_squad_id",
+                "creative_id": "ad.creative_id",
+                "status": "ad.status",
+                "delivery_status": "ad.delivery_status",
+                "type": "ad.type",
+                "review_status": "ad.review_status",
+                "review_status_reasons": "ad.review_status_reasons",
+                "created_at": "ad.created_at",
+                "updated_at": "ad.updated_at"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "snapchat_get_ad",
+      "description": "Read one ad: name, ad squad, creative id, status, delivery status, type and review status with rejection reasons.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_id": {
+            "type": "string",
+            "description": "Ad id (a UUID)."
+          }
+        },
+        "required": [
+          "ad_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ads/{ad_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "ad": {
+              "$from": "$.ads[*]",
+              "$select": {
+                "id": "ad.id",
+                "name": "ad.name",
+                "ad_squad_id": "ad.ad_squad_id",
+                "creative_id": "ad.creative_id",
+                "status": "ad.status",
+                "delivery_status": "ad.delivery_status",
+                "type": "ad.type",
+                "review_status": "ad.review_status",
+                "review_status_reasons": "ad.review_status_reasons",
+                "created_at": "ad.created_at",
+                "updated_at": "ad.updated_at"
+              }
+            }
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "snapchat_list_creatives",
+      "description": "List the creatives of an ad account: id, name, type, headline, brand name, call to action, main media id, review status and web view URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id (a UUID) from snapchat_list_ad_accounts or snapchat_list_organizations."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Entities per page, 50 to 1000 (default 50).",
+            "minimum": 50,
+            "maximum": 1000,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the cursor= value inside next_link of the previous answer."
+          }
+        },
+        "required": [
+          "ad_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adaccounts/{ad_account_id}/creatives",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "next_link": "$.paging.next_link",
+            "creatives": {
+              "$from": "$.creatives[*]",
+              "$select": {
+                "id": "creative.id",
+                "name": "creative.name",
+                "ad_account_id": "creative.ad_account_id",
+                "type": "creative.type",
+                "headline": "creative.headline",
+                "brand_name": "creative.brand_name",
+                "call_to_action": "creative.call_to_action",
+                "top_snap_media_id": "creative.top_snap_media_id",
+                "review_status": "creative.review_status",
+                "review_status_reasons": "creative.review_status_reasons",
+                "shareable": "creative.shareable",
+                "web_view_properties": "creative.web_view_properties",
+                "created_at": "creative.created_at",
+                "updated_at": "creative.updated_at"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "snapchat_get_creative",
+      "description": "Read one creative: name, type, headline, brand name, call to action, main media id, review status and web view properties.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "creative_id": {
+            "type": "string",
+            "description": "Creative id (a UUID)."
+          }
+        },
+        "required": [
+          "creative_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/creatives/{creative_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "creative": {
+              "$from": "$.creatives[*]",
+              "$select": {
+                "id": "creative.id",
+                "name": "creative.name",
+                "ad_account_id": "creative.ad_account_id",
+                "type": "creative.type",
+                "headline": "creative.headline",
+                "brand_name": "creative.brand_name",
+                "call_to_action": "creative.call_to_action",
+                "top_snap_media_id": "creative.top_snap_media_id",
+                "review_status": "creative.review_status",
+                "review_status_reasons": "creative.review_status_reasons",
+                "shareable": "creative.shareable",
+                "web_view_properties": "creative.web_view_properties",
+                "created_at": "creative.created_at",
+                "updated_at": "creative.updated_at"
+              }
+            }
+          },
+          "maxBytes": 8000
+        }
+      }
+    },
+    {
+      "name": "snapchat_get_stats",
+      "description": "Read performance statistics of an ad account, campaign, ad squad or ad: impressions, swipes, spend and any other metric in fields, as one total or per day or hour. spend is in micro-currency (divide by 1,000,000). DAY and HOUR need start_time and end_time on whole hours (DAY on midnight in the ad account's time zone); DAY covers at most 31 days and HOUR 7 days. Metrics are final 48 hours after the end of a day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "description": "adaccounts, campaigns, adsquads or ads.",
+            "enum": [
+              "adaccounts",
+              "campaigns",
+              "adsquads",
+              "ads"
+            ]
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Id (UUID) of that ad account, campaign, ad squad or ad."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "TOTAL (default, one total for the period), DAY, HOUR or LIFETIME.",
+            "enum": [
+              "TOTAL",
+              "DAY",
+              "HOUR",
+              "LIFETIME"
+            ],
+            "default": "TOTAL"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated metrics (default impressions,swipes,spend). Others: video_views, screen_time_millis, quartile_1, quartile_2, quartile_3, view_completion, uniques, frequency, conversion_purchases, conversion_purchases_value, conversion_sign_ups, total_installs.",
+            "default": "impressions,swipes,spend"
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start, ISO 8601 on a whole hour, e.g. 2026-10-01T00:00:00 (in the ad account's time zone) or with an offset."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End (exclusive), ISO 8601 on a whole hour."
+          },
+          "breakdown": {
+            "type": "string",
+            "description": "Split by child entity: campaign (ad account only), adsquad (campaign only) or ad.",
+            "enum": [
+              "ad",
+              "adsquad",
+              "campaign"
+            ]
+          },
+          "swipe_up_attribution_window": {
+            "type": "string",
+            "description": "1_DAY, 7_DAY or 28_DAY (default).",
+            "enum": [
+              "1_DAY",
+              "7_DAY",
+              "28_DAY"
+            ]
+          },
+          "view_attribution_window": {
+            "type": "string",
+            "description": "none, 1_HOUR, 3_HOUR, 6_HOUR, 1_DAY (default), 7_DAY or 28_DAY.",
+            "enum": [
+              "none",
+              "1_HOUR",
+              "3_HOUR",
+              "6_HOUR",
+              "1_DAY",
+              "7_DAY",
+              "28_DAY"
+            ]
+          },
+          "omit_empty": {
+            "type": "boolean",
+            "description": "true to leave out days or entities with no data."
+          }
+        },
+        "required": [
+          "entity_type",
+          "entity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity_type}/{entity_id}/stats",
+        "encodePathParams": true,
+        "queryParams": {
+          "granularity": "$granularity",
+          "fields": "$fields",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "breakdown": "$breakdown",
+          "swipe_up_attribution_window": "$swipe_up_attribution_window",
+          "view_attribution_window": "$view_attribution_window",
+          "omit_empty": "$omit_empty"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "request_id"
+          ],
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "snapchat_list_audiences",
+      "description": "List the audience segments of an ad account (customer lists, lookalikes, pixel and engagement audiences): id, name, description, source type, status, whether it can be targeted, upload status, approximate size and retention days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id (a UUID) from snapchat_list_ad_accounts or snapchat_list_organizations."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Entities per page, 50 to 1000 (default 50).",
+            "minimum": 50,
+            "maximum": 1000,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: the cursor= value inside next_link of the previous answer."
+          }
+        },
+        "required": [
+          "ad_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adaccounts/{ad_account_id}/segments",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "next_link": "$.paging.next_link",
+            "segments": {
+              "$from": "$.segments[*]",
+              "$select": {
+                "id": "segment.id",
+                "name": "segment.name",
+                "description": "segment.description",
+                "source_type": "segment.source_type",
+                "status": "segment.status",
+                "targetable_status": "segment.targetable_status",
+                "upload_status": "segment.upload_status",
+                "approximate_number_users": "segment.approximate_number_users",
+                "retention_in_days": "segment.retention_in_days",
+                "created_at": "segment.created_at",
+                "updated_at": "segment.updated_at"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "snapchat_set_campaign_status",
+      "description": "Pause a campaign (status PAUSED) or turn it back on (ACTIVE). Turning a campaign on starts spending its budget. Before calling, tell the user exactly what will change and wait for their yes. Only the status changes; Snapchat validates the campaign afterwards and refuses the change if it is invalid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id (a UUID) from snapchat_list_ad_accounts or snapchat_list_organizations."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign id (a UUID)."
+          },
+          "status": {
+            "type": "string",
+            "description": "PAUSED or ACTIVE.",
+            "enum": [
+              "ACTIVE",
+              "PAUSED"
+            ]
+          }
+        },
+        "required": [
+          "ad_account_id",
+          "campaign_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/adaccounts/{ad_account_id}/campaigns/{campaign_id}",
+        "encodePathParams": true,
+        "headers": {
+          "Content-Type": "application/json-patch+json"
+        },
+        "bodyTemplate": "[{\"op\": \"replace\", \"path\": \"/status\", \"value\": \"${status}\"}]"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "campaigns": {
+              "$from": "$.campaigns[*]",
+              "$select": {
+                "sub_request_status": "sub_request_status",
+                "sub_request_error_reason": "sub_request_error_reason",
+                "id": "campaign.id",
+                "name": "campaign.name",
+                "status": "campaign.status"
+              }
+            }
+          },
+          "maxBytes": 5000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "snapchat_set_campaign_daily_budget",
+      "description": "Change a campaign's daily budget, in micro-currency (e.g. 50000000 = 50.00 in the ad account's currency). This changes how much money is spent. Before calling, tell the user exactly what will change and wait for their yes. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id (a UUID) from snapchat_list_ad_accounts or snapchat_list_organizations."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign id (a UUID)."
+          },
+          "daily_budget_micro": {
+            "type": "integer",
+            "description": "New daily budget in micro-currency (amount times 1,000,000).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "ad_account_id",
+          "campaign_id",
+          "daily_budget_micro"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/adaccounts/{ad_account_id}/campaigns/{campaign_id}",
+        "encodePathParams": true,
+        "headers": {
+          "Content-Type": "application/json-patch+json"
+        },
+        "bodyTemplate": "[{\"op\": \"add\", \"path\": \"/daily_budget_micro\", \"value\": ${daily_budget_micro}}]"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "request_status": "$.request_status",
+            "campaigns": {
+              "$from": "$.campaigns[*]",
+              "$select": {
+                "sub_request_status": "sub_request_status",
+                "sub_request_error_reason": "sub_request_error_reason",
+                "id": "campaign.id",
+                "name": "campaign.name",
+                "daily_budget_micro": "campaign.daily_budget_micro"
+              }
+            }
+          },
+          "maxBytes": 5000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

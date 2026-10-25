@@ -49,6 +49,63 @@ describe('deriveErrorHint', () => {
     ).toMatch(/fields_get/);
   });
 
+  describe('SAP S/4HANA Cloud client credentials', () => {
+    it('lists the four causes when the token request is refused', () => {
+      const hint = deriveErrorHint({
+        host: 'my123456-api.s4hana.cloud.sap',
+        status: 401,
+        message:
+          'OAuth2 client_credentials: could not obtain an access token from my123456-api.s4hana.cloud.sap (HTTP 401: invalid_client). No request was sent to the API.',
+      })!;
+      expect(hint).toMatch(/-api\.s4hana\.cloud\.sap\/sap\/bc\/sec\/oauth2\/token/);
+      expect(hint).toMatch(/not a BTP/);
+      expect(hint).toMatch(/communication user/);
+      expect(hint).toMatch(/active communication arrangement/);
+      expect(hint).toMatch(/scope/);
+    });
+
+    it('names the missing arrangement on a 403 from the API', () => {
+      expect(
+        deriveErrorHint({ host: 'my123456-api.s4hana.cloud.sap', status: 403, body: 'Forbidden' }),
+      ).toMatch(/SAP_COM_0008/);
+    });
+  });
+
+  describe('Odoo API keys', () => {
+    it('says the key has most likely expired on a JSON-2 401 "Invalid apikey"', () => {
+      // As stored on the cloud, 14 Oct 2026 (63 calls, 5 workspaces in two weeks).
+      const hint = deriveErrorHint({
+        host: 'acme.odoo.com',
+        status: 401,
+        message:
+          '401 UNAUTHORIZED: Request failed with status code 401: body={"name":"werkzeug.exceptions.Unauthorized","message":"Invalid apikey","arguments":["Invalid apikey",401]}',
+      })!;
+      expect(hint).toMatch(/expired/);
+      expect(hint).toMatch(/1 Day/);
+      expect(hint).toMatch(/"Persistent Key"/);
+      expect(hint).toMatch(/ODOO_API_KEY/);
+    });
+
+    it('names the expired key next to a mismatch on a JSON-RPC Access Denied', () => {
+      for (const message of [
+        'JSON-RPC error 200: Odoo Server Error: Access Denied',
+        'JSON-RPC error 200: Odoo Server Error: Access denied',
+        'JSON-RPC error 0: Odoo Server Error: Access Denied',
+      ]) {
+        const hint = deriveErrorHint({ host: 'erp.example.com', message })!;
+        expect(hint).toMatch(/ODOO_UID/);
+        expect(hint).toMatch(/expired/);
+        expect(hint).toMatch(/"Persistent Key"/);
+      }
+    });
+
+    it('leaves an unrelated "Access Denied" page alone', () => {
+      expect(
+        deriveErrorHint({ host: 'example.com', status: 403, body: '<html><title>Access Denied</title></html>' }),
+      ).toBeUndefined();
+    });
+  });
+
   describe('weclapp', () => {
     it('explains unknown properties instead of letting the model guess spellings', () => {
       const hint = deriveErrorHint({
@@ -64,6 +121,19 @@ describe('deriveErrorHint', () => {
       const hint = deriveErrorHint({ host: 'x.weclapp.com', status: 400, body: { detail: 'unknown property: shippingAddress' } });
       expect(hint).toMatch(/`deliveryAddress` \(not `shippingAddress`\)/);
       expect(hint).toMatch(/`unitId` \(not `unitName`\)/);
+    });
+
+    it('first tells the model to retry without `properties`', () => {
+      // 14 Oct 2026: ~50 failures in ten days, all guessed names in `properties`.
+      const hint = deriveErrorHint({
+        host: 'x.weclapp.com',
+        status: 400,
+        body: { detail: 'unknown property: openAmount' },
+      })!;
+      expect(hint).toMatch(/retry the same call with `properties` left out/);
+      expect(hint.indexOf('left out')).toBeLessThan(hint.indexOf('camelCase'));
+      expect(hint).toMatch(/no `customerNumber`/);
+      expect(hint).toMatch(/`openAmount`/);
     });
 
     it('treats "unexpected filter property" the same way', () => {
@@ -410,5 +480,27 @@ describe('deriveErrorHint: web search APIs for agents', () => {
   it('stays quiet for these statuses on other hosts', () => {
     expect(deriveErrorHint({ host: 'api.example.com', status: 432 })).toBeUndefined();
     expect(deriveErrorHint({ host: 'example-serpapi.com', status: 401 })).toBeUndefined();
+  });
+});
+
+describe('Meta Graph API error 190', () => {
+  const graph = 'graph.facebook.com';
+  const body = (subcode?: number) => ({
+    error: { message: 'Error validating access token', type: 'OAuthException', code: 190, error_subcode: subcode },
+  });
+
+  it('tells an expired token from a session that ended and from an invalid one', () => {
+    expect(deriveErrorHint({ host: graph, status: 400, body: body(463) })).toMatch(/has expired.*META_APP_ID/);
+    for (const subcode of [458, 460, 467]) {
+      expect(deriveErrorHint({ host: graph, status: 401, body: body(subcode) })).toMatch(/ended this token's session/);
+    }
+    expect(deriveErrorHint({ host: graph, status: 400, body: body() })).toMatch(/invalid, revoked/);
+    // The body arrives as text from some paths.
+    expect(deriveErrorHint({ host: 'graph.instagram.com', status: 400, body: JSON.stringify(body(467)) })).toMatch(/ended/);
+  });
+
+  it('stays quiet for other Meta errors and other hosts', () => {
+    expect(deriveErrorHint({ host: graph, status: 400, body: { error: { code: 4, message: 'rate' } } })).toBeUndefined();
+    expect(deriveErrorHint({ host: 'api.example.com', status: 400, body: body(467) })).toBeUndefined();
   });
 });

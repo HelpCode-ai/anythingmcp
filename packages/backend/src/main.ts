@@ -18,6 +18,7 @@ import { startTracing } from './tracing';
 startTracing();
 
 import { NestFactory } from '@nestjs/core';
+import { APP_VERSION, APP_COMMIT, APP_BUILD_DATE } from './common/app-version';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
@@ -28,7 +29,9 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { mcpStrategy } from './mcp-server/mcp-strategy';
 import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
+import { McpEmailVerificationFilter } from './auth/mcp-email-verification';
 import { validateRequiredSecretsAtStartup } from './common/secrets.util';
+import { startMetricsServer, stopMetricsServer } from './common/metrics';
 
 async function bootstrap() {
   // Fail fast if required secrets are missing or use known placeholder values.
@@ -50,7 +53,17 @@ async function bootstrap() {
   // body-parser's default `type` matches only application/json, so without
   // this every SCIM POST/PATCH would arrive as an empty body and fail in ways
   // that look nothing like a content-type problem.
-  app.use(json({ limit: '10mb', type: ['application/json', 'application/scim+json'] }));
+  // `verify` keeps the raw bytes of signed webhooks, whose HMAC must be
+  // computed over the body exactly as sent.
+  app.use(
+    json({
+      limit: '10mb',
+      type: ['application/json', 'application/scim+json'],
+      verify: (req: any, _res, buf) => {
+        if (req.url?.startsWith('/api/support/webhook')) req.rawBody = buf;
+      },
+    }),
+  );
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   const configService = app.get(ConfigService);
@@ -92,8 +105,9 @@ async function bootstrap() {
     }),
   );
 
-  // Add WWW-Authenticate header to MCP 401 responses for OAuth discovery
-  app.useGlobalFilters(new McpAuthExceptionFilter());
+  // Add WWW-Authenticate header to MCP 401 responses for OAuth discovery,
+  // and answer an unverified cloud user's MCP client with what to do.
+  app.useGlobalFilters(new McpAuthExceptionFilter(), new McpEmailVerificationFilter());
 
   // Global validation
   app.useGlobalPipes(
@@ -112,6 +126,8 @@ async function bootstrap() {
     origin: corsOrigin,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
+    // Read by the frontend when it downloads a connector export.
+    exposedHeaders: ['Content-Disposition', 'X-Secrets-Included'],
   });
 
   // Swagger documentation
@@ -161,6 +177,10 @@ async function bootstrap() {
   server.keepAliveTimeout = 65_000;
   server.headersTimeout = 66_000;
 
+  // Second, separate listener — never the main app or port 4000, since
+  // /health* is proxied publicly on both Cloud and self-hosted.
+  startMetricsServer();
+
   // A SIGTERM must end in an exit, every time, within a bounded time.
   //
   // It did not. `app.close()` calls `server.close()`, which resolves only
@@ -196,6 +216,7 @@ async function bootstrap() {
       }, cutConnectionsAfterMs);
       cutter.unref();
       try {
+        await stopMetricsServer();
         await app.close();
         logger.log('Shutdown complete.');
         process.exit(0);
@@ -206,6 +227,9 @@ async function bootstrap() {
     });
   }
 
+  const mode = process.env.DEPLOYMENT_MODE || 'self-hosted';
+  const shortCommit = /^[0-9a-f]{40}$/.test(APP_COMMIT) ? APP_COMMIT.slice(0, 7) : APP_COMMIT;
+  logger.log(`AnythingMCP v${APP_VERSION} (commit ${shortCommit}, built ${APP_BUILD_DATE ?? 'unknown'}, mode ${mode})`);
   logger.log(`AnythingMCP backend running on: http://localhost:${port}`);
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
   logger.log(`MCP endpoint (global): http://localhost:${port}/mcp`);

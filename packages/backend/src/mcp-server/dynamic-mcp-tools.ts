@@ -21,8 +21,9 @@ import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import {
   CALLER_CONTEXT_PREFIX,
   buildCallerContextVars,
+  usesCallerContext,
 } from '../common/caller-context.util';
-import { applyResponseTransform } from '../connectors/response-transform.util';
+import { applyResponseTransform, type TransformOutcome } from '../connectors/response-transform.util';
 import {
   attachResponseMeta,
   type ResponseMeta,
@@ -32,24 +33,37 @@ import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
 import { processGauges } from '../common/process-vitals';
+import { recordToolCall } from '../common/metrics';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { connectorErrorWhen } from '../connectors/error-when.util';
+import {
+  isBinaryBody,
+  readBinaryConfig,
+  renderBinaryBody,
+  withoutBinaryData,
+  type BinaryContent,
+} from '../connectors/binary-response.util';
 
 /**
  * The content of a tool result: one text item, then the images taken out of
- * the response by `responseMapping.images` (none for every other tool). The
- * text comes first so whatever reads `content[0].text` keeps working.
+ * the response by `responseMapping.images`, or the file a binary response
+ * carried (binary-response.util.ts). None for every other tool. The text
+ * comes first so whatever reads `content[0].text` keeps working.
  */
 export type ToolResultContent = [
   { type: 'text'; text: string },
-  ...{ type: 'image'; data: string; mimeType: string }[],
+  ...(
+    | { type: 'image'; data: string; mimeType: string }
+    | { type: 'resource'; resource: { uri: string; mimeType: string; blob: string } }
+  )[],
 ];
 import { ResponseBodyError } from '../connectors/engines/response-error.util';
-import { isMaskedEnvVar, secretContext } from '../connectors/connector-secrets.util';
+import { connectorSecretValues } from '../connectors/connector-secrets.util';
 import { redactSecretsDeep } from '../common/secret-literals.util';
+import { withTokenRenewal } from '../connectors/engines/bearer-token-renewal.service';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -150,6 +164,14 @@ export class DynamicMcpTools {
     upstreamStatus?: number,
   ): void {
     const resultBytes = renderedText ? Buffer.byteLength(renderedText) : 0;
+    recordToolCall({
+      connectorType: tool.connectorType,
+      status: status === 'SUCCESS' ? 'success' : 'error',
+      durationMs,
+      upstreamStatus,
+      connectorId: tool.connectorId,
+      tool: tool.name,
+    });
     const line = {
       msg: 'tool_call',
       toolName: tool.name,
@@ -177,18 +199,12 @@ export class DynamicMcpTools {
    * replacing a 3-character string everywhere in a response would mangle it.
    */
   private connectorSecretValues(tool: RegisteredTool): string[] {
-    const envVars = tool.connectorConfig?.envVars;
-    if (!envVars || typeof envVars !== 'object') return [];
-    const ctx = secretContext({
+    if (!tool.connectorConfig) return [];
+    return connectorSecretValues({
+      envVars: tool.connectorConfig.envVars,
       config: tool.connectorConfig.config,
       headers: tool.connectorConfig.headers,
     });
-    return Object.entries(envVars)
-      .filter(
-        ([name, value]) =>
-          typeof value === 'string' && value.length >= 8 && isMaskedEnvVar(name, value, ctx),
-      )
-      .map(([, value]) => value as string);
   }
 
   private async getProxyLimit(organizationId: string): Promise<number> {
@@ -220,6 +236,8 @@ export class DynamicMcpTools {
       mcpServerName?: string;
       connectorIds?: string[];
       intent?: string;
+      /** The caller contributes to skill learning (stamped on the log row). */
+      learnable?: boolean;
     },
   ): Promise<{
     content: ToolResultContent;
@@ -363,13 +381,18 @@ export class DynamicMcpTools {
       // connector first and filled its credentials afterwards therefore kept
       // sending the placeholder text forever. Interpolating here makes the two
       // paths agree.
-      const authConfig = tool.connectorConfig.authConfig
-        ? interpolateDeep(
-            JSON.parse(tool.connectorConfig.authConfig),
-            interpolationVars,
-            { reservedPrefix: CALLER_CONTEXT_PREFIX },
-          )
-        : undefined;
+      const authConfig = withTokenRenewal(
+        tool.connectorConfig.authType,
+        tool.connectorConfig.authConfig
+          ? interpolateDeep(
+              JSON.parse(tool.connectorConfig.authConfig),
+              interpolationVars,
+              { reservedPrefix: CALLER_CONTEXT_PREFIX },
+            )
+          : undefined,
+        tool.connectorConfig.config,
+        envVars,
+      );
 
       const engineConfig = {
         baseUrl: interpolatedConfig.baseUrl,
@@ -377,7 +400,20 @@ export class DynamicMcpTools {
         authConfig,
         headers: interpolatedConfig.headers,
         specUrl: (tool.connectorConfig as any).specUrl,
+        // The engines key the OAuth2 token cache, the refresh lock and the
+        // saving of a renewed token on the connector id. Without it every
+        // call parsed a fresh authConfig, so nothing was cached, a renewed
+        // token was never saved, and the next renewal sent the refresh token
+        // the provider had already rotated: Cloudinary (5-minute tokens)
+        // answered invalid_grant a few minutes after each authorization.
+        // Credentials that depend on the caller ({{amcp.*}}) differ per call,
+        // so they stay unkeyed.
+        connectorId: usesCallerContext(tool.connectorConfig.authConfig)
+          ? undefined
+          : tool.connectorId,
         errorWhen: connectorErrorWhen(tool.connectorConfig.config),
+        // Masked in the engines' log lines (a bot token in the URL path).
+        logSecrets: secretValues,
         ...(proxyUrl ? { proxyUrl } : {}),
       };
 
@@ -474,8 +510,10 @@ export class DynamicMcpTools {
         connectorId: tool.connectorId,
         usedProxy,
         intent: context?.intent,
+        learnable: context?.learnable ?? false,
         input: params,
-        output: result as Record<string, unknown>,
+        // A file's bytes stay out of the call log: only what it was.
+        output: withoutBinaryData(result) as Record<string, unknown>,
         status: 'SUCCESS',
         durationMs,
         clientInfo: context ? JSON.stringify({
@@ -529,7 +567,11 @@ export class DynamicMcpTools {
       // One actionable line for the client, on top of the vendor's own body.
       // Keyed on the upstream host so hand-built tools get the same help as
       // catalog ones; see error-hints.ts for why this exists.
-      const hint = deriveErrorHint({
+      // The engines attach their own hint when they know more than the
+      // response says (a refresh token refused 7 days after a Google
+      // authorization, a Meta session that was logged out).
+      const engineHint = typeof error?.hint === 'string' && error.hint ? error.hint : undefined;
+      const hint = engineHint ?? deriveErrorHint({
         host:
           hostFromAxiosConfig(error?.config) ??
           hostFromUrl(tool.connectorConfig?.baseUrl),
@@ -548,6 +590,7 @@ export class DynamicMcpTools {
         connectorId: tool.connectorId,
         usedProxy,
         intent: context?.intent,
+        learnable: context?.learnable ?? false,
         input: params,
         status: 'ERROR',
         durationMs,
@@ -603,7 +646,18 @@ export class DynamicMcpTools {
     isError?: boolean;
     structured?: unknown;
   } {
-    const outcome = applyResponseTransform(raw, responseMapping);
+    // A file (image, PDF, …): described in the text and attached after it.
+    // A response mapping has nothing to shape in raw bytes, so it is skipped.
+    let binaryContent: BinaryContent[] = [];
+    const binary = isBinaryBody(raw);
+    if (isBinaryBody(raw)) {
+      const rendered = renderBinaryBody(raw, readBinaryConfig(responseMapping), toolName);
+      raw = rendered.value;
+      binaryContent = rendered.content;
+    }
+    const outcome: TransformOutcome = binary
+      ? { value: raw, applied: false }
+      : applyResponseTransform(raw, responseMapping);
 
     if (outcome.error) {
       if (outcome.fatal) {
@@ -647,7 +701,7 @@ export class DynamicMcpTools {
     }));
 
     return {
-      content: [{ type: 'text' as const, text: resultText }, ...images],
+      content: [{ type: 'text' as const, text: resultText }, ...images, ...binaryContent],
       structured: value,
     };
   }

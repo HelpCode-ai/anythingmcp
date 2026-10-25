@@ -1,0 +1,776 @@
+{
+  "slug": "dadata",
+  "name": "DaData",
+  "aliases": [
+    "Дадата",
+    "DaData.ru",
+    "HFLabs"
+  ],
+  "description": "Suggest and look up Russian addresses, companies and sole proprietors by INN or OGRN (ЕГРЮЛ/ЕГРИП), banks by BIC, full names and emails, reverse geocode coordinates, find the city of an IP and search Russian reference lists with DaData. Optional paid standardisation of addresses, phones and names, switched off until you allow it.",
+  "region": "intl",
+  "category": "data",
+  "icon": "dadata",
+  "docsUrl": "https://dadata.ru/api/",
+  "prerequisites": "A DaData account (the free plan includes 10,000 suggestion and lookup requests a day) and its API key from the profile page. The secret key is only needed for the balance, statistics and the paid cleansing tool.",
+  "instructions": "## DaData\nThis connector calls the **DaData API** (HFLabs, dadata.ru) with your own key: suggestions and lookups for Russian addresses, companies and sole proprietors (ЕГРЮЛ/ЕГРИП), banks, full names (ФИО) and emails, reverse geocoding, IP to city, Russian reference lists, and the paid standardisation (cleansing) service.\n\n**Setup (about 2 minutes)**\n1. Sign up at https://dadata.ru and open **Профиль > API-ключи** (https://dadata.ru/profile/#info).\n2. Paste the **API key** into `DADATA_API_KEY`. It is sent as `Authorization: Token <key>`.\n3. Optional: paste the **secret key** into `DADATA_SECRET_KEY`. Only the balance, the daily statistics and `dadata_clean` need it, sent as `X-Secret`.\n\n**Plans and costs**\n- Suggestions and lookups (`dadata_suggest_*`, `dadata_find_*`, geolocate, iplocate) are part of the subscription: the free plan includes 10,000 requests a day, paid plans more data fields (finances, more company details). `dadata_find_affiliated` needs the Maximum plan.\n- **`dadata_clean` costs money on every plan**: about 20 kopecks per value, paid from the account balance. It is installed switched off. Before each call, tell the user how many values will be cleaned and the price, and wait for a yes; check the balance with `dadata_get_balance` first.\n\n**Tips**\n- Company by INN: `dadata_find_party` with the INN (and `branch_type` MAIN for the head office). For a name, `dadata_suggest_party` first, then `dadata_find_party` with the INN it returns.\n- Results come as `suggestions[]`, each with `value` (the display text), `unrestricted_value` and `data` (all fields). Statuses, OKVED and dates are in `data`; dates of companies are Unix milliseconds.\n- Address suggestions cover Russia by default; pass `locations: [{\"country_iso_code\": \"*\"}]` for Belarus, Kazakhstan, Uzbekistan and other countries.\n- Errors: 403 \"Feature ... disabled for token\" means the API key is wrong or the service is not on your plan; 401 on balance or clean means the secret key is missing or wrong; 429 means the request rate (about 30 a second) or the daily limit was exceeded.",
+  "requiredEnvVars": [
+    "DADATA_API_KEY"
+  ],
+  "optionalEnvVars": [
+    "DADATA_SECRET_KEY"
+  ],
+  "envVarMeta": {
+    "DADATA_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "dadata.ru > Профиль > API-ключи: the API key (Ключ API), 40 hexadecimal characters. Sent as Authorization: Token <key>.",
+      "link": "https://dadata.ru/profile/#info",
+      "pattern": "^[0-9a-f]{40}$",
+      "patternMessage": "Paste the 40-character API key alone, without Token or spaces."
+    },
+    "DADATA_SECRET_KEY": {
+      "label": "Secret key (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page: the secret key (Секретный ключ). Only needed for the balance, daily statistics and the paid cleansing tool.",
+      "link": "https://dadata.ru/profile/#info",
+      "pattern": "^[0-9a-f]{40}$",
+      "patternMessage": "Paste the 40-character secret key alone."
+    }
+  },
+  "verifyHints": {
+    "403": "DaData refused the API key (\"Feature disabled for token\"). Copy the API key again from https://dadata.ru/profile/#info.",
+    "401": "DaData needs the secret key for this call. Set DADATA_SECRET_KEY from https://dadata.ru/profile/#info.",
+    "429": "DaData's rate or daily limit was reached. Wait, or check the usage with dadata_get_daily_stats."
+  },
+  "connector": {
+    "name": "DaData",
+    "type": "REST",
+    "baseUrl": "https://suggestions.dadata.ru/suggestions/api/4_1/rs",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Token {{DADATA_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "probe": {
+    "tool": "dadata_find_party",
+    "params": {
+      "query": "7707083893",
+      "count": 1
+    }
+  },
+  "tools": [
+    {
+      "name": "dadata_suggest_address",
+      "description": "Suggest Russian (and CIS) addresses from free text as the user types: up to 20 normalised variants with postal code, region, city, street, house, FIAS/GAR and KLADR ids, OKATO/OKTMO, tax office, coordinates and timezone in data. Restrict by region or city with locations and choose the granularity with from_bound/to_bound. Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Address text as typed, up to 300 characters, e.g. мск сухонская 11."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of suggestions, 1 to 20.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the answer: ru (default) or en (transliterated).",
+            "enum": [
+              "ru",
+              "en"
+            ]
+          },
+          "locations": {
+            "type": "array",
+            "description": "Only addresses in these places, e.g. [{\"region\": \"Москва\"}] or [{\"kladr_id\": \"7700000000000\"}] or [{\"country_iso_code\": \"KZ\"}]. Use [{\"country_iso_code\": \"*\"}] for all countries.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "locations_boost": {
+            "type": "array",
+            "description": "Rank these places first without excluding others, e.g. [{\"kladr_id\": \"7800000000000\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "from_bound": {
+            "type": "object",
+            "description": "Smallest part to suggest, e.g. {\"value\": \"city\"}. Values: country, region, area, city, settlement, street, house, flat."
+          },
+          "to_bound": {
+            "type": "object",
+            "description": "Largest part to suggest, e.g. {\"value\": \"settlement\"} for cities and towns only."
+          },
+          "division": {
+            "type": "string",
+            "description": "Address division: administrative (default) or municipal.",
+            "enum": [
+              "administrative",
+              "municipal"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/suggest/address",
+        "bodyMapping": {
+          "query": "$query",
+          "count": "$count",
+          "language": "$language",
+          "locations": "$locations",
+          "locations_boost": "$locations_boost",
+          "from_bound": "$from_bound",
+          "to_bound": "$to_bound",
+          "division": "$division"
+        }
+      }
+    },
+    {
+      "name": "dadata_find_address",
+      "description": "Look up one address by its FIAS/GAR id, KLADR code or cadastral number and return the full normalised record (postal code, ids, OKATO/OKTMO, coordinates, tax office). Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "FIAS/GAR id (GUID), KLADR code or cadastral number, e.g. 9120b43f-2fae-4838-a144-85e43c2bfb29."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of suggestions, 1 to 20.",
+            "default": 1,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the answer: ru (default) or en (transliterated).",
+            "enum": [
+              "ru",
+              "en"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/findById/address",
+        "bodyMapping": {
+          "query": "$query",
+          "count": "$count",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "dadata_geolocate_address",
+      "description": "Reverse geocoding: the addresses nearest to a latitude and longitude in Russia, closest first, within radius_meters. Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "Latitude, e.g. 55.878."
+          },
+          "lon": {
+            "type": "number",
+            "description": "Longitude, e.g. 37.653."
+          },
+          "radius_meters": {
+            "type": "integer",
+            "description": "Search radius in metres, up to 1000 (default 100).",
+            "maximum": 1000
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of suggestions, 1 to 20.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the answer: ru (default) or en (transliterated).",
+            "enum": [
+              "ru",
+              "en"
+            ]
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/geolocate/address",
+        "bodyMapping": {
+          "lat": "$lat",
+          "lon": "$lon",
+          "radius_meters": "$radius_meters",
+          "count": "$count",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "dadata_iplocate",
+      "description": "The city of an IPv4 or IPv6 address (Russian addresses only), as a full address record with KLADR and FIAS ids. Returns location null when the IP is not in Russia or unknown. Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 46.226.227.20."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the answer: ru (default) or en (transliterated).",
+            "enum": [
+              "ru",
+              "en"
+            ]
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/iplocate/address",
+        "queryParams": {
+          "ip": "$ip",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "dadata_suggest_party",
+      "description": "Suggest Russian companies and sole proprietors (ЕГРЮЛ/ЕГРИП) by name, INN, OGRN, address or director: name, INN, KPP, OGRN, legal address, director, OKVED, status (active or liquidated), registration and liquidation dates. Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Name, INN, OGRN, address or director, e.g. сбербанк or 7707083893."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of suggestions, 1 to 20.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "status": {
+            "type": "array",
+            "description": "Only companies in these states: ACTIVE, LIQUIDATING, LIQUIDATED, BANKRUPT, REORGANIZING.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "LIQUIDATING",
+                "LIQUIDATED",
+                "BANKRUPT",
+                "REORGANIZING"
+              ]
+            }
+          },
+          "type": {
+            "type": "string",
+            "description": "LEGAL for companies, INDIVIDUAL for sole proprietors.",
+            "enum": [
+              "LEGAL",
+              "INDIVIDUAL"
+            ]
+          },
+          "locations": {
+            "type": "array",
+            "description": "Only companies registered in these places, e.g. [{\"kladr_id\": \"77\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "okved": {
+            "type": "array",
+            "description": "Only companies with these OKVED codes, e.g. [\"62.01\"].",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/suggest/party",
+        "bodyMapping": {
+          "query": "$query",
+          "count": "$count",
+          "status": "$status",
+          "type": "$type",
+          "locations": "$locations",
+          "okved": "$okved"
+        }
+      }
+    },
+    {
+      "name": "dadata_find_party",
+      "description": "Company or sole proprietor by INN or OGRN: the full ЕГРЮЛ/ЕГРИП record (names, KPP, OGRN, OKPO, OKVED, address, director, capital, status, branches, tax regime and finances on paid plans). Pass kpp or branch_type MAIN to get only the head office. Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "INN (10 or 12 digits) or OGRN (13 or 15 digits)."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of suggestions, 1 to 20.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "kpp": {
+            "type": "string",
+            "description": "KPP of the branch you want, 9 digits."
+          },
+          "branch_type": {
+            "type": "string",
+            "description": "MAIN for the head office only, BRANCH for branches only.",
+            "enum": [
+              "MAIN",
+              "BRANCH"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "LEGAL or INDIVIDUAL.",
+            "enum": [
+              "LEGAL",
+              "INDIVIDUAL"
+            ]
+          },
+          "status": {
+            "type": "array",
+            "description": "Only companies in these states: ACTIVE, LIQUIDATING, LIQUIDATED, BANKRUPT, REORGANIZING.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "LIQUIDATING",
+                "LIQUIDATED",
+                "BANKRUPT",
+                "REORGANIZING"
+              ]
+            }
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/findById/party",
+        "bodyMapping": {
+          "query": "$query",
+          "count": "$count",
+          "kpp": "$kpp",
+          "branch_type": "$branch_type",
+          "type": "$type",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "dadata_find_affiliated",
+      "description": "Companies affiliated with a person or company by its INN: where it is a founder or a manager. Only on DaData's Maximum plan; other plans answer 403.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "INN of the person (12 digits) or company (10 digits)."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of suggestions, 1 to 20.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "scope": {
+            "type": "array",
+            "description": "Which links: FOUNDERS, MANAGERS (default both).",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FOUNDERS",
+                "MANAGERS"
+              ]
+            }
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/findAffiliated/party",
+        "bodyMapping": {
+          "query": "$query",
+          "count": "$count",
+          "scope": "$scope"
+        }
+      }
+    },
+    {
+      "name": "dadata_suggest_bank",
+      "description": "Suggest Russian banks by name, BIC, SWIFT, INN or address: BIC, SWIFT, correspondent account, INN, KPP, registration number, address and status. Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Bank name, BIC, SWIFT, INN or address, e.g. сбербанк or 044525225."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of suggestions, 1 to 20.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "status": {
+            "type": "array",
+            "description": "Only banks in these states: ACTIVE, LIQUIDATING, LIQUIDATED.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "LIQUIDATING",
+                "LIQUIDATED"
+              ]
+            }
+          },
+          "type": {
+            "type": "array",
+            "description": "Kinds: BANK, BANK_BRANCH, NKO, NKO_BRANCH, RKC, CBR, TREASURY, OTHER.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "BANK",
+                "BANK_BRANCH",
+                "NKO",
+                "NKO_BRANCH",
+                "RKC",
+                "CBR",
+                "TREASURY",
+                "OTHER"
+              ]
+            }
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/suggest/bank",
+        "bodyMapping": {
+          "query": "$query",
+          "count": "$count",
+          "status": "$status",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "dadata_find_bank",
+      "description": "One bank by BIC, SWIFT, INN (with KPP for a branch) or registration number: names, correspondent account, address, payment city, status. Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "BIC (9 digits), SWIFT, INN or registration number."
+          },
+          "kpp": {
+            "type": "string",
+            "description": "KPP, to pick a branch when the query is an INN."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/findById/bank",
+        "bodyMapping": {
+          "query": "$query",
+          "kpp": "$kpp"
+        }
+      }
+    },
+    {
+      "name": "dadata_suggest_fio",
+      "description": "Suggest and split Russian full names (ФИО) as typed: surname, name and patronymic with the detected gender. Restrict to one part with parts. Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Name text as typed, e.g. Викт."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of suggestions, 1 to 20.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "parts": {
+            "type": "array",
+            "description": "Only these parts: SURNAME, NAME, PATRONYMIC.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "SURNAME",
+                "NAME",
+                "PATRONYMIC"
+              ]
+            }
+          },
+          "gender": {
+            "type": "string",
+            "description": "MALE, FEMALE or UNKNOWN.",
+            "enum": [
+              "MALE",
+              "FEMALE",
+              "UNKNOWN"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/suggest/fio",
+        "bodyMapping": {
+          "query": "$query",
+          "count": "$count",
+          "parts": "$parts",
+          "gender": "$gender"
+        }
+      }
+    },
+    {
+      "name": "dadata_suggest_email",
+      "description": "Complete an email address as typed with common domains (mail.ru, yandex.ru, gmail.com and others). It does not check that the mailbox exists. Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The start of the email, e.g. anton@m."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of suggestions, 1 to 20.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/suggest/email",
+        "bodyMapping": {
+          "query": "$query",
+          "count": "$count"
+        }
+      }
+    },
+    {
+      "name": "dadata_suggest_reference",
+      "description": "Suggest entries of DaData's Russian reference lists: fms_unit (who issued a passport, by code), postal_unit (post offices by postal code or address), fns_unit (tax offices), fts_unit (customs offices), region_court (courts), metro (stations), car_brand, country, currency, okved2, okpd2, oktmo and mktu (trademark classes). Free within the daily limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory": {
+            "type": "string",
+            "description": "Which list to search.",
+            "enum": [
+              "fms_unit",
+              "postal_unit",
+              "fns_unit",
+              "fts_unit",
+              "region_court",
+              "metro",
+              "car_brand",
+              "country",
+              "currency",
+              "okved2",
+              "okpd2",
+              "oktmo",
+              "mktu"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "Text, code or number to look for, e.g. 772-053 for fms_unit or 127642 for postal_unit."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of suggestions, 1 to 20.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "filters": {
+            "type": "array",
+            "description": "Optional filters of the list, e.g. [{\"city\": \"Москва\"}] for metro or [{\"region_code\": \"77\"}] for fms_unit.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "directory",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/suggest/{directory}",
+        "bodyMapping": {
+          "query": "$query",
+          "count": "$count",
+          "filters": "$filters"
+        }
+      }
+    },
+    {
+      "name": "dadata_get_balance",
+      "description": "The DaData account balance in roubles, which paid calls such as dadata_clean spend. Needs DADATA_SECRET_KEY. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://dadata.ru/api/v2/profile/balance",
+        "headers": {
+          "X-Secret": "${DADATA_SECRET_KEY}"
+        }
+      }
+    },
+    {
+      "name": "dadata_get_daily_stats",
+      "description": "How many suggestions, cleansing (clean) and merging calls the account made on a day, to see how much of the daily limit is used. Needs DADATA_SECRET_KEY. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Day as YYYY-MM-DD; omit for today.",
+            "format": "date"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://dadata.ru/api/v2/stat/daily",
+        "queryParams": {
+          "date": "$date"
+        },
+        "headers": {
+          "X-Secret": "${DADATA_SECRET_KEY}"
+        }
+      }
+    },
+    {
+      "name": "dadata_clean",
+      "description": "Standardise and check raw values (Стандартизация): addresses with postal code, FIAS ids, coordinates and quality codes; phones with operator, region and type; full names split with gender; emails, passports, birthdates and vehicles. COSTS MONEY: DaData charges about 20 kopecks per value from the account balance (any plan), so first say how many values will be cleaned and what it costs, and wait for a yes; never run it in a loop. Needs DADATA_SECRET_KEY. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "What the values are.",
+            "enum": [
+              "address",
+              "phone",
+              "name",
+              "email",
+              "passport",
+              "birthdate",
+              "vehicle"
+            ]
+          },
+          "values": {
+            "type": "array",
+            "description": "The raw values to clean, one per item, e.g. [\"мск сухонская 11/-89\"]. Each value is billed.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "type",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://cleaner.dadata.ru/api/v1/clean/{type}",
+        "bodyMapping": {
+          "__raw": "$values"
+        },
+        "headers": {
+          "X-Secret": "${DADATA_SECRET_KEY}"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

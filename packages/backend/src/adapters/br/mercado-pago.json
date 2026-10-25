@@ -1,0 +1,535 @@
+{
+  "slug": "mercado-pago",
+  "name": "Mercado Pago",
+  "aliases": [
+    "MercadoPago",
+    "Mercado Pago Argentina",
+    "Mercado Pago Brasil",
+    "Mercado Pago México"
+  ],
+  "description": "Mercado Pago seller account (Argentina, Brazil, Mexico, Chile, Colombia, Peru, Uruguay): payments with fees, net amounts and release dates, merchant orders, subscriptions, payment methods, and the released money and account money reports for reconciliation (generate, list, download). Moves no money.",
+  "region": "br",
+  "category": "payments",
+  "icon": "mercado-pago",
+  "docsUrl": "https://www.mercadopago.com/developers/en/reference",
+  "instructions": "## Mercado Pago\nThis connector reads a **Mercado Pago** seller account through the official REST API (`https://api.mercadopago.com`): payments and their fees and release dates, merchant orders, subscriptions, payment methods and the two account reports, released money (*Dinero liberado / Dinheiro liberado*) and account money (*Dinero en cuenta*, formerly \"all transactions\"). Nothing in it moves money: there are no refunds, payouts or charges.\n\n**Setup (about 3 minutes)**\n1. Sign in at https://www.mercadopago.com/developers/panel/app (the Mercado Pago account whose data you want), open **Your integrations** and create an application if you have none (any name; product \"Checkout Pro\" or \"Payments\" is fine).\n2. In the application open **Production credentials** and activate them (accept the terms). Copy the **Access Token** (`APP_USR-...`) into `MERCADO_PAGO_ACCESS_TOKEN`. The Public Key, Client ID and Client Secret are not needed.\n3. Install and run `mercado_pago_get_account` to check the token. It shows the country site: MLA Argentina, MLB Brazil, MLM Mexico, MLC Chile, MCO Colombia, MPE Peru, MLU Uruguay.\n\nThe access token reaches the whole account: keep it secret and reset it in the same panel if it leaks. Test credentials only see test data, and reports of test accounts are empty.\n\n**Payments**\n- `mercado_pago_search_payments` covers the last 12 months: filter by `status`, a date range (`range` picks which date, `begin_date` / `end_date` take `NOW-30DAYS` style or ISO 8601 with milliseconds and offset, e.g. `2026-10-01T00:00:00.000-03:00`) and `external_reference`; 1 to 100 per page, `paging.total` counts the matches. Each row carries the gross `transaction_amount`, `net_received_amount` after fees, `fee_details`, `money_release_date` and the payer.\n- `mercado_pago_get_payment` returns the full payment, including refunds and `additional_info` (items, shipping).\n- `mercado_pago_search_merchant_orders` (last 90 days) and `mercado_pago_get_merchant_order` group the payments of one Checkout Pro or QR sale.\n- `mercado_pago_search_subscriptions` lists subscriptions (preapprovals); `mercado_pago_list_payment_methods` the methods of the account's country.\n\n**Reports**: for bookkeeping and reconciliation use the reports rather than paging through payments.\n1. `mercado_pago_list_release_reports` / `mercado_pago_list_settlement_reports` show what already exists, including the scheduled reports set up in the Mercado Pago panel.\n2. `mercado_pago_create_release_report` / `mercado_pago_create_settlement_report` generate one for a period (`begin_date`, `end_date` in UTC, e.g. `2026-10-01T03:00:00Z` for midnight in Buenos Aires). Generation is asynchronous and takes a minute or more; Mercado Pago refuses an end date beyond its cut-off and says which date is allowed.\n3. List again until the report's `status` is `processed`, then `mercado_pago_download_release_report` / `mercado_pago_download_settlement_report` with its `file_name`. CSV files come back as semicolon-separated text with a header row (columns as configured in the panel, e.g. DATE, SOURCE_ID, DESCRIPTION, NET_CREDIT_AMOUNT, NET_DEBIT_AMOUNT, GROSS_AMOUNT, MP_FEE_AMOUNT); XLSX files come back as a file. Text over 200 KB is cut: use shorter periods.\n\n**Amounts and dates**: amounts are in the account currency (`currency_id`: ARS, BRL, MXN, CLP, COP, PEN, UYU), as decimals. Payment dates carry the account's time zone offset; report dates are UTC.\n\n**Errors**: 401 means a wrong, reset or test token. 403 means the token's application lacks access to that resource. 404 on a payment means it belongs to another account. 429 (`local_rate_limited`, `too_many_requests`) means too many calls in a short time: wait a minute.",
+  "prerequisites": "A Mercado Pago account and the production Access Token of an application under Your integrations (developers panel).",
+  "requiredEnvVars": [
+    "MERCADO_PAGO_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "MERCADO_PAGO_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Mercado Pago developers panel, Your integrations, your application, Production credentials: the Access Token starting with APP_USR-.",
+      "link": "https://www.mercadopago.com/developers/panel/app",
+      "pattern": "^(APP_USR|TEST)-[A-Za-z0-9-]{20,}$",
+      "patternMessage": "Paste the Access Token alone (APP_USR-...), without Bearer, spaces or quotes. The Public Key is not the token."
+    }
+  },
+  "verifyHints": {
+    "401": "Mercado Pago refused the access token. Copy the production Access Token (APP_USR-...) again from Your integrations, Production credentials; a reset token replaces the old one.",
+    "403": "The token works, but its application may not read this. Check the application in the developers panel.",
+    "rate_limited": "Mercado Pago is throttling the calls. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "mercado_pago_get_account"
+  },
+  "connector": {
+    "name": "Mercado Pago API",
+    "type": "REST",
+    "baseUrl": "https://api.mercadopago.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MERCADO_PAGO_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/users/me"
+  },
+  "tools": [
+    {
+      "name": "mercado_pago_get_account",
+      "description": "Get the Mercado Pago account behind the access token: user id, nickname, name, e-mail, country, site (MLA Argentina, MLB Brazil, MLM Mexico, MLC Chile, MCO Colombia, MPE Peru, MLU Uruguay) and account type. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "id",
+            "nickname": "nickname",
+            "first_name": "first_name",
+            "last_name": "last_name",
+            "email": "email",
+            "country_id": "country_id",
+            "site_id": "site_id",
+            "user_type": "user_type",
+            "tags": "tags",
+            "registration_date": "registration_date"
+          }
+        }
+      }
+    },
+    {
+      "name": "mercado_pago_search_payments",
+      "description": "Search the payments received by the account (the last 12 months at most): id, status, amount, net received after fees, fees, payment method, installments, payer, external reference and money release date. Filter by status and a date range on date_created, date_approved, date_last_updated or money_release_date. paging.total is the number of matches; page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Payment status.",
+            "enum": [
+              "approved",
+              "pending",
+              "authorized",
+              "in_process",
+              "in_mediation",
+              "rejected",
+              "cancelled",
+              "refunded",
+              "charged_back"
+            ]
+          },
+          "range": {
+            "type": "string",
+            "description": "Which date begin_date and end_date apply to. Default date_created.",
+            "enum": [
+              "date_created",
+              "date_approved",
+              "date_last_updated",
+              "money_release_date"
+            ]
+          },
+          "begin_date": {
+            "type": "string",
+            "description": "Start of the range. ISO 8601 with milliseconds and offset, e.g. 2026-10-01T00:00:00.000-03:00, or relative: NOW, NOW-7DAYS, NOW-1MONTH.",
+            "default": "NOW-30DAYS"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the range. ISO 8601 with milliseconds and offset, e.g. 2026-10-01T00:00:00.000-03:00, or relative: NOW, NOW-7DAYS, NOW-1MONTH.",
+            "default": "NOW"
+          },
+          "external_reference": {
+            "type": "string",
+            "description": "Your own reference (order number) sent when the payment was created."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field. Default date_created.",
+            "enum": [
+              "date_created",
+              "date_approved",
+              "date_last_updated",
+              "money_release_date",
+              "id"
+            ]
+          },
+          "criteria": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "desc",
+              "asc"
+            ],
+            "default": "desc"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Payments per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payments/search",
+        "queryParams": {
+          "status": "$status",
+          "range": "$range",
+          "begin_date": "$begin_date",
+          "end_date": "$end_date",
+          "external_reference": "$external_reference",
+          "sort": "$sort",
+          "criteria": "$criteria",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "paging": "$.paging",
+            "results": {
+              "$from": "$.results[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "status_detail": "status_detail",
+                "date_created": "date_created",
+                "date_approved": "date_approved",
+                "date_last_updated": "date_last_updated",
+                "money_release_date": "money_release_date",
+                "money_release_status": "money_release_status",
+                "operation_type": "operation_type",
+                "payment_method_id": "payment_method_id",
+                "payment_type_id": "payment_type_id",
+                "installments": "installments",
+                "currency_id": "currency_id",
+                "transaction_amount": "transaction_amount",
+                "transaction_amount_refunded": "transaction_amount_refunded",
+                "net_received_amount": "transaction_details.net_received_amount",
+                "total_paid_amount": "transaction_details.total_paid_amount",
+                "fee_details": "fee_details",
+                "description": "description",
+                "external_reference": "external_reference",
+                "payer": {
+                  "id": "payer.id",
+                  "email": "payer.email",
+                  "first_name": "payer.first_name",
+                  "last_name": "payer.last_name",
+                  "identification": "payer.identification"
+                },
+                "order": "order",
+                "point_of_interaction_type": "point_of_interaction.type",
+                "store_id": "store_id",
+                "pos_id": "pos_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "mercado_pago_get_payment",
+      "description": "Get every detail of one payment by id: status and status_detail, amounts, fees and net received, refunds, payment method and card brand, installments, payer, items and shipping in additional_info, release date and the related order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Payment id (number), e.g. 183750898422."
+          }
+        },
+        "required": [
+          "payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payments/{payment_id}"
+      }
+    },
+    {
+      "name": "mercado_pago_search_merchant_orders",
+      "description": "Search merchant orders (the order behind a Checkout Pro or QR sale, grouping its payments and shipments) of the last 90 days: status opened, closed or expired, paid and total amounts, payments, items. Page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Order status.",
+            "enum": [
+              "opened",
+              "closed",
+              "expired"
+            ]
+          },
+          "external_reference": {
+            "type": "string",
+            "description": "Your own reference sent with the preference."
+          },
+          "preference_id": {
+            "type": "string",
+            "description": "Checkout Pro preference id."
+          },
+          "date_created_from": {
+            "type": "string",
+            "description": "Created on or after, ISO 8601, e.g. 2026-10-01T00:00:00.000-03:00."
+          },
+          "date_created_to": {
+            "type": "string",
+            "description": "Created on or before, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchant_orders/search",
+        "queryParams": {
+          "status": "$status",
+          "external_reference": "$external_reference",
+          "preference_id": "$preference_id",
+          "date_created_from": "$date_created_from",
+          "date_created_to": "$date_created_to",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mercado_pago_get_merchant_order",
+      "description": "Get one merchant order by id: status, order_status, total and paid amounts, items, its payments and shipments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_order_id": {
+            "type": "string",
+            "description": "Merchant order id (number)."
+          }
+        },
+        "required": [
+          "merchant_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchant_orders/{merchant_order_id}"
+      }
+    },
+    {
+      "name": "mercado_pago_list_payment_methods",
+      "description": "List the payment methods available to the account in its country: id (visa, master, pix, bolbradesco, account_money...), name, type (credit_card, debit_card, ticket, bank_transfer...), status, minimum and maximum amount and accreditation time in minutes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payment_methods"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{id: id, name: name, payment_type_id: payment_type_id, status: status, min_allowed_amount: min_allowed_amount, max_allowed_amount: max_allowed_amount, accreditation_time: accreditation_time}"
+        }
+      }
+    },
+    {
+      "name": "mercado_pago_list_release_reports",
+      "description": "List the released money reports (Dinero liberado / Dinheiro liberado: the money that became available, with each payment, fee, refund and withdrawal) already generated for the account, newest last: id, begin_date, end_date, status (pending, processing, processed, failed), file_name and format. Download a processed one with mercado_pago_download_release_report.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/account/release_report/list"
+      }
+    },
+    {
+      "name": "mercado_pago_create_release_report",
+      "description": "Ask Mercado Pago to generate a released money report (Dinero liberado / Dinheiro liberado: the money that became available, with each payment, fee, refund and withdrawal) for a period. Generation is asynchronous: list the reports after a minute or two and download the file once its status is processed. Dates are UTC, e.g. 2026-10-01T00:00:00Z; Mercado Pago refuses an end date in the future or beyond its own cut-off and names the latest allowed date in the error. Creates a file on the account; moves no money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Start of the period, UTC, e.g. 2026-10-01T00:00:00Z."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, UTC, e.g. 2026-10-15T23:59:59Z."
+          }
+        },
+        "required": [
+          "begin_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/account/release_report",
+        "bodyMapping": {
+          "begin_date": "$begin_date",
+          "end_date": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "mercado_pago_download_release_report",
+      "description": "Download one released money report by its file_name (from mercado_pago_list_release_reports). CSV reports come back as text (semicolon-separated, a header row first); XLSX reports come back as a file. Very large reports are cut at 200 KB: generate a shorter period instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_name": {
+            "type": "string",
+            "description": "file_name from the report list, e.g. release-report-123456789-2026-10-21-111911.csv."
+          }
+        },
+        "required": [
+          "file_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/account/release_report/{file_name}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mercado_pago_list_settlement_reports",
+      "description": "List the account money reports (Dinero en cuenta, formerly \"all transactions\": every movement of the account balance) already generated for the account, newest last: id, begin_date, end_date, status (pending, processing, processed, failed), file_name and format. Download a processed one with mercado_pago_download_settlement_report.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/account/settlement_report/list"
+      }
+    },
+    {
+      "name": "mercado_pago_create_settlement_report",
+      "description": "Ask Mercado Pago to generate a account money report (Dinero en cuenta, formerly \"all transactions\": every movement of the account balance) for a period. Generation is asynchronous: list the reports after a minute or two and download the file once its status is processed. Dates are UTC, e.g. 2026-10-01T00:00:00Z; Mercado Pago refuses an end date in the future or beyond its own cut-off and names the latest allowed date in the error. Creates a file on the account; moves no money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Start of the period, UTC, e.g. 2026-10-01T00:00:00Z."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, UTC, e.g. 2026-10-15T23:59:59Z."
+          }
+        },
+        "required": [
+          "begin_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/account/settlement_report",
+        "bodyMapping": {
+          "begin_date": "$begin_date",
+          "end_date": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "mercado_pago_download_settlement_report",
+      "description": "Download one account money report by its file_name (from mercado_pago_list_settlement_reports). CSV reports come back as text (semicolon-separated, a header row first); XLSX reports come back as a file. Very large reports are cut at 200 KB: generate a shorter period instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_name": {
+            "type": "string",
+            "description": "file_name from the report list, e.g. release-report-123456789-2026-10-21-111911.csv."
+          }
+        },
+        "required": [
+          "file_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/account/settlement_report/{file_name}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mercado_pago_search_subscriptions",
+      "description": "Search subscriptions (preapprovals) of the account: id, status (pending, authorized, paused, cancelled), payer e-mail, plan, reason, amount and frequency, next payment date. Page with offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Subscription status.",
+            "enum": [
+              "pending",
+              "authorized",
+              "paused",
+              "cancelled"
+            ]
+          },
+          "payer_email": {
+            "type": "string",
+            "description": "Payer e-mail."
+          },
+          "preapproval_plan_id": {
+            "type": "string",
+            "description": "Only subscriptions of this plan."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Subscriptions per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/preapproval/search",
+        "queryParams": {
+          "status": "$status",
+          "payer_email": "$payer_email",
+          "preapproval_plan_id": "$preapproval_plan_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

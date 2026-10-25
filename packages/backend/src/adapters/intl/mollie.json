@@ -1,8 +1,8 @@
 {
   "slug": "mollie",
   "name": "Mollie",
-  "description": "Drive Mollie (EU-friendly payments) from any AI agent: payments, refunds, customers, subscriptions, mandates, methods. 14 tools, Bearer auth.",
-  "instructions": "This connector uses the Mollie API v2 (docs.mollie.com/reference).\n\n**Setup**:\n1. Sign in to https://my.mollie.com → **Developers → API keys**.\n2. Use a **test key** (`test_...`) for development, **live key** (`live_...`) for production.\n3. Set `MOLLIE_API_KEY` accordingly. (Mollie tells you which environment via the key prefix.)\n\n**Authentication**: `Authorization: Bearer ${MOLLIE_API_KEY}`.\n\n**Amount format**: every monetary amount is `{currency: 'EUR', value: '10.00'}` — value is a STRING with exactly 2 decimals (or whatever the currency requires). Sending `value: 10` (number) errors.\n\n**Payment lifecycle**: created → open → pending → authorized → paid (success) | canceled | expired | failed.\n\n**Profile and mode**: every payment belongs to a profile (website). On Mollie you can have multiple profiles per account. The `profileId` is implicit (uses the default profile of the key); for multi-profile accounts pass it explicitly.\n\n**Subscriptions and mandates**: subscriptions need a mandate (a pre-authorized customer payment method). Workflow: create customer → first one-off payment with `sequenceType=first` → use the resulting mandate to create the subscription.\n\n**Webhooks** out of scope (Mollie pushes payment.* events to a URL you host).\n\n**Pagination**: cursor-based via `from=<resourceId>` + `limit` (max 250). Response has `_links.next.href` for next page.\n\n**Rate limits**: 250 req per 5 sec per IP. On 429 honor headers.\n\n**Out of scope here**: settlements, invoices, profile management, organizations, partners (Mollie Connect), permissions.",
+  "description": "Drive Mollie (EU-friendly payments) from any AI agent: payments, payment links, refunds, customers, subscriptions, mandates, methods. 18 tools, Bearer auth.",
+  "instructions": "This connector uses the Mollie API v2 (docs.mollie.com/reference).\n\n**Setup**:\n1. Sign in to https://my.mollie.com → **Developers → API keys**.\n2. Use a **test key** (`test_...`) for development, **live key** (`live_...`) for production.\n3. Set `MOLLIE_API_KEY` accordingly. (Mollie tells you which environment via the key prefix.)\n\n**Authentication**: `Authorization: Bearer ${MOLLIE_API_KEY}`.\n\n**Amount format**: every monetary amount is `{currency: 'EUR', value: '10.00'}` — value is a STRING with exactly 2 decimals (or whatever the currency requires). Sending `value: 10` (number) errors.\n\n**Payment lifecycle**: created → open → pending → authorized → paid (success) | canceled | expired | failed.\n\n**Profile and mode**: every payment belongs to a profile (website). On Mollie you can have multiple profiles per account. The `profileId` is implicit (uses the default profile of the key); for multi-profile accounts pass it explicitly.\n\n**Subscriptions and mandates**: subscriptions need a mandate (a pre-authorized customer payment method). Workflow: create customer → first one-off payment with `sequenceType=first` → use the resulting mandate to create the subscription.\n\n**Payment links**: `mollie_create_payment_link` returns a hosted checkout URL (`_links.paymentLink.href`) to send to a customer, without a website. `paidAt` on the link (or `mollie_list_payment_link_payments`) shows whether it was paid. With a live key the link is real and payable.\n\n**Webhooks** out of scope (Mollie pushes payment.* events to a URL you host).\n\n**Pagination**: cursor-based via `from=<resourceId>` + `limit` (max 250). Response has `_links.next.href` for next page.\n\n**Rate limits**: 250 req per 5 sec per IP. On 429 honor headers.\n\n**Out of scope here**: settlements, invoices, profile management, organizations, partners (Mollie Connect), permissions.",
   "region": "intl",
   "category": "payments",
   "icon": "mollie",
@@ -308,6 +308,179 @@
       "endpointMapping": {
         "method": "DELETE",
         "path": "/customers/{customerId}/mandates/{mandateId}"
+      }
+    },
+    {
+      "name": "mollie_list_payment_links",
+      "description": "List payment links (newest first) with description, amount, paidAt (null = not paid yet), expiresAt, reusable and the hosted checkout URL under _links.paymentLink. Page with `from` = the id of the first link of the next page (_links.next). If the list is unexpectedly empty, read a known link by id with mollie_get_payment_link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "description": "Links per page, 1 to 250. Default 50."
+          },
+          "from": {
+            "type": "string",
+            "description": "Payment link id (pl_...) to start from, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment-links",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from"
+        }
+      }
+    },
+    {
+      "name": "mollie_get_payment_link",
+      "description": "Read one payment link: amount, description, whether and when it was paid (paidAt), expiry, allowed methods, lines and addresses, and the checkout URL to share under _links.paymentLink.href.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentLinkId": {
+            "type": "string",
+            "description": "Payment link id, starts with pl_."
+          }
+        },
+        "required": [
+          "paymentLinkId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment-links/{paymentLinkId}"
+      }
+    },
+    {
+      "name": "mollie_list_payment_link_payments",
+      "description": "List the payments made through one payment link (a reusable link can collect several), with status, method and amount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentLinkId": {
+            "type": "string",
+            "description": "Payment link id, starts with pl_."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "description": "Payments per page, 1 to 250."
+          },
+          "from": {
+            "type": "string",
+            "description": "Payment id (tr_...) to start from, for paging."
+          }
+        },
+        "required": [
+          "paymentLinkId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment-links/{paymentLinkId}/payments",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from"
+        }
+      }
+    },
+    {
+      "name": "mollie_create_payment_link",
+      "description": "Create a payment link: a hosted checkout page to send to a customer (by email, chat or on an invoice), no website needed. Returns the link with its URL under _links.paymentLink.href. The amount is {\"currency\": \"EUR\", \"value\": \"10.00\"} with the value as a string. Billie, Klarna and Riverty need lines and billingAddress, and the lines' totalAmount must add up to amount. With a live key this creates a real payable link: confirm amount and description with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Shown on the checkout page and the bank statement, e.g. Invoice RE-2026-0142."
+          },
+          "amount": {
+            "type": "object",
+            "description": "{\"currency\": \"EUR\", \"value\": \"49.90\"}. Omit only for a reusable link where the customer enters the amount.",
+            "properties": {
+              "currency": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string",
+                "description": "Decimal string with the currency's decimals, e.g. \"49.90\"."
+              }
+            },
+            "required": [
+              "currency",
+              "value"
+            ]
+          },
+          "redirectUrl": {
+            "type": "string",
+            "description": "Where the customer lands after paying."
+          },
+          "webhookUrl": {
+            "type": "string",
+            "description": "Where Mollie posts status changes."
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "Expiry as ISO 8601, e.g. 2026-11-30T23:59:00+01:00."
+          },
+          "reusable": {
+            "type": "boolean",
+            "description": "true lets the link be paid more than once."
+          },
+          "allowedMethods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Restrict the methods, e.g. [\"ideal\", \"creditcard\", \"banktransfer\"]."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Order lines: [{\"description\", \"quantity\", \"unitPrice\": {currency, value}, \"totalAmount\": {currency, value}, \"vatRate\": \"21.00\", \"vatAmount\": {currency, value}}]."
+          },
+          "billingAddress": {
+            "type": "object",
+            "description": "{\"givenName\", \"familyName\", \"organizationName\", \"email\", \"streetAndNumber\", \"postalCode\", \"city\", \"country\"}."
+          },
+          "shippingAddress": {
+            "type": "object",
+            "description": "Same shape as billingAddress."
+          },
+          "profileId": {
+            "type": "string",
+            "description": "Only with an organization access token. Leave out with an API key (live_ or test_): the key already belongs to one profile."
+          }
+        },
+        "required": [
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payment-links",
+        "bodyMapping": {
+          "description": "$description",
+          "amount": "$amount",
+          "redirectUrl": "$redirectUrl",
+          "webhookUrl": "$webhookUrl",
+          "expiresAt": "$expiresAt",
+          "reusable": "$reusable",
+          "allowedMethods": "$allowedMethods",
+          "lines": "$lines",
+          "billingAddress": "$billingAddress",
+          "shippingAddress": "$shippingAddress",
+          "profileId": "$profileId"
+        }
       }
     }
   ]

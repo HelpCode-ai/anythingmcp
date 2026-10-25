@@ -22,7 +22,7 @@ import { getAdapter, listAdapters } from '../catalog';
  *
  *   2. Live: skipped unless MIRAKL_URL and MIRAKL_API_KEY are set. Reads
  *      only: the shop, orders, offers, imports, threads, returns, reasons,
- *      carriers, invoices and transactions.
+ *      carriers and the other reference lists, invoices and transactions.
  *
  *        MIRAKL_URL=https://<operator>.mirakl.net MIRAKL_API_KEY=... \
  *          npx jest src/adapters/intl/mirakl.live.spec.ts
@@ -124,10 +124,13 @@ const formPart = (form: FormData, name: string) => {
 
 const WRITES = [
   'mirakl_accept_order',
+  'mirakl_accept_return',
   'mirakl_create_order_thread',
   'mirakl_import_offers',
   'mirakl_import_products',
+  'mirakl_receive_return',
   'mirakl_reply_thread',
+  'mirakl_resolve_incident',
   'mirakl_ship_order',
   'mirakl_update_offers',
   'mirakl_update_tracking',
@@ -263,12 +266,21 @@ describe('mirakl adapter: static spec conformance', () => {
     ['mirakl_list_carriers', {}, 'GET', '/shipping/carriers', 'SH21'],
     ['mirakl_list_invoices', {}, 'GET', '/invoices', 'IV01'],
     ['mirakl_list_transactions', {}, 'GET', '/sellerpayment/transactions_logs', 'TL02'],
+    ['mirakl_list_document_requests', {}, 'GET', '/document-request/requests', 'DR11'],
+    ['mirakl_list_order_documents', { order_ids: '1234567-A' }, 'GET', '/orders/documents', 'OR72'],
+    ['mirakl_list_channels', {}, 'GET', '/channels', 'CH11'],
+    ['mirakl_list_shipping_zones', {}, 'GET', '/shipping/zones', 'SH11'],
+    ['mirakl_list_shipping_methods', {}, 'GET', '/shipping/types', 'SH12'],
+    ['mirakl_list_logistic_classes', {}, 'GET', '/shipping/logistic_classes', 'SH31'],
     ['mirakl_accept_order', { order_id: '1234567-A', order_lines: [{ id: '1234567-A-1', accepted: true }] }, 'PUT', '/orders/1234567-A/accept', 'OR21'],
     ['mirakl_update_tracking', { order_id: '1234567-A', carrier_code: 'UPS', tracking_number: '1Z999' }, 'PUT', '/orders/1234567-A/tracking', 'OR23'],
     ['mirakl_ship_order', { order_id: '1234567-A' }, 'PUT', '/orders/1234567-A/ship', 'OR24'],
     ['mirakl_update_offers', { offers: [{ shop_sku: 'S1', state_code: '11', price: 10 }] }, 'POST', '/offers', 'OF24'],
     ['mirakl_reply_thread', { thread_id: 't-1', body: 'Hello', to: [{ type: 'CUSTOMER' }] }, 'POST', '/inbox/threads/t-1/message', 'M12'],
     ['mirakl_create_order_thread', { order_id: '1234567-A', body: 'Hello', to: ['CUSTOMER'], topic_value: 'Delivery' }, 'POST', '/orders/1234567-A/threads', 'OR43'],
+    ['mirakl_resolve_incident', { order_id: '1234567-A', order_line_id: '1234567-A-1', reason_code: '13' }, 'PUT', '/orders/1234567-A/lines/1234567-A-1/resolve_incident', 'OR64'],
+    ['mirakl_accept_return', { return_id: 'r-1', accepted: true }, 'PUT', '/returns/accept', 'RT21'],
+    ['mirakl_receive_return', { return_id: 'r-1' }, 'PUT', '/returns/receive', 'RT25'],
     ['mirakl_import_products', { file_url: 'https://files.example.com/products.csv' }, 'POST', '/products/imports', 'P41'],
     ['mirakl_import_offers', { file_url: 'https://files.example.com/offers.csv' }, 'POST', '/offers/imports', 'OF01'],
   ];
@@ -349,6 +361,36 @@ describe('mirakl adapter: static spec conformance', () => {
     });
   });
 
+  it('closes an incident on one order line with the reason code in the body', async () => {
+    mockedAxios.mockResolvedValue({ data: '' });
+    await call('mirakl_resolve_incident', { order_id: '1234567-A', order_line_id: '1234567-A-1', reason_code: '13' });
+    expect(sent().data).toEqual({ reason_code: '13' });
+  });
+
+  it('decides and receives one return at a time with the body RT21 and RT25 expect', async () => {
+    mockedAxios.mockResolvedValue({ data: '' });
+    await call('mirakl_accept_return', { return_id: 'r-1', accepted: true });
+    expect(sent().data).toEqual({ returns: [{ id: 'r-1', accepted: true }] });
+    mockedAxios.mockClear();
+    await call('mirakl_accept_return', { return_id: 'r-2', accepted: false, rejection_reason_code: 'RETURN_REJECTION_WINDOW_CLOSED' });
+    expect(sent().data).toEqual({ returns: [{ id: 'r-2', accepted: false, rejection_reason_code: 'RETURN_REJECTION_WINDOW_CLOSED' }] });
+    mockedAxios.mockClear();
+    await call('mirakl_receive_return', { return_id: 'r-1' });
+    expect(sent().data).toEqual({ returns: [{ id: 'r-1' }] });
+  });
+
+  it('offers no tool that refunds, cancels an order or moves money', () => {
+    for (const t of a.tools) expect(t.endpointMapping.path).not.toMatch(/refund|cancel|payout|promotions/);
+  });
+
+  it('is found by the names of the marketplaces that run on Mirakl', () => {
+    const aliases = (adapter as unknown as { aliases: string[] }).aliases;
+    for (const name of ['Leroy Merlin', 'ADEO', 'Conforama', 'BUT', 'home24', 'Maisons du Monde', 'Vente-unique', 'ePrice']) expect(aliases).toContain(name);
+    for (const url of ['adeo-marketplace.mirakl.net', 'but-prod.mirakl.net', 'conforama-prod.mirakl.net', 'home24.mirakl.net', 'maisonsdumonde-prod.mirakl.net', 'venteunique-prod.mirakl.net']) {
+      expect(a.instructions).toContain(`https://${url}`);
+    }
+  });
+
   it('uploads import files fetched from the given URL as the file part', async () => {
     mockedAxios.mockResolvedValue({ data: { import_id: 5 } });
     mockedFetchOutbound.mockResolvedValue({
@@ -409,6 +451,8 @@ live('mirakl adapter: live shop API (reads only)', () => {
     expect(Array.isArray((await run('mirakl_list_returns', { limit: 2 })).data)).toBe(true);
     expect(Array.isArray((await run('mirakl_list_reasons')).reasons)).toBe(true);
     expect(Array.isArray((await run('mirakl_list_carriers')).carriers)).toBe(true);
+    expect(Array.isArray((await run('mirakl_list_channels')).channels)).toBe(true);
+    expect(Array.isArray((await run('mirakl_list_logistic_classes')).logistic_classes)).toBe(true);
   }, 120_000);
 
   it('reads invoices and transactions', async () => {
