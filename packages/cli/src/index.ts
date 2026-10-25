@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
 import { readConfig, writeConfig, profileName, type Profile } from './config.js';
 import { listClientTools, listTools, serverUrl, withClient } from './mcp.js';
+import { completionScript, isShell } from './completion.js';
 
 class CliError extends Error {
   constructor(message: string, readonly exitCode: number) { super(message); }
@@ -125,6 +126,14 @@ function classifyConnectionError(error: unknown): CliError {
   return new CliError('Could not connect to the MCP server or complete the request', 4);
 }
 
+// Shell completion (completion.ts) must offer every option here; the tests check it.
+export const OPTIONS = {
+  url: { type: 'string' }, server: { type: 'string' }, profile: { type: 'string' },
+  'key-stdin': { type: 'boolean' }, filter: { type: 'string' }, help: { type: 'boolean', short: 'h' },
+  args: { type: 'string' }, yes: { type: 'boolean' }, json: { type: 'boolean' },
+  timeout: { type: 'string' },
+} as const;
+
 function usage(): string {
   return `Usage:
   amcp login --url <instance-url> --server <server-id> [--key-stdin] [--profile <name>]
@@ -133,6 +142,7 @@ function usage(): string {
   amcp tools ls [--filter <text>] [--profile <name>]
   amcp tools describe <name> [--profile <name>]
   amcp tools call <name> [--args '<json>' | --args @file.json | --args -] [--yes] [--timeout <seconds>]
+  amcp completion <bash|zsh|fish>
 
 Use --json for machine-readable output. For CI, set AMCP_URL, AMCP_SERVER and AMCP_API_KEY.
 The key is never accepted as a command argument.`;
@@ -143,12 +153,7 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
   try {
     const { values, positionals } = parseArgs({
       args,
-      options: {
-        url: { type: 'string' }, server: { type: 'string' }, profile: { type: 'string' },
-        'key-stdin': { type: 'boolean' }, filter: { type: 'string' }, help: { type: 'boolean', short: 'h' },
-        args: { type: 'string' }, yes: { type: 'boolean' }, json: { type: 'boolean' },
-        timeout: { type: 'string' },
-      },
+      options: OPTIONS,
       allowPositionals: true,
     });
     json = values.json === true;
@@ -156,10 +161,18 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
       print({ usage: usage() }, json, () => process.stdout.write(usage() + '\n'));
       return 0;
     }
+    const [command, subcommand] = positionals;
+    if (command === 'completion') {
+      if (positionals.length !== 2 || !isShell(subcommand)) {
+        throw new CliError('Usage: amcp completion <bash|zsh|fish>', 2);
+      }
+      // A shell sources this output, so it stays plain text even with --json.
+      process.stdout.write(completionScript(subcommand));
+      return 0;
+    }
     let name: string;
     try { name = profileName(values.profile || 'default'); }
     catch { throw new CliError('Invalid profile name', 2); }
-    const [command, subcommand] = positionals;
     const timeoutSeconds = values.timeout === undefined ? 300 : Number(values.timeout);
     if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > 2147483.647 ||
         (values.timeout !== undefined && !/^\d+(?:\.\d+)?$/.test(values.timeout))) {
