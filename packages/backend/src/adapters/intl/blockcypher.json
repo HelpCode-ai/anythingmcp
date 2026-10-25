@@ -1,0 +1,437 @@
+{
+  "slug": "blockcypher",
+  "name": "BlockCypher",
+  "aliases": [
+    "BlockCypher API",
+    "Bitcoin blockchain API"
+  ],
+  "description": "Public blockchain data from BlockCypher for Bitcoin, Litecoin, Dogecoin, Dash and Ethereum: chain state and fee estimates, blocks, address balances, address transaction histories, single transactions and the mempool. Read-only, works without a token on the free tier.",
+  "instructions": "## BlockCypher\nThis connector reads public blockchain data from the **BlockCypher API v1** (`https://api.blockcypher.com/v1`): chain state and fee estimates, blocks, address balances and histories, transactions and unconfirmed transactions on Bitcoin, Litecoin, Dogecoin, Dash and Ethereum. All tools are read-only; nothing is sent, signed or created.\n\n**Setup**\n- Nothing is required: BlockCypher answers read-only GET calls without a token.\n- Optional `BLOCKCYPHER_TOKEN`: sign up at https://accounts.blockcypher.com, copy the token from the dashboard. It is needed for `blockcypher_get_transaction_confidence`, for wallet names, and to raise limits on a paid plan. It is sent as the `token` query parameter.\n\n**Networks**: every tool takes `network` as `coin/chain`: `btc/main`, `ltc/main`, `doge/main`, `dash/main`, `eth/main`, or the test chains `btc/test3`, `bcy/test`, `beth/test`. Ethereum addresses are written without `0x`.\n\n**Amounts**: always in the smallest unit. Bitcoin, Litecoin, Dogecoin and Dash have 10^8 units per coin (100,000,000 satoshi = 1 BTC); Ethereum has 10^18 wei per ether. Convert before quoting an amount to the user. Times are ISO 8601 in UTC.\n\n**Workflow**\n- Where is the chain now: `blockcypher_get_chain` (height, latest block, fee estimates per kB).\n- How much is on an address: `blockcypher_get_address_balance` (`final_balance` includes unconfirmed transactions, `balance` only confirmed ones).\n- What happened on an address: `blockcypher_get_address` for light references or UTXOs (`unspent_only`), `blockcypher_get_address_full` for complete transactions. Both return newest first; while `hasMore` is true, call again with `before` = the lowest `block_height` you received. To fetch only what is new since a known height, use `after`.\n- One transaction: `blockcypher_get_transaction`; confirmations = chain height - block height + 1. For a still unconfirmed one, `blockcypher_get_transaction_confidence` (token required).\n- Blocks: `blockcypher_get_block` by hash or height. Mempool: `blockcypher_list_unconfirmed_transactions`.\n\n**Limits**: the free tier allows 3 requests per second and 100 requests per hour, with or without a token (confidence lookups 10 per hour); the hourly window resets at the top of the hour UTC. `blockcypher_get_chain` returns the remaining hourly calls in `_headers.x-ratelimit-remaining`. Prefer the balance call over the full address call, and keep `limit` small.\n\n**Errors**: 429 means the hourly or per-second limit is used up; wait until the next full hour or add a paid token. 404 means an unknown address, hash or block on that network (check that the address belongs to the chosen coin). 401 on the confidence call means the token is missing or wrong.\n\n**Limitations**: no sending, signing, wallet management, webhooks or asset (OAP) calls. Ethereum token (ERC-20) balances are not covered.",
+  "region": "intl",
+  "category": "data",
+  "icon": "blockcypher",
+  "docsUrl": "https://www.blockcypher.com/dev/bitcoin/",
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "BLOCKCYPHER_TOKEN"
+  ],
+  "envVarMeta": {
+    "BLOCKCYPHER_TOKEN": {
+      "label": "API token (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Leave empty for the free keyless tier. With an account at accounts.blockcypher.com, copy the token from the dashboard; it is needed for transaction confidence and higher paid limits.",
+      "link": "https://accounts.blockcypher.com/",
+      "pattern": "^[A-Fa-f0-9]{32}$",
+      "patternMessage": "Paste only the 32-character token from the BlockCypher dashboard."
+    }
+  },
+  "verifyHints": {
+    "401": "BlockCypher refused the token. Copy it again from accounts.blockcypher.com, or leave BLOCKCYPHER_TOKEN empty for the keyless free tier.",
+    "429": "The BlockCypher free tier allows 100 requests per hour and 3 per second. Wait until the next full hour (UTC) or use a paid token."
+  },
+  "probe": {
+    "tool": "blockcypher_get_chain",
+    "params": {
+      "network": "btc/main"
+    }
+  },
+  "connector": {
+    "name": "BlockCypher API v1",
+    "type": "REST",
+    "baseUrl": "https://api.blockcypher.com/v1",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "blockcypher_get_chain",
+      "description": "Get the current state of a blockchain: height, hash and time of the latest block, previous block, unconfirmed transaction count, peer count and the fee estimates (high_fee_per_kb, medium_fee_per_kb, low_fee_per_kb in the smallest unit). Use it as the first call and to know the current block height for confirmations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Blockchain as coin/chain: btc/main (Bitcoin), ltc/main (Litecoin), doge/main (Dogecoin), dash/main (Dash), eth/main (Ethereum), btc/test3 (Bitcoin testnet), bcy/test and beth/test (BlockCypher test chains).",
+            "enum": [
+              "btc/main",
+              "btc/test3",
+              "ltc/main",
+              "doge/main",
+              "dash/main",
+              "eth/main",
+              "bcy/test",
+              "beth/test"
+            ]
+          }
+        },
+        "required": [
+          "network"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{network}",
+        "queryParams": {
+          "token": "${BLOCKCYPHER_TOKEN}"
+        },
+        "exposeHeaders": [
+          "x-ratelimit-remaining"
+        ]
+      }
+    },
+    {
+      "name": "blockcypher_get_block",
+      "description": "Get one block by its hash or its height: time, total amount transacted, fees, transaction count and the transaction hashes in block order (up to limit, default 20, max 500; page with txstart).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Blockchain as coin/chain: btc/main (Bitcoin), ltc/main (Litecoin), doge/main (Dogecoin), dash/main (Dash), eth/main (Ethereum), btc/test3 (Bitcoin testnet), bcy/test and beth/test (BlockCypher test chains).",
+            "enum": [
+              "btc/main",
+              "btc/test3",
+              "ltc/main",
+              "doge/main",
+              "dash/main",
+              "eth/main",
+              "bcy/test",
+              "beth/test"
+            ]
+          },
+          "block": {
+            "type": "string",
+            "description": "Block hash (hex) or block height (integer as text), e.g. 294322."
+          },
+          "txstart": {
+            "type": "integer",
+            "description": "Only list transaction hashes after this index in the block (for paging)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum transaction hashes to list, up to 500."
+          }
+        },
+        "required": [
+          "network",
+          "block"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{network}/blocks/{block}",
+        "queryParams": {
+          "txstart": "$txstart",
+          "limit": "$limit",
+          "token": "${BLOCKCYPHER_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "blockcypher_get_address_balance",
+      "description": "Get the balance of an address, fastest call: balance, unconfirmed_balance and final_balance, total_received, total_sent and the number of confirmed and unconfirmed transactions. Amounts are in the smallest unit (satoshi, litoshi, koinu, duff, or wei on Ethereum).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Blockchain as coin/chain: btc/main (Bitcoin), ltc/main (Litecoin), doge/main (Dogecoin), dash/main (Dash), eth/main (Ethereum), btc/test3 (Bitcoin testnet), bcy/test and beth/test (BlockCypher test chains).",
+            "enum": [
+              "btc/main",
+              "btc/test3",
+              "ltc/main",
+              "doge/main",
+              "dash/main",
+              "eth/main",
+              "bcy/test",
+              "beth/test"
+            ]
+          },
+          "address": {
+            "type": "string",
+            "description": "Public address on that chain, e.g. 1DEP8i3QJCsomS4BSMY2RpU1upv62aGvhD (Bitcoin) or 738d145faabb1e00cf5a017588a9c0f998318012 (Ethereum, without 0x). A wallet name created with a token also works."
+          }
+        },
+        "required": [
+          "network",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{network}/addrs/{address}/balance",
+        "queryParams": {
+          "token": "${BLOCKCYPHER_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "blockcypher_get_address",
+      "description": "Get an address with its balance and transaction references (txrefs: tx_hash, block_height, value, spent, confirmations, tx_input_n / tx_output_n; unconfirmed ones in unconfirmed_txrefs), newest first. Lighter than blockcypher_get_address_full. Use unspent_only for UTXOs. Page with before = the lowest block_height of the previous page while hasMore is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Blockchain as coin/chain: btc/main (Bitcoin), ltc/main (Litecoin), doge/main (Dogecoin), dash/main (Dash), eth/main (Ethereum), btc/test3 (Bitcoin testnet), bcy/test and beth/test (BlockCypher test chains).",
+            "enum": [
+              "btc/main",
+              "btc/test3",
+              "ltc/main",
+              "doge/main",
+              "dash/main",
+              "eth/main",
+              "bcy/test",
+              "beth/test"
+            ]
+          },
+          "address": {
+            "type": "string",
+            "description": "Public address on that chain, e.g. 1DEP8i3QJCsomS4BSMY2RpU1upv62aGvhD (Bitcoin) or 738d145faabb1e00cf5a017588a9c0f998318012 (Ethereum, without 0x). A wallet name created with a token also works."
+          },
+          "unspent_only": {
+            "type": "boolean",
+            "description": "Only unspent outputs (UTXOs)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only transactions below this block height (paging)."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Only transactions above this block height."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Minimum number of txrefs to return, default 200, max 2000."
+          },
+          "confirmations": {
+            "type": "integer",
+            "description": "Only count transactions with at least this many confirmations."
+          },
+          "include_confidence": {
+            "type": "boolean",
+            "description": "Add the confidence figure to unconfirmed txrefs."
+          }
+        },
+        "required": [
+          "network",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{network}/addrs/{address}",
+        "queryParams": {
+          "unspentOnly": "$unspent_only",
+          "before": "$before",
+          "after": "$after",
+          "limit": "$limit",
+          "confirmations": "$confirmations",
+          "includeConfidence": "$include_confidence",
+          "token": "${BLOCKCYPHER_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "blockcypher_get_address_full",
+      "description": "Get an address with its complete transactions (inputs, outputs, fees, confirmations, block height and time), newest first. The slowest address call: default 10 transactions, max 50. Page with before = the lowest block_height of the previous page while hasMore is true; txlimit caps inputs and outputs per transaction.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Blockchain as coin/chain: btc/main (Bitcoin), ltc/main (Litecoin), doge/main (Dogecoin), dash/main (Dash), eth/main (Ethereum), btc/test3 (Bitcoin testnet), bcy/test and beth/test (BlockCypher test chains).",
+            "enum": [
+              "btc/main",
+              "btc/test3",
+              "ltc/main",
+              "doge/main",
+              "dash/main",
+              "eth/main",
+              "bcy/test",
+              "beth/test"
+            ]
+          },
+          "address": {
+            "type": "string",
+            "description": "Public address on that chain, e.g. 1DEP8i3QJCsomS4BSMY2RpU1upv62aGvhD (Bitcoin) or 738d145faabb1e00cf5a017588a9c0f998318012 (Ethereum, without 0x). A wallet name created with a token also works."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only transactions below this block height (paging)."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Only transactions above this block height, e.g. to fetch only what is new since the last check."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of transactions, default 10, max 50."
+          },
+          "txlimit": {
+            "type": "integer",
+            "description": "Maximum inputs and outputs listed per transaction."
+          },
+          "confirmations": {
+            "type": "integer",
+            "description": "Only transactions with at least this many confirmations."
+          }
+        },
+        "required": [
+          "network",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{network}/addrs/{address}/full",
+        "queryParams": {
+          "before": "$before",
+          "after": "$after",
+          "limit": "$limit",
+          "txlimit": "$txlimit",
+          "confirmations": "$confirmations",
+          "token": "${BLOCKCYPHER_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "blockcypher_get_transaction",
+      "description": "Get one transaction by its hash: block height and hash, confirmations, received and confirmed time, total, fees, size, double_spend flag and its inputs and outputs (addresses and values in the smallest unit). Inputs and outputs are capped by limit (default 20); page with instart / outstart.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Blockchain as coin/chain: btc/main (Bitcoin), ltc/main (Litecoin), doge/main (Dogecoin), dash/main (Dash), eth/main (Ethereum), btc/test3 (Bitcoin testnet), bcy/test and beth/test (BlockCypher test chains).",
+            "enum": [
+              "btc/main",
+              "btc/test3",
+              "ltc/main",
+              "doge/main",
+              "dash/main",
+              "eth/main",
+              "bcy/test",
+              "beth/test"
+            ]
+          },
+          "tx_hash": {
+            "type": "string",
+            "description": "Transaction hash (hex), e.g. f854aebae95150b379cc1187d848d58225f3c4157fe992bcd166f58bd5063449."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum inputs and outputs to list, default 20."
+          },
+          "instart": {
+            "type": "integer",
+            "description": "Only list inputs from this index."
+          },
+          "outstart": {
+            "type": "integer",
+            "description": "Only list outputs from this index."
+          }
+        },
+        "required": [
+          "network",
+          "tx_hash"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{network}/txs/{tx_hash}",
+        "queryParams": {
+          "limit": "$limit",
+          "instart": "$instart",
+          "outstart": "$outstart",
+          "token": "${BLOCKCYPHER_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "blockcypher_get_transaction_confidence",
+      "description": "Get the confidence that an unconfirmed transaction will be confirmed (confidence 0 to 1, receive_count, age_millis). Needs a BLOCKCYPHER_TOKEN; the free tier allows 10 such lookups per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Blockchain as coin/chain: btc/main (Bitcoin), ltc/main (Litecoin), doge/main (Dogecoin), dash/main (Dash), eth/main (Ethereum), btc/test3 (Bitcoin testnet), bcy/test and beth/test (BlockCypher test chains).",
+            "enum": [
+              "btc/main",
+              "btc/test3",
+              "ltc/main",
+              "doge/main",
+              "dash/main",
+              "eth/main",
+              "bcy/test",
+              "beth/test"
+            ]
+          },
+          "tx_hash": {
+            "type": "string",
+            "description": "Hash of an unconfirmed transaction (hex)."
+          }
+        },
+        "required": [
+          "network",
+          "tx_hash"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{network}/txs/{tx_hash}/confidence",
+        "queryParams": {
+          "token": "${BLOCKCYPHER_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "blockcypher_list_unconfirmed_transactions",
+      "description": "List the latest transactions relayed to the network that are not yet in a block (mempool), newest first: hash, total, fees, inputs and outputs. Default 10, max 100.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Blockchain as coin/chain: btc/main (Bitcoin), ltc/main (Litecoin), doge/main (Dogecoin), dash/main (Dash), eth/main (Ethereum), btc/test3 (Bitcoin testnet), bcy/test and beth/test (BlockCypher test chains).",
+            "enum": [
+              "btc/main",
+              "btc/test3",
+              "ltc/main",
+              "doge/main",
+              "dash/main",
+              "eth/main",
+              "bcy/test",
+              "beth/test"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of transactions, default 10, max 100."
+          },
+          "min_value": {
+            "type": "integer",
+            "description": "Only transactions moving more than this amount, in the smallest unit."
+          }
+        },
+        "required": [
+          "network"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{network}/txs",
+        "queryParams": {
+          "limit": "$limit",
+          "minValue": "$min_value",
+          "token": "${BLOCKCYPHER_TOKEN}"
+        }
+      }
+    }
+  ]
+}

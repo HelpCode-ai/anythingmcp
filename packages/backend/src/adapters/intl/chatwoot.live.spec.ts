@@ -4,8 +4,6 @@ import { applyResponseTransform } from '../../connectors/response-transform.util
 /**
  * Chatwoot Application API (developers.chatwoot.com, swagger in the chatwoot repository):
  * api_access_token header, /api/v1/accounts/{id}/... and the /api/v2 reports.
- * Built from a customer's hand-built Cloud connector (self-hosted Chatwoot) and checked
- * read-only with its token on 22 Oct 2026.
  * Live part: CHATWOOT_URL=... CHATWOOT_API_TOKEN=... CHATWOOT_ACCOUNT_ID=... RUN_CHATWOOT_LIVE=1 npx jest src/adapters/intl/chatwoot
  * (reads only: profile, inboxes, open conversations, contacts).
  */
@@ -54,9 +52,7 @@ const used = (t: Tool) => {
   return out;
 };
 const PREFIX = 'chatwoot_';
-const WRITES: string[] = ["chatwoot_create_conversation", "chatwoot_send_message"];
-// Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
-const HAND_BUILT: string[] = ["add_new_agent_to_account", "contactsearch", "conversation_add_labels", "conversationfilter", "conversationlist", "create_a_new_message_in_a_conversation", "delete_agent_from_account", "fetchprofile", "get_account_agents", "get_details_of_a_conversation", "get_inbox_members", "get_sso_url_of_a_user", "getconversationmessages", "list_all_account_users", "list_all_labels", "list_all_messages", "listallinboxes", "newconversation"];
+const WRITES: string[] = ["chatwoot_add_agent", "chatwoot_create_conversation", "chatwoot_remove_agent", "chatwoot_send_message", "chatwoot_update_agent"];
 
 describe('chatwoot adapter: static spec conformance', () => {
 
@@ -85,6 +81,17 @@ describe('chatwoot adapter: static spec conformance', () => {
     expect(tool('chatwoot_set_conversation_labels').endpointMapping).toMatchObject({ method: 'POST', path: `${ACC}/conversations/{conversation_id}/labels`, bodyMapping: { labels: '$labels' } });
     expect(tool('chatwoot_set_conversation_labels').annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
     expect(tool('chatwoot_set_conversation_labels').description).toMatch(/REPLACES/);
+  });
+
+  it('maps agent management to the documented Agents routes, switched off', () => {
+    const ACC = '/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}';
+    expect(tool('chatwoot_add_agent').endpointMapping).toEqual({ method: 'POST', path: `${ACC}/agents`, bodyMapping: { name: '$name', email: '$email', role: '$role', availability: '$availability', auto_offline: '$auto_offline' } });
+    expect(tool('chatwoot_add_agent').parameters?.required).toEqual(['name', 'email', 'role']);
+    expect(tool('chatwoot_update_agent').endpointMapping).toEqual({ method: 'PATCH', path: `${ACC}/agents/{agent_id}`, bodyMapping: { role: '$role', availability: '$availability', auto_offline: '$auto_offline' } });
+    expect(tool('chatwoot_update_agent').parameters?.required).toEqual(['agent_id', 'role']);
+    expect(tool('chatwoot_remove_agent').endpointMapping).toEqual({ method: 'DELETE', path: `${ACC}/agents/{agent_id}` });
+    for (const n of ['chatwoot_add_agent', 'chatwoot_update_agent', 'chatwoot_remove_agent']) expect(tool(n).enabled).toBe(false);
+    expect(tool('chatwoot_remove_agent').annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
   });
 
   it('never hands channel secrets or the user token to the model', () => {
@@ -134,11 +141,6 @@ describe('chatwoot adapter: static spec conformance', () => {
       if (t.endpointMapping.method !== 'GET') expect(`${t.name}:${t.annotations?.readOnlyHint}`).toBe(`${t.name}:true`);
     }
     for (const n of WRITES) expect(tool(n).annotations?.readOnlyHint).toBe(false);
-  });
-
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
   });
 
   it('probes with a read tool and documents every tool in the instructions', () => {

@@ -2,12 +2,12 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.HelpCode-ai/anythingmcp",
   "title": "AnythingMCP",
-  "description": "Any REST/SOAP/GraphQL/OData/SQL API as MCP tools for Claude & ChatGPT. 529 connectors: SAP, ERP.",
+  "description": "Any REST/SOAP/GraphQL/OData/SQL API as MCP tools for Claude & ChatGPT. 545 connectors: SAP, ERP.",
   "repository": {
     "url": "https://github.com/HelpCode-ai/anythingmcp",
     "source": "github"
   },
-  "version": "0.47.2",
+  "version": "0.48.0",
   "websiteUrl": "https://anythingmcp.com",
   "icons": [
     {

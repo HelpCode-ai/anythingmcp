@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma.service';
 import { encrypt, decrypt } from '../../common/crypto/encryption.util';
@@ -9,6 +10,8 @@ import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
 import { urlForLog } from '../../common/log-safe-url.util';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
+import { ClientAssertionError, signJwt } from './client-assertion.util';
+import { findUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 
 const DEFAULT_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const DEFAULT_PROACTIVE_REFRESH_SECONDS = 24 * 60 * 60; // 1 day
@@ -71,10 +74,29 @@ export interface LoginTokenAuthConfig {
   // …or a raw string template (deprecated, brittle for GraphQL mutations).
   loginBodyTemplate?: string;
   loginHeaders?: Record<string, string>;
+  // Required, unless the login proves who it is with `signedJwt` instead.
   username: string;
   password: string;
   aud?: string;
   otp?: string;
+
+  /**
+   * Sign a JWT with the account's private key for each login, for APIs whose
+   * login takes a client-signed token instead of a password (noon's Partner
+   * API: RS256, `sub` = the key id). The token is `${signedJwt}` (or
+   * `${outputParam}`) in loginBody/loginBodyTemplate. Every login signs a new
+   * one: `iat` = now in whole seconds and a random `jti`, then `claims`;
+   * `exp` = iat + ttlSeconds only when ttlSeconds is set. The key is read as
+   * in client-assertion.util.ts (PEM, also pasted on one line).
+   */
+  signedJwt?: {
+    privateKey: string;
+    algorithm?: string; // default RS256
+    keyId?: string; // `kid` header
+    ttlSeconds?: number;
+    claims?: Record<string, unknown>;
+    outputParam?: string; // template param name (default: signedJwt)
+  };
 
   passwordHashing?: {
     scheme: 'bcrypt' | 'none';
@@ -275,21 +297,31 @@ export class LoginTokenService {
     request: LoginRequestOptions,
   ): Promise<LoginTokenBundle> {
     this.requireString(authConfig.loginUrl, 'loginUrl');
-    this.requireString(authConfig.username, 'username');
-    this.requireString(authConfig.password, 'password');
+    if (!authConfig.signedJwt) {
+      this.requireString(authConfig.username, 'username');
+      this.requireString(authConfig.password, 'password');
+    }
     if (authConfig.tokenSource !== 'cookie') {
       this.requireString(authConfig.tokenJsonPath, 'tokenJsonPath');
     }
 
-    const passwordToSend = await this.preparePassword(authConfig, request);
+    const passwordToSend = authConfig.signedJwt && authConfig.password === undefined
+      ? ''
+      : await this.preparePassword(authConfig, request);
+    const signedToken = authConfig.signedJwt
+      ? signLoginJwt(authConfig.signedJwt)
+      : undefined;
 
     const templateParams: Record<string, string> = {
-      username: authConfig.username,
+      username: authConfig.username ?? '',
       [authConfig.passwordHashing?.outputParam || 'passwordHashed']:
         passwordToSend,
       password: passwordToSend,
       aud: authConfig.aud || '',
       otp: authConfig.otp || '',
+      ...(signedToken !== undefined && {
+        [authConfig.signedJwt?.outputParam || 'signedJwt']: signedToken,
+      }),
     };
 
     const method = (authConfig.loginMethod || 'POST').toUpperCase();
@@ -321,7 +353,7 @@ export class LoginTokenService {
     }
 
     this.logger.debug(
-      `LOGIN_TOKEN: logging in via ${method} ${urlForLog(url, { secrets: [authConfig.password, passwordToSend] })}${request.proxyUrl ? ' (via proxy)' : ''}`,
+      `LOGIN_TOKEN: logging in via ${method} ${urlForLog(url, { secrets: [authConfig.password, passwordToSend, signedToken ?? ''] })}${request.proxyUrl ? ' (via proxy)' : ''}`,
     );
     const response = await axios({
       method,
@@ -504,7 +536,8 @@ export class LoginTokenService {
     connectorId?: string,
   ): string {
     if (connectorId) return connectorId;
-    return `${authConfig.loginUrl}|${authConfig.username}`;
+    const who = authConfig.username ?? authConfig.signedJwt?.claims?.sub;
+    return `${authConfig.loginUrl}|${String(who ?? '')}`;
   }
 
   private async loadFromDb(
@@ -598,6 +631,49 @@ export function jsonPath(value: unknown, path: string): unknown {
  * awareness — use `loginBody` (structured) instead of `loginBodyTemplate` (raw)
  * when the body contains nested string contexts (e.g. GraphQL mutations).
  */
+/**
+ * The JWT a `signedJwt` login sends. Errors name what is wrong (key missing,
+ * not PEM, wrong type, a claim whose variable is empty) and never carry key
+ * material. Exported for the tests.
+ */
+export function signLoginJwt(
+  cfg: NonNullable<LoginTokenAuthConfig['signedJwt']>,
+  now: number = Date.now(),
+): string {
+  const claims = cfg.claims ?? {};
+  for (const [name, v] of Object.entries(claims)) {
+    if (typeof v !== 'string') continue;
+    const unresolved = findUnresolvedPlaceholders(v);
+    if (!v.trim() || unresolved.length > 0) {
+      throw new Error(
+        `LOGIN_TOKEN: signedJwt: the "${name}" claim is not set` +
+          (unresolved.length > 0 ? ` ({{${unresolved[0]}}} has no value)` : ''),
+      );
+    }
+  }
+  const iat = Math.floor(now / 1000);
+  const ttl = Number(cfg.ttlSeconds);
+  const payload: Record<string, unknown> = {
+    iat,
+    jti: randomUUID(),
+    ...claims,
+    ...(Number.isFinite(ttl) && ttl > 0 ? { exp: iat + Math.floor(ttl) } : {}),
+  };
+  try {
+    return signJwt({
+      privateKey: cfg.privateKey,
+      algorithm: cfg.algorithm,
+      keyId: cfg.keyId,
+      payload,
+    });
+  } catch (err) {
+    if (err instanceof ClientAssertionError) {
+      throw new Error(`LOGIN_TOKEN: signedJwt: ${err.message.replace(/^client assertion: /, '')}`);
+    }
+    throw err;
+  }
+}
+
 export function renderTemplate(
   template: string,
   params: Record<string, string>,

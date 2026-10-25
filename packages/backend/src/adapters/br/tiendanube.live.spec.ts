@@ -1,11 +1,13 @@
 import * as adapter from './tiendanube.json';
 const a = adapter as unknown as {
+  instructions: string;
   requiredEnvVars: string[];
   connector: { baseUrl: string; authType: string; authConfig: Record<string, string>; headers: Record<string, string> };
   probe: { tool: string };
   tools: Array<{
     name: string;
-    parameters?: { properties?: Record<string, unknown> };
+    enabled?: boolean;
+    parameters?: { properties?: Record<string, unknown>; required?: string[] };
     endpointMapping: { method: string; path: string; queryParams?: Record<string, string>; bodyMapping?: Record<string, string> };
     annotations?: Record<string, boolean>;
   }>;
@@ -46,5 +48,33 @@ describe('tiendanube adapter: static spec conformance', () => {
       const body = Object.keys(t.endpointMapping.bodyMapping ?? {});
       expect(body.includes('published') && body.includes('visibility')).toBe(false);
     }
+  });
+
+  it('manages product images on the documented routes; removing one installs switched off', () => {
+    const t = (n: string) => a.tools.find((x) => x.name === n)!;
+    expect(t('tiendanube_list_product_images').endpointMapping).toMatchObject({ method: 'GET', path: '/products/{product_id}/images' });
+    expect(t('tiendanube_add_product_image').endpointMapping).toEqual({
+      method: 'POST',
+      path: '/products/{product_id}/images',
+      bodyMapping: { src: '$src', attachment: '$attachment', filename: '$filename', position: '$position', alt: '$alt' },
+    });
+    expect(t('tiendanube_update_product_image').endpointMapping).toEqual({
+      method: 'PUT',
+      path: '/products/{product_id}/images/{image_id}',
+      bodyMapping: { position: '$position', alt: '$alt', src: '$src' },
+    });
+    expect(t('tiendanube_delete_product_image').endpointMapping).toEqual({ method: 'DELETE', path: '/products/{product_id}/images/{image_id}' });
+    expect(t('tiendanube_delete_product_image').enabled).toBe(false);
+    expect(t('tiendanube_delete_product_image').annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    for (const n of ['tiendanube_add_product_image', 'tiendanube_update_product_image']) expect(t(n).annotations?.readOnlyHint).toBe(false);
+    expect(t('tiendanube_update_product_image').parameters?.required).toEqual(['product_id', 'image_id']);
+  });
+
+  it('path parameters are required and every tool is named in the instructions', () => {
+    for (const t of a.tools) {
+      for (const [, p] of t.endpointMapping.path.matchAll(/\{(\w+)\}/g)) expect(`${t.name}:${(t.parameters?.required ?? []).includes(p)}`).toBe(`${t.name}:true`);
+      expect(`${t.name}:${a.instructions.includes(t.name)}`).toBe(`${t.name}:true`);
+    }
+    expect(JSON.stringify(a)).not.toMatch(/\u2014/);
   });
 });

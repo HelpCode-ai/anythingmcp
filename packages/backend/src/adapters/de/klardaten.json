@@ -7,7 +7,7 @@
   "icon": "klardaten",
   "docsUrl": "https://api.klardaten.com/docs",
   "prerequisites": "The Klardaten connector installed on the firm's DATEV server and a DATEV instance in the Klardaten dashboard. Tax and payroll data of the firm's clients: put this connector only on servers whose users may see all of it.",
-  "instructions": "**Sensitive data: read this first.** This connector reads a tax advisory firm's DATEV data through Klardaten: the master data, tax returns, bookkeeping and payroll of the firm's clients, including salaries, tax numbers, birth dates and bank transactions of private persons and companies. That data is covered by professional secrecy (§ 203 StGB, § 57 StBerG) and the GDPR. Add this connector only to servers whose users are allowed to see all of it, for example the partners or the staff who already have that access in DATEV. Do not add it to a shared or company-wide server. The API key acts with the DATEV profile behind it, so a model sees whatever that profile can read.\n\n**Setup**\n1. Sign in at https://dashboard.klardaten.com and create an API key for your user. It starts with `uk-` and goes into `KLARDATEN_API_KEY`; it is sent as `Authorization: Bearer`.\n2. Copy the id of the DATEV instance (a UUID, created with your consultant number when the Klardaten connector was installed on the DATEV server) into `KLARDATEN_INSTANCE_ID`. Every DATEV request carries it in the `x-client-instance-id` header. `klardaten_list_instances` lists the instances the key can reach.\n3. The Klardaten connector on the DATEV server must be running. When it is offline, DATEV calls fail while `klardaten_get_me` still works; `klardaten_get_datevconnect_health` shows the service status.\n\n**Which tool to start with**: `klardaten_get_me` to check access, then `klardaten_list_clients` (master data), `klardaten_list_accounting_clients` (bookkeeping), `klardaten_list_payroll_clients` (LODAS payroll) or `klardaten_list_firm_clients` (the firm's own practice management analytics).\n\n**Ids differ per area.** Master data uses UUIDs (`client_id`, `addressee_id`). Accounting uses a numeric `client_id` from `klardaten_list_accounting_clients`, and fiscal years are keyed by their start date as `YYYYMMDD` (e.g. `20250101`). Payroll and firm analytics use the `client_number`. Tax returns have their own `id`. Passing an id from another area is the usual cause of a 400 or 404.\n\n**Paging, fields and filters**: list tools take `page` (from 1) and `page_size` (default 100), `order_by` (`field:asc|desc`, comma-separated), `fields` (comma-separated, keeps answers small) and `filter`. A filter is `field operator value` with `eq`, `like`, `gt`, `gte`, `lt`, `lte`, `in`, `notin`, `is`, `isnot`, combined with `AND`/`OR`, e.g. `client_id eq 101 AND fiscal_year eq 20250101`. Only the fields of that endpoint are accepted; an unknown field or a wrongly formatted value returns 400. Always filter `klardaten_list_postings` by `client_id` and `fiscal_year`: across all clients of a firm the query takes about a minute and can time out.\n\n**DATEVconnect passthrough**: `klardaten_datevconnect_get` reads any DATEVconnect GET path (e.g. `master-data/v1/clients`) for data the other tools do not cover. It is read-only.\n\n**DATEV profile**: DATEVconnect calls run with the API key's default Klardaten profile. To act as another profile, set `KLARDATEN_PROFILE_ID`; it is sent as `x-profile-id` on every DATEVconnect call. Eigenorganisation writes need a profile that is an Eigenorganisation employee (`EODC10015` otherwise). `DCO10009` (\"License for DATEVconnect is not present\") comes from the DATEV server itself: check the DATEVconnect licence there.\n\n**DATEV Anwalt and user management**: `klardaten_list_law_files` and the other `klardaten_*_law_*` tools read the law firm module (files, parties, budget, expenses and its reference lists); they need DATEV Anwalt on the server. `klardaten_list_datev_users` and `klardaten_list_datev_groups` read DATEV's user management (read-only).\n\n**Writes (installed switched off)**: `klardaten_update_order` changes an Eigenorganisation order, `klardaten_create_expense_posting` books a time or cost entry on a sub-order, and `klardaten_set_client_responsibilities` replaces a client's responsibilities. They change the firm's DATEV data: turn them on only on a server whose users may do that in DATEV, and confirm every change with the user. `klardaten_update_order` and `klardaten_set_client_responsibilities` replace what they write, so read first and send the full object or list.\n\n**Licensing**: the Enterprise endpoints (accounting, payroll, tax, analytics) depend on the Klardaten plan; an endpoint outside the plan answers 403. `klardaten_search_documents` needs the document search add-on, which Klardaten enables per instance on request; it is installed switched off, turn it on once the add-on is active.",
+  "instructions": "**Sensitive data: read this first.** This connector reads a tax advisory firm's DATEV data through Klardaten: the master data, tax returns, bookkeeping and payroll of the firm's clients, including salaries, tax numbers, birth dates and bank transactions of private persons and companies. That data is covered by professional secrecy (§ 203 StGB, § 57 StBerG) and the GDPR. Add this connector only to servers whose users are allowed to see all of it, for example the partners or the staff who already have that access in DATEV. Do not add it to a shared or company-wide server. The API key acts with the DATEV profile behind it, so a model sees whatever that profile can read.\n\n**Setup**\n1. Sign in at https://dashboard.klardaten.com and create an API key for your user. It starts with `uk-` and goes into `KLARDATEN_API_KEY`; it is sent as `Authorization: Bearer`.\n2. Copy the id of the DATEV instance (a UUID, created with your consultant number when the Klardaten connector was installed on the DATEV server) into `KLARDATEN_INSTANCE_ID`. Every DATEV request carries it in the `x-client-instance-id` header. `klardaten_list_instances` lists the instances the key can reach.\n3. The Klardaten connector on the DATEV server must be running. When it is offline, DATEV calls fail while `klardaten_get_me` still works; `klardaten_get_datevconnect_health` shows the service status.\n\n**Which tool to start with**: `klardaten_get_me` to check access, then `klardaten_list_clients` (master data), `klardaten_list_accounting_clients` (bookkeeping), `klardaten_list_payroll_clients` (LODAS payroll) or `klardaten_list_firm_clients` (the firm's own practice management analytics).\n\n**Ids differ per area.** Master data uses UUIDs (`client_id`, `addressee_id`). Accounting uses a numeric `client_id` from `klardaten_list_accounting_clients`, and fiscal years are keyed by their start date as `YYYYMMDD` (e.g. `20250101`). Payroll and firm analytics use the `client_number`. Tax returns have their own `id`. Passing an id from another area is the usual cause of a 400 or 404.\n\n**Paging, fields and filters**: list tools take `page` (from 1) and `page_size` (default 100), `order_by` (`field:asc|desc`, comma-separated), `fields` (comma-separated, keeps answers small) and `filter`. A filter is `field operator value` with `eq`, `like`, `gt`, `gte`, `lt`, `lte`, `in`, `notin`, `is`, `isnot`, combined with `AND`/`OR`, e.g. `client_id eq 101 AND fiscal_year eq 20250101`. Only the fields of that endpoint are accepted; an unknown field or a wrongly formatted value returns 400. Always filter `klardaten_list_postings` by `client_id` and `fiscal_year`: across all clients of a firm the query takes about a minute and can time out.\n\n**Tax returns**: income tax, corporate tax, trade tax and VAT returns each have a list tool, a get tool and a data tool (`klardaten_list_vat_filings`, `klardaten_get_vat_filing`, `klardaten_get_vat_data` for Umsatzsteuer). `klardaten_list_clients_extended` returns clients with addresses, communications, tax office and bank accounts in one call; filter it, unfiltered it can time out.\n\n**Monitoring**: when DATEV calls fail, check `klardaten_get_instance` (status, last reply), `klardaten_get_instance_required_services`, `klardaten_get_datevconnect_health`, `klardaten_get_instance_metrics` and `klardaten_list_instance_logs` (keep the time window short). `klardaten_list_audit_logs` and `klardaten_get_audit_log` show which accesses took place; `klardaten_list_data_change_webhooks` and `klardaten_list_monitoring_webhooks` list the configured notifications without their secrets. The DATEVconnect diagnostics (`diagnostics/v1/echo`, `diagnostics/v1/domains`) are read through `klardaten_datevconnect_get`.\n\n**DATEVconnect passthrough**: `klardaten_datevconnect_get` reads any DATEVconnect GET path (e.g. `master-data/v1/clients`) for data the other tools do not cover. It is read-only.\n\n**DATEV profile**: DATEVconnect calls run with the API key's default Klardaten profile. To act as another profile, set `KLARDATEN_PROFILE_ID`; it is sent as `x-profile-id` on every DATEVconnect call. Eigenorganisation writes need a profile that is an Eigenorganisation employee (`EODC10015` otherwise). `DCO10009` (\"License for DATEVconnect is not present\") comes from the DATEV server itself: check the DATEVconnect licence there.\n\n**DATEV Anwalt and user management**: `klardaten_list_law_files` and the other `klardaten_*_law_*` tools read the law firm module (files, parties, budget, expenses and its reference lists); they need DATEV Anwalt on the server. `klardaten_list_datev_users` and `klardaten_list_datev_groups` read DATEV's user management (read-only).\n\n**Writes (installed switched off)**: `klardaten_update_order` changes an Eigenorganisation order, `klardaten_create_expense_posting` books a time or cost entry on a sub-order, and `klardaten_set_client_responsibilities` replaces a client's responsibilities. They change the firm's DATEV data: turn them on only on a server whose users may do that in DATEV, and confirm every change with the user. `klardaten_update_order` and `klardaten_set_client_responsibilities` replace what they write, so read first and send the full object or list.\n\n**Licensing**: the Enterprise endpoints (accounting, payroll, tax, analytics) depend on the Klardaten plan; an endpoint outside the plan answers 403. `klardaten_search_documents` needs the document search add-on, which Klardaten enables per instance on request; it is installed switched off, turn it on once the add-on is active.",
   "requiredEnvVars": [
     "KLARDATEN_API_KEY",
     "KLARDATEN_INSTANCE_ID"
@@ -373,6 +373,31 @@
       }
     },
     {
+      "name": "klardaten_list_clients_extended",
+      "description": "List DATEV clients (Mandanten) with their full master data in one call: person or company details, addresses, communications (phone, e-mail), tax office, bank accounts and relationships. On a large firm an unfiltered call can time out: always filter, e.g. by client_number, client_id or a phone number (communications.number like ...). For a plain list of clients use klardaten_list_clients.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value' (eq, like, gt, gte, lt, lte, in, notin, is, isnot; combine with AND / OR), e.g. client_number eq 10023 or communications.number like %7612345%. Fields: client_id, client_number, client_name, short_name, alias_name, type, status, vat_id, updated_at, communications.number."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction, e.g. client_number:asc. Fields: client_number, client_name, short_name, type, status, updated_at, client_id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/clients/extended",
+        "queryParams": {
+          "filter": "$filter",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
       "name": "klardaten_list_filing_standards",
       "description": "List the firm's filing standards (Ablage-Knigge): document classes with their standard folder and register, used to file documents in DATEV DMS.",
       "parameters": {
@@ -690,6 +715,86 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/api/tax/trade-tax/{id}/data"
+      }
+    },
+    {
+      "name": "klardaten_list_vat_filings",
+      "description": "List VAT returns (Umsatzsteuer: monthly or quarterly advance returns and annual returns) in DATEV: id, client_number, year, type, description, status, ELSTER telenumber, transmission status and dates, tax office arrival and notice status. Use the id with klardaten_get_vat_filing and klardaten_get_vat_data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. transmission_date:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. id,client_number,year,status,transmission_status. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_number eq 10023 AND year eq 2026. Useful fields: client_number, year, type, status, transmission_status, transmission_date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/value-added-tax",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_vat_filing",
+      "description": "Return one VAT return (Umsatzsteuer) by id: year, type, status, ELSTER transmission, tax office arrival and notice dates, objection status and client number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Return id (field id) from klardaten_list_vat_filings."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/value-added-tax/{id}"
+      }
+    },
+    {
+      "name": "klardaten_get_vat_data",
+      "description": "Return the form data of one VAT return (Umsatzsteuer) by id, as name and content pairs. Use it to read the values entered in the return, such as turnover and input tax lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Return id (field id) from klardaten_list_vat_filings."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/value-added-tax/{id}/data"
       }
     },
     {
@@ -1588,6 +1693,177 @@
           "from_date": "$from_date",
           "to_date": "$to_date",
           "granularity_minutes": "$granularity_minutes"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_instance",
+      "description": "Return the configured DATEV instance: name, consultant number, owner, connection type, status, time of the last reply from the DATEV server, connector version and whether it is a test instance. A first check when DATEV calls fail.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client-instances/{{KLARDATEN_INSTANCE_ID}}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "installation_email",
+            "service_user"
+          ]
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_instance_required_services",
+      "description": "Return the state of the Windows services the configured DATEV instance needs (DATEVconnect, Klardaten connector and the DATEV services behind them). Use it when DATEV calls fail or time out.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client-instances/{{KLARDATEN_INSTANCE_ID}}/required-services"
+      }
+    },
+    {
+      "name": "klardaten_get_instance_metrics",
+      "description": "Return load metrics of the DATEV server behind the configured instance over time: CPU and memory of the machine and of the connector process, database CPU, memory and I/O, and the number of requests waiting and in progress. Use it to explain slow answers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601, e.g. 2026-10-01T00:00:00Z. Keep the window short: answers grow quickly."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the period, ISO 8601."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/monitoring/instance/{{KLARDATEN_INSTANCE_ID}}/metrics",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_instance_logs",
+      "description": "Read the connector log of the configured instance, to find the cause of 5xx answers and time-outs. Returns log lines and a next_token; call again with next_token until it is missing. Narrow with filter_pattern and a short time window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601, e.g. 2026-10-01T00:00:00Z. Keep the window short: answers grow quickly."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the period, ISO 8601."
+          },
+          "filter_pattern": {
+            "type": "string",
+            "description": "Text the log lines must contain, e.g. ERROR or a DATEV error code."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "next_token from the previous page."
+          },
+          "oldest_first": {
+            "type": "boolean",
+            "description": "true returns the oldest lines first. Default: newest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/monitoring/instance/{{KLARDATEN_INSTANCE_ID}}/logs",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "filter_pattern": "$filter_pattern",
+          "next_token": "$next_token",
+          "oldest_first": "$oldest_first"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_audit_logs",
+      "description": "List the audit log files of the configured instance (name, size, last modified). They record which accesses to DATEV data took place. Read one with klardaten_get_audit_log.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/monitoring/instance/{{KLARDATEN_INSTANCE_ID}}/audit-logs"
+      }
+    },
+    {
+      "name": "klardaten_get_audit_log",
+      "description": "Return the content of one audit log file of the configured instance as text. Files can be large; list them first with klardaten_list_audit_logs and pick the one for the day you need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "log_name": {
+            "type": "string",
+            "description": "File name (field name) from klardaten_list_audit_logs."
+          }
+        },
+        "required": [
+          "log_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/monitoring/instance/{{KLARDATEN_INSTANCE_ID}}/audit-logs/{log_name}/download",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "klardaten_list_data_change_webhooks",
+      "description": "List the data-change webhooks of the account: which DATEV entity changes are sent to which endpoint, for which instance. The signing secret is removed from the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/data-changes/webhooks"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "[*].secret"
+          ]
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_monitoring_webhooks",
+      "description": "List the monitoring webhooks of the account: the endpoints notified when an instance goes offline or comes back. The signing secret is removed from the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/monitoring/webhooks"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "[*].secret"
+          ]
         }
       }
     },

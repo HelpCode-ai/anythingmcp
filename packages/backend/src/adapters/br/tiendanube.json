@@ -1,8 +1,8 @@
 {
   "slug": "tiendanube",
   "name": "Tiendanube / Nuvemshop",
-  "description": "Tiendanube (Nuvemshop in Brazil) online stores: store info, products, variants and stock, categories, orders and fulfillment orders, customers, abandoned checkouts, coupons and webhooks. REST API 2025-03 with an app access token.",
-  "instructions": "## Tiendanube / Nuvemshop\nThis connector talks to the Tiendanube REST API (Nuvemshop in Brazil, same platform and same API), version `2025-03`, at `https://api.tiendanube.com/2025-03/<store id>`. Every request goes to one store.\n\n## Credentials\nTiendanube has no API keys in the store admin: access is granted to an app. To get a token for your own store:\n1. Register at the Tiendanube or Nuvemshop Partners portal and create an app under **Apps**. Choose the scopes you need (`read_products`, `write_products`, `read_orders`, `write_orders`, `read_customers`, `read_coupons`...); a write scope includes its read scope.\n2. Install the app on your store by opening `https://www.tiendanube.com/apps/<app id>/authorize`. You are redirected to the app's redirect URL with a `code` (valid 5 minutes).\n3. Exchange it: `POST https://www.tiendanube.com/apps/authorize/token` with `client_id`, `client_secret`, `grant_type=authorization_code` and `code`. The answer has `access_token` (put it in `TIENDANUBE_ACCESS_TOKEN`) and `user_id`, which is the store id (put it in `TIENDANUBE_STORE_ID`).\nTokens do not expire; they stop working when a new one is issued for the same app or the app is uninstalled.\n\nThe token is sent as `Authorization: Bearer <token>`. Older integrations use the legacy header `Authentication: bearer <token>`, which the API still accepts; a token works with either. Tiendanube also requires a `User-Agent` with the app name and a contact; without it the API answers 400. The connector sends `AnythingMCP (support@anythingmcp.com)`.\n\n## Start here\n`tiendanube_get_store` returns the store name, languages, currency and plan. Then `tiendanube_list_orders` or `tiendanube_list_products`.\n\n## Pagination and limits\n- Lists return 30 items by default; `per_page` goes up to 200, `page` starts at 1. The total count is in the `x-total-count` header and the next page in the `Link` header (both returned in `_headers` / `_pagination`).\n- Order queries stop at 10,000 results: narrow them with `created_at_min` / `created_at_max` or a status filter.\n- Rate limit: a leaky bucket of 40 requests draining at 2 per second per store and app (10x on Next and Evolution plans). Over it the API returns 429.\n\n## Data conventions\n- Ids are integers. Product variants have their own ids; stock and price live on the variant, not on the product.\n- Product and category names, descriptions and handles are objects keyed by language (`{\"es\": \"...\", \"pt\": \"...\"}`). When creating, pass such an object or a plain string, which is applied to every language.\n- Money values are strings with two decimals (`\"5400.00\"`) in the store currency (`currency` on the order).\n- Dates are ISO 8601 with offset, e.g. `2026-09-01T00:00:00-03:00`.\n- Orders have three separate states: `status` (open, closed, cancelled), `payment_status` (pending, authorized, paid, abandoned, refunded, voided) and `shipping_status` (unpacked, unfulfilled, fulfilled).\n\n## Pitfalls\n- `published` and `visibility` on products cannot be sent together (422); this connector uses `visibility`.\n- A 402 means the store's API access is suspended for an unpaid subscription.\n- `tiendanube_cancel_order` restocks and e-mails the customer by default.",
+  "description": "Tiendanube (Nuvemshop in Brazil) online stores: store info, products, variants and stock, product images, categories, orders and fulfillment orders, customers, abandoned checkouts, coupons and webhooks. REST API 2025-03 with an app access token.",
+  "instructions": "## Tiendanube / Nuvemshop\nThis connector talks to the Tiendanube REST API (Nuvemshop in Brazil, same platform and same API), version `2025-03`, at `https://api.tiendanube.com/2025-03/<store id>`. Every request goes to one store.\n\n## Credentials\nTiendanube has no API keys in the store admin: access is granted to an app. To get a token for your own store:\n1. Register at the Tiendanube or Nuvemshop Partners portal and create an app under **Apps**. Choose the scopes you need (`read_products`, `write_products`, `read_orders`, `write_orders`, `read_customers`, `read_coupons`...); a write scope includes its read scope.\n2. Install the app on your store by opening `https://www.tiendanube.com/apps/<app id>/authorize`. You are redirected to the app's redirect URL with a `code` (valid 5 minutes).\n3. Exchange it: `POST https://www.tiendanube.com/apps/authorize/token` with `client_id`, `client_secret`, `grant_type=authorization_code` and `code`. The answer has `access_token` (put it in `TIENDANUBE_ACCESS_TOKEN`) and `user_id`, which is the store id (put it in `TIENDANUBE_STORE_ID`).\nTokens do not expire; they stop working when a new one is issued for the same app or the app is uninstalled.\n\nThe token is sent as `Authorization: Bearer <token>`. Older integrations use the legacy header `Authentication: bearer <token>`, which the API still accepts; a token works with either. Tiendanube also requires a `User-Agent` with the app name and a contact; without it the API answers 400. The connector sends `AnythingMCP (support@anythingmcp.com)`.\n\n## Start here\n`tiendanube_get_store` returns the store name, languages, currency and plan. Then `tiendanube_list_orders` or `tiendanube_list_products`.\n\n## Pagination and limits\n- Lists return 30 items by default; `per_page` goes up to 200, `page` starts at 1. The total count is in the `x-total-count` header and the next page in the `Link` header (both returned in `_headers` / `_pagination`).\n- Order queries stop at 10,000 results: narrow them with `created_at_min` / `created_at_max` or a status filter.\n- Rate limit: a leaky bucket of 40 requests draining at 2 per second per store and app (10x on Next and Evolution plans). Over it the API returns 429.\n\n## Data conventions\n- Ids are integers. Product variants have their own ids; stock and price live on the variant, not on the product.\n- Product and category names, descriptions and handles are objects keyed by language (`{\"es\": \"...\", \"pt\": \"...\"}`). When creating, pass such an object or a plain string, which is applied to every language.\n- Money values are strings with two decimals (`\"5400.00\"`) in the store currency (`currency` on the order).\n- Dates are ISO 8601 with offset, e.g. `2026-09-01T00:00:00-03:00`.\n- Orders have three separate states: `status` (open, closed, cancelled), `payment_status` (pending, authorized, paid, abandoned, refunded, voided) and `shipping_status` (unpacked, unfulfilled, fulfilled).\n\n## Pitfalls\n- `published` and `visibility` on products cannot be sent together (422); this connector uses `visibility`.\n- A 402 means the store's API access is suspended for an unpaid subscription.\n- `tiendanube_cancel_order` restocks and e-mails the customer by default.\n\n## Tools\n- Store: `tiendanube_get_store`.\n- Products: `tiendanube_list_products`, `tiendanube_get_product`, `tiendanube_get_product_by_sku`, `tiendanube_create_product`, `tiendanube_update_product`, `tiendanube_delete_product`, `tiendanube_list_categories`.\n- Variants, prices and stock: `tiendanube_list_variants`, `tiendanube_update_variant`, `tiendanube_update_stock`.\n- Product images: `tiendanube_list_product_images` gives the image ids and positions; `tiendanube_add_product_image` adds one from a URL or a Base64 file, `tiendanube_update_product_image` reorders it (position 1 is the main image), changes its alt text or swaps the picture, and `tiendanube_delete_product_image` (installed switched off) removes it. Image writes change the live store: confirm with the user first.\n- Orders: `tiendanube_list_orders`, `tiendanube_get_order`, `tiendanube_list_fulfillment_orders`, `tiendanube_close_order`, `tiendanube_open_order`, `tiendanube_cancel_order`.\n- Customers and marketing: `tiendanube_list_customers`, `tiendanube_get_customer`, `tiendanube_list_abandoned_checkouts`, `tiendanube_list_coupons`, `tiendanube_list_webhooks`.",
   "prerequisites": "Needs an access token from a Tiendanube/Nuvemshop app installed on your store: create the app in the Partners portal, install it, and exchange the code for a token. The store id is the `user_id` returned with the token.",
   "region": "br",
   "category": "e-commerce",
@@ -267,6 +267,194 @@
         "method": "POST",
         "path": "/products/{product_id}/variants/stock",
         "bodyMapping": { "action": "$action", "value": "$value", "id": "$variant_id" }
+      }
+    },
+    {
+      "name": "tiendanube_list_product_images",
+      "description": "List the images of one product with image id, URL (src), position (1 is the main image) and alt text. Use it to get an image id before changing or removing an image.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id."
+          },
+          "since_id": {
+            "type": "integer",
+            "description": "Only images with an id after this one."
+          },
+          "src": {
+            "type": "string",
+            "description": "Only the image with this URL."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Only the image at this position."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,src,position."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 200."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/images",
+        "queryParams": {
+          "since_id": "$since_id",
+          "src": "$src",
+          "position": "$position",
+          "fields": "$fields",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "tiendanube_add_product_image",
+      "description": "Add an image to a product, either from a public URL (src) or from a Base64-encoded file (attachment with filename); send one of the two. position 1 makes it the main image. A product holds at most 250 images. Changes the live store: show the product and image to the user and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id."
+          },
+          "src": {
+            "type": "string",
+            "description": "Public URL of the image, e.g. https://example.com/photo.jpg."
+          },
+          "attachment": {
+            "type": "string",
+            "description": "The image encoded as a Base64 string, instead of src."
+          },
+          "filename": {
+            "type": "string",
+            "description": "File name for attachment, e.g. photo.jpg."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Position in the product's image list; 1 is the main image. Omit to add it at the end."
+          },
+          "alt": {
+            "type": [
+              "object",
+              "string"
+            ],
+            "description": "Alt text for search engines and screen readers. Like other texts it can be an object keyed by language, e.g. {\"es\": \"Remera azul\", \"pt\": \"Camiseta azul\"}; send it in the shape tiendanube_list_product_images returns it."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/{product_id}/images",
+        "bodyMapping": {
+          "src": "$src",
+          "attachment": "$attachment",
+          "filename": "$filename",
+          "position": "$position",
+          "alt": "$alt"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "tiendanube_update_product_image",
+      "description": "Change an existing product image: its position (1 makes it the main image), its alt text, or replace the picture with a new URL while keeping the image id. Only the fields passed change. Show the change to the user and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id."
+          },
+          "image_id": {
+            "type": "integer",
+            "description": "Image id from tiendanube_list_product_images."
+          },
+          "position": {
+            "type": "integer",
+            "description": "New position; 1 is the main image."
+          },
+          "alt": {
+            "type": [
+              "object",
+              "string"
+            ],
+            "description": "Alt text for search engines and screen readers. Like other texts it can be an object keyed by language, e.g. {\"es\": \"Remera azul\", \"pt\": \"Camiseta azul\"}; send it in the shape tiendanube_list_product_images returns it."
+          },
+          "src": {
+            "type": "string",
+            "description": "Public URL of a replacement picture."
+          }
+        },
+        "required": [
+          "product_id",
+          "image_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}/images/{image_id}",
+        "bodyMapping": {
+          "position": "$position",
+          "alt": "$alt",
+          "src": "$src"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tiendanube_delete_product_image",
+      "enabled": false,
+      "description": "Remove one image from a product. This cannot be undone; the picture has to be uploaded again to restore it. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id."
+          },
+          "image_id": {
+            "type": "integer",
+            "description": "Image id from tiendanube_list_product_images."
+          }
+        },
+        "required": [
+          "product_id",
+          "image_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/products/{product_id}/images/{image_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
       }
     },
     {

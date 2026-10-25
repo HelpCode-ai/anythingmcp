@@ -1,0 +1,541 @@
+{
+  "slug": "netskope",
+  "name": "Netskope",
+  "aliases": [
+    "Netskope SSE",
+    "Netskope One",
+    "Netskope REST API"
+  ],
+  "description": "Netskope Security Service Edge, read-only: search alerts and events (application, web, network, incident, endpoint DLP), the admin audit log, user risk scores, Cloud Confidence Index lookups, URL lists, Private Access publishers and apps, and SCIM users and groups.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "netskope",
+  "docsUrl": "https://docs.netskope.com/en/rest-api-v2-overview-312207/",
+  "instructions": "## Netskope\nThis connector reads a **Netskope** Security Service Edge tenant through **REST API v2**: alerts and events (application, web page, network, incident, client status, endpoint DLP), the administrator audit log, user risk scores (UCI), Cloud Confidence Index lookups, URL lists, Private Access publishers and apps, and SCIM users and groups. It is read-only.\n\n**Setup**\n1. In the Netskope tenant open **Settings > Tools > REST API v2** and create a new token (or use a service account under Settings > Administration > Administrators & Roles).\n2. Add every endpoint the AI should use with **Read** privilege: `/api/v2/events/datasearch/alert` and the other `/api/v2/events/datasearch/...` types, `/api/v2/events/data/audit`, `/api/v2/ubadatasvc/user/uci`, `/api/v2/services/cci/app`, `/api/v2/policy/urllist`, `/api/v2/infrastructure/publishers`, `/api/v2/steering/apps/private`, `/api/v2/scim/Users`, `/api/v2/scim/Groups`. Set an expiry and copy the token into `NETSKOPE_API_TOKEN`. It is sent in the `Netskope-Api-Token` header.\n3. `NETSKOPE_TENANT` is the host name of your tenant, e.g. `example.goskope.com` (EU tenants e.g. `example.eu.goskope.com`), without https:// or a path.\n4. If the tenant uses an IP allowlist (Settings > Administration > IP Allowlist), add the outbound address of this AnythingMCP server. Install and run `netskope_search_alerts` to check the token.\n\n**Workflow**\n- Alerts: `netskope_search_alerts` with a time range (`starttime`, `endtime` in Unix seconds) and a `query` such as `alert_type eq 'DLP'` or `severity eq 'high'`; ask only for the `fields` you need. For counts use `fields=count_total:count(_id)` with `groupbys` (e.g. `alert_name` or `user`) and `orderbys` `count_total desc`.\n- Events: `netskope_search_events` with `event_type` application, page, network, incident, clientstatus or epdlp, same parameters. Admin changes: `netskope_list_audit_events`.\n- A user: `netskope_get_user_risk_score` (UCI, from_time in milliseconds), `netskope_list_scim_users`, `netskope_list_scim_groups`.\n- An app: `netskope_lookup_cloud_app` needs the exact app name. Policies: `netskope_list_url_lists`, `netskope_get_url_list`. Private Access: `netskope_list_publishers`, `netskope_list_private_apps`.\n\n**Paging and limits**: datasearch lists page with `limit` and `offset`; SCIM with `startIndex` (from 1) and `count`. Always set a time range on event searches: large tenants hold millions of events. Netskope rate-limits per endpoint (a few calls per second; 429 with Retry-After above that).\n\n**Errors**: 401 or 403 means a wrong or expired token, or the endpoint was not added to the token with Read privilege. A datasearch call that fails reports `status.execution` FAILED with a message (e.g. an unknown field in `query`); this connector turns it into an error. A 404 on every call usually means a wrong `NETSKOPE_TENANT`.",
+  "prerequisites": "A Netskope tenant and a REST API v2 token with Read privilege on the endpoints the AI should use (Settings > Tools > REST API v2).",
+  "requiredEnvVars": [
+    "NETSKOPE_TENANT",
+    "NETSKOPE_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "NETSKOPE_TENANT": {
+      "label": "Tenant host",
+      "kind": "address",
+      "help": "The host name of your Netskope tenant, as in the browser address bar, without https:// or a path.",
+      "example": "example.goskope.com",
+      "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.goskope\\.com$",
+      "patternMessage": "Only the tenant host, e.g. example.goskope.com, without https:// or a path."
+    },
+    "NETSKOPE_API_TOKEN": {
+      "label": "REST API v2 token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Netskope, Settings > Tools > REST API v2: a token with Read privilege on the endpoints the AI should use.",
+      "link": "https://docs.netskope.com/en/rest-api-v2-overview-312207/",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the token, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Netskope refused the token: it is wrong or expired. Create a new one under Settings > Tools > REST API v2.",
+    "403": "The token works, but this endpoint was not added to it with Read privilege, or the tenant IP allowlist blocks this server.",
+    "not_found": "No Netskope REST API at this address. NETSKOPE_TENANT is only the tenant host, e.g. example.goskope.com.",
+    "rate_limited": "Netskope rate-limits each endpoint. Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "netskope_search_alerts",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Netskope REST API v2",
+    "type": "REST",
+    "baseUrl": "https://{{NETSKOPE_TENANT}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Netskope-Api-Token",
+      "apiKey": "{{NETSKOPE_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status.execution",
+          "equals": "FAILED",
+          "messagePath": "status.message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "netskope_search_alerts",
+      "description": "Search Netskope alerts (DLP, malware, policy, anomaly, compromised credential, UBA...) through the datasearch endpoint: filter with the Netskope query language and a time range, choose fields, aggregate with groupbys, sort and page. Returns result rows and status.count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Filter in the Netskope (Skope IT) query language, e.g. severity eq 'high' and user eq 'alice@example.com', or alert_type in ('DLP','malware')."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. _id,timestamp,user,app,alert_name. Aggregations work too: count_total:count(_id)."
+          },
+          "starttime": {
+            "type": "integer",
+            "description": "Start of the period, Unix time in seconds."
+          },
+          "endtime": {
+            "type": "integer",
+            "description": "End of the period, Unix time in seconds."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return (default 100).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          },
+          "groupbys": {
+            "type": "string",
+            "description": "Comma-separated fields to aggregate on, e.g. user,app (use with an aggregation in fields)."
+          },
+          "orderbys": {
+            "type": "string",
+            "description": "Sort order, e.g. timestamp desc or count_total desc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/events/datasearch/alert",
+        "queryParams": {
+          "query": "$query",
+          "fields": "$fields",
+          "starttime": "$starttime",
+          "endtime": "$endtime",
+          "limit": "$limit",
+          "offset": "$offset",
+          "groupbys": "$groupbys",
+          "orderbys": "$orderbys"
+        }
+      }
+    },
+    {
+      "name": "netskope_search_events",
+      "description": "Search Netskope events of one type through the datasearch endpoint: application (cloud app activity), page (web visits), network (firewall and private access traffic), incident, clientstatus (Netskope client status of devices) or epdlp (endpoint DLP). Same query language, fields, time range, aggregation and paging as alerts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "description": "Event type to search.",
+            "enum": [
+              "application",
+              "page",
+              "network",
+              "incident",
+              "clientstatus",
+              "epdlp"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "Filter in the Netskope (Skope IT) query language, e.g. severity eq 'high' and user eq 'alice@example.com', or alert_type in ('DLP','malware')."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. _id,timestamp,user,app,alert_name. Aggregations work too: count_total:count(_id)."
+          },
+          "starttime": {
+            "type": "integer",
+            "description": "Start of the period, Unix time in seconds."
+          },
+          "endtime": {
+            "type": "integer",
+            "description": "End of the period, Unix time in seconds."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return (default 100).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          },
+          "groupbys": {
+            "type": "string",
+            "description": "Comma-separated fields to aggregate on, e.g. user,app (use with an aggregation in fields)."
+          },
+          "orderbys": {
+            "type": "string",
+            "description": "Sort order, e.g. timestamp desc or count_total desc."
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/events/datasearch/{event_type}",
+        "queryParams": {
+          "query": "$query",
+          "fields": "$fields",
+          "starttime": "$starttime",
+          "endtime": "$endtime",
+          "limit": "$limit",
+          "offset": "$offset",
+          "groupbys": "$groupbys",
+          "orderbys": "$orderbys"
+        }
+      }
+    },
+    {
+      "name": "netskope_list_audit_events",
+      "description": "List the administrator audit log of the tenant (who changed which setting or policy, logins to the console) for a time range, optionally only one audit type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "starttime": {
+            "type": "integer",
+            "description": "Start of the period, Unix time in seconds."
+          },
+          "endtime": {
+            "type": "integer",
+            "description": "End of the period, Unix time in seconds."
+          },
+          "type": {
+            "type": "string",
+            "description": "Audit type filter, e.g. admin or user."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return (default 100).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/events/data/audit",
+        "queryParams": {
+          "starttime": "$starttime",
+          "endtime": "$endtime",
+          "type": "$type",
+          "fields": "$fields",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "netskope_get_user_risk_score",
+      "description": "Get the User Confidence Index (UCI, behavior analytics risk score from 0 to 1000) of one user and its changes since a point in time. Read-only, sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "User e-mail address as known to Netskope."
+          },
+          "from_time": {
+            "type": "integer",
+            "description": "Start of the window, Unix time in milliseconds (e.g. 7 days ago)."
+          }
+        },
+        "required": [
+          "user",
+          "from_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/ubadatasvc/user/uci",
+        "bodyMapping": {
+          "user": "$user",
+          "fromTime": "$from_time"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "netskope_lookup_cloud_app",
+      "description": "Look up the Cloud Confidence Index (CCI) of a cloud application by its exact name (e.g. Dropbox, Slack): score, Cloud Confidence Level, category, tags and whether it is sanctioned or discovered.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_name": {
+            "type": "string",
+            "description": "Exact application name as Netskope lists it; several names separated by semicolons."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category filter, e.g. Cloud Storage."
+          },
+          "ccl": {
+            "type": "string",
+            "description": "Cloud Confidence Level filter.",
+            "enum": [
+              "excellent",
+              "high",
+              "medium",
+              "low",
+              "poor"
+            ]
+          },
+          "tag": {
+            "type": "string",
+            "description": "Tag filter."
+          },
+          "discovered": {
+            "type": "boolean",
+            "description": "true for discovered (shadow IT) apps only, false for sanctioned only."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return (default 100).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "app_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/services/cci/app",
+        "queryParams": {
+          "apps": "$app_name",
+          "category": "$category",
+          "ccl": "$ccl",
+          "tag": "$tag",
+          "discovered": "$discovered",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "netskope_list_url_lists",
+      "description": "List the URL lists used in policies (allow and block lists): id, name, type (exact or regex), URLs and pending changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return (default 100).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/policy/urllist",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "netskope_get_url_list",
+      "description": "Get one URL list by its numeric id with all its URLs and its type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "URL list id, from netskope_list_url_lists."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/policy/urllist/{list_id}"
+      }
+    },
+    {
+      "name": "netskope_list_publishers",
+      "description": "List the Netskope Private Access publishers: id, name, status (connected or not), version, assessment and the apps they serve.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter expression, e.g. publisher_name eq 'pub-fra-1'."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return (default 100).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/infrastructure/publishers",
+        "queryParams": {
+          "filter": "$filter",
+          "fields": "$fields",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "netskope_list_private_apps",
+      "description": "List the private applications of Netskope Private Access: name, hosts, protocols and ports, publishers, reachability, clientless access and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text."
+          },
+          "app_name": {
+            "type": "string",
+            "description": "Application name."
+          },
+          "publisher_name": {
+            "type": "string",
+            "description": "Publisher name."
+          },
+          "host": {
+            "type": "string",
+            "description": "Host name or IP."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return (default 100).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/steering/apps/private",
+        "queryParams": {
+          "query": "$query",
+          "app_name": "$app_name",
+          "publisher_name": "$publisher_name",
+          "host": "$host",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "netskope_list_scim_users",
+      "description": "List users provisioned to Netskope over SCIM: id, userName, name, e-mails, active flag and groups. Filter with a SCIM filter such as userName eq \"alice@example.com\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "SCIM filter, e.g. userName eq \"alice@example.com\"."
+          },
+          "startIndex": {
+            "type": "integer",
+            "description": "1-based index of the first result.",
+            "minimum": 1
+          },
+          "count": {
+            "type": "integer",
+            "description": "Results per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/scim/Users",
+        "queryParams": {
+          "filter": "$filter",
+          "startIndex": "$startIndex",
+          "count": "$count"
+        }
+      }
+    },
+    {
+      "name": "netskope_list_scim_groups",
+      "description": "List groups provisioned to Netskope over SCIM with their members. Filter with a SCIM filter such as displayName eq \"Finance\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "SCIM filter, e.g. displayName eq \"Finance\"."
+          },
+          "startIndex": {
+            "type": "integer",
+            "description": "1-based index of the first result.",
+            "minimum": 1
+          },
+          "count": {
+            "type": "integer",
+            "description": "Results per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/scim/Groups",
+        "queryParams": {
+          "filter": "$filter",
+          "startIndex": "$startIndex",
+          "count": "$count"
+        }
+      }
+    }
+  ]
+}

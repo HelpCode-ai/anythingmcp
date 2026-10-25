@@ -147,7 +147,7 @@ describe('trendyol adapter: static spec conformance', () => {
     mockedFetchOutbound.mockReset();
   });
 
-  it('is listed (verified against the official reference, public lookups and customer traffic on 12 Oct 2026)', () => {
+  it('is listed (verified against the official reference and public lookups on 12 Oct 2026)', () => {
     expect(a.unlisted).toBeUndefined();
   });
 
@@ -243,6 +243,7 @@ describe('trendyol adapter: static spec conformance', () => {
     ].map((m) => m[0]);
     expect(mentioned.length).toBeGreaterThan(10);
     for (const name of mentioned) expect(names).toContain(name);
+    for (const t of a.tools) expect(`${t.name}:${a.instructions.includes(t.name)}`).toBe(`${t.name}:true`);
     expect(JSON.stringify(adapter)).not.toMatch(/[–—]/);
   });
 

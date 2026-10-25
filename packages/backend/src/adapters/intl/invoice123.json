@@ -1,0 +1,612 @@
+{
+  "slug": "invoice123",
+  "name": "Invoice123",
+  "aliases": [
+    "Saskaita123",
+    "Sąskaita123",
+    "Rekins123"
+  ],
+  "description": "Invoice123 (Saskaita123), invoicing for Lithuania and Latvia, read-only: sales invoices with payments, payment links and PDFs, purchases, clients, products, projects, waybills, VAT rates, series and bank accounts.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "invoice123",
+  "docsUrl": "https://app.invoice123.com/docs/index.html",
+  "instructions": "## Invoice123\nThis connector reads **Invoice123** (app.invoice123.com, Saskaita123 in Lithuania), the invoicing and bookkeeping service for small businesses in Lithuania and Latvia, through its REST API v1.0: sales invoices and their payments and PDFs, purchases, clients, products, projects, waybills and the reference data (series, VAT rates, banks, units, activities). It is read-only.\n\n**Setup (about 2 minutes)**\n1. In Invoice123 open the account menu (top right), **Integrations** (puzzle icon) or **Account settings > Integrations**, and install the **API** integration.\n2. Click **Generate your API key**, name it and tick the permissions the AI may use, at least `invoice:index`, plus `expense:index`, `client:index`, `product:index`, `project:index` and `waybills:index` for those areas. The PDF route of invoices checks `invoice:store`, and the offer PDF `commercial:store`.\n3. Paste the key into `INVOICE123_API_TOKEN`. It is sent as `Authorization: Bearer`.\n4. Install and run `invoice123_get_company` to check the token.\n\n**Workflow**\n- Reference data first when you need ids: `invoice123_get_invoice_data` (activities, series, banks, units, VAT rates, warehouses in one call), or `invoice123_list_series`, `invoice123_list_bank_accounts`, `invoice123_list_units`, `invoice123_list_activities`, `invoice123_list_cash_registers`, `invoice123_list_email_templates`, `invoice123_list_invoice_vat_rates`.\n- Sales: `invoice123_list_invoices` (filter by `status` unpaid or late for open items, `range` for a period, `client_id` for one customer), `invoice123_list_invoice_payments` to see how and when an invoice was paid (transfer, cash, card, cash register receipt), `invoice123_get_invoice_payment_link`, `invoice123_download_invoice_pdf`.\n- Purchases: `invoice123_list_purchases`, `invoice123_list_purchase_types`, `invoice123_list_purchase_vat_rates`.\n- Master data: `invoice123_list_clients` (customers and suppliers), `invoice123_list_products`, `invoice123_list_projects`, `invoice123_list_waybills`; offers: `invoice123_download_commercial_offer_pdf`.\n\n**Paging**: lists return `data.result` and `data.pagination` (`current_page`, `last_page`, `total`); pass `page` (from 1) and `limit` (default 20) and stop at `last_page`. Date ranges are two `YYYY-MM-DD` dates joined by a comma. Amounts are strings in the invoice currency (usually EUR).\n\n**Limits and errors**: 60 requests per minute on the Standard plan, 1,000 per hour on Business (429 above that). 401 means a wrong or deleted token; 403 means the token lacks the permission named in the tool description; purchases, waybills and offers also need their module enabled in the account.",
+  "prerequisites": "An Invoice123 account with the API integration installed (Account settings > Integrations) and an API key with the read permissions the AI should use.",
+  "requiredEnvVars": [
+    "INVOICE123_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "INVOICE123_API_TOKEN": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Invoice123, Account settings, Integrations: install the API integration, then Generate your API key with the read permissions the AI may use.",
+      "link": "https://help.invoice123.com/en/article/how-to-activate-invoice123s-api-edeyjl/",
+      "pattern": "^(?![Bb]earer )\\S{20,}$",
+      "patternMessage": "Paste only the API key, without Bearer, spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Invoice123 refused the API key: it is wrong or was deleted. Generate a new one under Account settings > Integrations > API.",
+    "403": "The key works, but lacks the permission for this area (e.g. invoice:index or expense:index), or the module is not enabled. Edit the key permissions in Invoice123.",
+    "rate_limited": "Invoice123 allows 60 requests per minute on the Standard plan. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "invoice123_get_company"
+  },
+  "connector": {
+    "name": "Invoice123 API v1.0",
+    "type": "REST",
+    "baseUrl": "https://app.invoice123.com/api/v1.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{INVOICE123_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "invoice123_get_company",
+      "description": "Get the company profile behind the API token (currently whether the company is VAT registered). Costs one call and needs no permission, so it is the connection check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company"
+      }
+    },
+    {
+      "name": "invoice123_list_invoices",
+      "description": "List sales invoices with client, line items, VAT, totals, currency, payments and paid flag, 20 per page by default. Filter by text (number, client, product), date range, payment date range, status (paid, unpaid, partially_paid, late, draft, credit, advance, nullified...) or by client, series, project, product, activity or warehouse id. Needs the invoice:index permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page.",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string",
+            "description": "Free text: invoice number, client name, address or code, product title or description."
+          },
+          "range": {
+            "type": "string",
+            "description": "Invoice dates: Date range as two YYYY-MM-DD dates joined by a comma, e.g. 2026-01-01,2026-03-31."
+          },
+          "payment_date": {
+            "type": "string",
+            "description": "Payment dates: Date range as two YYYY-MM-DD dates joined by a comma, e.g. 2026-01-01,2026-03-31."
+          },
+          "status": {
+            "type": "string",
+            "description": "Invoice status or kind.",
+            "enum": [
+              "draft",
+              "paid",
+              "unpaid",
+              "fully_unpaid",
+              "partially_paid",
+              "overpaid",
+              "cash",
+              "transfer",
+              "simple",
+              "advance",
+              "credit",
+              "late",
+              "nullified"
+            ]
+          },
+          "invoice_id": {
+            "type": "string",
+            "description": "Only this invoice id."
+          },
+          "series_id": {
+            "type": "string",
+            "description": "Series id, from invoice123_list_series."
+          },
+          "activity_id": {
+            "type": "string",
+            "description": "Activity id, from invoice123_list_activities."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Client id, from invoice123_list_clients."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id, from invoice123_list_projects."
+          },
+          "warehouse_id": {
+            "type": "string",
+            "description": "Warehouse id, from invoice123_get_invoice_data."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Product id, from invoice123_list_products."
+          },
+          "issued_by": {
+            "type": "string",
+            "description": "Name of the person who issued the invoice."
+          },
+          "order_number": {
+            "type": "string",
+            "description": "Order number on the invoice."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "text": "$text",
+          "range": "$range",
+          "payment_date": "$payment_date",
+          "status": "$status",
+          "invoice": "$invoice_id",
+          "series": "$series_id",
+          "activity": "$activity_id",
+          "client": "$client_id",
+          "project": "$project_id",
+          "warehouse": "$warehouse_id",
+          "product": "$product_id",
+          "issued_by": "$issued_by",
+          "order_number": "$order_number"
+        }
+      }
+    },
+    {
+      "name": "invoice123_list_invoice_payments",
+      "description": "List the payments registered for one invoice: type (transfer, cash, refund, other), cash document type and receipt number, amount, date and whether the invoice is fully paid. Needs invoice:index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id, from invoice123_list_invoices."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}/payments"
+      }
+    },
+    {
+      "name": "invoice123_download_invoice_pdf",
+      "description": "Download the PDF of an invoice in Lithuanian, English or Latvian; the file is handed over as an attachment. The token needs the invoice:store permission for this route.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id, from invoice123_list_invoices."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the PDF: lt (Lithuanian), en (English) or lv (Latvian).",
+            "enum": [
+              "lt",
+              "en",
+              "lv"
+            ]
+          }
+        },
+        "required": [
+          "invoice_id",
+          "language"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/{invoice_id}/pdf/{language}"
+      }
+    },
+    {
+      "name": "invoice123_get_invoice_payment_link",
+      "description": "Get the online payment link of an invoice, when the company has a payment provider (Montonio or Paysera) enabled. Needs invoice:index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id, from invoice123_list_invoices."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/{invoice_id}/payment-link"
+      }
+    },
+    {
+      "name": "invoice123_list_invoice_vat_rates",
+      "description": "List the VAT rates available on sales invoices: id, VAT code (e.g. PVM1), tariff in percent and the reverse-charge article where it applies.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/vats"
+      }
+    },
+    {
+      "name": "invoice123_get_invoice_data",
+      "description": "Get in one call the reference data used on invoices: activities, document series, bank accounts, units, VAT rates and warehouses, with their ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "string",
+            "description": "Only series of these types, comma-separated: simple, advance, credit, kpo, ppk, kio."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice-data",
+        "queryParams": {
+          "types": "$types"
+        }
+      }
+    },
+    {
+      "name": "invoice123_list_purchases",
+      "description": "List purchase invoices (expenses) with supplier, line items with expense type, VAT, totals, payments and paid flag. Filter by text, date range, type (simple, vat-simple, credit, vat-credit, foreign, other), status (paid, unpaid, partially_paid, late, nullified), expense type, activity, client (supplier) or project. Needs expense:index and the purchases module.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page.",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string",
+            "description": "Free text search."
+          },
+          "range": {
+            "type": "string",
+            "description": "Purchase dates: Date range as two YYYY-MM-DD dates joined by a comma, e.g. 2026-01-01,2026-03-31."
+          },
+          "type": {
+            "type": "string",
+            "description": "Purchase document type.",
+            "enum": [
+              "simple",
+              "vat-simple",
+              "credit",
+              "vat-credit",
+              "foreign",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Payment status.",
+            "enum": [
+              "paid",
+              "unpaid",
+              "partially_paid",
+              "late",
+              "nullified"
+            ]
+          },
+          "expense_type_id": {
+            "type": "string",
+            "description": "Expense type id, from invoice123_list_purchase_types."
+          },
+          "activity_id": {
+            "type": "string",
+            "description": "Activity id, from invoice123_list_activities."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Supplier id (suppliers are clients), from invoice123_list_clients."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id, from invoice123_list_projects."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "text": "$text",
+          "range": "$range",
+          "type": "$type",
+          "status": "$status",
+          "expense_type": "$expense_type_id",
+          "activity": "$activity_id",
+          "client": "$client_id",
+          "project": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "invoice123_list_purchase_vat_rates",
+      "description": "List the VAT rates available on purchase invoices: id, VAT code, tariff in percent and reverse-charge article.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expense/vats"
+      }
+    },
+    {
+      "name": "invoice123_list_purchase_types",
+      "description": "List the expense types (purchase categories) that purchase line items can carry, with their ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expense/types"
+      }
+    },
+    {
+      "name": "invoice123_download_commercial_offer_pdf",
+      "description": "Download the PDF of a commercial offer (quote) in Lithuanian, English or Latvian; the file is handed over as an attachment. Needs the commercial:store permission and the commercial offers module.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Commercial offer id."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the PDF: lt (Lithuanian), en (English) or lv (Latvian).",
+            "enum": [
+              "lt",
+              "en",
+              "lv"
+            ]
+          }
+        },
+        "required": [
+          "offer_id",
+          "language"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/commercial-suggestion/{offer_id}/pdf/{language}"
+      }
+    },
+    {
+      "name": "invoice123_list_clients",
+      "description": "List clients (customers and suppliers): id, name, company or personal code, client code, VAT code, address and country. Filter by name or code. Needs client:index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page.",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Client name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Company code or personal identification number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "name": "$name",
+          "code": "$code"
+        }
+      }
+    },
+    {
+      "name": "invoice123_list_products",
+      "description": "List the product catalog: id, name, code, price, description, prime cost, type, weight and stock per warehouse. Filter by exact code. Needs product:index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page.",
+            "minimum": 1
+          },
+          "code": {
+            "type": "string",
+            "description": "Product code."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "code": "$code"
+        }
+      }
+    },
+    {
+      "name": "invoice123_list_projects",
+      "description": "List projects with number, description, start and end dates and budget. Projects can be linked to invoices and purchases. Needs project:index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "invoice123_list_waybills",
+      "description": "List waybills (delivery notes) with type, series, receiver, carrier, load and delivery dates and the linked invoice series, at most 50 per page. Needs waybills:index and the waybill module.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (at most 50).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/waybills",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "invoice123_list_bank_accounts",
+      "description": "List the company bank accounts (IBAN, bank name, code, SWIFT, default flag) that invoices show for payment.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/banks"
+      }
+    },
+    {
+      "name": "invoice123_list_series",
+      "description": "List document series (numbering ranges) with id, title and type: simple, advance, credit invoices, and the cash documents kpo, ppk, kio.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "string",
+            "description": "Only these types, comma-separated: simple, advance, credit, kpo, ppk, kio."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/series",
+        "queryParams": {
+          "types": "$types"
+        }
+      }
+    },
+    {
+      "name": "invoice123_list_cash_registers",
+      "description": "List the company cash registers with register number, last receipt number and receipt pattern.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cash-registers"
+      }
+    },
+    {
+      "name": "invoice123_list_units",
+      "description": "List the measurement units (pcs, hours, kg...) with their ids, as used on invoice lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/units"
+      }
+    },
+    {
+      "name": "invoice123_list_activities",
+      "description": "List the business activities (for individual activity accounts) with their ids, used to filter invoices and purchases.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/activities"
+      }
+    },
+    {
+      "name": "invoice123_list_email_templates",
+      "description": "List the e-mail templates the company uses to send invoices, with their ids and names.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates"
+      }
+    }
+  ]
+}

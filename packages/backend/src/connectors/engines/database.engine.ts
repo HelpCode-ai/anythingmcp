@@ -5,7 +5,7 @@ import { MongoClient } from 'mongodb';
 import * as mysql from 'mysql2/promise';
 import * as oracledb from 'oracledb';
 import Database from 'better-sqlite3';
-import { assertSafeOutboundHost } from '../../common/ssrf.util';
+import { SsrfBlockedError, assertSafeOutboundHost } from '../../common/ssrf.util';
 import {
   HanaConnectOptions,
   HanaDriverName,
@@ -831,14 +831,24 @@ export class DatabaseEngine {
 
   /**
    * SSRF guard for a database connection string. SQLite is a local file (no
-   * network host) so it's skipped here. Every other engine resolves one or more
+   * network host): on a self-hosted instance the operator's own disk is fair
+   * game, but on the multi-tenant cloud it would let any workspace open or
+   * create files inside the shared container, so it is refused there. Every
+   * other engine resolves one or more
    * hosts that must pass the same outbound policy as REST/SOAP/GraphQL — so a
    * connector can't be pointed at cloud metadata, loopback, or internal-only
    * databases unless an operator allowlists them (SSRF_ALLOWED_HOSTS /
    * SSRF_ALLOW_PRIVATE).
    */
   private async assertSafeDbHost(baseUrl: string): Promise<void> {
-    if (this.isSqlite(baseUrl)) return;
+    if (this.isSqlite(baseUrl)) {
+      if (process.env.DEPLOYMENT_MODE === 'cloud') {
+        throw new SsrfBlockedError(
+          'SQLite connectors read files on the server and are not available on AnythingMCP Cloud. Use a network database (PostgreSQL, MySQL, SQL Server, Oracle, SAP HANA or MongoDB).',
+        );
+      }
+      return;
+    }
     const hosts = this.extractHosts(baseUrl);
     for (const host of hosts) {
       await assertSafeOutboundHost(host);

@@ -30,6 +30,7 @@ import {
   POPULAR_MIN_WORKSPACES,
   POPULAR_WINDOW_DAYS,
 } from './popular-connectors';
+import { INSTALL_RANKING_CACHE_MS, INSTALL_RANKING_MIN_WORKSPACES } from './install-ranking';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
@@ -246,6 +247,45 @@ export class AdaptersService {
     }
     this.popularCache = { at: now, slugs };
     return slugs;
+  }
+
+  private installRankingCache: { at: number; ranking: SerializedBody } | null = null;
+
+  /**
+   * `{ slugs }`: the listed adapters, most-installed first, as a ready-to-send
+   * body (see ./install-ranking.ts). Cached for six hours; when the query
+   * fails, the last good ranking (or an empty one) is served and the next
+   * request tries again.
+   */
+  async installRanking(): Promise<SerializedBody> {
+    const now = Date.now();
+    const cached = this.installRankingCache;
+    if (cached && now - cached.at < INSTALL_RANKING_CACHE_MS) return cached.ranking;
+    try {
+      // The EXISTS goes through tool_invocations' (connector_id, created_at)
+      // index and stops at the first successful call of each connector.
+      const rows = await this.prisma.$queryRaw<Array<{ slug: string | null }>>`
+        SELECT c.config->>'adapterSlug' AS slug
+        FROM connectors c
+        WHERE c.config ? 'adapterSlug'
+          AND EXISTS (
+            SELECT 1 FROM tool_invocations ti
+            WHERE ti.connector_id = c.id AND ti.status = 'SUCCESS'
+          )
+        GROUP BY 1
+        HAVING COUNT(DISTINCT c.organization_id) >= ${INSTALL_RANKING_MIN_WORKSPACES}
+        ORDER BY COUNT(DISTINCT c.organization_id) DESC, 1`;
+      const listed = new Set(this.listAll().map((a) => a.slug));
+      const slugs = rows
+        .map((r) => r.slug)
+        .filter((s): s is string => typeof s === 'string' && listed.has(s));
+      const ranking = serializeWithEtag({ slugs });
+      this.installRankingCache = { at: now, ranking };
+      return ranking;
+    } catch (err: any) {
+      this.logger.warn(`Could not rank adapters by installs: ${err?.message ?? err}`);
+      return cached?.ranking ?? serializeWithEtag({ slugs: [] });
+    }
   }
 
   /** Catalog slugs this workspace already has a connector for. */

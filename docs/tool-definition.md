@@ -941,7 +941,7 @@ to every connector type, not just REST.
 
 ## Authentication: `LOGIN_TOKEN`
 
-In addition to the standard `NONE` / `API_KEY` / `BEARER_TOKEN` / `BASIC_AUTH` / `OAUTH2` / `QUERY_AUTH` / `WS_SECURITY` / `CERTIFICATE` / `CONNECTION_STRING` schemes, the connector spec supports `LOGIN_TOKEN` for APIs that issue a long-lived bearer **in exchange for a credentials POST** — optionally requiring the password to be **bcrypt-hashed with a salt fetched from the remote service** (Sorare-style).
+In addition to the standard `NONE` / `API_KEY` / `BEARER_TOKEN` / `BASIC_AUTH` / `OAUTH2` / `QUERY_AUTH` / `WS_SECURITY` / `CERTIFICATE` / `CONNECTION_STRING` schemes, the connector spec supports `LOGIN_TOKEN` for APIs that issue a long-lived bearer **in exchange for a credentials POST** — optionally requiring the password to be **bcrypt-hashed with a salt fetched from the remote service** (Sorare-style). APIs that log in with a JWT the client signs with its own private key instead of a password (noon's Partner API) use `signedJwt`.
 
 The engine handles salt fetch → bcrypt → login → token cache → proactive refresh → re-login-on-401 automatically. Adapter authors declare the full flow as JSON:
 

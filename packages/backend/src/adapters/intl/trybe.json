@@ -1,0 +1,409 @@
+{
+  "slug": "trybe",
+  "name": "Trybe",
+  "aliases": [
+    "Trybe UGC",
+    "jointrybe"
+  ],
+  "description": "Trybe performance-based UGC platform for brands: the creator roster and sample obligations, creator performance (earnings, GMV, ad spend, purchases and ROAS across Meta, TikTok and AppLovin) and the videos creators submit. Submission reviews are included, installed switched off.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "trybe",
+  "docsUrl": "https://api.jointrybe.com/v1/openapi.json",
+  "instructions": "## Trybe\nThis connector uses the **Trybe Brand API** (`https://api.jointrybe.com/v1`), the HTTP API Trybe offers brands to pull data about their UGC creators: the creator roster with sample obligations, creator performance (earnings, Trybe conversions and GMV, ad spend, purchases and ROAS on Meta, TikTok and AppLovin) and the content creators submit. Reviewing a submission (approve, reject, request a revision) is included but installed switched off.\n\n**Setup (about 2 minutes)**\n1. API access is a feature of the brand account; if every call answers 403 `feature_not_enabled`, ask your Trybe contact to enable the Brand API for your brand.\n2. Create an API key for your brand in the Trybe brand portal (or ask your Trybe contact for one). It starts with `tk_live_`. Paste it into `TRYBE_API_KEY`.\n3. Install and run `trybe_list_creators` to check the key.\n\nThe key is sent as `Authorization: Bearer tk_live_...` and sees only your brand.\n\n**Workflow**\n- Roster: `trybe_list_creators` (filter `sample_obligation=overdue` for creators who owe a video), then `trybe_get_creator` for one creator's programs and commission rules.\n- Performance: `trybe_get_creator_performance` for a period (default the last 30 complete UTC days). Rank the roster with `sort_by` (earnings, spend, purchase_value...), restrict to one creator with `creator_id`, to one program with `program_id`, or to Meta/TikTok/AppLovin with `platforms`.\n- Content: `trybe_list_submissions` (e.g. `status=pending` for the review queue, `query` to find videos that say a word), then `trybe_get_submission` for one item.\n- Reviews (switched off): `trybe_approve_submission`, `trybe_reject_submission`, `trybe_request_submission_revision` (needs a `comment`). The creator is notified at once and approval affects what they earn, so an admin turns these on deliberately; before each call show the user the submission and the comment and wait for a yes.\n\n**Reading the numbers**: money fields end in `_cents` and are USD cents (`spend_cents` 250000 = 2,500.00 USD). Dates are UTC calendar days `YYYY-MM-DD`; `end_date` cannot be in the future. Sorting by a metric or `active_only=true` caps the window at 90 days. `roas` is purchase value divided by spend, null without spend. A creator's `samples` block of zeros means no samples; `null` means it could not be read on that request, so retry rather than reading it as none.\n\n**Ids**: creators `creator_<uuid>`, programs `creator_program_<uuid>`, submissions `submission_<uuid>`, products `product_<uuid>`, groups `subgroup_<uuid>`. Use them exactly as returned. A submission's `trybe_id` (last 8 characters) must appear on the destination URL and ad name of every ad built from it; that is how Trybe attributes ads and pays creators.\n\n**Pagination and limits**: lists return `data`, `has_more` and `next_cursor`. Default 20 rows, at most 100 (`limit`); call again with `after` = `next_cursor` while `has_more` is true. The API reports its rate limit in `RateLimit-*` headers (300 requests per window); 429 `rate_limit_exceeded` means wait and retry. Download links in `asset.url` expire after about 20 minutes.\n\n**Errors**: 401 `invalid_api_key` means a missing or wrong key. 403 `feature_not_enabled` means the Brand API is not enabled for your brand. 400 `validation_error` names the bad parameter (e.g. start_date after end_date). 404 on one id means it does not exist or belongs to another brand.",
+  "prerequisites": "A Trybe brand account with Brand API access enabled, and a brand API key (tk_live_...).",
+  "requiredEnvVars": [
+    "TRYBE_API_KEY"
+  ],
+  "envVarMeta": {
+    "TRYBE_API_KEY": {
+      "label": "Brand API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "API key of your brand from the Trybe brand portal or your Trybe contact. It starts with tk_live_ and is sent as a Bearer token.",
+      "link": "https://api.jointrybe.com/v1/openapi.json",
+      "pattern": "^tk_[A-Za-z0-9_]+$",
+      "patternMessage": "Paste only the key, starting with tk_live_, without Bearer or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Trybe refused the key. Paste the brand API key again (it starts with tk_live_), without the word Bearer.",
+    "403": "The key works, but the Brand API is not enabled for this brand. Ask your Trybe contact to enable it.",
+    "429": "Trybe's rate limit was reached. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "trybe_list_creators"
+  },
+  "connector": {
+    "name": "Trybe Brand API",
+    "type": "REST",
+    "baseUrl": "https://api.jointrybe.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TRYBE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v1/creators"
+  },
+  "tools": [
+    {
+      "name": "trybe_list_creators",
+      "description": "List the active creators of your brand, newest first: id, name, avatar, join date and their sample status at your brand (samples requested, approved, fulfilled, overdue, the sample to act on and the Sample Score). Filter by sample_obligation to find who owes a video. Paginated with cursors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, default 20, at most 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from next_cursor of the previous page: returns the rows after it. Do not combine with before."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from previous_cursor: returns the rows before it. Do not combine with after."
+          },
+          "sample_obligation": {
+            "type": "string",
+            "enum": [
+              "not_yet_due",
+              "submitted_awaiting_review",
+              "needs_resubmit",
+              "overdue",
+              "fulfilled",
+              "none"
+            ],
+            "description": "Keep only creators with a sample in this state: overdue (owes a video past the due date), needs_resubmit, not_yet_due, submitted_awaiting_review, fulfilled, or none (no sample ever approved)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/creators",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before",
+          "sample_obligation": "$sample_obligation"
+        }
+      }
+    },
+    {
+      "name": "trybe_get_creator",
+      "description": "Get one creator of your brand by Trybe id: name, avatar, join date, sample status, and the programs they are enrolled in with each program's commission rules (e.g. 10% of GMV plus a flat amount per order).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "creator_id": {
+            "type": "string",
+            "description": "Trybe creator id as the API returns it, `creator_` plus a UUID, e.g. creator_8f3e21a0-7c6d-4b1e-9a3f-1b2c3d4e5f60. Take it from trybe_list_creators."
+          }
+        },
+        "required": [
+          "creator_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/creators/{creator_id}"
+      }
+    },
+    {
+      "name": "trybe_get_creator_performance",
+      "description": "Creator performance for a date range: per creator their programs, last activity and metrics (earnings, Trybe conversions and GMV, new and active submissions, ads running their content, ad spend, purchases, purchase value and ROAS). Money is in USD cents. Without dates it covers the last 30 complete UTC days. Sort by a metric to rank the whole roster (window then capped at 90 days).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "First day, inclusive, YYYY-MM-DD in UTC. Default 30 complete days ago."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, inclusive, YYYY-MM-DD in UTC. Default yesterday; future dates are rejected."
+          },
+          "creator_id": {
+            "type": "string",
+            "description": "Only this creator (`creator_` plus a UUID from trybe_list_creators)."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "joined_at",
+              "earnings",
+              "trybe_gmv",
+              "trybe_conversions",
+              "new_submissions",
+              "active_submissions",
+              "ads",
+              "spend",
+              "purchase_value",
+              "purchases"
+            ],
+            "description": "Row order. joined_at (default) pages newest first; any metric ranks the whole roster highest first."
+          },
+          "program_id": {
+            "type": "string",
+            "description": "Only creators enrolled in this program (`creator_program_` plus a UUID)."
+          },
+          "managed_by": {
+            "type": "string",
+            "enum": [
+              "brand",
+              "partner"
+            ],
+            "description": "partner = creators a partner agency manages; brand = creators the brand manages directly. Omit for both."
+          },
+          "active_only": {
+            "type": "boolean",
+            "description": "true drops creators with every metric zero in the window (window then capped at 90 days)."
+          },
+          "platforms": {
+            "type": "string",
+            "description": "Ad platforms whose ad data to include, comma-separated from meta, tiktok, applovin (e.g. meta,tiktok). Default: every platform."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, default 20, at most 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from next_cursor of the previous page: returns the rows after it. Do not combine with before."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from previous_cursor: returns the rows before it. Do not combine with after."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/creator-performance",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "creator_id": "$creator_id",
+          "sort_by": "$sort_by",
+          "program_id": "$program_id",
+          "managed_by": "$managed_by",
+          "active_only": "$active_only",
+          "platforms": "$platforms",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "trybe_list_submissions",
+      "description": "List the content (video or image) creators submitted to your brand: status (pending, approved, rejected, revision_requested), creator, program, products, angles, transcript, all-time ad usage, thumbnail and a download link that expires after about 20 minutes. Filter by status, creator, program, product, angle, transcript language or words the video says or shows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "revision_requested"
+            ],
+            "description": "Review status to keep."
+          },
+          "creator_id": {
+            "type": "string",
+            "description": "Only this creator (`creator_` plus a UUID)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Only the variants of this submission group (`subgroup_` plus a UUID)."
+          },
+          "angle": {
+            "type": "string",
+            "description": "Only submissions tagged with this angle name, case-insensitive (e.g. Unboxing & First Impressions)."
+          },
+          "program_id": {
+            "type": "string",
+            "description": "Program id `creator_program_` plus a UUID, as shown in programs[].id."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Only submissions tagged with this product (`product_` plus a UUID, from products[].id)."
+          },
+          "transcript_language": {
+            "type": "string",
+            "description": "ISO 639-1 language of the transcript, e.g. en or es."
+          },
+          "query": {
+            "type": "string",
+            "description": "One phrase of 2 to 100 characters matched against the transcript, on-screen text and the creator's note."
+          },
+          "platforms": {
+            "type": "string",
+            "description": "Ad platforms whose ad data to include, comma-separated from meta, tiktok, applovin (e.g. meta,tiktok). Default: every platform."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, default 20, at most 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from next_cursor of the previous page: returns the rows after it. Do not combine with before."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from previous_cursor: returns the rows before it. Do not combine with after."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/submissions",
+        "queryParams": {
+          "status": "$status",
+          "creator_id": "$creator_id",
+          "group_id": "$group_id",
+          "angle": "$angle",
+          "program_id": "$program_id",
+          "product_id": "$product_id",
+          "transcript_language": "$transcript_language",
+          "query": "$query",
+          "platforms": "$platforms",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "trybe_get_submission",
+      "description": "Get one submission by id with its status, creator, program, products, transcript, angles, review comment, ad usage, the trybe_id that ads must carry, and a fresh download link (expires after about 20 minutes, fetch again rather than storing it).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "description": "Submission id as the API returns it, `submission_` plus a UUID. Take it from trybe_list_submissions."
+          },
+          "platforms": {
+            "type": "string",
+            "description": "Ad platforms whose ad data to include, comma-separated from meta, tiktok, applovin (e.g. meta,tiktok). Default: every platform."
+          }
+        },
+        "required": [
+          "submission_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/submissions/{submission_id}",
+        "queryParams": {
+          "platforms": "$platforms"
+        }
+      }
+    },
+    {
+      "name": "trybe_approve_submission",
+      "description": "Approve a submission. The creator is notified and an approved submission can count toward their earnings and sample obligation. Installed switched off; confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "description": "Submission id as the API returns it, `submission_` plus a UUID. Take it from trybe_list_submissions."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Optional note to the creator, shown with the review."
+          }
+        },
+        "required": [
+          "submission_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/submissions/{submission_id}/approve",
+        "bodyMapping": {
+          "comment": "$comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "trybe_reject_submission",
+      "description": "Reject a submission. The creator is notified and the sample may turn into needs_resubmit. Installed switched off; confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "description": "Submission id as the API returns it, `submission_` plus a UUID. Take it from trybe_list_submissions."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Optional note to the creator, shown with the review."
+          }
+        },
+        "required": [
+          "submission_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/submissions/{submission_id}/reject",
+        "bodyMapping": {
+          "comment": "$comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "trybe_request_submission_revision",
+      "description": "Send a submission back to the creator with a revision request; the comment tells them what to change. Installed switched off; confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "description": "Submission id as the API returns it, `submission_` plus a UUID. Take it from trybe_list_submissions."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Message to the creator explaining what to change. Required."
+          }
+        },
+        "required": [
+          "submission_id",
+          "comment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/submissions/{submission_id}/request-revision",
+        "bodyMapping": {
+          "comment": "$comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

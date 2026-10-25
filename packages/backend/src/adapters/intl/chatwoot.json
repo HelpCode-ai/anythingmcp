@@ -11,7 +11,7 @@
   "category": "support",
   "icon": "chatwoot",
   "docsUrl": "https://developers.chatwoot.com/api-reference/introduction",
-  "instructions": "## Chatwoot\nThis connector uses the **Chatwoot Application API** (`/api/v1` and the `/api/v2` reports) of Chatwoot Cloud or your own self-hosted Chatwoot: inboxes, conversations and their messages, contacts, labels, agents, teams, canned responses and the support reports. Replies, private notes and new conversations are included but installed switched off.\n\n**Setup (about 2 minutes)**\n1. Sign in to Chatwoot with the user the AI should act as. Agents only see conversations of the inboxes they belong to and cannot read reports, so use an **administrator** for the full picture.\n2. Click your avatar, **Profile Settings**, and copy the **Access Token** at the bottom of the page into `CHATWOOT_API_TOKEN`. It does not expire; reset it on the same page.\n3. `CHATWOOT_URL` is the address you open Chatwoot at: `https://app.chatwoot.com` on Chatwoot Cloud, or your own domain (e.g. `https://chat.example.com`) when self-hosted. No path, no `/api`.\n4. `CHATWOOT_ACCOUNT_ID` is the number after `/app/accounts/` in the browser address bar (e.g. `https://app.chatwoot.com/app/accounts/3/dashboard` means 3). `chatwoot_get_profile` also lists every account of the token under `accounts`.\n5. Install and run `chatwoot_get_profile` to check the token.\n\nThe account token is not the Platform App token of a self-hosted super admin (`/platform/api`); this connector does not use the Platform API.\n\n**Self-hosted behind nginx**: the token travels in the `api_access_token` header. nginx drops headers with an underscore unless `underscores_in_headers on;` is set, which shows up as 401 on every call although the token is right.\n\n**Workflow**\n- Find things first: `chatwoot_list_inboxes`, `chatwoot_list_agents`, `chatwoot_list_teams`, `chatwoot_list_labels`, `chatwoot_list_inbox_agents`, `chatwoot_list_team_members`, `chatwoot_list_canned_responses`, `chatwoot_list_custom_attributes`, `chatwoot_get_account`.\n- Conversations: `chatwoot_list_conversations` (status open by default, 25 per page; page until the list is empty), `chatwoot_count_conversations` for counts only, `chatwoot_filter_conversations` for conditions such as \"created after a date and assigned to agent 4\", `chatwoot_get_conversation`, then `chatwoot_list_messages` for the thread. Message types: 0 incoming from the contact, 1 outgoing, 2 activity, 3 template; private notes have `private: true`.\n- Contacts: `chatwoot_search_contacts` (name, e-mail, phone, identifier), `chatwoot_list_contacts`, `chatwoot_get_contact`, `chatwoot_list_contact_conversations`.\n- Reports (administrator token): `chatwoot_get_report_summary` for a period with the previous period alongside, `chatwoot_get_report_timeseries` for a metric over time, `chatwoot_get_summary_by` to compare agents, inboxes or teams, `chatwoot_get_live_conversation_stats` for what is open and unattended now.\n\n**Dates**: conversation and message times, and the `since` / `until` of the reports, are Unix timestamps in seconds (UTC). Convert before quoting a time to the user. Report times (`avg_first_response_time`, `avg_resolution_time`, `reply_time`) are seconds.\n\n**Labels**: `chatwoot_set_conversation_labels` replaces the whole label list of a conversation. To add one, send the current labels plus the new title; to remove one, send the list without it.\n\n**Writes switched off**: `chatwoot_send_message` (reply or private note) and `chatwoot_create_conversation` reach the customer at once on WhatsApp, e-mail or chat, so an admin turns them on deliberately. Before each call show the user the text and the recipient and wait for a yes. A private note (`private: true`) is internal. WhatsApp Cloud API inboxes only deliver free text within 24 hours of the contact's last message; outside that window Chatwoot needs an approved template, which this connector does not send.\n\n**Errors**: 401 means a wrong or reset token (or nginx dropping the header). 404 on every call usually means a wrong `CHATWOOT_URL` or `CHATWOOT_ACCOUNT_ID`; 404 on one conversation means an id the user cannot see. Reports answer 401 or 403 for agents who are not administrators.",
+  "instructions": "## Chatwoot\nThis connector uses the **Chatwoot Application API** (`/api/v1` and the `/api/v2` reports) of Chatwoot Cloud or your own self-hosted Chatwoot: inboxes, conversations and their messages, contacts, labels, agents, teams, canned responses and the support reports. Replies, private notes and new conversations are included but installed switched off.\n\n**Setup (about 2 minutes)**\n1. Sign in to Chatwoot with the user the AI should act as. Agents only see conversations of the inboxes they belong to and cannot read reports, so use an **administrator** for the full picture.\n2. Click your avatar, **Profile Settings**, and copy the **Access Token** at the bottom of the page into `CHATWOOT_API_TOKEN`. It does not expire; reset it on the same page.\n3. `CHATWOOT_URL` is the address you open Chatwoot at: `https://app.chatwoot.com` on Chatwoot Cloud, or your own domain (e.g. `https://chat.example.com`) when self-hosted. No path, no `/api`.\n4. `CHATWOOT_ACCOUNT_ID` is the number after `/app/accounts/` in the browser address bar (e.g. `https://app.chatwoot.com/app/accounts/3/dashboard` means 3). `chatwoot_get_profile` also lists every account of the token under `accounts`.\n5. Install and run `chatwoot_get_profile` to check the token.\n\nThe account token is not the Platform App token of a self-hosted super admin (`/platform/api`); this connector does not use the Platform API.\n\n**Self-hosted behind nginx**: the token travels in the `api_access_token` header. nginx drops headers with an underscore unless `underscores_in_headers on;` is set, which shows up as 401 on every call although the token is right.\n\n**Workflow**\n- Find things first: `chatwoot_list_inboxes`, `chatwoot_list_agents`, `chatwoot_list_teams`, `chatwoot_list_labels`, `chatwoot_list_inbox_agents`, `chatwoot_list_team_members`, `chatwoot_list_canned_responses`, `chatwoot_list_custom_attributes`, `chatwoot_get_account`.\n- Conversations: `chatwoot_list_conversations` (status open by default, 25 per page; page until the list is empty), `chatwoot_count_conversations` for counts only, `chatwoot_filter_conversations` for conditions such as \"created after a date and assigned to agent 4\", `chatwoot_get_conversation`, then `chatwoot_list_messages` for the thread. Message types: 0 incoming from the contact, 1 outgoing, 2 activity, 3 template; private notes have `private: true`.\n- Contacts: `chatwoot_search_contacts` (name, e-mail, phone, identifier), `chatwoot_list_contacts`, `chatwoot_get_contact`, `chatwoot_list_contact_conversations`.\n- Reports (administrator token): `chatwoot_get_report_summary` for a period with the previous period alongside, `chatwoot_get_report_timeseries` for a metric over time, `chatwoot_get_summary_by` to compare agents, inboxes or teams, `chatwoot_get_live_conversation_stats` for what is open and unattended now.\n\n**Dates**: conversation and message times, and the `since` / `until` of the reports, are Unix timestamps in seconds (UTC). Convert before quoting a time to the user. Report times (`avg_first_response_time`, `avg_resolution_time`, `reply_time`) are seconds.\n\n**Labels**: `chatwoot_set_conversation_labels` replaces the whole label list of a conversation. To add one, send the current labels plus the new title; to remove one, send the list without it.\n\n**Writes switched off**: `chatwoot_send_message` (reply or private note) and `chatwoot_create_conversation` reach the customer at once on WhatsApp, e-mail or chat, so an admin turns them on deliberately. Before each call show the user the text and the recipient and wait for a yes. A private note (`private: true`) is internal. WhatsApp Cloud API inboxes only deliver free text within 24 hours of the contact's last message; outside that window Chatwoot needs an approved template, which this connector does not send.\n\n**Managing agents (switched off)**: `chatwoot_add_agent` invites a person (Chatwoot e-mails them at once and, on Chatwoot Cloud, the seat is billed), `chatwoot_update_agent` changes role or availability (Chatwoot wants the role on every update), `chatwoot_remove_agent` takes their access away. All three need an administrator token and are installed switched off; take the agent id from `chatwoot_list_agents`, show the change and wait for a yes.\n\n**Errors**: 401 means a wrong or reset token (or nginx dropping the header). 404 on every call usually means a wrong `CHATWOOT_URL` or `CHATWOOT_ACCOUNT_ID`; 404 on one conversation means an id the user cannot see. Reports answer 401 or 403 for agents who are not administrators.",
   "prerequisites": "A Chatwoot account (Cloud or self-hosted) and the access token of a user from Profile Settings; an administrator token is needed for the reports.",
   "requiredEnvVars": [
     "CHATWOOT_URL",
@@ -171,6 +171,145 @@
         "method": "GET",
         "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/agents"
       }
+    },
+    {
+      "name": "chatwoot_add_agent",
+      "description": "Invite a person to the account as an agent or administrator. Chatwoot sends them an invitation e-mail at once to set a password, and on Chatwoot Cloud every agent counts toward the paid seats. Needs an administrator token. Installed switched off. Show the name, e-mail and role to the user and wait for a yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name of the agent."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address the invitation goes to."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "administrator"
+            ],
+            "description": "agent sees only the conversations of their inboxes; administrator manages the whole account, its settings and reports."
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "online",
+              "busy",
+              "offline"
+            ],
+            "description": "Availability the agent starts with."
+          },
+          "auto_offline": {
+            "type": "boolean",
+            "description": "true marks the agent offline automatically when they are away from Chatwoot."
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "role"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/agents",
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "role": "$role",
+          "availability": "$availability",
+          "auto_offline": "$auto_offline"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "chatwoot_update_agent",
+      "description": "Change an agent's role (agent or administrator), availability or auto-offline setting. Promoting to administrator gives access to every inbox, the settings and the reports. Needs an administrator token. Installed switched off. Show the change to the user and wait for a yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "integer",
+            "description": "Agent id from chatwoot_list_agents (the user id, not the e-mail)."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "administrator"
+            ],
+            "description": "Role to set; Chatwoot requires it on every update, so send the current role to keep it."
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "online",
+              "busy",
+              "offline"
+            ],
+            "description": "New availability."
+          },
+          "auto_offline": {
+            "type": "boolean",
+            "description": "true marks the agent offline automatically when they are away from Chatwoot."
+          }
+        },
+        "required": [
+          "agent_id",
+          "role"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/agents/{agent_id}",
+        "bodyMapping": {
+          "role": "$role",
+          "availability": "$availability",
+          "auto_offline": "$auto_offline"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "chatwoot_remove_agent",
+      "description": "Remove an agent from the account. They lose access to the account at once; to undo it, invite them again. Needs an administrator token. Installed switched off. Name the agent to the user and wait for a yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "integer",
+            "description": "Agent id from chatwoot_list_agents (the user id, not the e-mail)."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/v1/accounts/{{CHATWOOT_ACCOUNT_ID}}/agents/{agent_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
     },
     {
       "name": "chatwoot_list_teams",

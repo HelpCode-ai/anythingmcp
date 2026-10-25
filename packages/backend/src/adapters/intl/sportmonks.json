@@ -2,7 +2,7 @@
   "slug": "sportmonks",
   "name": "SportMonks Football",
   "description": "SportMonks Football API v3: leagues, seasons, fixtures and results, livescores, standings, top scorers, teams, squads, players, venues, pre-match odds and predictions, with SportMonks include and filter syntax. Coverage depends on your SportMonks plan.",
-  "instructions": "## SportMonks Football\nThis connector reads the SportMonks Football API v3 (`https://api.sportmonks.com/v3`): leagues and seasons, fixtures and results, livescores, standings, top scorers, teams and squads, players, venues, pre-match odds and predictions. Every tool only reads.\n\n**Setup.** Sign in at https://my.sportmonks.com, open API, create an API token and paste it into `SPORTMONKS_API_TOKEN`. It is sent in the `Authorization` header. A free plan exists (a few leagues); paid plans add leagues and add-ons such as odds and predictions.\n\n**Plan coverage.** Data outside your plan does not raise an error: the answer is empty with the message \"No result(s) found ... you don't have access to it via your current subscription\". Call `sportmonks_list_my_leagues` first and work with those leagues. Odds and predictions need the matching add-on.\n\n**Includes.** Base answers only carry ids. Ask for related data with `include`, separated by semicolons and nested with dots: `participants;scores;state;events.type;lineups.player`. Ids such as `type_id`, `state_id` or `position_id` are explained by adding `.type` (or `state`, `position`) to the include, or by `sportmonks_list_types`. Each tool lists useful includes. Keep includes to what you need: they make answers much larger.\n\n**Filters, fields and paging.** `filters` takes SportMonks filters separated by semicolons, e.g. `fixtureLeagues:9` on fixture lists, `eventTypes:14,15` on events, `markets:1;bookmakers:2` on odds, `seasonTopscorerTypes:208` on top scorers. `select` returns only the fields you list. Lists are paged (`per_page` up to 50); when `pagination.has_more` is true, call again with the next `page`.\n\n**Ids.** League ids: 8 Premier League, 9 Championship, 82 Bundesliga, 384 Serie A, 564 LaLiga, 301 Ligue 1, 2 Champions League. The standings, top scorer and squad tools take a season id: get it from `sportmonks_get_league` with include `currentSeason`. Fixture lists give fixture ids for the match, odds and prediction tools. Teams and players: use the search tools.\n\n**Reading the data.** Times are UTC unless you pass `timezone`. `result_info` is a sentence such as \"Arsenal won after full-time.\"; scores are in the `scores` include (`description` CURRENT is the latest score). Odds values are decimal.\n\n**Rate limit.** 3,000 calls per hour per entity (fixtures, teams, players ...). Every answer carries `rate_limit.remaining` and `resets_in_seconds`; on 429 wait until the reset. Prefer one list call with a filter over many single calls.",
+  "instructions": "## SportMonks Football\nThis connector reads the SportMonks Football API v3 (`https://api.sportmonks.com/v3`): leagues and seasons, fixtures and results, livescores, standings, top scorers, teams and squads, players, venues, pre-match odds and predictions. Every tool only reads.\n\n**Setup.** Sign in at https://my.sportmonks.com, open API, create an API token and paste it into `SPORTMONKS_API_TOKEN`. It is sent in the `Authorization` header. A free plan exists (a few leagues); paid plans add leagues and add-ons such as odds and predictions.\n\n**Plan coverage.** Data outside your plan does not raise an error: the answer is empty with the message \"No result(s) found ... you don't have access to it via your current subscription\". Call `sportmonks_list_my_leagues` first and work with those leagues. Odds and predictions need the matching add-on.\n\n**Includes.** Base answers only carry ids. Ask for related data with `include`, separated by semicolons and nested with dots: `participants;scores;state;events.type;lineups.player`. Ids such as `type_id`, `state_id` or `position_id` are explained by adding `.type` (or `state`, `position`) to the include, or by `sportmonks_list_types`. Each tool lists useful includes. Keep includes to what you need: they make answers much larger.\n\n**Filters, fields and paging.** `filters` takes SportMonks filters separated by semicolons, e.g. `fixtureLeagues:9` on fixture lists, `eventTypes:14,15` on events, `markets:1;bookmakers:2` on odds (`sportmonks_get_prematch_odds`), `seasonTopscorerTypes:208` on top scorers. `select` returns only the fields you list. Lists are paged (`per_page` up to 50); when `pagination.has_more` is true, call again with the next `page`.\n\n**Ids.** League ids: 8 Premier League, 9 Championship, 82 Bundesliga, 384 Serie A, 564 LaLiga, 301 Ligue 1, 2 Champions League. The standings, top scorer and squad tools take a season id: get it from `sportmonks_get_league` with include `currentSeason`. Fixture lists give fixture ids for the match, odds and prediction tools. For one market of a fixture use `sportmonks_get_prematch_odds_by_market` (market ids from `sportmonks_list_odds_markets`), for one bookmaker `sportmonks_get_prematch_odds_by_bookmaker` (ids from `sportmonks_list_bookmakers`); both are smaller than the full odds list. Teams and players: use the search tools.\n\n**Reading the data.** Times are UTC unless you pass `timezone`. `result_info` is a sentence such as \"Arsenal won after full-time.\"; scores are in the `scores` include (`description` CURRENT is the latest score). Odds values are decimal.\n\n**Rate limit.** 3,000 calls per hour per entity (fixtures, teams, players ...). Every answer carries `rate_limit.remaining` and `resets_in_seconds`; on 429 wait until the reset. Prefer one list call with a filter over many single calls.",
   "region": "intl",
   "category": "sports",
   "icon": "sportmonks",
@@ -1464,6 +1464,130 @@
           "include": "$include",
           "select": "$select",
           "filters": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_prematch_odds_by_market",
+      "description": "Pre-match odds of one fixture in one market (e.g. 1 match winner, 2 double chance, 14 both teams to score; ids from sportmonks_list_odds_markets), from every bookmaker in your plan. Narrow to bookmakers with filters bookmakers:2,9. Not paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks fixture id, from the fixture list tools."
+          },
+          "market_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Odds market id, from sportmonks_list_odds_markets (1 = match winner)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons (one level only): market, bookmaker, fixture."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Static filters: bookmakers:2,9 (bookmaker ids) or winningOdds. Leave out for none."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language code to translate name fields, e.g. es or de. Leave out for English."
+          }
+        },
+        "required": [
+          "fixture_id",
+          "market_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/odds/pre-match/fixtures/{fixture_id}/markets/{market_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "locale": "$locale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, pagination: pagination.{has_more: has_more, current_page: current_page, next_page: next_page}, rate_limit: rate_limit.{remaining: remaining, resets_in_seconds: resets_in_seconds, requested_entity: requested_entity}, message: message} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "sportmonks_get_prematch_odds_by_bookmaker",
+      "description": "Pre-match odds of one fixture from one bookmaker (ids from sportmonks_list_bookmakers, e.g. 2 bet365), across all markets in your plan. Narrow to markets with filters markets:1,14. Not paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SportMonks fixture id, from the fixture list tools."
+          },
+          "bookmaker_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Bookmaker id, from sportmonks_list_bookmakers (2 = bet365)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to add, separated by semicolons (one level only): market, bookmaker, fixture."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma separated fields to return, e.g. name,starting_at. Cuts the response down."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Static filters: markets:1,14 (market ids) or winningOdds. Leave out for none."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language code to translate name fields, e.g. es or de. Leave out for English."
+          }
+        },
+        "required": [
+          "fixture_id",
+          "bookmaker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/football/odds/pre-match/fixtures/{fixture_id}/bookmakers/{bookmaker_id}",
+        "queryParams": {
+          "include": "$include",
+          "select": "$select",
+          "filters": "$filters",
+          "locale": "$locale"
         }
       },
       "responseMapping": {
