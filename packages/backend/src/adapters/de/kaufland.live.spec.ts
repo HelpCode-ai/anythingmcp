@@ -69,3 +69,12 @@ const live = process.env.RUN_KAUFLAND_LIVE === '1';
     expect(a.probe?.tool ?? toolNames[0]).toBeTruthy();
   });
 });
+
+describe('kaufland_list_tickets limit', () => {
+  it('caps limit at 30, the most the tickets endpoint accepts', () => {
+    const tool = (adapter as unknown as {
+      tools: { name: string; parameters: { properties: Record<string, { maximum?: number }> } }[];
+    }).tools.find((t) => t.name === 'kaufland_list_tickets')!;
+    expect(tool.parameters.properties.limit.maximum).toBe(30);
+  });
+});

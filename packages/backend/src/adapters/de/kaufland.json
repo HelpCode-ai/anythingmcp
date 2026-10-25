@@ -213,7 +213,8 @@
           },
           "limit": {
             "type": "number",
-            "description": "Rows per page (max 100)."
+            "maximum": 30,
+            "description": "Rows per page (max 30)."
           },
           "offset": {
             "type": "number",

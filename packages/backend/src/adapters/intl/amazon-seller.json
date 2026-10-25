@@ -260,7 +260,9 @@
           },
           "itemCondition": {
             "type": "string",
-            "description": "Condition filter: New, Used, Collectible, Refurbished, Club. Default New."
+            "enum": ["New", "Used", "Collectible", "Refurbished", "Club"],
+            "default": "New",
+            "description": "Condition filter. Amazon requires one; defaults to New."
           }
         },
         "required": ["asin"]
