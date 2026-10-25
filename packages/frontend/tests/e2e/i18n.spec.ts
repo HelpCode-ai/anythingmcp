@@ -238,8 +238,18 @@ test.describe('language switcher', () => {
   test('in Settings persists across a reload and sign-out', async ({ page }) => {
     await fakeSession(page);
     await page.goto('/settings');
+    // The sidebar renders on the client, so once it shows the page is hydrated
+    // and the switcher's onChange is attached.
+    await expectSidebar(page, 'en', { group: 'Overview', links: ['Connectors'], settings: 'Settings' });
 
-    await page.getByLabel('Language', { exact: true }).selectOption('it');
+    const select = page.getByLabel('Language', { exact: true });
+    await expect(async () => {
+      await select.selectOption('it');
+      const cookie = (await page.context().cookies()).find((c) => c.name === 'amcp_locale');
+      expect(cookie?.value).toBe('it');
+    }).toPass({ timeout: 15_000 });
+    // router.refresh() re-renders the server components; give a cold dev server time.
+    await expect(page.locator('html')).toHaveAttribute('lang', 'it', { timeout: 15_000 });
     await expectSidebar(page, 'it', { group: 'Panoramica', links: ['Connettori'], settings: 'Impostazioni' });
     await expect(page.getByLabel('Lingua', { exact: true })).toHaveValue('it');
 
