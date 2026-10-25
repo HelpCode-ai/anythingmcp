@@ -10,6 +10,7 @@ import { useToast } from '@/components/toast';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/badge';
+import { LanguageSwitcher } from '@/components/language-switcher';
 
 const AUTH_MODE_LABELS: Record<string, string> = {
   none: 'None (not recommended)',
@@ -351,6 +352,7 @@ export default function SettingsPage() {
             <label htmlFor="settings-profile-role" className={labelClass}>Role</label>
             <input id="settings-profile-role" type="text" value={user?.role || ''} disabled className={inputDisabledClass} />
           </div>
+          <LanguageSwitcher />
           {profileMsg && (
             <p className={`text-sm ${profileMsg.startsWith('Error') ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
               {profileMsg}

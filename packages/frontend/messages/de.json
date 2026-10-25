@@ -27,5 +27,38 @@
       "hide": "Schaltfläche ausblenden",
       "hideAriaLabel": "Schaltfläche „Stern auf GitHub“ ausblenden"
     }
+  },
+  "signIn": {
+    "title": "Anmelden",
+    "subtitle": "Erstellen Sie eigene Connectors für Claude, ChatGPT, Copilot, Meta Muse und jeden KI-Agenten",
+    "emailVerified": "E-Mail-Adresse erfolgreich bestätigt! Sie können sich jetzt anmelden.",
+    "signingIn": "Sie werden angemeldet…",
+    "continueWith": "Weiter mit {provider}",
+    "redirecting": "Weiterleitung…",
+    "orUseEmail": "oder mit Ihrer E-Mail-Adresse",
+    "or": "oder",
+    "email": "E-Mail",
+    "password": "Passwort",
+    "passwordPlaceholder": "Mind. 8 Zeichen",
+    "recoveryCode": "Wiederherstellungscode",
+    "recoveryCodeHint": "Einer der Codes, die Sie beim Einrichten von Single Sign-On gespeichert haben. Jeder Code funktioniert nur einmal.",
+    "loading": "Wird geladen…",
+    "submit": "Anmelden",
+    "submitRecovery": "Mit Wiederherstellungscode anmelden",
+    "forgotPassword": "Passwort vergessen?",
+    "useRecoveryCode": "Wiederherstellungscode verwenden",
+    "backToPassword": "Zurück zur Anmeldung mit Passwort",
+    "noAccount": "Noch kein Konto?",
+    "register": "Registrieren",
+    "errors": {
+      "authFailed": "Authentifizierung fehlgeschlagen",
+      "signInFailed": "Anmeldung fehlgeschlagen",
+      "codeInvalid": "Der Anmeldecode ist ungültig oder abgelaufen",
+      "socialUnavailable": "Diese Anmeldeoption ist gerade nicht verfügbar."
+    }
+  },
+  "language": {
+    "label": "Sprache",
+    "hint": "Gilt für diesen Browser."
   }
 }

@@ -27,5 +27,38 @@
       "hide": "Hide button",
       "hideAriaLabel": "Hide Star on GitHub button"
     }
+  },
+  "signIn": {
+    "title": "Sign in",
+    "subtitle": "Create custom connectors for Claude, ChatGPT, Copilot, Meta Muse and any AI agent",
+    "emailVerified": "Email verified successfully! You can now sign in.",
+    "signingIn": "Signing you in…",
+    "continueWith": "Continue with {provider}",
+    "redirecting": "Redirecting…",
+    "orUseEmail": "or use your email",
+    "or": "or",
+    "email": "Email",
+    "password": "Password",
+    "passwordPlaceholder": "Min. 8 characters",
+    "recoveryCode": "Recovery code",
+    "recoveryCodeHint": "One of the codes you saved when setting up single sign-on. Each works once.",
+    "loading": "Loading...",
+    "submit": "Sign In",
+    "submitRecovery": "Sign in with recovery code",
+    "forgotPassword": "Forgot password?",
+    "useRecoveryCode": "Use a recovery code",
+    "backToPassword": "Back to password sign-in",
+    "noAccount": "Don't have an account?",
+    "register": "Register",
+    "errors": {
+      "authFailed": "Authentication failed",
+      "signInFailed": "Sign-in failed",
+      "codeInvalid": "Sign-in code is invalid or has expired",
+      "socialUnavailable": "This sign-in option is not available right now."
+    }
+  },
+  "language": {
+    "label": "Language",
+    "hint": "Applies to this browser."
   }
 }

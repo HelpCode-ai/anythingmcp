@@ -3,11 +3,13 @@
 import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { ApiError, auth, license, server, social, sso, type SocialProviderButton, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/toast';
 import { buildPricingUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/logo-icon';
+import { LanguageSwitcher } from '@/components/language-switcher';
 import { ProviderMark } from '@/components/provider-mark';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -102,6 +104,9 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const { login, token: sessionToken, user: sessionUser, isLoading: sessionLoading } = useAuth();
   const toast = useToast();
+  // Sign-in only: registration, the Cloud sign-up and the verification and
+  // licence steps are still English.
+  const t = useTranslations('signIn');
 
   const redirectTo = safeRedirect(searchParams.get('redirect'));
   // Back into an AI client's pending authorization (/auth/login, served by the
@@ -293,14 +298,14 @@ function LoginForm() {
       try {
         const result = await sso.exchange(ssoCode);
         if (!result.accessToken) {
-          setError(result.error || 'Sign-in code is invalid or has expired');
+          setError(result.error || t('errors.codeInvalid'));
           setSsoExchanging(false);
           return;
         }
         login(result.accessToken, result.user);
         router.replace(redirectTo);
       } catch (err: any) {
-        setError(err.message || 'Sign-in failed');
+        setError(err.message || t('errors.signInFailed'));
         setSsoExchanging(false);
       }
     })();
@@ -382,7 +387,7 @@ function LoginForm() {
           goTo(redirectTo);
           return;
         }
-        setError(err.message || 'Sign-in failed');
+        setError(err.message || t('errors.signInFailed'));
         setSsoExchanging(false);
       }
     })();
@@ -403,7 +408,7 @@ function LoginForm() {
       window.location.assign(authorizationUrl);
       return true;
     } catch (err: any) {
-      setError(err.message || 'This sign-in option is not available right now.');
+      setError(err.message || (isRegister ? 'This sign-in option is not available right now.' : t('errors.socialUnavailable')));
       setSocialStarting(null);
       return false;
     }
@@ -512,7 +517,7 @@ function LoginForm() {
 
       await finishSignIn(result, needsLicenseSetup);
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      setError(err.message || (isRegister ? 'Authentication failed' : t('errors.authFailed')));
     } finally {
       setLoading(false);
     }
@@ -1045,18 +1050,20 @@ function LoginForm() {
               : 'text-xl font-semibold text-[var(--text)]'
           }
         >
-          {cloudSignup ? 'Create your free account' : isRegister ? 'Create your account' : 'Sign in'}
+          {cloudSignup ? 'Create your free account' : isRegister ? 'Create your account' : t('title')}
         </h1>
         <p className="text-[var(--text-2)] mt-1.5 text-sm leading-relaxed">
           {cloudSignup
             ? '7-day free trial · no credit card · connect Claude, ChatGPT, Copilot, Cursor or Meta Muse to your tools.'
-            : 'Create custom connectors for Claude, ChatGPT, Copilot, Meta Muse and any AI agent'}
+            : isRegister
+              ? 'Create custom connectors for Claude, ChatGPT, Copilot, Meta Muse and any AI agent'
+              : t('subtitle')}
         </p>
       </div>
 
       {emailVerifiedParam === 'true' && (
         <div className={alertSuccess}>
-          Email verified successfully! You can now sign in.
+          {t('emailVerified')}
         </div>
       )}
 
@@ -1064,7 +1071,7 @@ function LoginForm() {
 
       {ssoExchanging && (
         <p className="text-center text-sm text-[var(--text-2)] py-6">
-          Signing you in…
+          {t('signingIn')}
         </p>
       )}
 
@@ -1079,7 +1086,11 @@ function LoginForm() {
               className="flex items-center justify-center gap-2.5 w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text)] hover:border-[var(--brand)] transition-colors disabled:opacity-60"
             >
               <ProviderMark type={p.id} />
-              <span>{socialStarting === p.id ? 'Redirecting…' : `Continue with ${p.name}`}</span>
+              <span>
+                {isRegister
+                  ? socialStarting === p.id ? 'Redirecting…' : `Continue with ${p.name}`
+                  : socialStarting === p.id ? t('redirecting') : t('continueWith', { provider: p.name })}
+              </span>
             </button>
           ))}
           {isRegister && (
@@ -1110,7 +1121,7 @@ function LoginForm() {
           ) : (
             <div className="flex items-center gap-3 pt-1">
               <div className="h-px flex-1 bg-[var(--border)]" />
-              <span className="text-[11.5px] text-[var(--text-3)]">or use your email</span>
+              <span className="text-[11.5px] text-[var(--text-3)]">{isRegister ? 'or use your email' : t('orUseEmail')}</span>
               <div className="h-px flex-1 bg-[var(--border)]" />
             </div>
           )}
@@ -1131,7 +1142,7 @@ function LoginForm() {
           ))}
           <div className="flex items-center gap-3 pt-1">
             <div className="h-px flex-1 bg-[var(--border)]" />
-            <span className="text-[11.5px] text-[var(--text-3)]">or</span>
+            <span className="text-[11.5px] text-[var(--text-3)]">{t('or')}</span>
             <div className="h-px flex-1 bg-[var(--border)]" />
           </div>
         </div>
@@ -1160,7 +1171,7 @@ function LoginForm() {
 
         <div>
           <label htmlFor="auth-email" className="block text-sm font-medium mb-1 text-[var(--text)]">
-            Email
+            {isRegister ? 'Email' : t('email')}
           </label>
           <input
             id="auth-email"
@@ -1176,7 +1187,7 @@ function LoginForm() {
         </div>
 
         <div className={recoveryMode ? 'hidden' : undefined}>
-          <label htmlFor="auth-password" className="block text-sm font-medium mb-1 text-[var(--text)]">Password</label>
+          <label htmlFor="auth-password" className="block text-sm font-medium mb-1 text-[var(--text)]">{isRegister ? 'Password' : t('password')}</label>
           <input
             id="auth-password"
             name="password"
@@ -1184,7 +1195,7 @@ function LoginForm() {
             autoComplete={isRegister ? 'new-password' : 'current-password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Min. 8 characters"
+            placeholder={isRegister ? 'Min. 8 characters' : t('passwordPlaceholder')}
             className={cn(inputClass, cloudSignup && 'h-[42px]')}
             // A hidden field that is still `required` blocks submission with
             // a validation bubble the user cannot see or reach.
@@ -1264,7 +1275,7 @@ function LoginForm() {
         {recoveryMode && (
           <div>
             <label htmlFor="auth-recovery-code" className="block text-sm font-medium mb-1 text-[var(--text)]">
-              Recovery code
+              {t('recoveryCode')}
             </label>
             <input
               id="auth-recovery-code"
@@ -1279,21 +1290,21 @@ function LoginForm() {
               required
             />
             <p className="text-xs text-[var(--text-2)] mt-1.5">
-              One of the codes you saved when setting up single sign-on. Each works once.
+              {t('recoveryCodeHint')}
             </p>
           </div>
         )}
 
         <Button type="submit" disabled={loading} className={cn('w-full', cloudSignup && 'h-11 text-[15px] font-semibold')} size="lg">
           {loading
-            ? 'Loading...'
+            ? isRegister ? 'Loading...' : t('loading')
             : cloudSignup
               ? 'Start free trial →'
               : isRegister
                 ? 'Create Account'
                 : recoveryMode
-                  ? 'Sign in with recovery code'
-                  : 'Sign In'}
+                  ? t('submitRecovery')
+                  : t('submit')}
         </Button>
 
         {cloudSignup && (
@@ -1304,10 +1315,10 @@ function LoginForm() {
       </form>
 
       {!isRegister && (
-        <p className="text-center text-sm mt-3 flex items-center justify-center gap-3">
+        <p className="text-center text-sm mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
           {!recoveryMode && (
-            <Link href="/forgot-password" className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline">
-              Forgot password?
+            <Link href="/forgot-password" className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline whitespace-nowrap">
+              {t('forgotPassword')}
             </Link>
           )}
           {/*
@@ -1319,21 +1330,21 @@ function LoginForm() {
           <button
             type="button"
             onClick={() => { setRecoveryMode(!recoveryMode); setError(''); }}
-            className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
+            className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline whitespace-nowrap"
           >
-            {recoveryMode ? 'Back to password sign-in' : 'Use a recovery code'}
+            {recoveryMode ? t('backToPassword') : t('useRecoveryCode')}
           </button>
         </p>
       )}
 
       {(registrationEnabled || isRegister) && (
         <p className="text-center text-sm text-[var(--text-2)] mt-3">
-          {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
+          {isRegister ? 'Already have an account?' : t('noAccount')}{' '}
           <button
             onClick={() => { setIsRegister(!isRegister); setError(''); }}
             className="text-[var(--brand)] hover:underline font-medium"
           >
-            {isRegister ? 'Sign In' : 'Register'}
+            {isRegister ? 'Sign In' : t('register')}
           </button>
         </p>
       )}
@@ -1353,6 +1364,7 @@ function LoginForm() {
     <div className={singleColumn}>
       {formCard}
       {infoLoaded && <TrustLine cloud={isCloudMode} />}
+      {infoLoaded && !isRegister && <LanguageSwitcher variant="compact" />}
     </div>
   );
 }

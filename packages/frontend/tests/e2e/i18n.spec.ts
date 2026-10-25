@@ -115,6 +115,148 @@ test.describe('amcp_locale cookie', () => {
   });
 });
 
+/** /login with an instance that has users and open registration, so the sign-in form shows. */
+async function openLogin(page: Page) {
+  await page.route(/\/(api|health)\//, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/health/server-info') {
+      return route.fulfill({
+        json: { deploymentMode: 'self-hosted', mcpAuthMode: 'oauth2', hasUsers: true, registrationEnabled: true, ssoProviders: [] },
+      });
+    }
+    return route.fulfill({ json: {} });
+  });
+  await page.goto('/login');
+}
+
+async function expectSignIn(
+  page: Page,
+  lang: string,
+  texts: { heading: string; email: string; password: string; submit: string; forgot: string; noAccount: string; register: string },
+) {
+  await expect(page.locator('html')).toHaveAttribute('lang', lang);
+  await expect(page.getByRole('heading', { level: 1, name: texts.heading, exact: true })).toBeVisible();
+  await expect(page.getByLabel(texts.email, { exact: true })).toBeVisible();
+  await expect(page.getByLabel(texts.password, { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: texts.submit, exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: texts.forgot, exact: true })).toBeVisible();
+  await expect(page.getByText(texts.noAccount, { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: texts.register, exact: true })).toBeVisible();
+}
+
+const GERMAN = {
+  heading: 'Anmelden',
+  email: 'E-Mail',
+  password: 'Passwort',
+  submit: 'Anmelden',
+  forgot: 'Passwort vergessen?',
+  noAccount: 'Noch kein Konto?',
+  register: 'Registrieren',
+};
+const ITALIAN = {
+  heading: 'Accedi',
+  email: 'Email',
+  password: 'Password',
+  submit: 'Accedi',
+  forgot: 'Password dimenticata?',
+  noAccount: 'Non hai un account?',
+  register: 'Registrati',
+};
+const ENGLISH = {
+  heading: 'Sign in',
+  email: 'Email',
+  password: 'Password',
+  submit: 'Sign In',
+  forgot: 'Forgot password?',
+  noAccount: "Don't have an account?",
+  register: 'Register',
+};
+
+test.describe('sign-in form from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE' });
+
+    test('renders /login in German', async ({ page }) => {
+      await openLogin(page);
+      await expectSignIn(page, 'de', GERMAN);
+      await page.getByRole('button', { name: 'Wiederherstellungscode verwenden', exact: true }).click();
+      await expect(page.getByLabel('Wiederherstellungscode', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Mit Wiederherstellungscode anmelden', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Zurück zur Anmeldung mit Passwort', exact: true })).toBeVisible();
+    });
+
+    test('shows the email-verified notice in German', async ({ page }) => {
+      await page.route(/\/(api|health)\//, (route) => route.fulfill({ json: {} }));
+      await page.goto('/login?emailVerified=true');
+      await expect(page.getByText('E-Mail-Adresse erfolgreich bestätigt! Sie können sich jetzt anmelden.')).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT' });
+
+    test('renders /login in Italian', async ({ page }) => {
+      await openLogin(page);
+      await expectSignIn(page, 'it', ITALIAN);
+    });
+  });
+
+  test.describe('fr-FR', () => {
+    test.use({ locale: 'fr-FR' });
+
+    test('falls back to English', async ({ page }) => {
+      await openLogin(page);
+      await expectSignIn(page, 'en', ENGLISH);
+    });
+  });
+});
+
+test.describe('language switcher', () => {
+  test('on /login sets the cookie and switches the language', async ({ page }) => {
+    await openLogin(page);
+    await expectSignIn(page, 'en', ENGLISH);
+
+    const select = page.getByLabel('Language', { exact: true });
+    await expect(select).toHaveValue('en');
+    await select.selectOption('de');
+    await expectSignIn(page, 'de', GERMAN);
+    await expect(page.getByLabel('Sprache', { exact: true })).toHaveValue('de');
+
+    const cookie = (await page.context().cookies()).find((c) => c.name === 'amcp_locale');
+    expect(cookie?.value).toBe('de');
+    expect(cookie?.path).toBe('/');
+    expect(cookie?.sameSite).toBe('Lax');
+    // One year, give or take the time the test took.
+    const days = ((cookie?.expires ?? 0) - Date.now() / 1000) / 86400;
+    expect(days).toBeGreaterThan(364);
+    expect(days).toBeLessThanOrEqual(365);
+
+    await page.reload();
+    await expectSignIn(page, 'de', GERMAN);
+  });
+
+  test('in Settings persists across a reload and sign-out', async ({ page }) => {
+    await fakeSession(page);
+    await page.goto('/settings');
+
+    await page.getByLabel('Language', { exact: true }).selectOption('it');
+    await expectSidebar(page, 'it', { group: 'Panoramica', links: ['Connettori'], settings: 'Impostazioni' });
+    await expect(page.getByLabel('Lingua', { exact: true })).toHaveValue('it');
+
+    await page.reload();
+    await expectSidebar(page, 'it', { group: 'Panoramica', links: ['Connettori'], settings: 'Impostazioni' });
+    await expect(page.getByLabel('Lingua', { exact: true })).toHaveValue('it');
+
+    await page.locator('aside').getByRole('button', { name: /Acme/ }).click();
+    await page.getByRole('button', { name: 'Esci', exact: true }).click();
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+    await expect(page.getByRole('heading', { level: 1, name: 'Accedi', exact: true })).toBeVisible();
+    const cookie = (await page.context().cookies()).find((c) => c.name === 'amcp_locale');
+    expect(cookie?.value).toBe('it');
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;
