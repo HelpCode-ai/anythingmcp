@@ -1,0 +1,14 @@
+- Welche Felder und Endpunkte bietet die Sage 100 API? (metadata verwenden)
+- Welche Artikel liegen unter ihrem Mindestbestand?
+- Zeige die Adressen, die wir fuer Kunde <Name> hinterlegt haben.
+- Liste die Dokumente, die diesen Monat erstellt wurden, und welchen Typ sie haben.
+- Suche einen Datensatz anhand seines Sage 100-Schluessels <Schluessel> und zeige seine Details.
+- Welche Artikel wurden in den letzten 30 Tagen angelegt?
+- Zeige alle Adressen im Postleitzahlengebiet <PLZ>.
+- Vergleiche die Anzahl der Dokumente dieses Monats mit dem Vormonat.
+- Welche Artikel haben keine verknuepften Dokumente?
+- Wie ist das Schema des items-Endpunkts?
+- Zeige Dokumente vom Typ Rechnung, die diese Woche erstellt wurden.
+- Welche Adressen haben keine E-Mail-Adresse?
+- Liste Artikel, deren Beschreibung <Begriff> enthaelt.
+- Erstelle eine Zusammenfassung: neue Adressen und Artikel dieses Quartals.
