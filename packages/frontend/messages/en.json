@@ -360,5 +360,111 @@
     "notReadyCard": "Not ready to add a card?",
     "keepFree": "Keep using the free trial",
     "tryFree": "Try free without payment details"
+  },
+  "appShell": {
+    "toggleTheme": "Toggle theme",
+    "openNavigation": "Open navigation",
+    "openCommandPalette": "Open command palette",
+    "commandPaletteTitle": "Command palette ({shortcut})",
+    "searchLabel": "Search ({shortcut})",
+    "search": "Search..."
+  },
+  "auditLog": {
+    "title": "Audit Log",
+    "subtitle": "Tool invocation history across your connectors and MCP servers.",
+    "refresh": "Refresh",
+    "filters": {
+      "all": "All",
+      "success": "Success",
+      "errors": "Errors",
+      "timeouts": "Timeouts",
+      "searchPlaceholder": "Search by tool or connector…",
+      "allConnectors": "All connectors",
+      "allServers": "All MCP servers"
+    },
+    "columns": {
+      "time": "Time",
+      "tool": "Tool",
+      "connector": "Connector",
+      "code": "Code",
+      "duration": "Duration",
+      "status": "Status"
+    },
+    "status": {
+      "SUCCESS": "SUCCESS",
+      "ERROR": "ERROR",
+      "TIMEOUT": "TIMEOUT"
+    },
+    "authMethods": {
+      "mcp_api_key": "API Key",
+      "jwt": "JWT",
+      "static_api_key": "Static Key",
+      "static_bearer": "Static Bearer",
+      "none": "No Auth"
+    },
+    "loading": "Loading logs…",
+    "endOfLog": "That's the end of the log.",
+    "noMatches": "No invocations match these filters.",
+    "clearFilters": "Clear filters",
+    "emptyTitle": "No tool calls recorded yet.",
+    "emptyBody": "Every call an AI client makes to one of your tools shows up here, with what it sent and what came back.",
+    "details": {
+      "input": "Input Parameters",
+      "output": "Output",
+      "error": "Error",
+      "user": "User:",
+      "auth": "Auth: {method}",
+      "key": "Key: {name}",
+      "server": "Server: {name}",
+      "connector": "Connector: {name} ({type})"
+    },
+    "replay": {
+      "sharedEndpoint": "Replay unavailable: call ran through the shared /mcp endpoint",
+      "truncated": "Replay unavailable: stored input parameters were truncated",
+      "noToolName": "Replay unavailable: tool name is missing",
+      "hint": "Copy as cURL to replay this MCP tool call",
+      "copy": "Copy as cURL",
+      "copied": "Copied!",
+      "copyFailed": "Copy failed"
+    },
+    "pagination": {
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page {page}",
+      "pageWithResults": "Page {page} · {count} results"
+    }
+  },
+  "analytics": {
+    "title": "Analytics",
+    "subtitle": "Tool-call volume, success rate and cost across your MCP server.",
+    "range": "{days}d",
+    "loading": "Loading…",
+    "loadFailed": "Failed to load",
+    "stats": {
+      "toolCalls": "Tool calls · {days}d",
+      "toolCallsHint": "total invocations",
+      "successRate": "Success rate",
+      "errors": "{count, plural, one {# error} other {# errors}}",
+      "proxyCalls": "Proxy calls",
+      "proxyCallsHint": "metered",
+      "estCost": "Est. cost",
+      "estCostHint": "volume-based",
+      "noRate": "no rate configured"
+    },
+    "timeline": {
+      "title": "Invocations over time",
+      "lastDays": "Last {days} days",
+      "success": "Success",
+      "error": "Error",
+      "dayTitle": "{date}: {total, plural, one {# call} other {# calls}}",
+      "dayTitleWithErrors": "{date}: {total, plural, one {# call} other {# calls}} · {errors, plural, one {# error} other {# errors}}"
+    },
+    "topTools": "Top tools",
+    "byConnector": "Calls by connector",
+    "byServer": "Calls by MCP server",
+    "byUser": "Calls by user",
+    "noData": "No data in range.",
+    "errShort": "{count} err",
+    "costNote": "Cost is volume-based (no LLM tokens): calls × COST_PER_CALL_MICROS + proxy calls × COST_PER_PROXY_CALL_MICROS. Configure the rates as environment variables."
   }
 }

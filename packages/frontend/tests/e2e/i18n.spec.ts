@@ -413,6 +413,104 @@ test.describe('auth and onboarding pages from Accept-Language', () => {
   });
 });
 
+/** The signed-in session plus a few audit-log rows and analytics breakdowns. */
+async function auditSession(page: Page) {
+  await fakeSession(page);
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\/(audit\/(invocations|breakdowns)|mcp-servers)/, (route) => {
+    const url = route.request().url();
+    if (url.includes('/mcp-servers')) return route.fulfill({ json: [{ id: 'srv-1', name: 'Test Server' }] });
+    if (url.includes('/breakdowns')) {
+      return route.fulfill({
+        json: {
+          days: 30,
+          total: 1234,
+          errors: 1,
+          proxyCalls: 0,
+          estCostMicros: 0,
+          rates: { callMicros: 0, proxyCallMicros: 0 },
+          byConnector: [{ id: 'c1', label: 'Echo Service', count: 1234, errors: 1 }],
+          byServer: [],
+          byUser: [],
+        },
+      });
+    }
+    return route.fulfill({
+      json: [
+        {
+          id: 'log-1',
+          createdAt: new Date().toISOString(),
+          status: 'ERROR',
+          durationMs: 42,
+          mcpServerId: 'srv-1',
+          mcpServer: { id: 'srv-1', name: 'Test Server' },
+          toolId: 't-1',
+          tool: { name: 'echo_message', connector: { name: 'Echo Service', type: 'REST' } },
+          input: { message: 'hello' },
+          error: 'Upstream timed out',
+          clientInfo: JSON.stringify({ authMethod: 'jwt' }),
+        },
+      ],
+    });
+  });
+}
+
+test.describe('audit log and analytics from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders /logs in German, including a row and its details', async ({ page }) => {
+      await auditSession(page);
+      await page.goto('/logs');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByText('Audit-Log', { exact: true }).first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Erfolgreich', exact: true })).toBeVisible();
+      await expect(page.getByPlaceholder('Nach Tool oder Connector suchen…')).toBeVisible();
+      await expect(page.getByText('Dauer', { exact: true })).toBeVisible();
+      await expect(page.getByText('Seite 1 · 1 Ergebnis', { exact: true })).toBeVisible();
+
+      await page.getByText('FEHLER', { exact: true }).last().click();
+      await expect(page.getByRole('heading', { name: 'Fehler', exact: true })).toBeVisible();
+      await expect(page.getByText('Authentifizierung: JWT', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Als cURL kopieren', exact: true })).toBeVisible();
+      // The shell around every page.
+      await expect(page.getByRole('button', { name: 'Design wechseln', exact: true }).last()).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders /analytics in Italian, with plurals', async ({ page }) => {
+      await auditSession(page);
+      await page.goto('/analytics');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('button', { name: '30 g', exact: true })).toBeVisible();
+      await expect(page.getByText('Chiamate · 30 g', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 errore', { exact: true })).toBeVisible();
+      await expect(page.getByText('nessuna tariffa configurata', { exact: true })).toBeVisible();
+      await expect(page.getByText('Chiamate per connettore', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps /logs and /analytics in English', async ({ page }) => {
+      await auditSession(page);
+      await page.goto('/logs');
+      await expect(page.getByRole('button', { name: 'Timeouts', exact: true })).toBeVisible();
+      await expect(page.getByText('Page 1 · 1 results', { exact: true })).toBeVisible();
+      await expect(page.getByText('ERROR', { exact: true }).last()).toBeVisible();
+
+      await page.goto('/analytics');
+      await expect(page.getByText('Tool calls · 30d', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 error', { exact: true })).toBeVisible();
+      await expect(page.getByText('no rate configured', { exact: true })).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;

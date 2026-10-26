@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useState, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { audit, connectors as connectorsApi, mcpServers, server } from '@/lib/api';
 import { AppSelect } from '@/components/ui/select';
@@ -27,15 +28,18 @@ function parseClientInfo(raw: any) {
   }
 }
 
-function authMethodLabel(method: string | undefined): string {
-  switch (method) {
-    case 'mcp_api_key': return 'API Key';
-    case 'jwt': return 'JWT';
-    case 'static_api_key': return 'Static Key';
-    case 'static_bearer': return 'Static Bearer';
-    case 'none': return 'No Auth';
-    default: return method || '-';
-  }
+type Translate = (key: string, values?: Record<string, string | number>) => string;
+
+const AUTH_METHODS = ['mcp_api_key', 'jwt', 'static_api_key', 'static_bearer', 'none'];
+
+function authMethodLabel(method: string | undefined, t: Translate): string {
+  if (method && AUTH_METHODS.includes(method)) return t(`authMethods.${method}`);
+  return method || '-';
+}
+
+/** The status as a word; anything the backend adds later shows as it comes. */
+function statusLabel(status: string | undefined, t: Translate): string | undefined {
+  return status === 'SUCCESS' || status === 'ERROR' || status === 'TIMEOUT' ? t(`status.${status}`) : status;
 }
 
 function statusTone(status: string | undefined): Tone {
@@ -67,6 +71,7 @@ function statusCode(status: string | undefined): string {
 }
 
 function UserCell({ log }: { log: any }) {
+  const t = useTranslations('auditLog');
   const ci = parseClientInfo(log.clientInfo);
   const email = log.user?.email || ci?.userEmail;
   const method = ci?.authMethod;
@@ -78,7 +83,7 @@ function UserCell({ log }: { log: any }) {
     <div className="flex flex-col gap-0.5">
       {email && <span className="truncate max-w-[150px]" title={email}>{email}</span>}
       <span className="text-[10px] text-[var(--text-3)]">
-        {keyName ? `${keyName}` : authMethodLabel(method)}
+        {keyName ? `${keyName}` : authMethodLabel(method, t)}
       </span>
     </div>
   );
@@ -86,6 +91,7 @@ function UserCell({ log }: { log: any }) {
 
 export default function LogsPage() {
   const { token } = useAuth();
+  const t = useTranslations('auditLog');
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -219,10 +225,10 @@ export default function LogsPage() {
 
   // Segmented status filter (All / Success / Errors / Timeouts)
   const segments: { value: string; label: string }[] = [
-    { value: '', label: 'All' },
-    { value: 'SUCCESS', label: 'Success' },
-    { value: 'ERROR', label: 'Errors' },
-    { value: 'TIMEOUT', label: 'Timeouts' },
+    { value: '', label: t('filters.all') },
+    { value: 'SUCCESS', label: t('filters.success') },
+    { value: 'ERROR', label: t('filters.errors') },
+    { value: 'TIMEOUT', label: t('filters.timeouts') },
   ];
 
   const hasFilters = !!(statusFilter || debouncedSearch || connectorFilter || mcpServerFilter);
@@ -239,7 +245,7 @@ export default function LogsPage() {
       size="md"
       onClick={fetchLogs}
       disabled={loading}
-      title="Refresh"
+      title={t('refresh')}
     >
       <svg
         className={cn('h-3.5 w-3.5', loading && 'animate-spin')}
@@ -249,14 +255,14 @@ export default function LogsPage() {
       >
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>
-      Refresh
+      {t('refresh')}
     </Button>
   );
 
   return (
     <AppShell
-      title="Audit Log"
-      subtitle="Tool invocation history across your connectors and MCP servers."
+      title={t('title')}
+      subtitle={t('subtitle')}
       actions={exportButton}
     >
       {/* Toolbar */}
@@ -292,7 +298,7 @@ export default function LogsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by tool or connector…"
+            placeholder={t('filters.searchPlaceholder')}
             className="w-full bg-transparent text-[12.5px] text-[var(--text)] outline-none placeholder:text-[var(--text-3)]"
           />
         </div>
@@ -303,7 +309,7 @@ export default function LogsPage() {
           onValueChange={setConnectorFilter}
           className="h-[34px] rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[12.5px] text-[var(--text-2)]"
           options={[
-            { value: '', label: 'All connectors' },
+            { value: '', label: t('filters.allConnectors') },
             ...connectors.map((c) => ({ value: c.id, label: c.name })),
           ]}
         />
@@ -312,7 +318,7 @@ export default function LogsPage() {
           onValueChange={setMcpServerFilter}
           className="h-[34px] rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[12.5px] text-[var(--text-2)]"
           options={[
-            { value: '', label: 'All MCP servers' },
+            { value: '', label: t('filters.allServers') },
             ...servers.map((s) => ({ value: s.id, label: s.name })),
           ]}
         />
@@ -326,40 +332,39 @@ export default function LogsPage() {
           className="hidden items-center gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-[18px] py-[11px] text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-3)] md:grid"
           style={{ gridTemplateColumns: GRID_COLS }}
         >
-          <span>Time</span>
-          <span>Tool</span>
-          <span>Connector</span>
-          <span>Code</span>
-          <span>Duration</span>
-          <span>Status</span>
+          <span>{t('columns.time')}</span>
+          <span>{t('columns.tool')}</span>
+          <span>{t('columns.connector')}</span>
+          <span>{t('columns.code')}</span>
+          <span>{t('columns.duration')}</span>
+          <span>{t('columns.status')}</span>
         </div>
 
         {/* Rows */}
         {loading ? (
           <div className="px-[18px] py-10 text-center text-[var(--text-3)]">
             <div className="mb-2 inline-block h-5 w-5 animate-spin rounded-full border-2 border-[var(--brand)] border-t-transparent"></div>
-            <p className="text-sm">Loading logs…</p>
+            <p className="text-sm">{t('loading')}</p>
           </div>
         ) : logs.length === 0 ? (
           <div className="px-5 py-14 text-center">
             {page > 0 ? (
-              <p className="text-sm text-[var(--text-3)]">That&apos;s the end of the log.</p>
+              <p className="text-sm text-[var(--text-3)]">{t('endOfLog')}</p>
             ) : hasFilters ? (
               <>
-                <p className="text-sm text-[var(--text-2)]">No invocations match these filters.</p>
+                <p className="text-sm text-[var(--text-2)]">{t('noMatches')}</p>
                 <button
                   onClick={clearFilters}
                   className="mt-2 text-[13px] font-medium text-[var(--brand)] hover:underline"
                 >
-                  Clear filters
+                  {t('clearFilters')}
                 </button>
               </>
             ) : (
               <>
-                <p className="text-sm text-[var(--text-2)]">No tool calls recorded yet.</p>
+                <p className="text-sm text-[var(--text-2)]">{t('emptyTitle')}</p>
                 <p className="mx-auto mt-1 max-w-[42ch] text-[13px] text-[var(--text-3)]">
-                  Every call an AI client makes to one of your tools shows up here, with what it
-                  sent and what came back.
+                  {t('emptyBody')}
                 </p>
               </>
             )}
@@ -382,7 +387,7 @@ export default function LogsPage() {
                       {log.tool?.name || log.toolId}
                     </span>
                     <StatusPill tone={tone} dot={statusDot(log.status)} className="flex-shrink-0">
-                      {log.status}
+                      {statusLabel(log.status, t)}
                     </StatusPill>
                   </div>
                   {/* One indicator for the outcome, not three: the pill above
@@ -428,7 +433,7 @@ export default function LogsPage() {
                     {log.durationMs ? `${log.durationMs}ms` : '-'}
                   </span>
                   <StatusPill tone={tone} dot={statusDot(log.status)} className="justify-self-start">
-                    {log.status}
+                    {statusLabel(log.status, t)}
                   </StatusPill>
                 </div>
 
@@ -436,14 +441,14 @@ export default function LogsPage() {
                   <div className="min-w-0 border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-4 sm:px-[18px]">
                     <div className="grid max-w-full grid-cols-1 gap-4 md:grid-cols-2">
                       <div>
-                        <h4 className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-3)]">Input Parameters</h4>
+                        <h4 className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-3)]">{t('details.input')}</h4>
                         <pre className="max-h-64 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-all rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 font-mono text-xs">
                           {formatJson(log.input)}
                         </pre>
                       </div>
                       <div>
                         <h4 className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-3)]">
-                          {log.status === 'ERROR' ? 'Error' : 'Output'}
+                          {log.status === 'ERROR' ? t('details.error') : t('details.output')}
                         </h4>
                         <pre className="max-h-64 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-all rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 font-mono text-xs">
                           {log.error || formatJson(log.output)}
@@ -458,11 +463,11 @@ export default function LogsPage() {
                           '_amcp_truncated' in log.input,
                       ) || (typeof log.input === 'string' && log.input.includes('_amcp_truncated'));
                       const cannotCopyReason = isSharedEndpoint
-                        ? 'Replay unavailable: call ran through the shared /mcp endpoint'
+                        ? t('replay.sharedEndpoint')
                         : isTruncated
-                        ? 'Replay unavailable: stored input parameters were truncated'
+                        ? t('replay.truncated')
                         : !log.tool?.name
-                        ? 'Replay unavailable: tool name is missing'
+                        ? t('replay.noToolName')
                         : null;
                       const canCopy = !cannotCopyReason;
 
@@ -470,7 +475,7 @@ export default function LogsPage() {
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-4 text-xs text-[var(--text-3)]">
                           <div className="flex flex-wrap items-center gap-4">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-medium text-[var(--text-2)]">User:</span>
+                              <span className="font-medium text-[var(--text-2)]">{t('details.user')}</span>
                               <UserCell log={log} />
                             </div>
                             {(() => {
@@ -478,17 +483,19 @@ export default function LogsPage() {
                               if (!ci) return null;
                               return (
                                 <>
-                                  {ci.authMethod && <span>Auth: {authMethodLabel(ci.authMethod)}</span>}
-                                  {ci.apiKeyName && <span>Key: {ci.apiKeyName}</span>}
+                                  {ci.authMethod && <span>{t('details.auth', { method: authMethodLabel(ci.authMethod, t) })}</span>}
+                                  {ci.apiKeyName && <span>{t('details.key', { name: ci.apiKeyName })}</span>}
                                 </>
                               );
                             })()}
-                            {log.mcpServer && <span>Server: {log.mcpServer.name}</span>}
-                            {log.tool?.connector && <span>Connector: {log.tool.connector.name} ({log.tool.connector.type})</span>}
+                            {log.mcpServer && <span>{t('details.server', { name: log.mcpServer.name })}</span>}
+                            {log.tool?.connector && (
+                              <span>{t('details.connector', { name: log.tool.connector.name, type: log.tool.connector.type })}</span>
+                            )}
                           </div>
 
                           <div className="flex items-center">
-                            <span title={cannotCopyReason || 'Copy as cURL to replay this MCP tool call'}>
+                            <span title={cannotCopyReason || t('replay.hint')}>
                               <Button
                                 variant="secondary"
                                 size="sm"
@@ -497,7 +504,7 @@ export default function LogsPage() {
                                   e.stopPropagation();
                                   handleCopyCurl(log);
                                 }}
-                                aria-label="Copy as cURL"
+                                aria-label={t('replay.copy')}
                                 className="h-[28px] px-2.5 text-[11.5px]"
                               >
                                 {copiedId === log.id ? (
@@ -505,16 +512,16 @@ export default function LogsPage() {
                                     <svg className="h-3.5 w-3.5 text-[var(--ok)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                     </svg>
-                                    <span className="text-[var(--ok)]">Copied!</span>
+                                    <span className="text-[var(--ok)]">{t('replay.copied')}</span>
                                   </>
                                 ) : copyErrorId === log.id ? (
-                                  <span className="text-[var(--danger)]">Copy failed</span>
+                                  <span className="text-[var(--danger)]">{t('replay.copyFailed')}</span>
                                 ) : (
                                   <>
                                     <svg className="h-3.5 w-3.5 text-[var(--text-3)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                     </svg>
-                                    <span>Copy as cURL</span>
+                                    <span>{t('replay.copy')}</span>
                                   </>
                                 )}
                               </Button>
@@ -541,10 +548,12 @@ export default function LogsPage() {
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Previous
+            {t('pagination.previous')}
           </Button>
           <span className="text-[12.5px] text-[var(--text-3)]">
-            Page {page + 1}{logs.length > 0 ? ` · ${logs.length} results` : ''}
+            {logs.length > 0
+              ? t('pagination.pageWithResults', { page: page + 1, count: logs.length })
+              : t('pagination.page', { page: page + 1 })}
           </span>
           <Button
             variant="secondary"
@@ -552,7 +561,7 @@ export default function LogsPage() {
             onClick={() => setPage((p) => p + 1)}
             disabled={!hasMore || loading}
           >
-            Next
+            {t('pagination.next')}
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>

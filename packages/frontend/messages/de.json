@@ -360,5 +360,111 @@
     "notReadyCard": "Noch keine Karte hinterlegen?",
     "keepFree": "Kostenlose Testphase weiter nutzen",
     "tryFree": "Kostenlos ohne Zahlungsdaten testen"
+  },
+  "appShell": {
+    "toggleTheme": "Design wechseln",
+    "openNavigation": "Navigation öffnen",
+    "openCommandPalette": "Befehlspalette öffnen",
+    "commandPaletteTitle": "Befehlspalette ({shortcut})",
+    "searchLabel": "Suchen ({shortcut})",
+    "search": "Suchen…"
+  },
+  "auditLog": {
+    "title": "Audit-Log",
+    "subtitle": "Verlauf der Tool-Aufrufe über Ihre Connectors und MCP-Server.",
+    "refresh": "Aktualisieren",
+    "filters": {
+      "all": "Alle",
+      "success": "Erfolgreich",
+      "errors": "Fehler",
+      "timeouts": "Timeouts",
+      "searchPlaceholder": "Nach Tool oder Connector suchen…",
+      "allConnectors": "Alle Connectors",
+      "allServers": "Alle MCP-Server"
+    },
+    "columns": {
+      "time": "Zeit",
+      "tool": "Tool",
+      "connector": "Connector",
+      "code": "Code",
+      "duration": "Dauer",
+      "status": "Status"
+    },
+    "status": {
+      "SUCCESS": "ERFOLG",
+      "ERROR": "FEHLER",
+      "TIMEOUT": "TIMEOUT"
+    },
+    "authMethods": {
+      "mcp_api_key": "API-Schlüssel",
+      "jwt": "JWT",
+      "static_api_key": "Statischer Schlüssel",
+      "static_bearer": "Statischer Bearer",
+      "none": "Keine Authentifizierung"
+    },
+    "loading": "Logs werden geladen…",
+    "endOfLog": "Das ist das Ende des Logs.",
+    "noMatches": "Keine Aufrufe entsprechen diesen Filtern.",
+    "clearFilters": "Filter zurücksetzen",
+    "emptyTitle": "Noch keine Tool-Aufrufe aufgezeichnet.",
+    "emptyBody": "Jeder Aufruf, den ein KI-Client an eines Ihrer Tools sendet, erscheint hier, mit dem, was gesendet wurde, und dem, was zurückkam.",
+    "details": {
+      "input": "Eingabeparameter",
+      "output": "Ausgabe",
+      "error": "Fehler",
+      "user": "Benutzer:",
+      "auth": "Authentifizierung: {method}",
+      "key": "Schlüssel: {name}",
+      "server": "Server: {name}",
+      "connector": "Connector: {name} ({type})"
+    },
+    "replay": {
+      "sharedEndpoint": "Wiederholung nicht möglich: Der Aufruf lief über den gemeinsamen /mcp-Endpunkt",
+      "truncated": "Wiederholung nicht möglich: Die gespeicherten Eingabeparameter wurden gekürzt",
+      "noToolName": "Wiederholung nicht möglich: Der Tool-Name fehlt",
+      "hint": "Als cURL kopieren, um diesen MCP-Tool-Aufruf zu wiederholen",
+      "copy": "Als cURL kopieren",
+      "copied": "Kopiert!",
+      "copyFailed": "Kopieren fehlgeschlagen"
+    },
+    "pagination": {
+      "previous": "Zurück",
+      "next": "Weiter",
+      "page": "Seite {page}",
+      "pageWithResults": "Seite {page} · {count, plural, one {# Ergebnis} other {# Ergebnisse}}"
+    }
+  },
+  "analytics": {
+    "title": "Analysen",
+    "subtitle": "Volumen der Tool-Aufrufe, Erfolgsquote und Kosten Ihres MCP-Servers.",
+    "range": "{days} T",
+    "loading": "Wird geladen…",
+    "loadFailed": "Laden fehlgeschlagen",
+    "stats": {
+      "toolCalls": "Tool-Aufrufe · {days} T",
+      "toolCallsHint": "Aufrufe insgesamt",
+      "successRate": "Erfolgsquote",
+      "errors": "{count, plural, one {# Fehler} other {# Fehler}}",
+      "proxyCalls": "Proxy-Aufrufe",
+      "proxyCallsHint": "abgerechnet",
+      "estCost": "Gesch. Kosten",
+      "estCostHint": "volumenbasiert",
+      "noRate": "kein Kostensatz konfiguriert"
+    },
+    "timeline": {
+      "title": "Aufrufe im Zeitverlauf",
+      "lastDays": "Letzte {days} Tage",
+      "success": "Erfolg",
+      "error": "Fehler",
+      "dayTitle": "{date}: {total, plural, one {# Aufruf} other {# Aufrufe}}",
+      "dayTitleWithErrors": "{date}: {total, plural, one {# Aufruf} other {# Aufrufe}} · {errors, plural, one {# Fehler} other {# Fehler}}"
+    },
+    "topTools": "Top-Tools",
+    "byConnector": "Aufrufe nach Connector",
+    "byServer": "Aufrufe nach MCP-Server",
+    "byUser": "Aufrufe nach Benutzer",
+    "noData": "Keine Daten im Zeitraum.",
+    "errShort": "{count} Fehl.",
+    "costNote": "Die Kosten sind volumenbasiert (keine LLM-Tokens): Aufrufe × COST_PER_CALL_MICROS + Proxy-Aufrufe × COST_PER_PROXY_CALL_MICROS. Die Kostensätze werden als Umgebungsvariablen konfiguriert."
   }
 }

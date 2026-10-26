@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { audit, type AuditBreakdowns } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
@@ -10,19 +11,17 @@ import { cn } from '@/lib/utils';
 
 type Analytics = Awaited<ReturnType<typeof audit.analytics>>;
 
-const RANGES = [
-  { days: 7, label: '7d' },
-  { days: 30, label: '30d' },
-  { days: 90, label: '90d' },
-];
+const RANGES = [7, 30, 90];
 
 export default function AnalyticsPage() {
   const { token } = useAuth();
+  const t = useTranslations('analytics');
   const [days, setDays] = useState(30);
   const [bd, setBd] = useState<AuditBreakdowns | null>(null);
   const [an, setAn] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  // null: no error. '' : failed without a message, shown with the fallback text.
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -32,7 +31,7 @@ export default function AnalyticsPage() {
         setBd(b);
         setAn(a);
       })
-      .catch((e) => setError(e.message || 'Failed to load'))
+      .catch((e) => setError(e.message || ''))
       .finally(() => setLoading(false));
   }, [token, days]);
 
@@ -44,66 +43,66 @@ export default function AnalyticsPage() {
 
   return (
     <AppShell
-      title="Analytics"
-      subtitle="Tool-call volume, success rate and cost across your MCP server."
+      title={t('title')}
+      subtitle={t('subtitle')}
       actions={
         <div className="flex items-center gap-0.5 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] p-0.5">
-          {RANGES.map((r) => (
+          {RANGES.map((range) => (
             <button
-              key={r.days}
-              onClick={() => setDays(r.days)}
+              key={range}
+              onClick={() => setDays(range)}
               className={cn(
                 'rounded-[7px] px-3 py-1 text-[12.5px] font-semibold transition-colors',
-                days === r.days
+                days === range
                   ? 'bg-[var(--brand)] text-[var(--primary-foreground)]'
                   : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'
               )}
             >
-              {r.label}
+              {t('range', { days: range })}
             </button>
           ))}
         </div>
       }
     >
       <div className="flex flex-col gap-[18px]">
-        {error && (
+        {error !== null && (
           <div className="rounded-[11px] border border-[var(--danger)]/30 bg-[var(--t-danger-bg)] px-4 py-3 text-sm text-[var(--t-danger-fg)]">
-            {error}
+            {error || t('loadFailed')}
           </div>
         )}
 
         {loading ? (
-          <p className="text-sm text-[var(--text-3)]">Loading…</p>
+          <p className="text-sm text-[var(--text-3)]">{t('loading')}</p>
         ) : !bd ? null : (
           <>
             {/* Metric tiles */}
             <div className="grid grid-cols-2 gap-3 sm:gap-3.5 lg:grid-cols-4">
               <StatCard
-                label={`Tool calls · ${bd.days}d`}
+                label={t('stats.toolCalls', { days: bd.days })}
                 value={bd.total.toLocaleString()}
-                hint="total invocations"
+                hint={t('stats.toolCallsHint')}
                 iconTone="info"
                 icon={<ActivityStatIcon />}
               />
               <StatCard
-                label="Success rate"
+                label={t('stats.successRate')}
                 value={successRate != null ? `${successRate}%` : '—'}
-                hint={`${bd.errors.toLocaleString()} error${bd.errors === 1 ? '' : 's'}`}
+                hint={t('stats.errors', { count: bd.errors })}
                 hintTone={bd.errors > 0 ? 'warn' : 'ok'}
                 iconTone={bd.errors > 0 ? 'warn' : 'emerald'}
                 icon={<CheckStatIcon />}
               />
               <StatCard
-                label="Proxy calls"
+                label={t('stats.proxyCalls')}
                 value={bd.proxyCalls.toLocaleString()}
-                hint="metered"
+                hint={t('stats.proxyCallsHint')}
                 iconTone="purple"
                 icon={<ProxyStatIcon />}
               />
               <StatCard
-                label="Est. cost"
+                label={t('stats.estCost')}
                 value={hasRates ? formatCost(bd.estCostMicros) : '—'}
-                hint={hasRates ? 'volume-based' : 'no rate configured'}
+                hint={hasRates ? t('stats.estCostHint') : t('stats.noRate')}
                 iconTone="emerald"
                 icon={<CostStatIcon />}
               />
@@ -114,17 +113,17 @@ export default function AnalyticsPage() {
               <Card className="p-5">
                 <div className="mb-[18px] flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold">Invocations over time</div>
+                    <div className="text-sm font-semibold">{t('timeline.title')}</div>
                     <div className="mt-0.5 text-xs text-[var(--text-3)]">
-                      Last {bd.days} days
+                      {t('timeline.lastDays', { days: bd.days })}
                     </div>
                   </div>
                   <div className="flex gap-3.5 text-xs text-[var(--text-2)]">
                     <span className="flex items-center gap-[5px]">
-                      <span className="h-2 w-2 rounded-sm bg-[var(--brand)]" />Success
+                      <span className="h-2 w-2 rounded-sm bg-[var(--brand)]" />{t('timeline.success')}
                     </span>
                     <span className="flex items-center gap-[5px]">
-                      <span className="h-2 w-2 rounded-sm bg-[var(--danger)]" />Error
+                      <span className="h-2 w-2 rounded-sm bg-[var(--danger)]" />{t('timeline.error')}
                     </span>
                   </div>
                 </div>
@@ -135,21 +134,20 @@ export default function AnalyticsPage() {
             {/* Top tools + Calls by connector */}
             <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
               <Card className="p-5">
-                <div className="mb-3.5 text-sm font-semibold">Top tools</div>
+                <div className="mb-3.5 text-sm font-semibold">{t('topTools')}</div>
                 <TopTools rows={an?.topTools ?? []} />
               </Card>
-              <Breakdown title="Calls by connector" rows={bd.byConnector} showDot />
+              <Breakdown title={t('byConnector')} rows={bd.byConnector} showDot />
             </div>
 
             {/* Secondary breakdowns */}
             <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
-              <Breakdown title="Calls by MCP server" rows={bd.byServer} />
-              <Breakdown title="Calls by user" rows={bd.byUser} />
+              <Breakdown title={t('byServer')} rows={bd.byServer} />
+              <Breakdown title={t('byUser')} rows={bd.byUser} />
             </div>
 
             <p className="text-xs text-[var(--text-3)]">
-              Cost is volume-based (no LLM tokens): calls × COST_PER_CALL_MICROS + proxy calls ×
-              COST_PER_PROXY_CALL_MICROS. Configure the rates as environment variables.
+              {t('costNote')}
             </p>
           </>
         )}
@@ -163,6 +161,7 @@ function DailyTimeline({
 }: {
   daily: Array<{ date: string; success: number; error: number; timeout: number }>;
 }) {
+  const t = useTranslations('analytics.timeline');
   const max = Math.max(1, ...daily.map((d) => d.success + d.error + d.timeout));
   // Thin the x-axis labels so they don't overlap on 30/90-day ranges. The
   // labels are centred under a column a few pixels wide, so the ones at the
@@ -183,7 +182,11 @@ function DailyTimeline({
           <div
             key={d.date}
             className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2"
-            title={`${d.date}: ${total} call${total === 1 ? '' : 's'}${errored > 0 ? ` · ${errored} error${errored === 1 ? '' : 's'}` : ''}`}
+            title={
+              errored > 0
+                ? t('dayTitleWithErrors', { date: d.date, total, errors: errored })
+                : t('dayTitle', { date: d.date, total })
+            }
           >
             <div className="flex h-[140px] w-full items-end">
               {total === 0 ? (
@@ -222,8 +225,9 @@ function TopTools({
 }: {
   rows: Array<{ name: string; count: number; errors: number }>;
 }) {
+  const t = useTranslations('analytics');
   if (rows.length === 0) {
-    return <p className="text-sm text-[var(--text-3)]">No data in range.</p>;
+    return <p className="text-sm text-[var(--text-3)]">{t('noData')}</p>;
   }
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
@@ -237,7 +241,7 @@ function TopTools({
             <span className="flex-shrink-0 tabular-nums text-[var(--text-3)]">
               {r.count.toLocaleString()}
               {r.errors > 0 && (
-                <span className="text-[var(--danger)]"> · {r.errors} err</span>
+                <span className="text-[var(--danger)]"> · {t('errShort', { count: r.errors })}</span>
               )}
             </span>
           </div>
@@ -273,12 +277,13 @@ function Breakdown({
   rows: Array<{ id: string | null; label: string; count: number; errors: number }>;
   showDot?: boolean;
 }) {
+  const t = useTranslations('analytics');
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
     <Card className="p-5">
       <div className="mb-3.5 text-sm font-semibold">{title}</div>
       {rows.length === 0 ? (
-        <p className="text-sm text-[var(--text-3)]">No data in range.</p>
+        <p className="text-sm text-[var(--text-3)]">{t('noData')}</p>
       ) : (
         <div className="flex flex-col gap-3">
           {rows.map((r, i) => (
@@ -298,7 +303,7 @@ function Breakdown({
                 <span className="flex-shrink-0 tabular-nums text-[var(--text-3)]">
                   {r.count.toLocaleString()}
                   {r.errors > 0 && (
-                    <span className="text-[var(--danger)]"> · {r.errors} err</span>
+                    <span className="text-[var(--danger)]"> · {t('errShort', { count: r.errors })}</span>
                   )}
                 </span>
               </div>

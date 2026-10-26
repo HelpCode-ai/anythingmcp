@@ -360,5 +360,111 @@
     "notReadyCard": "Non vuoi ancora aggiungere una carta?",
     "keepFree": "Continua a usare la prova gratuita",
     "tryFree": "Prova gratis senza dati di pagamento"
+  },
+  "appShell": {
+    "toggleTheme": "Cambia tema",
+    "openNavigation": "Apri la navigazione",
+    "openCommandPalette": "Apri la palette dei comandi",
+    "commandPaletteTitle": "Palette dei comandi ({shortcut})",
+    "searchLabel": "Cerca ({shortcut})",
+    "search": "Cerca…"
+  },
+  "auditLog": {
+    "title": "Registro di audit",
+    "subtitle": "Cronologia delle chiamate agli strumenti nei tuoi connettori e server MCP.",
+    "refresh": "Aggiorna",
+    "filters": {
+      "all": "Tutte",
+      "success": "Riuscite",
+      "errors": "Errori",
+      "timeouts": "Timeout",
+      "searchPlaceholder": "Cerca per strumento o connettore…",
+      "allConnectors": "Tutti i connettori",
+      "allServers": "Tutti i server MCP"
+    },
+    "columns": {
+      "time": "Ora",
+      "tool": "Strumento",
+      "connector": "Connettore",
+      "code": "Codice",
+      "duration": "Durata",
+      "status": "Stato"
+    },
+    "status": {
+      "SUCCESS": "RIUSCITA",
+      "ERROR": "ERRORE",
+      "TIMEOUT": "TIMEOUT"
+    },
+    "authMethods": {
+      "mcp_api_key": "Chiave API",
+      "jwt": "JWT",
+      "static_api_key": "Chiave statica",
+      "static_bearer": "Bearer statico",
+      "none": "Nessuna autenticazione"
+    },
+    "loading": "Caricamento dei log…",
+    "endOfLog": "Questa è la fine del registro.",
+    "noMatches": "Nessuna chiamata corrisponde a questi filtri.",
+    "clearFilters": "Azzera i filtri",
+    "emptyTitle": "Nessuna chiamata agli strumenti registrata finora.",
+    "emptyBody": "Ogni chiamata che un client AI fa a uno dei tuoi strumenti compare qui, con ciò che ha inviato e ciò che è tornato.",
+    "details": {
+      "input": "Parametri di input",
+      "output": "Output",
+      "error": "Errore",
+      "user": "Utente:",
+      "auth": "Autenticazione: {method}",
+      "key": "Chiave: {name}",
+      "server": "Server: {name}",
+      "connector": "Connettore: {name} ({type})"
+    },
+    "replay": {
+      "sharedEndpoint": "Riesecuzione non disponibile: la chiamata è passata dall'endpoint condiviso /mcp",
+      "truncated": "Riesecuzione non disponibile: i parametri di input salvati sono stati troncati",
+      "noToolName": "Riesecuzione non disponibile: manca il nome dello strumento",
+      "hint": "Copia come cURL per rieseguire questa chiamata allo strumento MCP",
+      "copy": "Copia come cURL",
+      "copied": "Copiato!",
+      "copyFailed": "Copia non riuscita"
+    },
+    "pagination": {
+      "previous": "Precedente",
+      "next": "Successiva",
+      "page": "Pagina {page}",
+      "pageWithResults": "Pagina {page} · {count, plural, one {# risultato} other {# risultati}}"
+    }
+  },
+  "analytics": {
+    "title": "Analisi",
+    "subtitle": "Volume di chiamate agli strumenti, tasso di successo e costi del tuo server MCP.",
+    "range": "{days} g",
+    "loading": "Caricamento…",
+    "loadFailed": "Caricamento non riuscito",
+    "stats": {
+      "toolCalls": "Chiamate · {days} g",
+      "toolCallsHint": "chiamate totali",
+      "successRate": "Tasso di successo",
+      "errors": "{count, plural, one {# errore} other {# errori}}",
+      "proxyCalls": "Chiamate proxy",
+      "proxyCallsHint": "a consumo",
+      "estCost": "Costo stimato",
+      "estCostHint": "in base al volume",
+      "noRate": "nessuna tariffa configurata"
+    },
+    "timeline": {
+      "title": "Chiamate nel tempo",
+      "lastDays": "Ultimi {days} giorni",
+      "success": "Riuscite",
+      "error": "Errori",
+      "dayTitle": "{date}: {total, plural, one {# chiamata} other {# chiamate}}",
+      "dayTitleWithErrors": "{date}: {total, plural, one {# chiamata} other {# chiamate}} · {errors, plural, one {# errore} other {# errori}}"
+    },
+    "topTools": "Strumenti più usati",
+    "byConnector": "Chiamate per connettore",
+    "byServer": "Chiamate per server MCP",
+    "byUser": "Chiamate per utente",
+    "noData": "Nessun dato nel periodo.",
+    "errShort": "{count} err.",
+    "costNote": "Il costo è basato sul volume (nessun token LLM): chiamate × COST_PER_CALL_MICROS + chiamate proxy × COST_PER_PROXY_CALL_MICROS. Configura le tariffe come variabili d'ambiente."
   }
 }

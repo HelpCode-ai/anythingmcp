@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState, useSyncExternalStore } from 'react';
+import { useTranslations } from 'next-intl';
 import { useTheme } from '@/lib/theme-context';
 import { AppSidebar } from '@/components/app-sidebar';
 import { CommandPalette, isMacPlatform } from '@/components/command-palette';
@@ -48,11 +49,12 @@ function ThemeToggle({
   setTheme: ReturnType<typeof useTheme>['setTheme'];
   className?: string;
 }) {
+  const t = useTranslations('appShell');
   return (
     <button
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      title="Toggle theme"
-      aria-label="Toggle theme"
+      title={t('toggleTheme')}
+      aria-label={t('toggleTheme')}
       className={cn(
         'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
         className
@@ -80,6 +82,7 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
+  const t = useTranslations('appShell');
   const isDark = resolvedTheme === 'dark';
 
   const isMac = useSyncExternalStore(
@@ -118,7 +121,7 @@ export function AppShell({
           <div className="flex min-w-0 flex-1 items-center gap-3 max-md:basis-full">
             <button
               onClick={() => setMobileOpen(true)}
-              aria-label="Open navigation"
+              aria-label={t('openNavigation')}
               className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] md:hidden"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
@@ -145,8 +148,8 @@ export function AppShell({
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
-              aria-label="Open command palette"
-              title={`Command palette (${shortcutLabel})`}
+              aria-label={t('openCommandPalette')}
+              title={t('commandPaletteTitle', { shortcut: shortcutLabel })}
               className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)] md:hidden"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -161,14 +164,14 @@ export function AppShell({
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
-              aria-label={`Search (${shortcutLabel})`}
+              aria-label={t('searchLabel', { shortcut: shortcutLabel })}
               className="flex h-9 items-center gap-2 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-2.5 text-[13px] text-[var(--text-3)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] max-md:hidden"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="11" cy="11" r="8" />
                 <path d="m21 21-4.3-4.3" />
               </svg>
-              <span className="text-[13px] text-[var(--text-2)]">Search...</span>
+              <span className="text-[13px] text-[var(--text-2)]">{t('search')}</span>
               <kbd className="ml-1 rounded border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-3)]">
                 {shortcutLabel}
               </kbd>
