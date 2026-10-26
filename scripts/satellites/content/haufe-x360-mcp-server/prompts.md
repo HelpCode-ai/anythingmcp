@@ -1,0 +1,13 @@
+- Which open invoices are overdue, and by how many days?
+- Show the last five invoices for <Kunde> and whether they are paid.
+- Which shipments went out this week, and to which customers?
+- List our vendors and their recent purchase orders.
+- Which stock items are below their reorder point?
+- Show customer <Name> with its contact details and open sales orders.
+- Compare this quarter's invoiced total with last quarter's.
+- Which sales orders are still open, and what is their total value?
+- Find the vendor record for <Lieferant> and show its contact details.
+- Which invoices are due next week?
+- List the items we have shipped but not yet invoiced.
+- Show all customers who ordered in the last 90 days.
+- Draft a follow-up list: open invoices older than 30 days, grouped by customer.
