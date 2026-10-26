@@ -1,0 +1,14 @@
+- What fields and endpoints are available on the Sage 100 API? (use metadata)
+- Which items are below their minimum stock level?
+- Show the addresses we have on file for customer <Name>.
+- List the documents created this month and what type they are.
+- Find a record by its Sage 100 key <Schluessel> and show its details.
+- Which items were added in the last 30 days?
+- Show all addresses in postal-code area <PLZ>.
+- Compare the number of documents this month with last month.
+- Which items have no linked documents?
+- What is the schema of the items endpoint?
+- Show documents of type invoice created this week.
+- Which addresses are missing an email address?
+- List items whose description mentions <Begriff>.
+- Draft a summary: new addresses and items added this quarter.
