@@ -195,11 +195,17 @@ x-backend: &backend
     - LIBREDESK_API_SECRET=${LIBREDESK_API_SECRET:-}
     - LIBREDESK_WEBHOOK_SECRET=${LIBREDESK_WEBHOOK_SECRET:-}
     - LIBREDESK_AI_ASSISTANT_USER_ID=${LIBREDESK_AI_ASSISTANT_USER_ID:-}
+    # Public CA intermediates that some upstreams forget to send (Node does
+    # not fetch a missing intermediate the way browsers do). The file is
+    # deploy/cloud/certs/extra-ca.pem, installed by deploy-cloud.yml; if it
+    # is missing Node logs a warning and starts with its default store.
+    - NODE_EXTRA_CA_CERTS=/app/extra-ca/extra-ca.pem
   volumes:
     # One heap snapshot per process, written by the heap guard when the heap
     # crosses HEAP_SNAPSHOT_PERCENT. A volume so it outlives the container
     # that wrote it — the whole point is to read it after the restart.
     - diagnostics:/app/diagnostics
+    - ./certs:/app/extra-ca:ro
   depends_on:
     postgres:
       condition: service_healthy
@@ -226,11 +232,14 @@ x-backend: &backend
     # outside probe see in the meantime.
     start_period: 180s
   restart: unless-stopped
+  # The backend logs every tool call. At 5 x 50 MB the files covered only
+  # about 19 hours, too little to compare one day with the next. 20 x 100 MB
+  # keeps about a week and uses at most 2 GB per container.
   logging:
     driver: json-file
     options:
-      max-size: "50m"
-      max-file: "5"
+      max-size: "100m"
+      max-file: "20"
 
 x-frontend: &frontend
   image: helpcodeai/anythingmcp:latest

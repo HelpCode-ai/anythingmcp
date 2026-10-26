@@ -1,0 +1,15 @@
+- Quelles factures clients sont encore impayées, et pour quels tiers ?
+- Montre-moi les cinq dernières factures de « Dupont SARL » et si elles sont payées.
+- Quelles factures impayées ont plus de 30 jours, et quel montant reste dû par client ?
+- Affiche la facture FA2610-0042 ligne par ligne, avec la TVA et les paiements déjà reçus.
+- Compare le total facturé de ce trimestre avec celui du trimestre précédent.
+- Quelles propositions commerciales avons-nous envoyées ce mois-ci qui ne sont pas encore signées ?
+- Quelles propositions non signées de plus de 5 000 EUR datent de plus de 30 jours ?
+- Liste les commandes clients créées cette semaine avec leur référence et leur montant.
+- Quelles factures fournisseurs sont encore impayées, et combien devons-nous au total ?
+- Trouve le tiers « Atelier Martin » et affiche son adresse, son numéro de TVA et ses conditions de paiement.
+- Liste nos fournisseurs avec leur numéro de TVA et leur ville.
+- Quels prospects ont été ajoutés ces 90 derniers jours ?
+- Quel est le stock du produit ART-1042 dans chaque entrepôt ?
+- Quels produits ont moins de 10 unités en stock ?
+- Quels services vendons-nous, à quel prix et avec quel taux de TVA ?
