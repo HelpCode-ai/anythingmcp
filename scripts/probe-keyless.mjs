@@ -93,7 +93,11 @@ function isKeyless(a) {
 }
 
 const PROBED_AUTH = new Set(['NONE', 'LOGIN_TOKEN']);
-const USER_AGENT = 'anythingmcp/1.0 (+https://anythingmcp.com)';
+// The REST engine sets no User-Agent of its own, so the backend sends axios's
+// default; an adapter's own header still wins. Probe with the same, or a bot
+// filter that reacts to a crawler-style agent (ESPN, October 2026) fails here
+// while cloud calls work.
+const USER_AGENT = 'axios/1.20.0';
 
 /** Mirror of RestEngine.resolveValue for the subset a probe needs. */
 function resolveValue(value, params) {

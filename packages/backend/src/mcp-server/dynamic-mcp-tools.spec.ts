@@ -201,6 +201,18 @@ describe('DynamicMcpTools — actionable hint on upstream errors', () => {
     expect(JSON.parse(res.content[0].text).hint).toBe(hint);
   });
 
+  it('returns the response size error as a tool error with its own code', async () => {
+    const { ResponseTooLargeError } = await import('../common/response-size-limit');
+    const { executor, restEngine } = build(makeTool());
+    restEngine.execute.mockRejectedValueOnce(new ResponseTooLargeError(10 * 1024 * 1024));
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBe(true);
+    const detail = JSON.parse(res.content[0].text);
+    expect(detail.code).toBe('TOOL_RESPONSE_TOO_LARGE');
+    expect(detail.error).toMatch(/larger than 10 MB, the limit for one tool call/);
+    expect(detail.status).toBeUndefined();
+  });
+
   it('adds no hint for an ordinary failure on an unknown host', async () => {
     const { executor, restEngine } = build(makeTool());
     restEngine.execute.mockRejectedValueOnce(new Error('boom'));
