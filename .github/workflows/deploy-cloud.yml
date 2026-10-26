@@ -32,7 +32,7 @@ jobs:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/cloud/stuck-users-report.sh,deploy/cloud/systemd/anythingmcp-stuck-report.service,deploy/cloud/systemd/anythingmcp-stuck-report.timer,deploy/cloud/trial-report.sh,deploy/cloud/systemd/anythingmcp-trial-report.service,deploy/cloud/systemd/anythingmcp-trial-report.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/cloud/stuck-users-report.sh,deploy/cloud/systemd/anythingmcp-stuck-report.service,deploy/cloud/systemd/anythingmcp-stuck-report.timer,deploy/cloud/trial-report.sh,deploy/cloud/systemd/anythingmcp-trial-report.service,deploy/cloud/systemd/anythingmcp-trial-report.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh,deploy/cloud/certs/extra-ca.pem"
           target: /tmp/anythingmcp-deploy
           overwrite: true
 
@@ -68,6 +68,12 @@ jobs:
             # copied below; `docker compose up` builds it if the pinned image
             # tag is missing (fresh droplet or a bumped tag), otherwise the
             # existing image is reused.
+
+            # Extra CA intermediates for the backend's NODE_EXTRA_CA_CERTS
+            # (see docker-compose.cloud.yml). Installed before release.sh so
+            # the new colour starts with them.
+            mkdir -p ./certs
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/certs/extra-ca.pem ./certs/extra-ca.pem
 
             # Uptime probe: a systemd timer on this host, every minute, mailing
             # on a change of state. It is here and not only in GitHub Actions
