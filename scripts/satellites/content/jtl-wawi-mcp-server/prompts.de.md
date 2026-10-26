@@ -1,0 +1,14 @@
+- Welche Artikel sind knapp an Lager, und in welchem Lager liegen sie?
+- Wie hoch ist der aktuelle Lagerbestand von Artikel <Artikelnummer>, und was kostet er?
+- Liste alle Lager und wie viele verschiedene Artikel jedes enthält.
+- Zeige die offenen Auftraege, die diese Woche erstellt wurden, mit Auftragsnummer und Summe.
+- Welche Auftraege sind noch nicht versendet, und welchen Status haben sie?
+- Zeige Auftrag <Auftragsnummer> mit seinen Positionen und Mengen.
+- Welche Lieferungen haben unser Lager heute verlassen, und an welche Kunden?
+- Suche den Kundendatensatz fuer <Firmenname> und zeige die Kontaktdaten.
+- Liste die Kunden mit den meisten offenen Auftraegen in diesem Monat.
+- Welche Artikel haben null Bestand, aber noch offene Auftragspositionen?
+- Vergleiche die Anzahl versendeter Auftraege dieses Monats mit dem Vormonat.
+- Zeige Kunden, an die wir in den letzten 60 Tagen nicht geliefert haben.
+- Wie hoch ist der Lagerwert von Lager <Lager>?
+- Erstelle eine Nachfassliste: Auftraege, die aelter als 14 Tage und noch offen sind, gruppiert nach Kunde.
