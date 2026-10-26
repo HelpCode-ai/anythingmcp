@@ -9,7 +9,28 @@
  * Request bodies, cookies and every header but user-agent are dropped; so is
  * the user. Console breadcrumbs are dropped too, a log line can quote anything.
  */
-import type { Breadcrumb, Event, EventHint } from '@sentry/nextjs';
+import type { Breadcrumb, Event, EventHint, init } from '@sentry/nextjs';
+
+type SentryOptions = NonNullable<Parameters<typeof init>[0]>;
+
+/**
+ * SDK v11 collects request bodies, cookies, headers, query strings, the
+ * user, MCP and GenAI content unless told not to. Every runtime turns all of
+ * it off; the scrubbers below remain the allowlist.
+ */
+export const DATA_COLLECTION: NonNullable<SentryOptions['dataCollection']> = {
+  userInfo: false,
+  cookies: false,
+  httpHeaders: { request: { allow: ['user-agent'] }, response: false },
+  httpBodies: [],
+  urlQueryParams: false,
+  graphQL: { document: false, variables: false },
+  genAI: { inputs: false, outputs: false },
+  mcp: { inputs: false, outputs: false },
+  databaseQueryData: false,
+  queues: false,
+  stackFrameVariables: false,
+};
 
 const KEPT_HEADERS = new Set(['user-agent']);
 
@@ -67,6 +88,39 @@ export function scrubEvent<T extends Event>(event: T): T {
     }
   }
   return event;
+}
+
+/** The parts of a streamed span (SDK v11 `beforeSendSpan`) the scrubber touches. */
+interface StreamedSpanLike {
+  name: string;
+  attributes?: Record<string, unknown>;
+}
+
+// Span attributes that can carry tokens, credentials or business data.
+const DROPPED_SPAN_ATTRIBUTES: RegExp[] = [
+  /^http\.(request|response)\.(header|body)\./,
+  /^(user|client)\./,
+  /^mcp\.request\.argument/,
+  /^mcp\.(tool|prompt)\.result\.(\d+\.)?(content|description|message_content|uri|resource_uri)$/,
+  /^gen_ai\.(input|output|prompt|completion|system_instructions|request\.messages|response\.text)/,
+];
+const KEPT_HEADER_ATTRIBUTES = new Set(['http.request.header.user-agent', 'http.request.header.user_agent']);
+
+/**
+ * The same rules as scrubEvent, for one streamed span. SDK v11 sends spans
+ * one by one, so beforeSendTransaction no longer runs.
+ */
+export function scrubSpan<T extends StreamedSpanLike>(span: T): T {
+  const attrs = span.attributes;
+  if (attrs) {
+    scrubUrlData(attrs);
+    for (const k of Object.keys(attrs)) {
+      if (KEPT_HEADER_ATTRIBUTES.has(k)) continue;
+      if (DROPPED_SPAN_ATTRIBUTES.some((re) => re.test(k))) delete attrs[k];
+    }
+  }
+  if (typeof span.name === 'string') span.name = cutQueries(span.name);
+  return span;
 }
 
 export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {

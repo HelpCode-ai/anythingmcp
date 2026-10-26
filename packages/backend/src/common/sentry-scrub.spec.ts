@@ -1,5 +1,5 @@
 import type { Event } from '@sentry/nestjs';
-import { cutQueries, scrubBreadcrumb, scrubEvent, stripQuery } from './sentry-scrub';
+import { cutQueries, scrubBreadcrumb, scrubEvent, scrubSpan, stripQuery, type StreamedSpan } from './sentry-scrub';
 
 describe('sentry-scrub', () => {
   it('keeps only method, bare URL and user-agent of the request', () => {
@@ -61,6 +61,73 @@ describe('sentry-scrub', () => {
     });
     expect((event.spans?.[0].data as Record<string, unknown>)['url.query']).toBeUndefined();
     expect(event.spans?.[1].description).toBe('SELECT * FROM "User" WHERE id = $1');
+  });
+
+  const span = (name: string, attributes: Record<string, unknown>, is_segment = false): StreamedSpan => ({
+    trace_id: 't',
+    span_id: 's',
+    name,
+    start_timestamp: 0,
+    status: 'ok',
+    is_segment,
+    attributes,
+  });
+
+  it('cuts queries from streamed HTTP spans and keeps only the user-agent header', () => {
+    const out = scrubSpan(
+      span(
+        'GET /callback?code=abc&state=xyz',
+        {
+          'sentry.op': 'http.server',
+          'url.full': 'https://cloud.example.com/callback?code=abc',
+          'url.query': 'code=abc',
+          'http.request.method': 'GET',
+          'http.request.header.user-agent': ['claude'],
+          'http.request.header.authorization': ['[Filtered]'],
+          'http.request.header.cookie': ['session=s'],
+          'http.response.header.set-cookie': ['a=b'],
+          'http.request.body.data': '{"iban":"DE89"}',
+          'client.address': '1.2.3.4',
+          'user.ip_address': '1.2.3.4',
+        },
+        true,
+      ),
+    );
+
+    expect(out.name).toBe('GET /callback');
+    expect(out.attributes).toEqual({
+      'sentry.op': 'http.server',
+      'url.full': 'https://cloud.example.com/callback',
+      'http.request.method': 'GET',
+      'http.request.header.user-agent': ['claude'],
+    });
+  });
+
+  it('drops MCP and GenAI content from streamed spans and keeps their metadata', () => {
+    const out = scrubSpan(
+      span('tools/call search_customer', {
+        'sentry.op': 'mcp.server',
+        'mcp.method.name': 'tools/call',
+        'mcp.tool.name': 'search_customer',
+        'mcp.request.argument.query': '"Rossi"',
+        'mcp.tool.result.content': '[{"iban":"DE89"}]',
+        'mcp.tool.result.content_count': 1,
+        'gen_ai.input.messages': '[]',
+        'gen_ai.output.messages': '[]',
+      }),
+    );
+
+    expect(out.attributes).toEqual({
+      'sentry.op': 'mcp.server',
+      'mcp.method.name': 'tools/call',
+      'mcp.tool.name': 'search_customer',
+      'mcp.tool.result.content_count': 1,
+    });
+  });
+
+  it('keeps the placeholders of database span names', () => {
+    const out = scrubSpan(span('SELECT * FROM "User" WHERE id = ?', { 'sentry.op': 'db' }));
+    expect(out.name).toBe('SELECT * FROM "User" WHERE id = ?');
   });
 
   it('handles relative and unparseable URLs', () => {
