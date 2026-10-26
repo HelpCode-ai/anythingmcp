@@ -654,7 +654,7 @@ the API actually returned.
 | `select` | Output template: keys are output names, leaves are paths (`$.a.b[*].c`) or literals |
 | `expression` | JMESPath expression, for reshaping a template cannot express |
 | `fallbackToRaw` | On error, return the raw response instead of failing. Default `true` |
-| `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap |
+| `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap. It shapes a response that was read; the instance-wide `TOOL_MAX_RESPONSE_BYTES` (10 MB by default) decides whether the upstream body is read at all |
 | `cacheTtl` | Seconds to cache the **raw** upstream response; shaping happens on read |
 | `images` | Paths to base64 images in the response, returned to the client as MCP image content (see below) |
 | `binary` | How a file the API returns as raw bytes is handed over: `{ "as": "auto" \| "base64", "maxBytes": n }` (see below) |
@@ -721,7 +721,9 @@ file. Neither the call log nor the dashboard's tool test stores the bytes.
 ```
 
 - `maxBytes` per file: 4 MiB by default, at most 10 MiB. A larger file is
-  described and not attached.
+  described and not attached. A response body over `TOOL_MAX_RESPONSE_BYTES`
+  (10 MB by default) is not read at all: the call fails with code
+  `TOOL_RESPONSE_TOO_LARGE`.
 - `as: "base64"` puts the base64 into the text (`file.base64`) instead of
   attaching it, for a workflow that hands the file on to another tool.
 - Both keys are optional. A tool without `binary` gets the defaults.

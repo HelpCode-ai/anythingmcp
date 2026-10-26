@@ -96,6 +96,9 @@ services:
       # address. Needed for the bundled MOTIS (`motis`) and any other API you
       # run on the same Docker network.
       - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-}
+      # Largest upstream response one tool call reads, in bytes. Empty = the
+      # default, 10 MB (see .env.example).
+      - TOOL_MAX_RESPONSE_BYTES=${TOOL_MAX_RESPONSE_BYTES:-}
       # Knowledge Graph LLM (optional): hosted providers need their API key,
       # a local OpenAI-compatible endpoint needs KG_LLM_BASE_URL and no key
       # (KG_LLM_API_KEY is only sent when set). From inside this container
