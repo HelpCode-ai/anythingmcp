@@ -46,7 +46,7 @@
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "@rekog/mcp-nest": "^2.0.8",
-    "@rekog/mcp-nest-auth": "^2.0.7",
+    "@rekog/mcp-nest-auth": "^2.0.8",
     "@sentry/nestjs": "^10.76.2",
     "@sentry/profiling-node": "^10.76.2",
     "axios": "^1.20.0",
