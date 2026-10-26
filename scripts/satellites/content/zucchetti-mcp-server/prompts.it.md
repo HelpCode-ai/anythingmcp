@@ -1,0 +1,12 @@
+- Trova l'anagrafica cliente o fornitore di "Mario Rossi".
+- Quale cliente ha la partita IVA IT12345678901?
+- Quali ordini cliente sono ancora aperti e per quali clienti?
+- Mostra le fatture emesse tra l'1 e il 30 settembre 2026 con i relativi totali.
+- Quali fatture attive sono scadute e da quanti giorni?
+- Cosa abbiamo consegnato a Bianchi SpA questo mese?
+- Elenca gli articoli che corrispondono a "sedia da ufficio" con i prezzi.
+- Quali articoli non sono stati venduti negli ultimi 90 giorni?
+- Confronta il totale fatturato di questo mese con quello del mese scorso.
+- Da quali fornitori abbiamo acquistato di più quest'anno?
+- Quanti dipendenti ci sono in ciascun reparto?
+- Riepiloga i documenti del mese scorso per tipo: fatture, ordini e documenti di trasporto (DDT).

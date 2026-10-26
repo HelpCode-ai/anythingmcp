@@ -78,3 +78,12 @@ describe('kaufland_list_tickets limit', () => {
     expect(tool.parameters.properties.limit.maximum).toBe(30);
   });
 });
+
+describe('kaufland_get_order embedded', () => {
+  it('only accepts the objects the order endpoint can embed', () => {
+    const tool = (adapter as unknown as {
+      tools: { name: string; parameters: { properties: Record<string, { enum?: string[] }> } }[];
+    }).tools.find((t) => t.name === 'kaufland_get_order')!;
+    expect(tool.parameters.properties.embedded.enum).toEqual(['order_invoices', 'delivery', 'kss_delivery']);
+  });
+});

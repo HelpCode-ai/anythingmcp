@@ -1,0 +1,12 @@
+- Quali fatture attive sono scadute e da quanti giorni?
+- Mostra il cliente Rossi Srl con partita IVA e saldo aperto.
+- Trova il cliente con partita IVA IT12345678901.
+- Elenca le fatture emesse a settembre 2026 con i relativi totali.
+- Quali fatture passive scadono questo mese e quanto dobbiamo a ciascun fornitore?
+- Quali articoli corrispondono a "laptop" e quanto costano?
+- Confronta il totale fatturato di questo trimestre con quello del trimestre precedente.
+- Quali clienti hanno acquistato l'anno scorso ma non hanno ancora fatture quest'anno?
+- Quali fatture elettroniche sono state scartate dal Sistema di Interscambio (SdI) questo mese?
+- Mostra le ultime cinque fatture di Bianchi SpA e indica se risultano saldate.
+- Riepiloga il fatturato di questo mese per cliente, dal più alto al più basso.
+- Da quali fornitori abbiamo acquistato di più quest'anno?
