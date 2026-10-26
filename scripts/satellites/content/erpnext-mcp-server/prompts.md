@@ -1,0 +1,15 @@
+- Which sales invoices are overdue, and how much is outstanding per customer?
+- Show sales invoice ACC-SINV-2026-00042 with its items, taxes and outstanding amount.
+- Compare this quarter's invoiced total with last quarter's.
+- Which sales orders are still "To Deliver and Bill", and when are they due for delivery?
+- How many sales orders did we create this month?
+- Which customers are in the "Commercial" group, and in which territory?
+- Which customers ordered in the last 90 days but have no unpaid invoice?
+- How much of item SKU-1001 do we have in each warehouse, including reserved and projected quantity?
+- Which stock items have no actual quantity left in any warehouse?
+- What is the current selling price of item SKU-1001?
+- Which leads came in this week, and from which source?
+- Which purchase orders are still waiting to be received?
+- Show the fields of our custom DocType "Service Contract", then list the contracts that end this month.
+- Create a lead for Anna Schmidt at Muster GmbH with source "Website". (write)
+- Create a customer "Atelier Martin" in the "Commercial" customer group. (write)

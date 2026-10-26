@@ -1,0 +1,15 @@
+- Which customer invoices are still unpaid, and for which third parties?
+- Show the last five invoices for "Dupont SARL" and whether they are paid.
+- Which unpaid invoices are older than 30 days, and how much is open per customer?
+- Show invoice FA2610-0042 line by line, with VAT and the payments applied so far.
+- Compare this quarter's invoiced total with last quarter's.
+- Which commercial proposals did we send this month that are not signed yet?
+- Which unsigned proposals over 5,000 EUR are older than 30 days?
+- List the customer orders created this week with their references and totals.
+- Which supplier invoices are still unpaid, and what do we owe in total?
+- Find the third party "Atelier Martin" and show its address, VAT number and payment terms.
+- List our suppliers with their VAT numbers and cities.
+- Which prospects were added in the last 90 days?
+- How much stock of product ART-1042 is in each warehouse?
+- Which products have fewer than 10 units in stock?
+- Which services do we sell, and at what price and VAT rate?
