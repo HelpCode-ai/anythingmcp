@@ -153,6 +153,9 @@ x-backend: &backend
     # use_proxy=true route through this; unset = feature off everywhere.
     - CONNECTOR_PROXY_URL=${CONNECTOR_PROXY_URL:-}
     - PROXY_RATE_LIMIT_DEFAULT=${PROXY_RATE_LIMIT_DEFAULT:-100}
+    # Largest upstream response one tool call reads, in bytes. Empty = the
+    # default, 10 MB, the same as self-hosted (see .env.example).
+    - TOOL_MAX_RESPONSE_BYTES=${TOOL_MAX_RESPONSE_BYTES:-}
     # Internal MOTIS instance for the Deutsche Bahn connector. When set, the
     # adapter's MOTIS_URL is filled in automatically at import (and hidden
     # from the install form), so cloud users never see or choose it.
