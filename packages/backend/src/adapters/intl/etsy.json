@@ -405,7 +405,7 @@
           },
           "includes": {
             "type": "string",
-            "description": "Optional extra data, comma-separated, any of: Images, Shop, User, Translations, Videos, Personalization, BuyerPrice."
+            "description": "Optional extra data, comma-separated, any of: Images, Shop, User, Translations, Videos, Personalization, BuyerPrice. Etsy rejects anything else: inventory (SKUs, quantities, prices per variation) is not available here, and shipping comes with the shop's shipping profiles, not with the listing."
           },
           "currency": {
             "type": "string",

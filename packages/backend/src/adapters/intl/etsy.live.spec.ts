@@ -76,6 +76,10 @@ describe('etsy adapter — static spec conformance', () => {
     });
     expect(batch.parameters.required).toEqual(['listing_ids']);
     expect(Object.keys(batch.parameters.properties).sort()).toEqual(['buyer_country', 'currency', 'includes', 'listing_ids']);
+    // Same includes as etsy_get_listing: Etsy rejects Inventory and Shipping here too.
+    expect(batch.parameters.properties.includes.description).toBe(
+      byName('etsy_get_listing').parameters.properties.includes.description,
+    );
     for (const t of [tx, batch]) {
       expect(t.enabled).toBeUndefined();
       expect(a.instructions).toContain(t.name);
