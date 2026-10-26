@@ -1,0 +1,1811 @@
+{
+  "slug": "gitea",
+  "name": "Gitea",
+  "aliases": [
+    "Forgejo",
+    "Codeberg"
+  ],
+  "description": "Let your AI read your Gitea: find repositories, triage issues and pull requests with their comments, files, diffs and reviews, check releases and organizations, and read branches, commits and files. gitea.com or your own Gitea server, with an access token. Read-only.",
+  "instructions": "## Gitea\nThis connector works with Gitea through the **REST API v1** (`<your Gitea address>/api/v1`): repositories, issues with comments, labels and milestones, pull requests with their files, diffs, commits and reviews, releases, organizations with members and teams, branches, commits, the file tree and file contents. It runs against gitea.com or your own Gitea server, as the user who owns the token: the AI sees exactly what that user can see. It is **read-only**, nothing here creates, changes or deletes anything.\n\n**Setup (about 2 minutes)**\n1. In Gitea click your avatar, then **Settings**, then **Applications**. Under **Manage Access Tokens** type a name (for example \"AnythingMCP\") and set **Repository**, **Issue**, **Organization** and **User** to **Read** (the scopes `read:repository`, `read:issue`, `read:organization` and `read:user`). A Gitea version without token scopes gives the token the full access of its user.\n2. Click **Generate Token** and copy the token right away, Gitea shows it only once. Paste only the token into `GITEA_TOKEN`: the adapter sends it as `Authorization: token <token>` and adds the word `token` itself.\n3. Set `GITEA_URL` to the address you open Gitea at, for example `https://gitea.com` or `https://git.example.com`, without `/api/v1` and without a trailing slash. If Gitea runs under a sub path, keep it (`https://example.com/gitea`).\n\n**Your own server**: a Gitea on an internal host (a private IP or an internal name) needs a self-hosted AnythingMCP on the same network, with the hostname in `SSRF_ALLOWED_HOSTS`, or the outbound guard blocks the call. Forgejo, and Codeberg which runs it, offer the same API v1 routes, so an address such as `https://codeberg.org` should work too; this adapter is written against the Gitea API.\n\n**Repositories and numbers**: every repository is addressed by two parameters, `owner` (a user or organization name) and `repo`, the two parts of `https://host/owner/repo`. Issues and pull requests share one number sequence per repository (`index`, the 42 in `#42`). Gitea treats a pull request as an issue too: `gitea_get_issue` and `gitea_list_issue_comments` work with a pull request number for its title, labels and conversation, while `gitea_get_pull_request`, `gitea_get_pull_request_files` and `gitea_get_pull_request_diff` give the code side.\n\n**Finding things**: `gitea_search_repositories` searches the whole instance, `gitea_list_my_repositories`, `gitea_list_organization_repositories` and `gitea_list_user_repositories` list by owner. `gitea_search_issues` searches issues and pull requests across all repositories and answers what is assigned to the token's user (`assigned`), created by them (`created`) or waits for their review (`review_requested`). Use `gitea_get_repository` first when you need the default branch.\n\n**Reviewing a pull request**: `gitea_get_pull_request` (check `mergeable` and `merged`), then `gitea_get_pull_request_files`, `gitea_get_pull_request_diff`, `gitea_list_pull_request_commits`, `gitea_list_pull_request_reviews` and `gitea_list_issue_comments`. A diff over 200 KB is cut: open the pull request's `html_url` for the rest.\n\n**Reading code**: `gitea_get_tree` lists files and folders at a branch, tag or commit (pass the branch name as `sha`), `gitea_get_file_content` returns a file as text (cut at 200 KB), `gitea_list_branches`, `gitea_list_commits` and `gitea_get_commit` show the history.\n\n**Releases**: `gitea_get_latest_release` answers what the current version is, `gitea_list_releases` and `gitea_get_release_by_tag` show release notes and attached files.\n\n**Pagination**: list tools take `page` (from 1) and `limit`. A server answers 30 items per page by default and at most 50 (its `MAX_RESPONSE_ITEMS`), so ask for the next page instead of a bigger limit. A list is returned under `data` (the repository search already does), together with `_headers` carrying `x-total-count` and `link`, and `_pagination` with `nextCursor`, the next page number. `_pagination` is missing on the last page. Comments and `gitea_get_tree` have their own paging, see their descriptions.\n\n**Errors**: 401 means the token is wrong, expired or deleted, or `GITEA_URL` points at another server. 403 means the token lacks a scope this call needs (Gitea names it in the message), for example `read:issue` for issues or `read:organization` for organizations. 404 means the repository, issue or file does not exist or the user cannot see it: Gitea answers 404 for private resources it hides. 422 names a missing or invalid field.\n\n**Out of scope here**: creating or editing issues, comments, pull requests, releases, branches and files, merging or approving, Actions runs and workflows, packages, wikis, notifications, webhooks, deploy keys and administration.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "gitea",
+  "docsUrl": "https://docs.gitea.com/development/api-usage",
+  "requiredEnvVars": [
+    "GITEA_URL",
+    "GITEA_TOKEN"
+  ],
+  "envVarMeta": {
+    "GITEA_URL": {
+      "label": "Gitea address",
+      "kind": "address",
+      "help": "The address you open Gitea at, for example https://gitea.com or https://git.example.com, without /api/v1 and without a trailing slash. Keep a sub path if Gitea runs under one (https://example.com/gitea).",
+      "example": "https://gitea.com",
+      "pattern": "^(?!.*/api/v1/?$)https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Use the server address, e.g. https://gitea.com or https://git.example.com, without /api/v1 and without a trailing slash."
+    },
+    "GITEA_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Gitea, avatar, Settings, Applications, Manage Access Tokens, Generate Token, with Read for Repository, Issue, Organization and User. Gitea shows the token only once.",
+      "link": "https://gitea.com/user/settings/applications",
+      "pattern": "^(?!(?:token|Bearer)\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token, without spaces or the word token or Bearer in front."
+    }
+  },
+  "verifyHints": {
+    "401": "Gitea refused the token: it is wrong, expired or deleted. Create a new one under Settings, Applications, and check that GITEA_URL points at the server that issued it.",
+    "403": "The token lacks a scope this call needs: read:user for this check, read:repository, read:issue and read:organization for the tools. Create a token with Read on Repository, Issue, Organization and User.",
+    "404": "Gitea found nothing at this address. Check GITEA_URL (for example https://gitea.com, without /api/v1, with the sub path if Gitea runs under one)."
+  },
+  "probe": {
+    "tool": "gitea_get_current_user"
+  },
+  "prerequisites": "An account on gitea.com or on your own Gitea server, and an access token with Read permission for Repository, Issue, Organization and User. About 2 minutes.",
+  "connector": {
+    "name": "Gitea REST API v1",
+    "type": "REST",
+    "baseUrl": "{{GITEA_URL}}/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "token {{GITEA_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/user"
+  },
+  "tools": [
+    {
+      "name": "gitea_get_current_user",
+      "description": "Get the Gitea user the token belongs to: id, login, full_name, email, is_admin and html_url. A quick check that the token and the instance address work.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user"
+      }
+    },
+    {
+      "name": "gitea_search_repositories",
+      "description": "Search the repositories the token can see on the whole instance by keyword, topic, type or archived state: full_name, description, default_branch, stars_count, forks_count, open_issues_count, private, archived, updated_at and html_url. The list is under `data`. For one owner's repositories use gitea_list_organization_repositories or gitea_list_user_repositories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Keyword matched against repository names (and descriptions when includeDesc is true).",
+            "examples": [
+              "website"
+            ]
+          },
+          "topic": {
+            "type": "boolean",
+            "description": "Match the keyword against repository topics only."
+          },
+          "includeDesc": {
+            "type": "boolean",
+            "description": "Also search the keyword in repository descriptions."
+          },
+          "is_private": {
+            "type": "boolean",
+            "description": "true for private repositories only, false for public ones only. Leave out for both."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true for archived repositories only, false to leave them out. Leave out for both."
+          },
+          "mode": {
+            "type": "string",
+            "description": "Kind of repository: fork, source, mirror or collaborative.",
+            "enum": [
+              "fork",
+              "source",
+              "mirror",
+              "collaborative"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "alpha, created, updated, size, git_size, lfs_size, stars, forks or id (default alpha).",
+            "enum": [
+              "alpha",
+              "created",
+              "updated",
+              "size",
+              "git_size",
+              "lfs_size",
+              "stars",
+              "forks",
+              "id"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc (default asc). Ignored without sort.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/search",
+        "queryParams": {
+          "q": "$q",
+          "topic": "$topic",
+          "includeDesc": "$includeDesc",
+          "is_private": "$is_private",
+          "archived": "$archived",
+          "mode": "$mode",
+          "sort": "$sort",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_list_my_repositories",
+      "description": "List the repositories owned by the token's user, with full_name, description, default_branch, private, archived, stars_count, open_issues_count, updated_at and html_url. Repositories of an organization are not included: use gitea_list_organization_repositories for those.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/repos",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_list_organization_repositories",
+      "description": "List the repositories of an organization that the token's user can see: full_name, description, default_branch, private, archived, stars_count, open_issues_count, updated_at and html_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization name, as in https://host/ORG.",
+            "examples": [
+              "acme"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "org"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/{org}/repos",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_list_user_repositories",
+      "description": "List the repositories owned by a given user that the token's user can see: full_name, description, default_branch, private, archived, stars_count, open_issues_count, updated_at and html_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Username of the user, as in https://host/USERNAME.",
+            "examples": [
+              "jane"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{username}/repos",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_get_repository",
+      "description": "Get one repository: description, default_branch, private, archived, fork, empty, size, stars_count, forks_count, open_issues_count, open_pr_counter, release_counter, the token user's permissions, clone_url and html_url. Use it to learn the default branch before reading files or commits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}"
+      }
+    },
+    {
+      "name": "gitea_list_issues",
+      "description": "List a repository's issues with filters: number, title, state, labels, assignees, milestone, comments count, created_at, updated_at and html_url. Gitea treats pull requests as issues too, so type defaults to issues here; set it to pulls to list pull requests with the same filters (gitea_list_pull_requests has the pull request specific ones).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "open, closed or all (default open).",
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "issues (default here) or pulls.",
+            "enum": [
+              "issues",
+              "pulls"
+            ],
+            "default": "issues"
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names. Issues with any of them match.",
+            "examples": [
+              "bug,help wanted"
+            ]
+          },
+          "milestones": {
+            "type": "string",
+            "description": "Comma-separated milestone names or ids. Issues in any of them match."
+          },
+          "q": {
+            "type": "string",
+            "description": "Text searched in titles and descriptions."
+          },
+          "created_by": {
+            "type": "string",
+            "description": "Only items created by this username."
+          },
+          "assigned_by": {
+            "type": "string",
+            "description": "Only items assigned to this username."
+          },
+          "mentioned_by": {
+            "type": "string",
+            "description": "Only items that mention this username."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only items updated after this time, RFC 3339 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "before": {
+            "type": "string",
+            "description": "Only items updated before this time, RFC 3339."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/issues",
+        "queryParams": {
+          "state": "$state",
+          "type": "$type",
+          "labels": "$labels",
+          "milestones": "$milestones",
+          "q": "$q",
+          "created_by": "$created_by",
+          "assigned_by": "$assigned_by",
+          "mentioned_by": "$mentioned_by",
+          "since": "$since",
+          "before": "$before",
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_search_issues",
+      "description": "Search issues and pull requests across every repository the token's user can see, or narrow to the ones assigned to, created by, mentioning or awaiting review from the token's user (assigned, created, mentioned, review_requested, reviewed). Each result names its repository. Use it for questions like what is assigned to me or which pull requests wait for my review.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Text searched in titles and descriptions."
+          },
+          "state": {
+            "type": "string",
+            "description": "open (default), closed or all.",
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ],
+            "default": "open"
+          },
+          "type": {
+            "type": "string",
+            "description": "issues or pulls. Leave out for both.",
+            "enum": [
+              "issues",
+              "pulls"
+            ]
+          },
+          "assigned": {
+            "type": "boolean",
+            "description": "Only items assigned to the token's user."
+          },
+          "created": {
+            "type": "boolean",
+            "description": "Only items created by the token's user."
+          },
+          "mentioned": {
+            "type": "boolean",
+            "description": "Only items that mention the token's user."
+          },
+          "review_requested": {
+            "type": "boolean",
+            "description": "Only pull requests where the token user's review was requested."
+          },
+          "reviewed": {
+            "type": "boolean",
+            "description": "Only pull requests the token's user has reviewed."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names. Items with any of them match."
+          },
+          "milestones": {
+            "type": "string",
+            "description": "Comma-separated milestone names. Items in any of them match."
+          },
+          "owner": {
+            "type": "string",
+            "description": "Only repositories of this owner (user or organization).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "created_by": {
+            "type": "string",
+            "description": "Only items created by this username."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only items updated after this time, RFC 3339 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "before": {
+            "type": "string",
+            "description": "Only items updated before this time, RFC 3339."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/issues/search",
+        "queryParams": {
+          "q": "$q",
+          "state": "$state",
+          "type": "$type",
+          "assigned": "$assigned",
+          "created": "$created",
+          "mentioned": "$mentioned",
+          "review_requested": "$review_requested",
+          "reviewed": "$reviewed",
+          "labels": "$labels",
+          "milestones": "$milestones",
+          "owner": "$owner",
+          "created_by": "$created_by",
+          "since": "$since",
+          "before": "$before",
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_get_issue",
+      "description": "Get one issue by its number: title, body (Markdown), state, labels, assignees, milestone, due_date, comments count, created_at, closed_at and html_url. For a pull request number it also carries the pull_request block; use gitea_get_pull_request for branches, merge state and changed lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "description": "The issue's number inside the repository (the 42 in #42), not a global id.",
+            "examples": [
+              42
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/issues/{index}"
+      }
+    },
+    {
+      "name": "gitea_list_issue_comments",
+      "description": "List the comments on an issue, oldest first: id, body (Markdown), user, created_at, updated_at and html_url. It also reads the conversation comments of a pull request given its number; inline review comments are under gitea_list_pull_request_reviews. All comments come back in one answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "description": "The issue's number inside the repository (the 42 in #42), not a global id.",
+            "examples": [
+              42
+            ]
+          },
+          "since": {
+            "type": "string",
+            "description": "Only comments updated after this time, RFC 3339."
+          },
+          "before": {
+            "type": "string",
+            "description": "Only comments updated before this time, RFC 3339."
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/issues/{index}/comments",
+        "queryParams": {
+          "since": "$since",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "gitea_list_labels",
+      "description": "List a repository's labels: id, name, color and description. Use it to find the exact label names for the labels filter of gitea_list_issues.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/labels",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_list_milestones",
+      "description": "List a repository's milestones: id, title, state, description, due_on, open_issues and closed_issues. Only open milestones come back unless state says otherwise.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "open (default), closed or all.",
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Only the milestone with this name."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/milestones",
+        "queryParams": {
+          "state": "$state",
+          "name": "$name",
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_list_pull_requests",
+      "description": "List a repository's pull requests: number, title, state, merged, mergeable, head and base branches, user, labels, created_at, updated_at and html_url. Open ones by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "open (default), closed or all.",
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ]
+          },
+          "base_branch": {
+            "type": "string",
+            "description": "Only pull requests that target this branch.",
+            "examples": [
+              "main"
+            ]
+          },
+          "poster": {
+            "type": "string",
+            "description": "Only pull requests opened by this username."
+          },
+          "milestone": {
+            "type": "integer",
+            "description": "Only pull requests in the milestone with this id (from gitea_list_milestones)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "oldest, recentupdate, recentclose, leastupdate, mostcomment, leastcomment or priority.",
+            "enum": [
+              "oldest",
+              "recentupdate",
+              "recentclose",
+              "leastupdate",
+              "mostcomment",
+              "leastcomment",
+              "priority"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/pulls",
+        "queryParams": {
+          "state": "$state",
+          "base_branch": "$base_branch",
+          "poster": "$poster",
+          "milestone": "$milestone",
+          "sort": "$sort",
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_get_pull_request",
+      "description": "Get one pull request by its number: title, body (Markdown), state, merged, mergeable, head and base (branch, sha, repository), additions, deletions, changed_files, requested_reviewers, labels, assignees and html_url. Check mergeable before saying a pull request can be merged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "description": "The pull request's number inside the repository (the 17 in #17). Pull requests and issues share one number sequence per repository.",
+            "examples": [
+              17
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/pulls/{index}"
+      }
+    },
+    {
+      "name": "gitea_get_pull_request_files",
+      "description": "List the files a pull request changes: filename, previous_filename, status (added, modified, deleted, renamed), additions, deletions and changes. No diff text: read that with gitea_get_pull_request_diff.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "description": "The pull request's number inside the repository (the 17 in #17). Pull requests and issues share one number sequence per repository.",
+            "examples": [
+              17
+            ]
+          },
+          "whitespace": {
+            "type": "string",
+            "description": "How whitespace counts: ignore-all, ignore-change, ignore-eol or show-all.",
+            "enum": [
+              "ignore-all",
+              "ignore-change",
+              "ignore-eol",
+              "show-all"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/pulls/{index}/files",
+        "queryParams": {
+          "whitespace": "$whitespace",
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_get_pull_request_diff",
+      "description": "Read the unified diff of a pull request as plain text, for reviewing the actual changes. Diffs over 200 KB are cut; for a large pull request list the files with gitea_get_pull_request_files first and open the pull request's html_url for the rest.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "description": "The pull request's number inside the repository (the 17 in #17). Pull requests and issues share one number sequence per repository.",
+            "examples": [
+              17
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/pulls/{index}.diff"
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "gitea_list_pull_request_commits",
+      "description": "List the commits of a pull request: sha, message, author, date and html_url. The affected files and signature checks of each commit are left out by default to keep the answer small.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "description": "The pull request's number inside the repository (the 17 in #17). Pull requests and issues share one number sequence per repository.",
+            "examples": [
+              17
+            ]
+          },
+          "files": {
+            "type": "boolean",
+            "description": "Include the list of affected files for every commit (default false).",
+            "default": false
+          },
+          "verification": {
+            "type": "boolean",
+            "description": "Include the signature verification for every commit (default false).",
+            "default": false
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/pulls/{index}/commits",
+        "queryParams": {
+          "files": "$files",
+          "verification": "$verification",
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_list_pull_request_reviews",
+      "description": "List the reviews of a pull request: id, reviewer, state (APPROVED, REQUEST_CHANGES, COMMENT, PENDING), body, comments_count and submitted_at. Use it to see who approved or asked for changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "description": "The pull request's number inside the repository (the 17 in #17). Pull requests and issues share one number sequence per repository.",
+            "examples": [
+              17
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/pulls/{index}/reviews",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_list_releases",
+      "description": "List a repository's releases, newest first: tag_name, name, body (release notes in Markdown), draft, prerelease, published_at, the attached files (assets) and html_url. Drafts only show for users with write access to the repository.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "true for drafts only, false to leave them out. Leave out for both."
+          },
+          "prerelease": {
+            "type": "boolean",
+            "description": "true for pre-releases only, false to leave them out. Leave out for both."
+          },
+          "tag_filter": {
+            "type": "string",
+            "description": "Only releases whose tag matches, with * as a wildcard (v1*, *beta, *rc*). Servers that do not support it ignore it.",
+            "examples": [
+              "v1*"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/releases",
+        "queryParams": {
+          "draft": "$draft",
+          "pre-release": "$prerelease",
+          "tag_filter": "$tag_filter",
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_get_latest_release",
+      "description": "Get the most recent release that is neither a draft nor a pre-release: tag_name, name, body (release notes), published_at, assets and html_url. Answers what the current version of a project is.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/releases/latest"
+      }
+    },
+    {
+      "name": "gitea_get_release_by_tag",
+      "description": "Get one release by its tag name: name, body (release notes), draft, prerelease, published_at, assets and html_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "tag": {
+            "type": "string",
+            "description": "Tag name of the release, as listed by gitea_list_releases.",
+            "examples": [
+              "v1.2.0"
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "tag"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/releases/tags/{tag}"
+      }
+    },
+    {
+      "name": "gitea_list_my_organizations",
+      "description": "List the organizations the token's user belongs to: name, full_name, description, visibility and website.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/orgs",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_get_organization",
+      "description": "Get one organization: name, full_name, description, website, location, visibility and avatar_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization name, as in https://host/ORG.",
+            "examples": [
+              "acme"
+            ]
+          }
+        },
+        "required": [
+          "org"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/{org}"
+      }
+    },
+    {
+      "name": "gitea_list_organization_members",
+      "description": "List the members of an organization that the token's user may see: login, full_name and html_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization name, as in https://host/ORG.",
+            "examples": [
+              "acme"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "org"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/{org}/members",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_list_organization_teams",
+      "description": "List the teams of an organization: id, name, description, permission, and whether the team covers all repositories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization name, as in https://host/ORG.",
+            "examples": [
+              "acme"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "org"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/{org}/teams",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_list_branches",
+      "description": "List a repository's branches: name, the latest commit (id, message, timestamp), protected and who may push. Filter by a part of the name with q.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "q": {
+            "type": "string",
+            "description": "Part of the branch name to filter by.",
+            "examples": [
+              "release"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/branches",
+        "queryParams": {
+          "q": "$q",
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_list_commits",
+      "description": "List the commits of a repository, newest first: sha, message, author, date and html_url. Start from a branch, tag or sha with sha, or only the commits that touched a file or folder with path. Per-commit stats, affected files and signature checks are left out by default to keep the answer small.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "sha": {
+            "type": "string",
+            "description": "Branch, tag or commit SHA to start from. Leave out for the default branch."
+          },
+          "path": {
+            "type": "string",
+            "description": "Only commits that changed this file or folder.",
+            "examples": [
+              "src/main.go"
+            ]
+          },
+          "since": {
+            "type": "string",
+            "description": "Only commits after this time, ISO 8601."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only commits before this time, ISO 8601."
+          },
+          "stat": {
+            "type": "boolean",
+            "description": "Include diff stats for every commit (default false).",
+            "default": false
+          },
+          "files": {
+            "type": "boolean",
+            "description": "Include the list of affected files for every commit (default false).",
+            "default": false
+          },
+          "verification": {
+            "type": "boolean",
+            "description": "Include the signature verification for every commit (default false).",
+            "default": false
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. When _pagination is in the answer there is a next page: call again with page set to _pagination.nextCursor. It is missing on the last page.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. The server default is usually 30 and its maximum usually 50 (the administrator sets both), so ask for further pages instead of a bigger limit.",
+            "minimum": 1,
+            "examples": [
+              20
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/commits",
+        "queryParams": {
+          "sha": "$sha",
+          "path": "$path",
+          "since": "$since",
+          "until": "$until",
+          "stat": "$stat",
+          "files": "$files",
+          "verification": "$verification",
+          "page": "$page",
+          "limit": "$limit"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "gitea_get_commit",
+      "description": "Get one commit by branch, tag or sha: message, author, committer, date, parents, html_url and, with files, the changed files and stats.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "sha": {
+            "type": "string",
+            "description": "Commit SHA, branch or tag name.",
+            "examples": [
+              "main"
+            ]
+          },
+          "files": {
+            "type": "boolean",
+            "description": "Include the changed files with their stats (default true on the server; set false for a small answer)."
+          },
+          "stat": {
+            "type": "boolean",
+            "description": "Include the total diff stats."
+          },
+          "verification": {
+            "type": "boolean",
+            "description": "Include the signature verification."
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "sha"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/git/commits/{sha}",
+        "queryParams": {
+          "files": "$files",
+          "stat": "$stat",
+          "verification": "$verification"
+        }
+      }
+    },
+    {
+      "name": "gitea_get_tree",
+      "description": "List the files and folders of a repository at a branch, tag or commit: path, type (blob for a file, tree for a folder), mode and size. The branch name of the default branch gives the top level of the repository. Set recursive for every path at once; when `truncated` is true in the answer, fetch the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "sha": {
+            "type": "string",
+            "description": "Branch name, tag name or commit SHA, e.g. the default_branch from gitea_get_repository.",
+            "examples": [
+              "main"
+            ]
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "List every file below the top level, not only the top level itself."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of the tree, from 1.",
+            "minimum": 1,
+            "examples": [
+              2
+            ]
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page.",
+            "minimum": 1,
+            "examples": [
+              100
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "sha"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/git/trees/{sha}",
+        "queryParams": {
+          "recursive": "$recursive",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "gitea_get_file_content",
+      "description": "Read a file of a repository as text, at a branch, tag or commit (the default branch when ref is left out). Files over 200 KB are cut. Binary files come back garbled: check size and type with gitea_get_tree first. Find paths with gitea_get_tree.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Owner of the repository: a user or organization name, the first part of the repository address (https://host/OWNER/repo).",
+            "examples": [
+              "acme"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, the second part of the repository address (https://host/owner/REPO).",
+            "examples": [
+              "website"
+            ]
+          },
+          "filepath": {
+            "type": "string",
+            "description": "Path of the file inside the repository, slashes included, e.g. src/main.go. A name with # or ? in it is not supported.",
+            "examples": [
+              "README.md"
+            ]
+          },
+          "ref": {
+            "type": "string",
+            "description": "Branch, tag or commit SHA. Leave out for the default branch; give it explicitly when a top-level folder has the same name as a branch."
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "filepath"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/repos/{owner}/{repo}/raw/{filepath}",
+        "queryParams": {
+          "ref": "$ref"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    }
+  ]
+}
