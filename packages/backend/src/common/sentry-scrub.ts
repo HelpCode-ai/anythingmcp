@@ -11,9 +11,11 @@
  * - headers: user-agent only;
  * - no request body, cookies, query string, IP or user;
  * - outgoing HTTP (breadcrumbs and spans): URL without query string;
+ * - spans: no header but user-agent, no body, query, client address, user,
+ *   MCP arguments or results, or GenAI prompts and completions;
  * - console breadcrumbs dropped: a log line can quote anything.
  */
-import type { Breadcrumb, Event } from '@sentry/nestjs';
+import type { Breadcrumb, Event, NodeOptions } from '@sentry/nestjs';
 import { redactSecretLiterals } from './secret-literals.util';
 
 const KEPT_HEADERS = new Set(['user-agent']);
@@ -88,6 +90,46 @@ export function scrubEvent<T extends Event>(event: T): T {
   }
 
   return event;
+}
+
+/** The streamed span the SDK hands to `beforeSendSpan` (SDK v11). */
+export type StreamedSpan = Parameters<NonNullable<NodeOptions['beforeSendSpan']>>[0];
+
+// Span attributes that can carry business data or credentials. The SDK is
+// told not to collect them (dataCollection in instrument.ts); this is the
+// second line of defence, should a later SDK version add one.
+const DROPPED_SPAN_ATTRIBUTES: RegExp[] = [
+  /^http\.(request|response)\.(header|body)\./,
+  /^(user|client)\./,
+  /^mcp\.request\.argument/,
+  /^mcp\.(tool|prompt)\.result\.(\d+\.)?(content|description|message_content|uri|resource_uri)$/,
+  /^mcp\.(logging|progress)\.message$/,
+  /^mcp\.resource\.uri$/,
+  /^gen_ai\.(input|output|prompt|completion|system_instructions|request\.messages|response\.text|tool\.(input|output|call\.arguments|call\.result))/,
+];
+const KEPT_HEADER_ATTRIBUTES = new Set(['http.request.header.user-agent', 'http.request.header.user_agent']);
+
+/**
+ * The same rules as scrubEvent, for one streamed span: URLs lose their
+ * query, request and response headers but user-agent are dropped, and so is
+ * anything holding a body, the client, the user or MCP and AI content.
+ */
+export function scrubSpan(span: StreamedSpan): StreamedSpan {
+  const attrs = span.attributes as Record<string, unknown> | undefined;
+  if (attrs) {
+    scrubUrlData(attrs);
+    for (const k of Object.keys(attrs)) {
+      if (KEPT_HEADER_ATTRIBUTES.has(k)) continue;
+      if (DROPPED_SPAN_ATTRIBUTES.some((re) => re.test(k))) delete attrs[k];
+    }
+  }
+  // HTTP span names and the segment span (the former transaction) can be
+  // "GET /callback?code=…". Database span names keep their "?" placeholders.
+  const op = attrs?.['sentry.op'];
+  if (span.is_segment || (typeof op === 'string' && op.startsWith('http'))) {
+    span.name = cutQueries(span.name);
+  }
+  return span;
 }
 
 export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {

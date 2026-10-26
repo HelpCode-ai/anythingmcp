@@ -34,7 +34,7 @@ Backend (`@sentry/nestjs`) auto-instruments http/express/prisma. `SentryGlobalFi
 
 Frontend (`@sentry/nextjs`) wires browser / server / edge runtimes; `error.tsx`, `global-error.tsx` and `onRequestError` report what reaches them. Browser events are sent to `/monitoring` on the same origin and forwarded to Sentry, so ad blockers do not drop them; put that path behind a reverse proxy that does not forward the client address (see `deploy/cloud/Caddyfile`).
 
-What leaves the process is an allowlist (`packages/backend/src/common/sentry-scrub.ts`, `packages/frontend/src/lib/sentry-scrub.ts`): request method, URL without query string or fragment, and the `user-agent` header. No request bodies (MCP tool arguments), cookies, query strings (OAuth codes, invitation and reset tokens), fragments (licence keys), IP addresses or user. Outgoing HTTP breadcrumbs and spans lose their query string, where some upstream APIs take their key; console breadcrumbs are dropped. Session replay is off.
+What leaves the process is an allowlist (`packages/backend/src/common/sentry-scrub.ts`, `packages/frontend/src/lib/sentry-scrub.ts`): request method, URL without query string or fragment, and the `user-agent` header. No request bodies (MCP tool arguments), cookies, query strings (OAuth codes, invitation and reset tokens), fragments (licence keys), IP addresses or user. Outgoing HTTP breadcrumbs and spans lose their query string, where some upstream APIs take their key; console breadcrumbs are dropped. Spans carry no MCP tool arguments or results and no AI prompts: the SDK's `dataCollection` option turns every such category off, and the scrubbers drop those span attributes as a second line of defence. Session replay is off.
 
 | Env | Default | Purpose |
 |---|---|---|
