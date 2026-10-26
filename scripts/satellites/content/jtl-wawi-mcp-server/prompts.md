@@ -1,0 +1,14 @@
+- Which articles are running low on stock, and in which warehouse are they stored?
+- What is the current stock of article <Artikelnummer>, and what does it cost?
+- List all warehouses and how many different items each one holds.
+- Show the open sales orders created this week with their order numbers and totals.
+- Which sales orders are still unshipped, and what is their current status?
+- Show sales order <Auftragsnummer> with its line items and quantities.
+- Which shipments left our warehouse today, and to which customers?
+- Find the customer record for <Firmenname> and show its contact details.
+- List the customers with the most open sales orders this month.
+- Which items have zero stock but still have open sales-order lines?
+- Compare this month's shipped order count with last month's.
+- Show customers we have not shipped to in the last 60 days.
+- What is the total stock value across warehouse <Lager>?
+- Draft a follow-up list: sales orders older than 14 days that are still open, grouped by customer.
