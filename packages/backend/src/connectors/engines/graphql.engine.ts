@@ -10,6 +10,7 @@ import {
 import { GraphqlSchemaService } from './graphql-schema.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
+import { toolMaxResponseBytes } from '../../common/response-size-limit';
 import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
 
 /**
@@ -188,6 +189,8 @@ export class GraphqlEngine {
     const axiosOpts: Record<string, unknown> = {
       headers,
       timeout: 30000,
+      // See response-size-limit.ts.
+      maxContentLength: toolMaxResponseBytes(),
       ...outboundAxiosOptions({ credentialHeaders }),
     };
     if (config.proxyUrl) {

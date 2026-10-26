@@ -12,7 +12,7 @@ Follow nested `AGENTS.md` instructions within their folders; leave
 
 ## Setup
 
-Use Node.js >= 22.12 (root `package.json`), npm >= 9, and Docker with Compose.
+Use Node.js >= 22.15 (root `package.json`), npm >= 9, and Docker with Compose.
 Run the interactive setup from the repository root:
 
 ```bash

@@ -14,6 +14,7 @@ import {
   createSsrfGuardedAgents,
   SsrfBlockedError,
 } from './ssrf.util';
+import { restateResponseTooLarge } from './response-size-limit';
 
 /**
  * Outbound HTTP to user-supplied URLs.
@@ -50,6 +51,9 @@ import {
  *    Everything else the caller sets (responseType, validateStatus, signal,
  *    maxContentLength, headers, ...) applies to every hop, and validateStatus
  *    to the final response.
+ *  - A body over the caller's `maxContentLength` fails as a
+ *    ResponseTooLargeError (response-size-limit.ts), so the connector
+ *    engines can cap a tool response with one option.
  *
  * Proxies: a connector's own proxy agent (proxyUrl) replaces the guarded
  * agents, and an operator proxy from HTTP(S)_PROXY is applied by axios as
@@ -176,7 +180,10 @@ function createOutboundAdapter(options: OutboundRequestOptions): AxiosAdapter {
         // The guarded lookup fails inside the HTTP client, which wraps the
         // error; hand back the guard's own error, as the URL check does.
         const cause = (err as { cause?: unknown })?.cause;
-        throw cause instanceof SsrfBlockedError ? cause : err;
+        if (cause instanceof SsrfBlockedError) throw cause;
+        // A body over `maxContentLength` (the tool response limit): say so
+        // in our own words rather than axios'.
+        throw restateResponseTooLarge(err);
       }
 
       const location = res.headers?.['location'];

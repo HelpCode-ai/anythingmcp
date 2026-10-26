@@ -25,6 +25,7 @@ import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-http';
+import { toolMaxResponseBytes } from '../../common/response-size-limit';
 import { assertNoResponseBodyError } from './response-error.util';
 import { escapeXmlValue } from '../../common/xml-escape.util';
 import { containsMimeMarker, expandMimeMarkers } from './mime-message.util';
@@ -292,6 +293,9 @@ export class RestEngine {
       // string of replacement characters. See binary-response.util.ts.
       responseType: 'arraybuffer',
       transformResponse: [(data: unknown, headers?: unknown) => decodeResponseBody(data, headers)],
+      // Stop reading a body over the tool response limit instead of parsing
+      // tens of MB on the event loop. See response-size-limit.ts.
+      maxContentLength: toolMaxResponseBytes(),
     };
     // A form-data body is a one-shot stream: every send (a retry, a redirect
     // that keeps the body) needs a fresh one, built by this.

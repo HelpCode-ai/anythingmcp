@@ -12,7 +12,7 @@
  */
 import * as Sentry from '@sentry/nestjs';
 import { APP_VERSION } from './common/app-version';
-import { scrubBreadcrumb, scrubEvent } from './common/sentry-scrub';
+import { scrubBreadcrumb, scrubEvent, scrubSpan } from './common/sentry-scrub';
 import { sampleRateFor } from './common/sentry-sampler';
 
 const dsn = process.env.SENTRY_DSN;
@@ -40,24 +40,32 @@ if (dsn) {
       const rates = { base, mcp: sample(process.env.SENTRY_MCP_TRACES_SAMPLE_RATE, base / 5) };
       return (ctx: Parameters<typeof sampleRateFor>[0]) => sampleRateFor(ctx, rates);
     })(),
-    profilesSampleRate: sample(process.env.SENTRY_PROFILES_SAMPLE_RATE, 0.0),
+    // SDK v11 renamed profilesSampleRate. Like before, it has no effect
+    // until nodeProfilingIntegration is added to the integrations below.
+    profileSessionSampleRate: sample(process.env.SENTRY_PROFILES_SAMPLE_RATE, 0.0),
+    profileLifecycle: 'trace',
 
-    sendDefaultPii: false,
+    // SDK v11 collects request bodies, cookies, headers, query strings, the
+    // user, MCP tool arguments and results and GenAI prompts unless told not
+    // to. Turn every category off; the scrubbers below remain the allowlist.
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: { request: { allow: ['user-agent'] }, response: false },
+      httpBodies: [],
+      urlQueryParams: false,
+      graphQL: { document: false, variables: false },
+      genAI: { inputs: false, outputs: false },
+      mcp: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      queues: false,
+      stackFrameVariables: false,
+    },
 
     integrations: [
-      // The SDK attaches incoming request bodies by default ('medium'). On
-      // this server that is the arguments of every MCP tool call.
-      Sentry.httpIntegration({ maxIncomingRequestBodySize: 'none' }),
-      Sentry.requestDataIntegration({
-        include: {
-          cookies: false,
-          data: false,
-          headers: true, // reduced to user-agent in scrubEvent
-          ip: false,
-          query_string: false,
-          url: true, // query and fragment stripped in scrubEvent
-        },
-      }),
+      // Never read incoming request bodies. On this server that is the
+      // arguments of every MCP tool call.
+      Sentry.httpIntegration({ maxRequestBodySize: 'none' }),
     ],
 
     // raw-body's BadRequestError when the client hangs up before its request
@@ -67,7 +75,9 @@ if (dsn) {
     ignoreErrors: [/^request aborted$/],
 
     beforeSend: scrubEvent,
-    beforeSendTransaction: scrubEvent,
+    // SDK v11 streams spans instead of sending transactions, so spans are
+    // scrubbed one by one here (beforeSendTransaction no longer runs).
+    beforeSendSpan: scrubSpan,
     beforeBreadcrumb: scrubBreadcrumb,
   });
 }

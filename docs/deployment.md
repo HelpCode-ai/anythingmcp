@@ -366,6 +366,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `MCP_API_KEY` | No | API key for legacy MCP auth |
 | `SERVER_URL` | No | Server URL for OAuth2 metadata (default: `http://localhost:4000`) |
 | `MCP_RATE_LIMIT_PER_MINUTE` | No | Rate limit per client (default: 60) |
+| `TOOL_MAX_RESPONSE_BYTES` | No | Largest upstream response body, in bytes after decompression, that one tool call reads from a REST, JSON-RPC, OData, GraphQL or SOAP API (default: `10485760`, 10 MB, on Cloud and self-hosted). A bigger response fails the call with code `TOOL_RESPONSE_TOO_LARGE` and a message that asks the model to narrow the request |
 | `SMTP_HOST` | No | SMTP server for instance emails; used when no SMTP is configured in the admin Settings page |
 | `SMTP_PORT` | No | SMTP port (default: 587) |
 | `SMTP_SECURE` | No | `true` for implicit TLS (default: `false`; always on for port 465) |

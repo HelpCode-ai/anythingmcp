@@ -153,6 +153,9 @@ x-backend: &backend
     # use_proxy=true route through this; unset = feature off everywhere.
     - CONNECTOR_PROXY_URL=${CONNECTOR_PROXY_URL:-}
     - PROXY_RATE_LIMIT_DEFAULT=${PROXY_RATE_LIMIT_DEFAULT:-100}
+    # Largest upstream response one tool call reads, in bytes. Empty = the
+    # default, 10 MB, the same as self-hosted (see .env.example).
+    - TOOL_MAX_RESPONSE_BYTES=${TOOL_MAX_RESPONSE_BYTES:-}
     # Internal MOTIS instance for the Deutsche Bahn connector. When set, the
     # adapter's MOTIS_URL is filled in automatically at import (and hidden
     # from the install form), so cloud users never see or choose it.
@@ -229,11 +232,14 @@ x-backend: &backend
     # outside probe see in the meantime.
     start_period: 180s
   restart: unless-stopped
+  # The backend logs every tool call. At 5 x 50 MB the files covered only
+  # about 19 hours, too little to compare one day with the next. 20 x 100 MB
+  # keeps about a week and uses at most 2 GB per container.
   logging:
     driver: json-file
     options:
-      max-size: "50m"
-      max-file: "5"
+      max-size: "100m"
+      max-file: "20"
 
 x-frontend: &frontend
   image: helpcodeai/anythingmcp:latest
