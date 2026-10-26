@@ -27,38 +27,5 @@
       "hide": "Nascondi pulsante",
       "hideAriaLabel": "Nascondi il pulsante Stella su GitHub"
     }
-  },
-  "signIn": {
-    "title": "Accedi",
-    "subtitle": "Crea connettori personalizzati per Claude, ChatGPT, Copilot, Meta Muse e qualsiasi agente AI",
-    "emailVerified": "Email verificata con successo! Ora puoi accedere.",
-    "signingIn": "Accesso in corso…",
-    "continueWith": "Continua con {provider}",
-    "redirecting": "Reindirizzamento…",
-    "orUseEmail": "oppure usa la tua email",
-    "or": "oppure",
-    "email": "Email",
-    "password": "Password",
-    "passwordPlaceholder": "Min. 8 caratteri",
-    "recoveryCode": "Codice di recupero",
-    "recoveryCodeHint": "Uno dei codici che hai salvato quando hai configurato il single sign-on. Ognuno funziona una sola volta.",
-    "loading": "Caricamento…",
-    "submit": "Accedi",
-    "submitRecovery": "Accedi con il codice di recupero",
-    "forgotPassword": "Password dimenticata?",
-    "useRecoveryCode": "Usa un codice di recupero",
-    "backToPassword": "Torna all'accesso con password",
-    "noAccount": "Non hai un account?",
-    "register": "Registrati",
-    "errors": {
-      "authFailed": "Autenticazione non riuscita",
-      "signInFailed": "Accesso non riuscito",
-      "codeInvalid": "Il codice di accesso non è valido o è scaduto",
-      "socialUnavailable": "Questa opzione di accesso non è disponibile al momento."
-    }
-  },
-  "language": {
-    "label": "Lingua",
-    "hint": "Vale per questo browser."
   }
 }

@@ -157,8 +157,7 @@ An adapter is one JSON file; the rest is generated and checked.
 ### Translating the UI
 
 UI text lives in `packages/frontend/messages/<locale>.json` (English, German
-and Italian today), nested by area: `nav.*` for the sidebar, `signIn.*` for
-the sign-in form, and so on.
+and Italian today), nested by area: `nav.*` for the sidebar, and so on.
 
 1. English is the source. Add a new key to `en.json` first and use it with
    `useTranslations('<area>')` in client components or `getTranslations` in
@@ -172,10 +171,6 @@ the sign-in form, and so on.
 
 The language comes from the `amcp_locale` cookie, then the browser's
 `Accept-Language`, then English (`src/i18n/request.ts`). URLs carry no locale.
-The language switcher (`src/components/language-switcher.tsx`, on Settings →
-Profile and under the sign-in card) sets that cookie. To add a language, add
-it to `LOCALES` and `LOCALE_NAMES` in `src/i18n/config.ts` (the name in the
-language itself) and add its `messages/<locale>.json`.
 
 ### What Needs Discussion First
 

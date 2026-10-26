@@ -8,14 +8,6 @@ export const DEFAULT_LOCALE: Locale = 'en';
 // one workspace (and signed-out visitors on /login) can use different languages.
 export const LOCALE_COOKIE = 'amcp_locale';
 
-// Each language in its own name, as the language switcher lists it. Adding a
-// language means adding it here as well as to LOCALES and messages/.
-export const LOCALE_NAMES: Record<Locale, string> = {
-  en: 'English',
-  de: 'Deutsch',
-  it: 'Italiano',
-};
-
 export function isLocale(value: string | undefined | null): value is Locale {
   return !!value && (LOCALES as readonly string[]).includes(value);
 }
