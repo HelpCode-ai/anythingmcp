@@ -1,0 +1,13 @@
+- Welche offenen Rechnungen sind ueberfaellig, und um wie viele Tage?
+- Zeige die letzten fuenf Rechnungen fuer <Kunde> und ob sie bezahlt sind.
+- Welche Lieferungen gingen diese Woche raus, und an welche Kunden?
+- Liste unsere Lieferanten und deren aktuelle Bestellungen.
+- Welche Lagerartikel liegen unter ihrem Meldebestand?
+- Zeige Kunde <Name> mit Kontaktdaten und offenen Auftraegen.
+- Vergleiche den berechneten Umsatz dieses Quartals mit dem letzten Quartal.
+- Welche Auftraege sind noch offen, und wie hoch ist deren Gesamtwert?
+- Suche den Lieferantendatensatz fuer <Lieferant> und zeige die Kontaktdaten.
+- Welche Rechnungen faellig sind naechste Woche?
+- Liste die Artikel, die wir versendet, aber noch nicht berechnet haben.
+- Zeige alle Kunden, die in den letzten 90 Tagen bestellt haben.
+- Erstelle eine Nachfassliste: offene Rechnungen aelter als 30 Tage, gruppiert nach Kunde.
