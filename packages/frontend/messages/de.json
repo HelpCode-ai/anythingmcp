@@ -60,5 +60,305 @@
   "language": {
     "label": "Sprache",
     "hint": "Gilt für diesen Browser."
+  },
+  "signUp": {
+    "title": "Konto erstellen",
+    "cloudTitle": "Kostenloses Konto erstellen",
+    "cloudSubtitle": "7 Tage kostenlos testen · keine Kreditkarte · verbinden Sie Claude, ChatGPT, Copilot, Cursor oder Meta Muse mit Ihren Tools.",
+    "socialConsent": "Mit dem Fortfahren akzeptieren Sie die <terms>Nutzungsbedingungen</terms> und die <privacy>Datenschutzerklärung</privacy>.",
+    "continueWithEmail": "Weiter mit E-Mail",
+    "name": "Name",
+    "namePlaceholder": "Ihr Name",
+    "rules": {
+      "length": "Mindestens 8 Zeichen",
+      "uppercase": "Ein Großbuchstabe",
+      "lowercase": "Ein Kleinbuchstabe",
+      "number": "Eine Ziffer",
+      "special": "Ein Sonderzeichen"
+    },
+    "confirmPassword": "Passwort bestätigen",
+    "confirmPasswordPlaceholder": "Passwort wiederholen",
+    "acceptTerms": "Ich akzeptiere die <terms>Nutzungsbedingungen</terms>",
+    "acceptTermsCloud": "Ich akzeptiere die <terms>Nutzungsbedingungen</terms> und habe die <privacy>Datenschutzerklärung</privacy> gelesen",
+    "submit": "Konto erstellen",
+    "submitCloud": "Kostenlos testen →",
+    "encrypted": "Verschlüsselt mit AES-256-GCM · gehostet in Frankfurt",
+    "haveAccount": "Sie haben bereits ein Konto?",
+    "signIn": "Anmelden",
+    "alreadyRegistered": {
+      "title": "Sie haben bereits ein Konto",
+      "description": "Diese Adresse war bereits registriert, daher haben wir Sie in Ihrem bestehenden Workspace angemeldet."
+    },
+    "errors": {
+      "passwordWeak": "Das Passwort muss mindestens 8 Zeichen lang sein und Groß- und Kleinbuchstaben, eine Ziffer und ein Sonderzeichen enthalten",
+      "passwordMismatch": "Die Passwörter stimmen nicht überein",
+      "termsRequired": "Sie müssen die Nutzungsbedingungen akzeptieren"
+    }
+  },
+  "planHandoff": {
+    "opening": "Ihr Tarif wird geöffnet…",
+    "askAdmin": {
+      "title": "Fragen Sie einen Workspace-Admin",
+      "description": "Nur ein Admin kann einen Tarif für diesen Workspace wählen."
+    },
+    "alreadyHavePlan": {
+      "title": "Sie haben bereits einen Tarif",
+      "description": "Ändern Sie ihn hier, statt einen zweiten zu kaufen."
+    }
+  },
+  "verifyCode": {
+    "title": "E-Mail-Adresse bestätigen",
+    "sentTo": "Wir haben einen 6-stelligen Code an <strong>{email}</strong> gesendet",
+    "label": "Bestätigungscode",
+    "submit": "E-Mail bestätigen",
+    "verifying": "Wird geprüft…",
+    "noCode": "Nichts erhalten?",
+    "resend": "Code erneut senden",
+    "resendIn": "Erneut senden in {seconds} s",
+    "resent": "Ein neuer Code wurde an Ihre E-Mail-Adresse gesendet",
+    "skip": "Vorerst überspringen",
+    "errors": {
+      "invalid": "Ungültiger Bestätigungscode",
+      "resendFailed": "Der Code konnte nicht erneut gesendet werden"
+    }
+  },
+  "checkInbox": {
+    "title": "Prüfen Sie Ihr Postfach",
+    "sentTo": "Wir haben eine E-Mail an <strong>{email}</strong> gesendet.",
+    "body": "Falls zu dieser Adresse bereits ein AnythingMCP-Konto gehört, enthält die E-Mail einen Link zum Anmelden oder zum Zurücksetzen Ihres Passworts. Andernfalls folgen Sie dem Link darin, um die Adresse zu bestätigen.",
+    "back": "Zurück zur Anmeldung",
+    "forgotPassword": "Passwort vergessen?"
+  },
+  "trialActivated": {
+    "title": "Testphase aktiviert!",
+    "subtitle": "Ihre 7-tägige kostenlose Testphase ist jetzt aktiv",
+    "daysLeft": "Sie haben <strong>{days, plural, one {# Tag} other {# Tage}}</strong>, um AnythingMCP Cloud zu entdecken.",
+    "includes": "IHRE TESTPHASE UMFASST",
+    "connectorsUpTo": "Bis zu {count} Connectors",
+    "connectorsAny": "Connectors aus dem Marktplatz oder Ihrer eigenen API",
+    "serversUpTo": "Bis zu {count} MCP-Server",
+    "serversAny": "Ihre eigenen MCP-Server",
+    "seats": "{count, plural, one {# Benutzerplatz} other {# Benutzerplätze}}",
+    "auditLog": "Vollständiges Audit-Log",
+    "getStarted": "Los geht's"
+  },
+  "licenseSetup": {
+    "welcome": "Willkommen bei Anything<brand>MCP</brand>",
+    "oneLastStep": "Nur noch ein Schritt",
+    "question": "Wie möchten Sie Anything<brand>MCP</brand> nutzen?",
+    "changeLater": "Sie können das später unter Einstellungen → Lizenz ändern.",
+    "personal": {
+      "title": "Privat, Ausbildung oder Evaluierung",
+      "description": "Community Edition, kostenlos, für bis zu 3 Benutzer. Wir senden Ihnen einen Community-Schlüssel per E-Mail, damit Sie Sicherheits- und Release-Hinweise erhalten."
+    },
+    "company": {
+      "title": "Für ein Unternehmen oder Team",
+      "description": "Testen Sie Enterprise 30 Tage kostenlos: mehr Benutzer, Single Sign-On mit Entra ID, Google oder Okta sowie SCIM. Keine Zahlungsdaten."
+    },
+    "haveKey": "Ich habe einen Lizenzschlüssel",
+    "skipForNow": "Vorerst überspringen",
+    "skip": "Überspringen",
+    "back": "Zurück",
+    "emailSent": {
+      "title": "Prüfen Sie Ihre E-Mails",
+      "sentTo": "Wir haben Ihren Lizenzschlüssel an <strong>{email}</strong> gesendet",
+      "body": "Geben Sie den Schlüssel aus dieser E-Mail ein, um ihn auf dieser Instanz zu hinterlegen. Nutzbar ist sie so oder so schon vollständig.",
+      "noEmail": "Nichts erhalten? Prüfen Sie Ihren Spam-Ordner."
+    },
+    "activate": {
+      "title": "Lizenz aktivieren",
+      "subtitle": "Geben Sie Ihren Lizenzschlüssel ein, um Anything<brand>MCP</brand> zu aktivieren",
+      "available": "Lizenzschlüssel für Starter, Team und Enterprise erhalten Sie auf <link>anythingmcp.com</link>."
+    },
+    "keyLabel": "Lizenzschlüssel",
+    "submit": "Lizenz aktivieren",
+    "activating": "Wird aktiviert…",
+    "errors": {
+      "requestFailed": "Die Lizenz konnte nicht angefordert werden",
+      "trialFailed": "Die Testphase konnte nicht gestartet werden",
+      "activateFailed": "Die Lizenz konnte nicht aktiviert werden"
+    }
+  },
+  "trust": {
+    "panelLabel": "Warum Teams auf AnythingMCP setzen",
+    "headline": "Ihre KI, verbunden mit <accent>der Software, die Ihr Unternehmen bereits nutzt.</accent>",
+    "intro": "AnythingMCP macht jedes REST-, SOAP-, GraphQL- oder SQL-System zu Tools, die Ihr KI-Assistent nutzen kann: sicher, mit Rollen und einem vollständigen Audit-Log.",
+    "stats": {
+      "downloads": "Downloads",
+      "toolCalls": "KI-Tool-Aufrufe im letzten Monat",
+      "workspaces": "Workspaces auf AnythingMCP Cloud"
+    },
+    "directory": "Gelistet im Claude Directory",
+    "badges": {
+      "euHosted": "🇪🇺 In der EU gehostet · Frankfurt",
+      "gdpr": "DSGVO · AVV inklusive",
+      "openSource": "Open Source · AGPL-3.0"
+    },
+    "worksWith": "Funktioniert mit",
+    "trialIncludes": "Ihre 7-tägige Testphase umfasst",
+    "trialItems": {
+      "connectors": "200+ fertige Connectors: DATEV, SAP, HubSpot, Shopify, Postgres…",
+      "servers": "Eigene MCP-Server mit Rollen und vollständigem Audit-Log",
+      "noInstall": "Nichts zu installieren, jederzeit kündbar, Ihre Daten bleiben in der EU"
+    },
+    "customer": "Im Produktiveinsatz bei der KOCH Freiburg GmbH, die ihr ERP per Single Sign-On mit Claude verbindet.",
+    "line": {
+      "encryption": "AES-256-GCM-Verschlüsselung",
+      "hosted": "Gehostet in Frankfurt",
+      "gdpr": "DSGVO · AVV",
+      "auditLog": "Jeder Aufruf im Audit-Log",
+      "github": "Open Source auf GitHub"
+    }
+  },
+  "forgotPassword": {
+    "title": "Passwort vergessen",
+    "intro": "Geben Sie Ihre E-Mail-Adresse ein, und wir senden Ihnen einen Link zum Zurücksetzen Ihres Passworts.",
+    "email": "E-Mail",
+    "submit": "Link zum Zurücksetzen senden",
+    "sending": "Wird gesendet…",
+    "backToSignIn": "Zurück zur Anmeldung",
+    "sentTitle": "Prüfen Sie Ihre E-Mails",
+    "sentBody": "Falls ein Konto mit dieser E-Mail-Adresse existiert, haben wir einen Link zum Zurücksetzen des Passworts gesendet.",
+    "toast": {
+      "sentTitle": "Link zum Zurücksetzen angefordert",
+      "sentDescription": "Falls diese E-Mail-Adresse registriert ist, ist ein Link zum Zurücksetzen unterwegs.",
+      "failedTitle": "Anfrage fehlgeschlagen"
+    },
+    "errors": {
+      "generic": "Etwas ist schiefgelaufen"
+    }
+  },
+  "resetPassword": {
+    "title": "Passwort zurücksetzen",
+    "intro": "Geben Sie unten Ihr neues Passwort ein.",
+    "newPassword": "Neues Passwort",
+    "newPasswordPlaceholder": "Mind. 8 Zeichen",
+    "confirmPassword": "Passwort bestätigen",
+    "confirmPasswordPlaceholder": "Passwort wiederholen",
+    "submit": "Passwort zurücksetzen",
+    "resetting": "Wird zurückgesetzt…",
+    "backToSignIn": "Zurück zur Anmeldung",
+    "invalidTitle": "Ungültiger Link",
+    "invalidBody": "Dieser Link zum Zurücksetzen des Passworts ist ungültig oder abgelaufen.",
+    "requestNew": "Neuen Link anfordern",
+    "successTitle": "Passwort zurückgesetzt",
+    "successBody": "Ihr Passwort wurde erfolgreich zurückgesetzt.",
+    "signIn": "Anmelden",
+    "errors": {
+      "mismatch": "Die Passwörter stimmen nicht überein",
+      "invalidLink": "Ungültiger Link zum Zurücksetzen",
+      "generic": "Etwas ist schiefgelaufen"
+    }
+  },
+  "verifyEmail": {
+    "title": "E-Mail-Bestätigung",
+    "verifying": "Ihre E-Mail-Adresse wird bestätigt…",
+    "success": "Ihre E-Mail-Adresse wurde erfolgreich bestätigt!",
+    "goToSignIn": "Zur Anmeldung",
+    "backToSignIn": "Zurück zur Anmeldung",
+    "errors": {
+      "noToken": "Kein Bestätigungstoken angegeben",
+      "failed": "Bestätigung fehlgeschlagen"
+    }
+  },
+  "acceptInvite": {
+    "loading": "Wird geladen…",
+    "invalidTitle": "Ungültige Einladung",
+    "goToLogin": "Zur Anmeldung",
+    "title": "Einladung annehmen",
+    "subtitleExisting": "Treten Sie diesem Workspace mit Ihrem bestehenden Konto bei",
+    "subtitleNew": "Erstellen Sie Ihr Konto, um diesem Workspace beizutreten",
+    "verifying": "Einladung wird geprüft…",
+    "invitedAs": "Sie wurden als <strong>{role}</strong> für <strong>{email}</strong> eingeladen",
+    "ssoOnly": "Zu dieser E-Mail-Adresse gibt es bereits ein Konto, das sich per Single Sign-On anmeldet. Melden Sie sich zuerst an und öffnen Sie dann diesen Einladungslink erneut, um dem Workspace beizutreten.",
+    "goToSignIn": "Zur Anmeldung",
+    "yourPassword": "Ihr Passwort",
+    "yourPasswordPlaceholder": "Ihr bestehendes Passwort eingeben",
+    "confirmIdentity": "Bestätigen Sie, dass Sie es sind, bevor wir dieses Konto zum Workspace hinzufügen.",
+    "signedInAs": "Sie sind als <strong>{email}</strong> angemeldet. Nehmen Sie an, um diesem Workspace beizutreten.",
+    "join": "Annehmen und beitreten",
+    "joining": "Wird beigetreten…",
+    "name": "Ihr Name",
+    "namePlaceholder": "Vollständiger Name",
+    "email": "E-Mail",
+    "password": "Passwort",
+    "passwordPlaceholder": "Mind. 8 Zeichen",
+    "confirmPassword": "Passwort bestätigen",
+    "confirmPasswordPlaceholder": "Passwort wiederholen",
+    "create": "Konto erstellen",
+    "creating": "Konto wird erstellt…",
+    "errors": {
+      "noToken": "Kein Einladungstoken angegeben",
+      "mismatch": "Die Passwörter stimmen nicht überein"
+    }
+  },
+  "welcome": {
+    "loading": "Wird geladen…",
+    "skip": "Vorerst überspringen",
+    "skipping": "Wird übersprungen…",
+    "eyebrow": "Willkommen",
+    "title": "Verbinden Sie Ihr erstes Tool, {name}.",
+    "titleNoName": "Verbinden Sie Ihr erstes Tool.",
+    "intro": "AnythingMCP macht jede API zu MCP-Tools, die Ihr KI-Agent aufrufen kann. Starten Sie mit ein paar fertigen Connectors, wählen Sie weitere im Marktplatz oder bringen Sie Ihre eigene API mit.",
+    "searchLabel": "Womit soll Ihr KI-Client arbeiten?",
+    "searchPlaceholder": "Etsy, Odoo, weclapp, Lexware, Shopify…",
+    "popular": "Was neue Workspaces am häufigsten verbinden",
+    "alreadyAdded": "Bereits hinzugefügt",
+    "noMatch": "Nichts im Katalog passt. Sie können trotzdem <link>Ihre eigene API hinzufügen</link>.",
+    "marketplace": {
+      "eyebrow": "Empfohlen",
+      "title": "Marktplatz durchsuchen",
+      "body": "265 fertige Connectors. OAuth, API-Schlüssel, Refresh-Token-Rotation, alles vorbereitet. Wählen Sie einen aus und folgen Sie der Einrichtung.",
+      "cta": "Marktplatz öffnen →"
+    },
+    "custom": {
+      "eyebrow": "Eigene API",
+      "title": "Eigene API hinzufügen",
+      "body": "Fügen Sie eine OpenAPI-URL oder JSON-Spezifikation ein, und wir erzeugen MCP-Tools für jeden Endpunkt. Funktioniert mit REST, SOAP und GraphQL.",
+      "cta": "Neu beginnen →"
+    },
+    "graph": {
+      "title": "Mehr als ein Proxy: AnythingMCP lernt, wie Ihre Tools zusammenhängen",
+      "body": "Während Sie Ihre Connectors nutzen, baut AnythingMCP einen <strong>Knowledge Graph</strong> darüber auf, wie Ihre Entitäten zusammenhängen, und macht aus wiederkehrenden Mustern <strong>Skills</strong>. So verkettet Ihr Agent die richtigen Tools in der richtigen Reihenfolge, statt zu raten. Je mehr Sie es nutzen, desto besser wird es.",
+      "cta": "Knowledge Graph entdecken →"
+    },
+    "comeBack": "Sie können jederzeit zurückkehren und im Dashboard weitere Connectors hinzufügen."
+  },
+  "startTrial": {
+    "loading": "Wird geladen…",
+    "skipCorner": "Ohne Zahlungsdaten fortfahren",
+    "eyebrow": {
+      "choosePlan": "Tarif wählen",
+      "freeUntil": "Kostenlos bis {date}",
+      "freeTrial": "Kostenlose Testphase"
+    },
+    "title": {
+      "paysToday": "Halten Sie Ihren Workspace am Laufen",
+      "trial": "Ihre kostenlose Testphase"
+    },
+    "ending": "Ihre kostenlose Testphase endet am <strong>{date}</strong>, zu früh, um mit einer Testphase mit Karte weiterzumachen. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "endingSoon": "Ihre kostenlose Testphase endet bald, zu früh, um mit einer Testphase mit Karte weiterzumachen. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "returning": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Karte nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind, und Ihre aktuelle Testphase läuft bis zum <strong>{date}</strong> weiter, falls Sie sich später entscheiden.",
+    "returningNoDate": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Karte nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "trial": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Hinterlegen Sie jetzt eine Karte, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Die Testphase ohne Karte hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Karte hinzufügen, um Ihren vollen Tarif freizuschalten.",
+    "trialNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Hinterlegen Sie jetzt eine Karte, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Die Testphase ohne Karte hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Karte hinzufügen, um Ihren vollen Tarif freizuschalten.",
+    "authorizationReturn": "So oder so geht es danach direkt zurück, um die Verbindung Ihres KI-Clients abzuschließen.",
+    "chargesToday": "Diese Adresse hatte bereits ein Abonnement, daher berechnet der Checkout heute {amount}.",
+    "start": {
+      "opening": "Checkout wird geöffnet…",
+      "tryAgain": "Erneut versuchen",
+      "checkout": "Weiter zum Checkout",
+      "withCard": "Kostenlos testen mit Karte"
+    },
+    "promo": "Der Code {code} wird beim Checkout angewendet.",
+    "price": "{amount}/{period, select, yearly {Jahr} other {Monat}}",
+    "priceLocal": "≈ {local}/{period, select, yearly {Jahr} other {Monat}} ({exact})",
+    "finePrintPaysToday": "{plan}, {price}, heute abgerechnet und danach {period, select, yearly {jährlich} other {monatlich}}. Sicherer Checkout über Stripe. Jederzeit im Abrechnungsportal kündbar.",
+    "finePrintTrial": "Heute 0 €. {plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab dem {date}. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
+    "finePrintTrialNoDate": "Heute 0 €. {plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab Ende Ihrer Testphase. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
+    "notReady": "Noch nicht so weit?",
+    "notReadyCard": "Noch keine Karte hinterlegen?",
+    "keepFree": "Kostenlose Testphase weiter nutzen",
+    "tryFree": "Kostenlos ohne Zahlungsdaten testen"
   }
 }

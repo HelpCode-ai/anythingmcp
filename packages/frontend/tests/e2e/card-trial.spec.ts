@@ -102,6 +102,9 @@ test.describe('card-trial helpers', () => {
   test('formats the trial end and the prices', () => {
     expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'long', 'UTC')).toBe('7 October 2026');
     expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'short', 'UTC')).toBe('7 Oct');
+    // A translated page passes its UI language.
+    expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'long', 'UTC', 'de')).toBe('7. Oktober 2026');
+    expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'long', 'UTC', 'it')).toBe('7 ottobre 2026');
     expect(formatTrialEnd('nonsense')).toBeNull();
 
     const [starter, team] = CLOUD_PLANS;

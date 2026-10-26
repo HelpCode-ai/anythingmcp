@@ -3,6 +3,7 @@
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { auth } from '@/lib/api';
 import { LogoIcon } from '@/components/logo-icon';
 import { Card } from '@/components/ui/card';
@@ -36,18 +37,19 @@ function ResetPasswordForm() {
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const t = useTranslations('resetPassword');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     if (newPassword !== confirmPassword) {
-      setError('Passwords do not match');
+      setError(t('errors.mismatch'));
       return;
     }
 
     if (!token) {
-      setError('Invalid reset link');
+      setError(t('errors.invalidLink'));
       return;
     }
 
@@ -56,7 +58,7 @@ function ResetPasswordForm() {
       await auth.resetPassword(token, newPassword);
       setSuccess(true);
     } catch (err: any) {
-      setError(err.message || 'Something went wrong');
+      setError(err.message || t('errors.generic'));
     } finally {
       setLoading(false);
     }
@@ -65,12 +67,12 @@ function ResetPasswordForm() {
   if (!token) {
     return (
       <div className="text-center">
-        <h2 className="text-base font-semibold mb-2 text-[var(--text)]">Invalid Link</h2>
+        <h2 className="text-base font-semibold mb-2 text-[var(--text)]">{t('invalidTitle')}</h2>
         <p className="text-sm text-[var(--text-2)] mb-4">
-          This password reset link is invalid or has expired.
+          {t('invalidBody')}
         </p>
         <Link href="/forgot-password" className="text-[var(--brand)] hover:underline text-sm font-medium">
-          Request a new link
+          {t('requestNew')}
         </Link>
       </div>
     );
@@ -83,22 +85,22 @@ function ResetPasswordForm() {
           <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
         </svg>
       </div>
-      <h2 className="text-base font-semibold mb-2 text-[var(--text)]">Password Reset</h2>
+      <h2 className="text-base font-semibold mb-2 text-[var(--text)]">{t('successTitle')}</h2>
       <p className="text-sm text-[var(--text-2)] mb-4">
-        Your password has been reset successfully.
+        {t('successBody')}
       </p>
       <Link
         href="/login"
         className={cn(buttonVariants({ variant: 'primary', size: 'lg' }))}
       >
-        Sign In
+        {t('signIn')}
       </Link>
     </div>
   ) : (
     <>
-      <h2 className="text-base font-semibold mb-2 text-center text-[var(--text)]">Reset Password</h2>
+      <h2 className="text-base font-semibold mb-2 text-center text-[var(--text)]">{t('title')}</h2>
       <p className="text-sm text-[var(--text-2)] mb-4 text-center">
-        Enter your new password below.
+        {t('intro')}
       </p>
 
       {error && (
@@ -109,7 +111,7 @@ function ResetPasswordForm() {
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <div>
-          <label htmlFor="reset-new-password" className="block text-sm font-medium mb-1 text-[var(--text)]">New Password</label>
+          <label htmlFor="reset-new-password" className="block text-sm font-medium mb-1 text-[var(--text)]">{t('newPassword')}</label>
           <input
             id="reset-new-password"
             name="new-password"
@@ -117,14 +119,14 @@ function ResetPasswordForm() {
             autoComplete="new-password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="Min. 8 characters"
+            placeholder={t('newPasswordPlaceholder')}
             className={inputClass}
             required
             minLength={8}
           />
         </div>
         <div>
-          <label htmlFor="reset-confirm-password" className="block text-sm font-medium mb-1 text-[var(--text)]">Confirm Password</label>
+          <label htmlFor="reset-confirm-password" className="block text-sm font-medium mb-1 text-[var(--text)]">{t('confirmPassword')}</label>
           <input
             id="reset-confirm-password"
             name="confirm-password"
@@ -132,20 +134,20 @@ function ResetPasswordForm() {
             autoComplete="new-password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="Repeat password"
+            placeholder={t('confirmPasswordPlaceholder')}
             className={inputClass}
             required
             minLength={8}
           />
         </div>
         <Button type="submit" disabled={loading} className="w-full" size="lg">
-          {loading ? 'Resetting...' : 'Reset Password'}
+          {loading ? t('resetting') : t('submit')}
         </Button>
       </form>
 
       <p className="text-center text-sm text-[var(--text-2)] mt-4">
         <Link href="/login" className="text-[var(--brand)] hover:underline font-medium">
-          Back to Sign In
+          {t('backToSignIn')}
         </Link>
       </p>
     </>

@@ -284,17 +284,19 @@ export function cardTrialDisplayEnd(
 
 /**
  * The trial end as shown to the user: "7 October 2026" (long) or "7 Oct"
- * (short), in their own time zone. English, like the rest of the UI.
+ * (short), in their own time zone. British English unless a page that is
+ * already translated passes its UI language (`de` gives "7. Oktober 2026").
  */
 export function formatTrialEnd(
   iso: string | null | undefined,
   style: 'long' | 'short' = 'long',
   timeZone?: string,
+  locale: string = 'en-GB',
 ): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString('en-GB', {
+  return d.toLocaleDateString(locale, {
     day: 'numeric',
     month: style === 'long' ? 'long' : 'short',
     ...(style === 'long' && { year: 'numeric' }),

@@ -60,5 +60,305 @@
   "language": {
     "label": "Lingua",
     "hint": "Vale per questo browser."
+  },
+  "signUp": {
+    "title": "Crea il tuo account",
+    "cloudTitle": "Crea il tuo account gratuito",
+    "cloudSubtitle": "7 giorni di prova gratuita · nessuna carta di credito · collega Claude, ChatGPT, Copilot, Cursor o Meta Muse ai tuoi strumenti.",
+    "socialConsent": "Continuando accetti i <terms>Termini di utilizzo</terms> e l'<privacy>Informativa sulla privacy</privacy>.",
+    "continueWithEmail": "Continua con l'email",
+    "name": "Nome",
+    "namePlaceholder": "Il tuo nome",
+    "rules": {
+      "length": "Almeno 8 caratteri",
+      "uppercase": "Una lettera maiuscola",
+      "lowercase": "Una lettera minuscola",
+      "number": "Un numero",
+      "special": "Un carattere speciale"
+    },
+    "confirmPassword": "Conferma password",
+    "confirmPasswordPlaceholder": "Ripeti la password",
+    "acceptTerms": "Accetto i <terms>Termini di utilizzo</terms>",
+    "acceptTermsCloud": "Accetto i <terms>Termini di utilizzo</terms> e ho letto l'<privacy>Informativa sulla privacy</privacy>",
+    "submit": "Crea account",
+    "submitCloud": "Inizia la prova gratuita →",
+    "encrypted": "Crittografia AES-256-GCM · ospitato a Francoforte, Germania",
+    "haveAccount": "Hai già un account?",
+    "signIn": "Accedi",
+    "alreadyRegistered": {
+      "title": "Hai già un account",
+      "description": "Questo indirizzo era già registrato, quindi ti abbiamo fatto accedere al tuo workspace esistente."
+    },
+    "errors": {
+      "passwordWeak": "La password deve avere almeno 8 caratteri e contenere una maiuscola, una minuscola, un numero e un carattere speciale",
+      "passwordMismatch": "Le password non coincidono",
+      "termsRequired": "Devi accettare i Termini di utilizzo"
+    }
+  },
+  "planHandoff": {
+    "opening": "Apertura del tuo piano…",
+    "askAdmin": {
+      "title": "Chiedi a un admin del workspace",
+      "description": "Solo un admin può scegliere un piano per questo workspace."
+    },
+    "alreadyHavePlan": {
+      "title": "Hai già un piano",
+      "description": "Cambialo qui invece di acquistarne un secondo."
+    }
+  },
+  "verifyCode": {
+    "title": "Verifica la tua email",
+    "sentTo": "Abbiamo inviato un codice di 6 cifre a <strong>{email}</strong>",
+    "label": "Codice di verifica",
+    "submit": "Verifica email",
+    "verifying": "Verifica in corso…",
+    "noCode": "Non l'hai ricevuto?",
+    "resend": "Invia di nuovo il codice",
+    "resendIn": "Invia di nuovo tra {seconds} s",
+    "resent": "Un nuovo codice è stato inviato alla tua email",
+    "skip": "Salta per ora",
+    "errors": {
+      "invalid": "Codice di verifica non valido",
+      "resendFailed": "Impossibile inviare di nuovo il codice"
+    }
+  },
+  "checkInbox": {
+    "title": "Controlla la tua casella di posta",
+    "sentTo": "Abbiamo inviato un'email a <strong>{email}</strong>.",
+    "body": "Se questo indirizzo ha già un account AnythingMCP, l'email contiene un link per accedere o reimpostare la password. Altrimenti, segui il link al suo interno per verificare l'indirizzo.",
+    "back": "Torna all'accesso",
+    "forgotPassword": "Password dimenticata?"
+  },
+  "trialActivated": {
+    "title": "Prova attivata!",
+    "subtitle": "La tua prova gratuita di 7 giorni è ora attiva",
+    "daysLeft": "Hai <strong>{days, plural, one {# giorno} other {# giorni}}</strong> per scoprire AnythingMCP Cloud.",
+    "includes": "LA TUA PROVA INCLUDE",
+    "connectorsUpTo": "Fino a {count} connettori",
+    "connectorsAny": "Connettori dal marketplace o dalla tua API",
+    "serversUpTo": "Fino a {count} server MCP",
+    "serversAny": "I tuoi server MCP",
+    "seats": "{count, plural, one {# postazione utente} other {# postazioni utente}}",
+    "auditLog": "Registro di audit completo",
+    "getStarted": "Inizia"
+  },
+  "licenseSetup": {
+    "welcome": "Benvenuto in Anything<brand>MCP</brand>",
+    "oneLastStep": "Un ultimo passaggio per iniziare",
+    "question": "Come userai Anything<brand>MCP</brand>?",
+    "changeLater": "Puoi cambiarlo in seguito in Impostazioni → Licenza.",
+    "personal": {
+      "title": "Uso personale, didattico o di valutazione",
+      "description": "Community edition, gratuita, fino a 3 utenti. Ti inviamo via email una chiave community, così ricevi gli avvisi di sicurezza e di rilascio."
+    },
+    "company": {
+      "title": "Per un'azienda o un team",
+      "description": "Prova Enterprise gratis per 30 giorni: più utenti, single sign-on con Entra ID, Google o Okta, e SCIM. Nessun dato di pagamento."
+    },
+    "haveKey": "Ho una chiave di licenza",
+    "skipForNow": "Salta per ora",
+    "skip": "Salta",
+    "back": "Indietro",
+    "emailSent": {
+      "title": "Controlla la tua email",
+      "sentTo": "Abbiamo inviato la tua chiave di licenza a <strong>{email}</strong>",
+      "body": "Inserisci la chiave di quell'email per registrarla su questa istanza. È comunque già pienamente utilizzabile.",
+      "noEmail": "Non l'hai ricevuta? Controlla la cartella spam."
+    },
+    "activate": {
+      "title": "Attiva licenza",
+      "subtitle": "Inserisci la tua chiave di licenza per attivare Anything<brand>MCP</brand>",
+      "available": "Le chiavi di licenza Starter, Team ed Enterprise sono disponibili su <link>anythingmcp.com</link>."
+    },
+    "keyLabel": "Chiave di licenza",
+    "submit": "Attiva licenza",
+    "activating": "Attivazione…",
+    "errors": {
+      "requestFailed": "Impossibile richiedere la licenza",
+      "trialFailed": "Impossibile avviare la prova",
+      "activateFailed": "Impossibile attivare la licenza"
+    }
+  },
+  "trust": {
+    "panelLabel": "Perché i team scelgono AnythingMCP",
+    "headline": "La tua AI, collegata al <accent>software che la tua azienda usa già.</accent>",
+    "intro": "AnythingMCP trasforma qualsiasi sistema REST, SOAP, GraphQL o SQL in strumenti che il tuo assistente AI può usare: in modo sicuro, con ruoli e un registro di audit completo.",
+    "stats": {
+      "downloads": "download",
+      "toolCalls": "chiamate a strumenti AI il mese scorso",
+      "workspaces": "workspace su AnythingMCP Cloud"
+    },
+    "directory": "Presente nella Claude Directory",
+    "badges": {
+      "euHosted": "🇪🇺 Ospitato nell'UE · Francoforte",
+      "gdpr": "GDPR · DPA incluso",
+      "openSource": "Open source · AGPL-3.0"
+    },
+    "worksWith": "Funziona con",
+    "trialIncludes": "La tua prova di 7 giorni include",
+    "trialItems": {
+      "connectors": "Oltre 200 connettori pronti: DATEV, SAP, HubSpot, Shopify, Postgres…",
+      "servers": "I tuoi server MCP con ruoli e un registro di audit completo",
+      "noInstall": "Niente da installare, disdici quando vuoi, i tuoi dati restano nell'UE"
+    },
+    "customer": "In produzione presso KOCH Freiburg GmbH, che collega il suo ERP a Claude con single sign-on.",
+    "line": {
+      "encryption": "Crittografia AES-256-GCM",
+      "hosted": "Ospitato a Francoforte",
+      "gdpr": "GDPR · DPA",
+      "auditLog": "Ogni chiamata nel registro di audit",
+      "github": "Open source su GitHub"
+    }
+  },
+  "forgotPassword": {
+    "title": "Password dimenticata",
+    "intro": "Inserisci il tuo indirizzo email e ti invieremo un link per reimpostare la password.",
+    "email": "Email",
+    "submit": "Invia link di reimpostazione",
+    "sending": "Invio in corso…",
+    "backToSignIn": "Torna all'accesso",
+    "sentTitle": "Controlla la tua email",
+    "sentBody": "Se esiste un account con quell'email, ti abbiamo inviato un link per reimpostare la password.",
+    "toast": {
+      "sentTitle": "Link di reimpostazione richiesto",
+      "sentDescription": "Se quell'email è registrata, un link di reimpostazione è in arrivo.",
+      "failedTitle": "Richiesta non riuscita"
+    },
+    "errors": {
+      "generic": "Qualcosa è andato storto"
+    }
+  },
+  "resetPassword": {
+    "title": "Reimposta password",
+    "intro": "Inserisci qui sotto la tua nuova password.",
+    "newPassword": "Nuova password",
+    "newPasswordPlaceholder": "Min. 8 caratteri",
+    "confirmPassword": "Conferma password",
+    "confirmPasswordPlaceholder": "Ripeti la password",
+    "submit": "Reimposta password",
+    "resetting": "Reimpostazione…",
+    "backToSignIn": "Torna all'accesso",
+    "invalidTitle": "Link non valido",
+    "invalidBody": "Questo link per reimpostare la password non è valido o è scaduto.",
+    "requestNew": "Richiedi un nuovo link",
+    "successTitle": "Password reimpostata",
+    "successBody": "La tua password è stata reimpostata con successo.",
+    "signIn": "Accedi",
+    "errors": {
+      "mismatch": "Le password non coincidono",
+      "invalidLink": "Link di reimpostazione non valido",
+      "generic": "Qualcosa è andato storto"
+    }
+  },
+  "verifyEmail": {
+    "title": "Verifica email",
+    "verifying": "Verifica della tua email in corso…",
+    "success": "La tua email è stata verificata con successo!",
+    "goToSignIn": "Vai all'accesso",
+    "backToSignIn": "Torna all'accesso",
+    "errors": {
+      "noToken": "Nessun token di verifica fornito",
+      "failed": "Verifica non riuscita"
+    }
+  },
+  "acceptInvite": {
+    "loading": "Caricamento…",
+    "invalidTitle": "Invito non valido",
+    "goToLogin": "Vai all'accesso",
+    "title": "Accetta l'invito",
+    "subtitleExisting": "Unisciti a questo workspace con il tuo account esistente",
+    "subtitleNew": "Crea il tuo account per unirti a questo workspace",
+    "verifying": "Verifica dell'invito in corso…",
+    "invitedAs": "Sei stato invitato come <strong>{role}</strong> per <strong>{email}</strong>",
+    "ssoOnly": "Questa email ha già un account che accede con single sign-on. Accedi prima, poi apri di nuovo questo link di invito per unirti al workspace.",
+    "goToSignIn": "Vai all'accesso",
+    "yourPassword": "La tua password",
+    "yourPasswordPlaceholder": "Inserisci la tua password attuale",
+    "confirmIdentity": "Conferma che sei tu prima che aggiungiamo questo account al workspace.",
+    "signedInAs": "Hai effettuato l'accesso come <strong>{email}</strong>. Accetta per unirti a questo workspace.",
+    "join": "Accetta e unisciti al workspace",
+    "joining": "Accesso al workspace…",
+    "name": "Il tuo nome",
+    "namePlaceholder": "Nome e cognome",
+    "email": "Email",
+    "password": "Password",
+    "passwordPlaceholder": "Min. 8 caratteri",
+    "confirmPassword": "Conferma password",
+    "confirmPasswordPlaceholder": "Ripeti la password",
+    "create": "Crea account",
+    "creating": "Creazione dell'account…",
+    "errors": {
+      "noToken": "Nessun token di invito fornito",
+      "mismatch": "Le password non coincidono"
+    }
+  },
+  "welcome": {
+    "loading": "Caricamento…",
+    "skip": "Salta per ora",
+    "skipping": "Salto in corso…",
+    "eyebrow": "Benvenuto",
+    "title": "Collega il tuo primo strumento, {name}.",
+    "titleNoName": "Collega il tuo primo strumento.",
+    "intro": "AnythingMCP trasforma qualsiasi API in strumenti MCP che il tuo agente AI può chiamare. Inizia con alcuni connettori pronti, scegline altri dal marketplace o porta la tua API.",
+    "searchLabel": "Con cosa deve lavorare il tuo client AI?",
+    "searchPlaceholder": "Etsy, Odoo, weclapp, Lexware, Shopify…",
+    "popular": "Cosa collegano più spesso i nuovi workspace",
+    "alreadyAdded": "Già aggiunto",
+    "noMatch": "Nessun risultato nel catalogo. Puoi comunque <link>aggiungere la tua API</link>.",
+    "marketplace": {
+      "eyebrow": "Consigliato",
+      "title": "Esplora il marketplace",
+      "body": "265 connettori pronti. OAuth, chiavi API, rotazione dei refresh token, tutto già configurato. Scegline uno e segui la configurazione.",
+      "cta": "Apri il marketplace →"
+    },
+    "custom": {
+      "eyebrow": "La tua API",
+      "title": "Aggiungi la tua API",
+      "body": "Incolla un URL OpenAPI o una specifica JSON e generiamo strumenti MCP per ogni endpoint. Funziona con REST, SOAP e GraphQL.",
+      "cta": "Parti da zero →"
+    },
+    "graph": {
+      "title": "Più di un proxy: impara come si collegano i tuoi strumenti",
+      "body": "Mentre usi i tuoi connettori, AnythingMCP costruisce un <strong>knowledge graph</strong> delle relazioni tra le tue entità e trasforma gli schemi ricorrenti in <strong>skill</strong>, così il tuo agente concatena gli strumenti giusti nell'ordine giusto invece di tirare a indovinare. Più lo usi, più diventa intelligente.",
+      "cta": "Esplora il knowledge graph →"
+    },
+    "comeBack": "Puoi sempre tornare e aggiungere altri connettori dalla dashboard."
+  },
+  "startTrial": {
+    "loading": "Caricamento…",
+    "skipCorner": "Continua senza dati di pagamento",
+    "eyebrow": {
+      "choosePlan": "Scegli il tuo piano",
+      "freeUntil": "Gratis fino al {date}",
+      "freeTrial": "Prova gratuita"
+    },
+    "title": {
+      "paysToday": "Mantieni attivo il tuo workspace",
+      "trial": "La tua prova gratuita"
+    },
+    "ending": "La tua prova gratuita termina il <strong>{date}</strong>, troppo presto per continuare con una prova con carta. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
+    "endingSoon": "La tua prova gratuita termina a breve, troppo presto per continuare con una prova con carta. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
+    "returning": "Questo indirizzo email ha già avuto un abbonamento AnythingMCP, quindi una nuova prova gratuita con carta non è disponibile. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono, e la tua prova attuale continua fino al <strong>{date}</strong> se decidi più avanti.",
+    "returningNoDate": "Questo indirizzo email ha già avuto un abbonamento AnythingMCP, quindi una nuova prova gratuita con carta non è disponibile. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
+    "trial": "Tutte le funzioni, gratis fino al <strong>{date}</strong>. Aggiungi ora una carta e il tuo piano prosegue semplicemente dopo la prova, senza alcun addebito prima di allora. Oppure continua a provare senza dati di pagamento: la prova senza carta ha un <strong>limite di connettori più basso</strong>, e puoi aggiungere una carta in qualsiasi momento per sbloccare il piano completo.",
+    "trialNoDate": "Tutte le funzioni, gratis fino alla fine della prova. Aggiungi ora una carta e il tuo piano prosegue semplicemente dopo la prova, senza alcun addebito prima di allora. Oppure continua a provare senza dati di pagamento: la prova senza carta ha un <strong>limite di connettori più basso</strong>, e puoi aggiungere una carta in qualsiasi momento per sbloccare il piano completo.",
+    "authorizationReturn": "In ogni caso, tornerai subito a completare il collegamento del tuo client AI.",
+    "chargesToday": "Questo indirizzo ha già avuto un abbonamento, quindi il checkout addebiterà {amount} oggi.",
+    "start": {
+      "opening": "Apertura del checkout…",
+      "tryAgain": "Riprova",
+      "checkout": "Continua al checkout",
+      "withCard": "Inizia la prova gratuita con carta"
+    },
+    "promo": "Il codice {code} verrà applicato al checkout.",
+    "price": "{amount}/{period, select, yearly {anno} other {mese}}",
+    "priceLocal": "≈ {local}/{period, select, yearly {anno} other {mese}} ({exact})",
+    "finePrintPaysToday": "{plan}, {price}, addebitato oggi e poi {period, select, yearly {ogni anno} other {ogni mese}}. Checkout sicuro con Stripe. Disdici quando vuoi dal portale di fatturazione.",
+    "finePrintTrial": "0 € oggi. {plan}, addebitato {period, select, yearly {annualmente} other {mensilmente}} dal {date}. Checkout sicuro con Stripe. Disdici prima di allora e non paghi nulla.",
+    "finePrintTrialNoDate": "0 € oggi. {plan}, addebitato {period, select, yearly {annualmente} other {mensilmente}} dalla fine della prova. Checkout sicuro con Stripe. Disdici prima di allora e non paghi nulla.",
+    "notReady": "Non sei ancora pronto?",
+    "notReadyCard": "Non vuoi ancora aggiungere una carta?",
+    "keepFree": "Continua a usare la prova gratuita",
+    "tryFree": "Prova gratis senza dati di pagamento"
   }
 }

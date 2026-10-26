@@ -60,5 +60,305 @@
   "language": {
     "label": "Language",
     "hint": "Applies to this browser."
+  },
+  "signUp": {
+    "title": "Create your account",
+    "cloudTitle": "Create your free account",
+    "cloudSubtitle": "7-day free trial · no credit card · connect Claude, ChatGPT, Copilot, Cursor or Meta Muse to your tools.",
+    "socialConsent": "By continuing you accept the <terms>Terms of Use</terms> and the <privacy>Privacy Policy</privacy>.",
+    "continueWithEmail": "Continue with email",
+    "name": "Name",
+    "namePlaceholder": "Your name",
+    "rules": {
+      "length": "At least 8 characters",
+      "uppercase": "One uppercase letter",
+      "lowercase": "One lowercase letter",
+      "number": "One number",
+      "special": "One special character"
+    },
+    "confirmPassword": "Confirm Password",
+    "confirmPasswordPlaceholder": "Repeat your password",
+    "acceptTerms": "I accept the <terms>Terms of Use</terms>",
+    "acceptTermsCloud": "I accept the <terms>Terms of Use</terms> and have read the <privacy>Privacy Policy</privacy>",
+    "submit": "Create Account",
+    "submitCloud": "Start free trial →",
+    "encrypted": "Encrypted with AES-256-GCM · hosted in Frankfurt, Germany",
+    "haveAccount": "Already have an account?",
+    "signIn": "Sign In",
+    "alreadyRegistered": {
+      "title": "You already have an account",
+      "description": "This address was already registered, so we signed you in to your existing workspace."
+    },
+    "errors": {
+      "passwordWeak": "Password must be at least 8 characters and include uppercase, lowercase, number, and special character",
+      "passwordMismatch": "Passwords do not match",
+      "termsRequired": "You must accept the Terms of Use"
+    }
+  },
+  "planHandoff": {
+    "opening": "Opening your plan…",
+    "askAdmin": {
+      "title": "Ask a workspace admin",
+      "description": "Only an admin can choose a plan for this workspace."
+    },
+    "alreadyHavePlan": {
+      "title": "You already have a plan",
+      "description": "Change it here rather than buying a second one."
+    }
+  },
+  "verifyCode": {
+    "title": "Verify Your Email",
+    "sentTo": "We sent a 6-digit code to <strong>{email}</strong>",
+    "label": "Verification Code",
+    "submit": "Verify Email",
+    "verifying": "Verifying...",
+    "noCode": "Didn't receive it?",
+    "resend": "Resend code",
+    "resendIn": "Resend in {seconds}s",
+    "resent": "A new code has been sent to your email",
+    "skip": "Skip for now",
+    "errors": {
+      "invalid": "Invalid verification code",
+      "resendFailed": "Failed to resend code"
+    }
+  },
+  "checkInbox": {
+    "title": "Check your inbox",
+    "sentTo": "We sent an email to <strong>{email}</strong>.",
+    "body": "If this address already has an AnythingMCP account, the email has a link to sign in or reset your password. Otherwise, follow the link in it to verify the address.",
+    "back": "Back to sign in",
+    "forgotPassword": "Forgot your password?"
+  },
+  "trialActivated": {
+    "title": "Trial Activated!",
+    "subtitle": "Your 7-day free trial is now active",
+    "daysLeft": "You have <strong>{days} days</strong> to explore AnythingMCP Cloud.",
+    "includes": "YOUR TRIAL INCLUDES",
+    "connectorsUpTo": "Up to {count} connectors",
+    "connectorsAny": "Connectors from the marketplace or your own API",
+    "serversUpTo": "Up to {count} MCP servers",
+    "serversAny": "Your own MCP servers",
+    "seats": "{count, plural, one {# user seat} other {# user seats}}",
+    "auditLog": "Full audit log",
+    "getStarted": "Get Started"
+  },
+  "licenseSetup": {
+    "welcome": "Welcome to Anything<brand>MCP</brand>",
+    "oneLastStep": "One last step to get started",
+    "question": "How will you use Anything<brand>MCP</brand>?",
+    "changeLater": "You can change this later under Settings → License.",
+    "personal": {
+      "title": "Personal, education or evaluation",
+      "description": "Community edition, free, for up to 3 users. We email you a community key so you get security and release notices."
+    },
+    "company": {
+      "title": "For a company or team",
+      "description": "Try Enterprise free for 30 days: more users, single sign-on with Entra ID, Google or Okta, and SCIM. No payment details."
+    },
+    "haveKey": "I have a license key",
+    "skipForNow": "Skip for now",
+    "skip": "Skip",
+    "back": "Back",
+    "emailSent": {
+      "title": "Check Your Email",
+      "sentTo": "We sent your license key to <strong>{email}</strong>",
+      "body": "Enter the key from that email to record it on this instance. It is already fully usable either way.",
+      "noEmail": "Didn't receive it? Check your spam folder."
+    },
+    "activate": {
+      "title": "Activate License",
+      "subtitle": "Enter your license key to activate Anything<brand>MCP</brand>",
+      "available": "Starter, Team and Enterprise license keys are available at <link>anythingmcp.com</link>."
+    },
+    "keyLabel": "License Key",
+    "submit": "Activate License",
+    "activating": "Activating...",
+    "errors": {
+      "requestFailed": "Failed to request license",
+      "trialFailed": "Could not start the trial",
+      "activateFailed": "Failed to activate license"
+    }
+  },
+  "trust": {
+    "panelLabel": "Why teams build on AnythingMCP",
+    "headline": "Your AI, connected to <accent>the software your company already runs.</accent>",
+    "intro": "AnythingMCP turns any REST, SOAP, GraphQL or SQL system into tools your AI assistant can use: securely, with roles and a full audit log.",
+    "stats": {
+      "downloads": "downloads",
+      "toolCalls": "AI tool calls last month",
+      "workspaces": "workspaces on AnythingMCP Cloud"
+    },
+    "directory": "Listed in the Claude Directory",
+    "badges": {
+      "euHosted": "🇪🇺 EU-hosted · Frankfurt",
+      "gdpr": "GDPR · DPA included",
+      "openSource": "Open source · AGPL-3.0"
+    },
+    "worksWith": "Works with",
+    "trialIncludes": "Your 7-day trial includes",
+    "trialItems": {
+      "connectors": "200+ ready-made connectors: DATEV, SAP, HubSpot, Shopify, Postgres…",
+      "servers": "Your own MCP servers with roles and a full audit log",
+      "noInstall": "Nothing to install, cancel any time, your data stays in the EU"
+    },
+    "customer": "In production at KOCH Freiburg GmbH, connecting its ERP to Claude with single sign-on.",
+    "line": {
+      "encryption": "AES-256-GCM encryption",
+      "hosted": "Hosted in Frankfurt",
+      "gdpr": "GDPR · DPA",
+      "auditLog": "Every call in your audit log",
+      "github": "Open source on GitHub"
+    }
+  },
+  "forgotPassword": {
+    "title": "Forgot Password",
+    "intro": "Enter your email address and we'll send you a link to reset your password.",
+    "email": "Email",
+    "submit": "Send Reset Link",
+    "sending": "Sending...",
+    "backToSignIn": "Back to Sign In",
+    "sentTitle": "Check your email",
+    "sentBody": "If an account with that email exists, we've sent a password reset link.",
+    "toast": {
+      "sentTitle": "Reset link requested",
+      "sentDescription": "If that email is registered, a reset link is on the way.",
+      "failedTitle": "Request failed"
+    },
+    "errors": {
+      "generic": "Something went wrong"
+    }
+  },
+  "resetPassword": {
+    "title": "Reset Password",
+    "intro": "Enter your new password below.",
+    "newPassword": "New Password",
+    "newPasswordPlaceholder": "Min. 8 characters",
+    "confirmPassword": "Confirm Password",
+    "confirmPasswordPlaceholder": "Repeat password",
+    "submit": "Reset Password",
+    "resetting": "Resetting...",
+    "backToSignIn": "Back to Sign In",
+    "invalidTitle": "Invalid Link",
+    "invalidBody": "This password reset link is invalid or has expired.",
+    "requestNew": "Request a new link",
+    "successTitle": "Password Reset",
+    "successBody": "Your password has been reset successfully.",
+    "signIn": "Sign In",
+    "errors": {
+      "mismatch": "Passwords do not match",
+      "invalidLink": "Invalid reset link",
+      "generic": "Something went wrong"
+    }
+  },
+  "verifyEmail": {
+    "title": "Email Verification",
+    "verifying": "Verifying your email...",
+    "success": "Your email has been verified successfully!",
+    "goToSignIn": "Go to Sign In",
+    "backToSignIn": "Back to Sign In",
+    "errors": {
+      "noToken": "No verification token provided",
+      "failed": "Verification failed"
+    }
+  },
+  "acceptInvite": {
+    "loading": "Loading...",
+    "invalidTitle": "Invalid Invitation",
+    "goToLogin": "Go to Login",
+    "title": "Accept Invitation",
+    "subtitleExisting": "Join this workspace with your existing account",
+    "subtitleNew": "Create your account to join this workspace",
+    "verifying": "Verifying invitation...",
+    "invitedAs": "You've been invited as <strong>{role}</strong> for <strong>{email}</strong>",
+    "ssoOnly": "This email already has an account that signs in with single sign-on. Sign in first, then open this invitation link again to join the workspace.",
+    "goToSignIn": "Go to sign in",
+    "yourPassword": "Your password",
+    "yourPasswordPlaceholder": "Enter your existing password",
+    "confirmIdentity": "Confirm it's you before we add this account to the workspace.",
+    "signedInAs": "You're signed in as <strong>{email}</strong>. Accept to join this workspace.",
+    "join": "Accept & join workspace",
+    "joining": "Joining…",
+    "name": "Your Name",
+    "namePlaceholder": "Full name",
+    "email": "Email",
+    "password": "Password",
+    "passwordPlaceholder": "Min. 8 characters",
+    "confirmPassword": "Confirm Password",
+    "confirmPasswordPlaceholder": "Repeat password",
+    "create": "Create Account",
+    "creating": "Creating account...",
+    "errors": {
+      "noToken": "No invitation token provided",
+      "mismatch": "Passwords do not match"
+    }
+  },
+  "welcome": {
+    "loading": "Loading…",
+    "skip": "Skip for now",
+    "skipping": "Skipping…",
+    "eyebrow": "Welcome",
+    "title": "Connect your first tool, {name}.",
+    "titleNoName": "Connect your first tool, friend.",
+    "intro": "AnythingMCP turns any API into MCP tools your AI agent can call. Start with a few ready-made connectors, pick more from the marketplace, or bring your own API.",
+    "searchLabel": "What should your AI client work with?",
+    "searchPlaceholder": "Etsy, Odoo, weclapp, Lexware, Shopify…",
+    "popular": "What new workspaces connect most",
+    "alreadyAdded": "Already added",
+    "noMatch": "Nothing in the catalog matches. You can still <link>add your own API</link>.",
+    "marketplace": {
+      "eyebrow": "Recommended",
+      "title": "Browse the marketplace",
+      "body": "265 pre-built connectors. OAuth, API keys, refresh-token rotation, all wired up. Pick one and follow the setup.",
+      "cta": "Open marketplace →"
+    },
+    "custom": {
+      "eyebrow": "Bring your own",
+      "title": "Add your own API",
+      "body": "Paste an OpenAPI URL or JSON spec and we generate MCP tools for every endpoint. Works for REST, SOAP, GraphQL.",
+      "cta": "Start from scratch →"
+    },
+    "graph": {
+      "title": "More than a proxy — it learns how your tools connect",
+      "body": "As you use your connectors, AnythingMCP builds a <strong>knowledge graph</strong> of how your entities relate and turns recurring patterns into <strong>skills</strong> — so your agent chains the right tools in the right order instead of guessing. It gets smarter the more you use it.",
+      "cta": "Explore the knowledge graph →"
+    },
+    "comeBack": "You can always come back and add more connectors from the dashboard."
+  },
+  "startTrial": {
+    "loading": "Loading…",
+    "skipCorner": "Continue without payment details",
+    "eyebrow": {
+      "choosePlan": "Choose your plan",
+      "freeUntil": "Free until {date}",
+      "freeTrial": "Free trial"
+    },
+    "title": {
+      "paysToday": "Keep your workspace running",
+      "trial": "Your free trial"
+    },
+    "ending": "Your free trial ends on <strong>{date}</strong>, too soon to carry on with a card trial. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
+    "endingSoon": "Your free trial ends soon, too soon to carry on with a card trial. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
+    "returning": "This email address has had an AnythingMCP subscription before, so a new free trial is not available with a card. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are, and your current trial keeps running until <strong>{date}</strong> if you decide later.",
+    "returningNoDate": "This email address has had an AnythingMCP subscription before, so a new free trial is not available with a card. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
+    "trial": "Every feature, free until <strong>{date}</strong>. Add a card now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: the no-card trial has a <strong>lower connector limit</strong>, and you can add a card any time to unlock your full plan.",
+    "trialNoDate": "Every feature, free until your trial ends. Add a card now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: the no-card trial has a <strong>lower connector limit</strong>, and you can add a card any time to unlock your full plan.",
+    "authorizationReturn": "Either way, you go straight back to finish connecting your AI client.",
+    "chargesToday": "This address already had a subscription, so the checkout will charge {amount} today.",
+    "start": {
+      "opening": "Opening checkout…",
+      "tryAgain": "Try again",
+      "checkout": "Continue to checkout",
+      "withCard": "Start free trial with card"
+    },
+    "promo": "Code {code} will be applied at checkout.",
+    "price": "{amount}/{period, select, yearly {year} other {month}}",
+    "priceLocal": "≈ {local}/{period, select, yearly {year} other {month}} ({exact})",
+    "finePrintPaysToday": "{plan}, {price}, billed today and then {period, select, yearly {every year} other {every month}}. Secure checkout by Stripe. Cancel anytime from the billing portal.",
+    "finePrintTrial": "€0 today. {plan}, billed {period, select, yearly {yearly} other {monthly}} from {date}. Secure checkout by Stripe. Cancel before then and you pay nothing.",
+    "finePrintTrialNoDate": "€0 today. {plan}, billed {period, select, yearly {yearly} other {monthly}} from the end of your trial. Secure checkout by Stripe. Cancel before then and you pay nothing.",
+    "notReady": "Not ready yet?",
+    "notReadyCard": "Not ready to add a card?",
+    "keepFree": "Keep using the free trial",
+    "tryFree": "Try free without payment details"
   }
 }

@@ -267,6 +267,152 @@ test.describe('language switcher', () => {
   });
 });
 
+/** An instance for the pre-sign-in pages: self-hosted or Cloud, with users and open registration. */
+async function mockServer(page: Page, deploymentMode: 'self-hosted' | 'cloud' = 'self-hosted') {
+  await page.route(/\/(api|health)\//, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/health/server-info') {
+      return route.fulfill({
+        json: { deploymentMode, mcpAuthMode: 'oauth2', hasUsers: true, registrationEnabled: true, ssoProviders: [] },
+      });
+    }
+    return route.fulfill({ json: {} });
+  });
+}
+
+/** A Cloud admin on a free trial that ends in five days, as /start-trial expects. */
+async function cloudTrialSession(page: Page) {
+  const trialEnd = new Date(Date.now() + 5 * 86_400_000).toISOString();
+  await page.context().addCookies([{ name: 'amcp_token', value: 'test-token', url: BASE_URL }]);
+  await page.addInitScript((user) => {
+    localStorage.setItem('amcp_token', 'test-token');
+    localStorage.setItem('amcp_user', JSON.stringify(user));
+  }, USER);
+  await page.route(/\/(api|health)\//, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (path === '/health/server-info') {
+      return json({ deploymentMode: 'cloud', mcpAuthMode: 'oauth2', hasUsers: true, registrationEnabled: true, ssoProviders: [] });
+    }
+    if (path === '/api/price-estimate') return json({ currency: null, vat: true });
+    if (path.endsWith('/license/card-trial-eligibility')) return json({ kind: 'trial', trialEndsAt: trialEnd });
+    if (path.endsWith('/license/status')) {
+      return json({ plan: 'trial', status: 'active', expiresAt: trialEnd, trialDaysLeft: 5, features: {} });
+    }
+    if (path.endsWith('/users/me')) return json(USER);
+    return json({});
+  });
+}
+
+test.describe('auth and onboarding pages from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE' });
+
+    test('renders registration in German, including its client-side checks', async ({ page }) => {
+      await mockServer(page);
+      await page.goto('/login?mode=register');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('heading', { level: 1, name: 'Konto erstellen', exact: true })).toBeVisible();
+      await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
+      await expect(page.getByLabel('Passwort bestätigen', { exact: true })).toBeVisible();
+      await expect(page.getByText('Sie haben bereits ein Konto?')).toBeVisible();
+
+      await page.getByLabel('Name', { exact: true }).fill('Test');
+      await page.getByLabel('E-Mail', { exact: true }).fill('test@example.com');
+      await page.getByLabel('Passwort', { exact: true }).fill('password');
+      await page.getByLabel('Passwort bestätigen', { exact: true }).fill('password');
+      await expect(page.getByText('✓ Mindestens 8 Zeichen')).toBeVisible();
+      await expect(page.getByText('• Ein Großbuchstabe')).toBeVisible();
+      await page.getByRole('button', { name: 'Konto erstellen', exact: true }).click();
+      await expect(page.getByText(/^Das Passwort muss mindestens 8 Zeichen lang sein/)).toBeVisible();
+    });
+
+    test('renders the Cloud sign-up and its trust panel in German', async ({ page }) => {
+      await mockServer(page, 'cloud');
+      await page.goto('/login?mode=register');
+      await expect(page.getByRole('heading', { level: 1, name: 'Kostenloses Konto erstellen', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Kostenlos testen →', exact: true })).toBeVisible();
+      const panel = page.getByRole('complementary', { name: 'Warum Teams auf AnythingMCP setzen' });
+      await expect(panel.getByText('Funktioniert mit', { exact: true })).toBeVisible();
+      await expect(panel.getByText('Ihre 7-tägige Testphase umfasst', { exact: true })).toBeVisible();
+    });
+
+    test('renders /forgot-password in German', async ({ page }) => {
+      await mockServer(page);
+      await page.goto('/forgot-password');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('heading', { name: 'Passwort vergessen', exact: true })).toBeVisible();
+      await expect(page.getByLabel('E-Mail', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Link zum Zurücksetzen senden', exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Zurück zur Anmeldung', exact: true })).toBeVisible();
+    });
+
+    test('renders /verify-email without a token in German', async ({ page }) => {
+      await mockServer(page);
+      await page.goto('/verify-email');
+      await expect(page.getByRole('heading', { level: 1, name: 'E-Mail-Bestätigung', exact: true })).toBeVisible();
+      await expect(page.getByText('Kein Bestätigungstoken angegeben', { exact: true })).toBeVisible();
+    });
+
+    test('renders /welcome in German', async ({ page }) => {
+      await fakeSession(page);
+      await page.goto('/welcome');
+      await expect(page.getByRole('heading', { level: 1, name: 'Verbinden Sie Ihr erstes Tool, Test.', exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: /Marktplatz durchsuchen/ })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Vorerst überspringen', exact: true })).toBeVisible();
+    });
+
+    test('renders /start-trial in German, with the date in German', async ({ page }) => {
+      await cloudTrialSession(page);
+      await page.goto('/start-trial');
+      await expect(page.getByRole('heading', { level: 1, name: 'Ihre kostenlose Testphase', exact: true })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText(/^Kostenlos bis \d{1,2}\. \S+ \d{4}$/)).toBeVisible();
+      await expect(page.getByText(/^Heute 0 €\./)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Ohne Zahlungsdaten fortfahren', exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT' });
+
+    test('renders /reset-password in Italian, with its mismatch check', async ({ page }) => {
+      await mockServer(page);
+      await page.goto('/reset-password?token=abc');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('heading', { name: 'Reimposta password', exact: true })).toBeVisible();
+      await page.getByLabel('Nuova password', { exact: true }).fill('Password1!');
+      await page.getByLabel('Conferma password', { exact: true }).fill('Password2!');
+      await page.getByRole('button', { name: 'Reimposta password', exact: true }).click();
+      await expect(page.getByText('Le password non coincidono', { exact: true })).toBeVisible();
+    });
+
+    test('renders /accept-invite without a token in Italian', async ({ page }) => {
+      await mockServer(page);
+      await page.goto('/accept-invite');
+      await expect(page.getByRole('heading', { name: 'Invito non valido', exact: true })).toBeVisible();
+      await expect(page.getByText('Nessun token di invito fornito', { exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: "Vai all'accesso", exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US' });
+
+    test('keeps registration and the reset pages in English', async ({ page }) => {
+      await mockServer(page);
+      await page.goto('/login?mode=register');
+      await expect(page.getByRole('heading', { level: 1, name: 'Create your account', exact: true })).toBeVisible();
+      await expect(page.getByLabel('Confirm Password', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Create Account', exact: true })).toBeVisible();
+      await expect(page.getByText('Already have an account?')).toBeVisible();
+
+      await page.goto('/reset-password');
+      await expect(page.getByRole('heading', { name: 'Invalid Link', exact: true })).toBeVisible();
+      await expect(page.getByText('This password reset link is invalid or has expired.', { exact: true })).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;

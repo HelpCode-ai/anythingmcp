@@ -104,9 +104,15 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const { login, token: sessionToken, user: sessionUser, isLoading: sessionLoading } = useAuth();
   const toast = useToast();
-  // Sign-in only: registration, the Cloud sign-up and the verification and
-  // licence steps are still English.
   const t = useTranslations('signIn');
+  const tSignUp = useTranslations('signUp');
+  const tPlan = useTranslations('planHandoff');
+  const tVerify = useTranslations('verifyCode');
+  const tInbox = useTranslations('checkInbox');
+  const tTrial = useTranslations('trialActivated');
+  const tLicense = useTranslations('licenseSetup');
+  const strong = (chunks: React.ReactNode) => <strong className="text-[var(--text)]">{chunks}</strong>;
+  const brand = (chunks: React.ReactNode) => <span className="text-[var(--brand)]">{chunks}</span>;
 
   const redirectTo = safeRedirect(searchParams.get('redirect'));
   // Back into an AI client's pending authorization (/auth/login, served by the
@@ -230,15 +236,15 @@ function LoginForm() {
       const target = purchaseDestination({ role: u?.role, license: status });
       if (u?.role !== 'ADMIN') {
         toast.show({
-          title: 'Ask a workspace admin',
-          description: 'Only an admin can choose a plan for this workspace.',
+          title: tPlan('askAdmin.title'),
+          description: tPlan('askAdmin.description'),
           tone: 'info',
           durationMs: 9000,
         });
       } else if (target === '/settings/license') {
         toast.show({
-          title: 'You already have a plan',
-          description: 'Change it here rather than buying a second one.',
+          title: tPlan('alreadyHavePlan.title'),
+          description: tPlan('alreadyHavePlan.description'),
           tone: 'info',
           durationMs: 9000,
         });
@@ -408,7 +414,7 @@ function LoginForm() {
       window.location.assign(authorizationUrl);
       return true;
     } catch (err: any) {
-      setError(err.message || (isRegister ? 'This sign-in option is not available right now.' : t('errors.socialUnavailable')));
+      setError(err.message || t('errors.socialUnavailable'));
       setSocialStarting(null);
       return false;
     }
@@ -448,18 +454,18 @@ function LoginForm() {
         // Validate password strength
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/;
         if (!passwordRegex.test(password)) {
-          setError('Password must be at least 8 characters and include uppercase, lowercase, number, and special character');
+          setError(tSignUp('errors.passwordWeak'));
           setLoading(false);
           return;
         }
         // Validate confirm password
         if (password !== confirmPassword) {
-          setError('Passwords do not match');
+          setError(tSignUp('errors.passwordMismatch'));
           setLoading(false);
           return;
         }
         if (!acceptTerms) {
-          setError('You must accept the Terms of Use');
+          setError(tSignUp('errors.termsRequired'));
           setLoading(false);
           return;
         }
@@ -495,8 +501,8 @@ function LoginForm() {
             // the account's password sees this, so it reveals nothing.
             if (loginResult.user?.emailVerified) {
               toast.show({
-                title: 'You already have an account',
-                description: 'This address was already registered, so we signed you in to your existing workspace.',
+                title: tSignUp('alreadyRegistered.title'),
+                description: tSignUp('alreadyRegistered.description'),
                 tone: 'info',
                 durationMs: 9000,
               });
@@ -517,7 +523,7 @@ function LoginForm() {
 
       await finishSignIn(result, needsLicenseSetup);
     } catch (err: any) {
-      setError(err.message || (isRegister ? 'Authentication failed' : t('errors.authFailed')));
+      setError(err.message || t('errors.authFailed'));
     } finally {
       setLoading(false);
     }
@@ -558,7 +564,7 @@ function LoginForm() {
         goTo(redirectTo);
       }
     } catch (err: any) {
-      setError(err.message || 'Invalid verification code');
+      setError(err.message || tVerify('errors.invalid'));
     } finally {
       setLoading(false);
     }
@@ -576,12 +582,12 @@ function LoginForm() {
     setResendMessage('');
     try {
       await auth.resendVerification(authToken);
-      setResendMessage('A new code has been sent to your email');
+      setResendMessage(tVerify('resent'));
       setResendCooldown(60);
     } catch (err: any) {
-      setError(err.message || 'Failed to resend code');
+      setError(err.message || tVerify('errors.resendFailed'));
     }
-  }, [resendCooldown, authToken]);
+  }, [resendCooldown, authToken, tVerify]);
 
   const handlePersonalUse = async () => {
     setError('');
@@ -591,7 +597,7 @@ function LoginForm() {
       setUserEmail(result.email);
       setSetupStep('license-email-sent');
     } catch (err: any) {
-      setError(err.message || 'Failed to request license');
+      setError(err.message || tLicense('errors.requestFailed'));
     } finally {
       setLoading(false);
     }
@@ -606,7 +612,7 @@ function LoginForm() {
       await license.startBusinessTrial(authToken);
       goTo(redirectTo);
     } catch (err: any) {
-      setError(err.message || 'Could not start the trial');
+      setError(err.message || tLicense('errors.trialFailed'));
       setLoading(false);
     }
   };
@@ -622,7 +628,7 @@ function LoginForm() {
       await license.setKey(licenseKey, authToken);
       goTo(redirectTo);
     } catch (err: any) {
-      setError(err.message || 'Failed to activate license');
+      setError(err.message || tLicense('errors.activateFailed'));
       setLoading(false);
     }
   };
@@ -636,7 +642,7 @@ function LoginForm() {
   if (handingOff) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
-        <div className="text-sm text-[var(--text-2)]">Opening your plan…</div>
+        <div className="text-sm text-[var(--text-2)]">{tPlan('opening')}</div>
       </div>
     );
   }
@@ -649,9 +655,9 @@ function LoginForm() {
             <div className="flex justify-center mb-4">
               <BrandMark />
             </div>
-            <h1 className="text-xl font-semibold text-[var(--text)]">Verify Your Email</h1>
+            <h1 className="text-xl font-semibold text-[var(--text)]">{tVerify('title')}</h1>
             <p className="text-[var(--text-2)] mt-1 text-sm">
-              We sent a 6-digit code to <strong className="text-[var(--text)]">{userEmail}</strong>
+              {tVerify.rich('sentTo', { email: userEmail, strong })}
             </p>
           </div>
 
@@ -661,7 +667,7 @@ function LoginForm() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1 text-[var(--text)]">Verification Code</label>
+              <label className="block text-sm font-medium mb-1 text-[var(--text)]">{tVerify('label')}</label>
               <input
                 type="text"
                 inputMode="numeric"
@@ -687,18 +693,18 @@ function LoginForm() {
               className="w-full"
               size="lg"
             >
-              {loading ? 'Verifying...' : 'Verify Email'}
+              {loading ? tVerify('verifying') : tVerify('submit')}
             </Button>
           </div>
 
           <p className="text-center text-sm text-[var(--text-2)] mt-4">
-            Didn&apos;t receive it?{' '}
+            {tVerify('noCode')}{' '}
             <button
               onClick={handleResendCode}
               disabled={resendCooldown > 0}
               className="text-[var(--brand)] hover:underline font-medium disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
             >
-              {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
+              {resendCooldown > 0 ? tVerify('resendIn', { seconds: resendCooldown }) : tVerify('resend')}
             </button>
           </p>
 
@@ -720,7 +726,7 @@ function LoginForm() {
                 }}
                 className="text-sm text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
               >
-                Skip for now
+                {tVerify('skip')}
               </button>
             </div>
           )}
@@ -739,14 +745,13 @@ function LoginForm() {
             <div className="flex justify-center mb-4">
               <BrandMark />
             </div>
-            <h1 className="text-xl font-semibold text-[var(--text)]">Check your inbox</h1>
+            <h1 className="text-xl font-semibold text-[var(--text)]">{tInbox('title')}</h1>
             <p className="text-[var(--text-2)] mt-1 text-sm">
-              We sent an email to <strong className="text-[var(--text)]">{userEmail}</strong>.
+              {tInbox.rich('sentTo', { email: userEmail, strong })}
             </p>
           </div>
           <p className="text-sm text-[var(--text-2)] mb-4">
-            If this address already has an AnythingMCP account, the email has a link to sign in
-            or reset your password. Otherwise, follow the link in it to verify the address.
+            {tInbox('body')}
           </p>
           <Button
             onClick={() => {
@@ -758,11 +763,11 @@ function LoginForm() {
             className="w-full"
             size="lg"
           >
-            Back to sign in
+            {tInbox('back')}
           </Button>
           <p className="text-center text-sm text-[var(--text-2)] mt-4">
             <Link href="/forgot-password" className="text-[var(--brand)] hover:underline font-medium">
-              Forgot your password?
+              {tInbox('forgotPassword')}
             </Link>
           </p>
         </Card>
@@ -780,9 +785,9 @@ function LoginForm() {
             <div className="flex justify-center mb-4">
               <BrandMark />
             </div>
-            <h1 className="text-xl font-semibold text-[var(--text)]">Trial Activated!</h1>
+            <h1 className="text-xl font-semibold text-[var(--text)]">{tTrial('title')}</h1>
             <p className="text-[var(--text-2)] mt-1 text-sm">
-              Your 7-day free trial is now active
+              {tTrial('subtitle')}
             </p>
           </div>
 
@@ -793,33 +798,33 @@ function LoginForm() {
               </svg>
             </div>
             <p className="text-sm text-[var(--text-2)]">
-              You have <strong className="text-[var(--text)]">{trialDaysLeft} days</strong> to explore AnythingMCP Cloud.
+              {tTrial.rich('daysLeft', { days: trialDaysLeft, strong })}
             </p>
           </div>
 
           <div className="bg-[var(--surface-2)] rounded-[9px] p-4 mb-4">
-            <p className="text-xs font-medium text-[var(--text-3)] mb-2">YOUR TRIAL INCLUDES</p>
+            <p className="text-xs font-medium text-[var(--text-3)] mb-2">{tTrial('includes')}</p>
             <ul className="space-y-1.5 text-sm text-[var(--text-2)]">
               <li className="flex items-center gap-2">
                 <span className="text-[var(--ok)]">&#10003;</span>{' '}
-                {trialLimits ? `Up to ${trialLimits.connectors} connectors` : 'Connectors from the marketplace or your own API'}
+                {trialLimits ? tTrial('connectorsUpTo', { count: trialLimits.connectors }) : tTrial('connectorsAny')}
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-[var(--ok)]">&#10003;</span>{' '}
-                {trialLimits ? `Up to ${trialLimits.servers} MCP servers` : 'Your own MCP servers'}
+                {trialLimits ? tTrial('serversUpTo', { count: trialLimits.servers }) : tTrial('serversAny')}
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-[var(--ok)]">&#10003;</span>{' '}
-                {trialLimits ? `${trialLimits.users} user seat${trialLimits.users === 1 ? '' : 's'}` : '1 user seat'}
+                {tTrial('seats', { count: trialLimits ? trialLimits.users : 1 })}
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-[var(--ok)]">&#10003;</span> Full audit log
+                <span className="text-[var(--ok)]">&#10003;</span> {tTrial('auditLog')}
               </li>
             </ul>
           </div>
 
           <Button onClick={() => goTo(redirectTo)} className="w-full" size="lg">
-            Get Started
+            {tTrial('getStarted')}
           </Button>
         </Card>
       </div>
@@ -836,17 +841,17 @@ function LoginForm() {
             <div className="flex justify-center mb-4">
               <BrandMark />
             </div>
-            <h1 className="text-xl font-semibold text-[var(--text)]">Welcome to Anything<span className="text-[var(--brand)]">MCP</span></h1>
+            <h1 className="text-xl font-semibold text-[var(--text)]">{tLicense.rich('welcome', { brand })}</h1>
             <p className="text-[var(--text-2)] mt-1 text-sm">
-              One last step to get started
+              {tLicense('oneLastStep')}
             </p>
           </div>
 
           <h2 className="text-base font-semibold mb-2 text-center text-[var(--text)]">
-            How will you use Anything<span className="text-[var(--brand)]">MCP</span>?
+            {tLicense.rich('question', { brand })}
           </h2>
           <p className="text-sm text-[var(--text-2)] mb-6 text-center">
-            You can change this later under Settings → License.
+            {tLicense('changeLater')}
           </p>
 
           {error && <div className={alertDanger}>{error}</div>}
@@ -857,10 +862,9 @@ function LoginForm() {
               disabled={loading}
               className="w-full border border-[var(--border)] rounded-[9px] p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors disabled:opacity-50"
             >
-              <div className="font-medium text-sm text-[var(--text)]">Personal, education or evaluation</div>
+              <div className="font-medium text-sm text-[var(--text)]">{tLicense('personal.title')}</div>
               <div className="text-xs text-[var(--text-2)] mt-1">
-                Community edition, free, for up to 3 users. We email you a
-                community key so you get security and release notices.
+                {tLicense('personal.description')}
               </div>
             </button>
 
@@ -869,10 +873,9 @@ function LoginForm() {
               disabled={loading}
               className="w-full border border-[var(--border)] rounded-[9px] p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors disabled:opacity-50"
             >
-              <div className="font-medium text-sm text-[var(--text)]">For a company or team</div>
+              <div className="font-medium text-sm text-[var(--text)]">{tLicense('company.title')}</div>
               <div className="text-xs text-[var(--text-2)] mt-1">
-                Try Enterprise free for 30 days: more users, single sign-on with
-                Entra ID, Google or Okta, and SCIM. No payment details.
+                {tLicense('company.description')}
               </div>
             </button>
           </div>
@@ -882,13 +885,13 @@ function LoginForm() {
               onClick={handleCommercialChoice}
               className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
             >
-              I have a license key
+              {tLicense('haveKey')}
             </button>
             <button
               onClick={handleSkip}
               className="text-sm text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
             >
-              Skip for now
+              {tLicense('skipForNow')}
             </button>
           </div>
         </Card>
@@ -906,22 +909,21 @@ function LoginForm() {
             <div className="flex justify-center mb-4">
               <BrandMark />
             </div>
-            <h1 className="text-xl font-semibold text-[var(--text)]">Check Your Email</h1>
+            <h1 className="text-xl font-semibold text-[var(--text)]">{tLicense('emailSent.title')}</h1>
             <p className="text-[var(--text-2)] mt-1 text-sm">
-              We sent your license key to <strong className="text-[var(--text)]">{userEmail}</strong>
+              {tLicense.rich('emailSent.sentTo', { email: userEmail, strong })}
             </p>
           </div>
 
           <p className="text-sm text-[var(--text-2)] mb-4">
-            Enter the key from that email to record it on this instance. It is
-            already fully usable either way.
+            {tLicense('emailSent.body')}
           </p>
 
           {error && <div className={alertDanger}>{error}</div>}
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1 text-[var(--text)]">License Key</label>
+              <label className="block text-sm font-medium mb-1 text-[var(--text)]">{tLicense('keyLabel')}</label>
               <input
                 type="text"
                 value={licenseKey}
@@ -937,19 +939,19 @@ function LoginForm() {
               className="w-full"
               size="lg"
             >
-              {loading ? 'Activating...' : 'Activate License'}
+              {loading ? tLicense('activating') : tLicense('submit')}
             </Button>
           </div>
 
           <div className="flex justify-between mt-4 text-sm">
             <p className="text-[var(--text-2)]">
-              Didn&apos;t receive it? Check your spam folder.
+              {tLicense('emailSent.noEmail')}
             </p>
             <button
               onClick={handleSkip}
               className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline whitespace-nowrap ml-2"
             >
-              Skip
+              {tLicense('skip')}
             </button>
           </div>
         </Card>
@@ -967,30 +969,32 @@ function LoginForm() {
             <div className="flex justify-center mb-4">
               <BrandMark />
             </div>
-            <h1 className="text-xl font-semibold text-[var(--text)]">Activate License</h1>
+            <h1 className="text-xl font-semibold text-[var(--text)]">{tLicense('activate.title')}</h1>
             <p className="text-[var(--text-2)] mt-1 text-sm">
-              Enter your license key to activate Anything<span className="text-[var(--brand)]">MCP</span>
+              {tLicense.rich('activate.subtitle', { brand })}
             </p>
           </div>
 
           <p className="text-sm text-[var(--text-2)] mb-4">
-            Starter, Team and Enterprise license keys are available at{' '}
-            <a
-              href={buildPricingUrl(undefined, null, true)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[var(--brand)] hover:underline font-medium"
-            >
-              anythingmcp.com
-            </a>
-            .
+            {tLicense.rich('activate.available', {
+              link: (chunks) => (
+                <a
+                  href={buildPricingUrl(undefined, null, true)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[var(--brand)] hover:underline font-medium"
+                >
+                  {chunks}
+                </a>
+              ),
+            })}
           </p>
 
           {error && <div className={alertDanger}>{error}</div>}
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1 text-[var(--text)]">License Key</label>
+              <label className="block text-sm font-medium mb-1 text-[var(--text)]">{tLicense('keyLabel')}</label>
               <input
                 type="text"
                 value={licenseKey}
@@ -1006,7 +1010,7 @@ function LoginForm() {
               className="w-full"
               size="lg"
             >
-              {loading ? 'Activating...' : 'Activate License'}
+              {loading ? tLicense('activating') : tLicense('submit')}
             </Button>
           </div>
 
@@ -1015,13 +1019,13 @@ function LoginForm() {
               onClick={() => setSetupStep('license-choice')}
               className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
             >
-              Back
+              {tLicense('back')}
             </button>
             <button
               onClick={handleSkip}
               className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
             >
-              Skip for now
+              {tLicense('skipForNow')}
             </button>
           </div>
         </Card>
@@ -1050,14 +1054,10 @@ function LoginForm() {
               : 'text-xl font-semibold text-[var(--text)]'
           }
         >
-          {cloudSignup ? 'Create your free account' : isRegister ? 'Create your account' : t('title')}
+          {cloudSignup ? tSignUp('cloudTitle') : isRegister ? tSignUp('title') : t('title')}
         </h1>
         <p className="text-[var(--text-2)] mt-1.5 text-sm leading-relaxed">
-          {cloudSignup
-            ? '7-day free trial · no credit card · connect Claude, ChatGPT, Copilot, Cursor or Meta Muse to your tools.'
-            : isRegister
-              ? 'Create custom connectors for Claude, ChatGPT, Copilot, Meta Muse and any AI agent'
-              : t('subtitle')}
+          {cloudSignup ? tSignUp('cloudSubtitle') : t('subtitle')}
         </p>
       </div>
 
@@ -1087,23 +1087,24 @@ function LoginForm() {
             >
               <ProviderMark type={p.id} />
               <span>
-                {isRegister
-                  ? socialStarting === p.id ? 'Redirecting…' : `Continue with ${p.name}`
-                  : socialStarting === p.id ? t('redirecting') : t('continueWith', { provider: p.name })}
+                {socialStarting === p.id ? t('redirecting') : t('continueWith', { provider: p.name })}
               </span>
             </button>
           ))}
           {isRegister && (
             <p className="text-[11.5px] leading-relaxed text-[var(--text-3)] text-center">
-              By continuing you accept the{' '}
-              <a href="https://anythingmcp.com/en/agb" target="_blank" rel="noopener noreferrer" className="underline">
-                Terms of Use
-              </a>{' '}
-              and the{' '}
-              <a href="https://anythingmcp.com/datenschutz" target="_blank" rel="noopener noreferrer" className="underline">
-                Privacy Policy
-              </a>
-              .
+              {tSignUp.rich('socialConsent', {
+                terms: (chunks) => (
+                  <a href="https://anythingmcp.com/en/agb" target="_blank" rel="noopener noreferrer" className="underline">
+                    {chunks}
+                  </a>
+                ),
+                privacy: (chunks) => (
+                  <a href="https://anythingmcp.com/datenschutz" target="_blank" rel="noopener noreferrer" className="underline">
+                    {chunks}
+                  </a>
+                ),
+              })}
             </p>
           )}
           {emailFormFolded ? (
@@ -1116,12 +1117,12 @@ function LoginForm() {
                 <rect x="3" y="5" width="18" height="14" rx="2" />
                 <path d="m3 7 9 6 9-6" />
               </svg>
-              <span>Continue with email</span>
+              <span>{tSignUp('continueWithEmail')}</span>
             </button>
           ) : (
             <div className="flex items-center gap-3 pt-1">
               <div className="h-px flex-1 bg-[var(--border)]" />
-              <span className="text-[11.5px] text-[var(--text-3)]">{isRegister ? 'or use your email' : t('orUseEmail')}</span>
+              <span className="text-[11.5px] text-[var(--text-3)]">{t('orUseEmail')}</span>
               <div className="h-px flex-1 bg-[var(--border)]" />
             </div>
           )}
@@ -1154,7 +1155,7 @@ function LoginForm() {
       >
         {isRegister && (
           <div>
-            <label htmlFor="auth-name" className="block text-sm font-medium mb-1 text-[var(--text)]">Name</label>
+            <label htmlFor="auth-name" className="block text-sm font-medium mb-1 text-[var(--text)]">{tSignUp('name')}</label>
             <input
               id="auth-name"
               name="name"
@@ -1162,7 +1163,7 @@ function LoginForm() {
               autoComplete="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
+              placeholder={tSignUp('namePlaceholder')}
               className={cn(inputClass, cloudSignup && 'h-[42px]')}
               required
             />
@@ -1171,7 +1172,7 @@ function LoginForm() {
 
         <div>
           <label htmlFor="auth-email" className="block text-sm font-medium mb-1 text-[var(--text)]">
-            {isRegister ? 'Email' : t('email')}
+            {t('email')}
           </label>
           <input
             id="auth-email"
@@ -1187,7 +1188,7 @@ function LoginForm() {
         </div>
 
         <div className={recoveryMode ? 'hidden' : undefined}>
-          <label htmlFor="auth-password" className="block text-sm font-medium mb-1 text-[var(--text)]">{isRegister ? 'Password' : t('password')}</label>
+          <label htmlFor="auth-password" className="block text-sm font-medium mb-1 text-[var(--text)]">{t('password')}</label>
           <input
             id="auth-password"
             name="password"
@@ -1195,7 +1196,7 @@ function LoginForm() {
             autoComplete={isRegister ? 'new-password' : 'current-password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder={isRegister ? 'Min. 8 characters' : t('passwordPlaceholder')}
+            placeholder={t('passwordPlaceholder')}
             className={cn(inputClass, cloudSignup && 'h-[42px]')}
             // A hidden field that is still `required` blocks submission with
             // a validation bubble the user cannot see or reach.
@@ -1205,11 +1206,11 @@ function LoginForm() {
           {isRegister && password.length > 0 && (
             <ul className="mt-1.5 space-y-0.5 text-xs">
               {[
-                [password.length >= 8, 'At least 8 characters'],
-                [/[A-Z]/.test(password), 'One uppercase letter'],
-                [/[a-z]/.test(password), 'One lowercase letter'],
-                [/\d/.test(password), 'One number'],
-                [/[^a-zA-Z0-9]/.test(password), 'One special character'],
+                [password.length >= 8, tSignUp('rules.length')],
+                [/[A-Z]/.test(password), tSignUp('rules.uppercase')],
+                [/[a-z]/.test(password), tSignUp('rules.lowercase')],
+                [/\d/.test(password), tSignUp('rules.number')],
+                [/[^a-zA-Z0-9]/.test(password), tSignUp('rules.special')],
               ].map(([ok, label]) => (
                 <li key={label as string} className={ok ? 'text-[var(--ok)]' : 'text-[var(--text-3)]'}>
                   {ok ? '✓' : '•'} {label as string}
@@ -1222,7 +1223,7 @@ function LoginForm() {
         {isRegister && (
           <>
             <div>
-              <label htmlFor="auth-confirm-password" className="block text-sm font-medium mb-1 text-[var(--text)]">Confirm Password</label>
+              <label htmlFor="auth-confirm-password" className="block text-sm font-medium mb-1 text-[var(--text)]">{tSignUp('confirmPassword')}</label>
               <input
                 id="auth-confirm-password"
                 name="confirm-password"
@@ -1230,7 +1231,7 @@ function LoginForm() {
                 autoComplete="new-password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Repeat your password"
+                placeholder={tSignUp('confirmPasswordPlaceholder')}
                 className={cn(inputClass, cloudSignup && 'h-[42px]')}
                 required
                 minLength={8}
@@ -1245,28 +1246,28 @@ function LoginForm() {
                 className="mt-0.5 accent-[var(--brand)]"
               />
               <span className="text-sm text-[var(--text-2)]">
-                I accept the{' '}
-                <a
-                  href="https://anythingmcp.com/en/agb"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[var(--brand)] hover:underline font-medium"
-                >
-                  Terms of Use
-                </a>
-                {cloudSignup && (
-                  <>
-                    {' '}and have read the{' '}
+                {tSignUp.rich(cloudSignup ? 'acceptTermsCloud' : 'acceptTerms', {
+                  terms: (chunks) => (
+                    <a
+                      href="https://anythingmcp.com/en/agb"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--brand)] hover:underline font-medium"
+                    >
+                      {chunks}
+                    </a>
+                  ),
+                  privacy: (chunks) => (
                     <a
                       href="https://anythingmcp.com/datenschutz"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-[var(--brand)] hover:underline font-medium"
                     >
-                      Privacy Policy
+                      {chunks}
                     </a>
-                  </>
-                )}
+                  ),
+                })}
               </span>
             </label>
           </>
@@ -1297,11 +1298,11 @@ function LoginForm() {
 
         <Button type="submit" disabled={loading} className={cn('w-full', cloudSignup && 'h-11 text-[15px] font-semibold')} size="lg">
           {loading
-            ? isRegister ? 'Loading...' : t('loading')
+            ? t('loading')
             : cloudSignup
-              ? 'Start free trial →'
+              ? tSignUp('submitCloud')
               : isRegister
-                ? 'Create Account'
+                ? tSignUp('submit')
                 : recoveryMode
                   ? t('submitRecovery')
                   : t('submit')}
@@ -1309,7 +1310,7 @@ function LoginForm() {
 
         {cloudSignup && (
           <p className="text-center text-xs leading-relaxed text-[var(--text-3)]">
-            <span aria-hidden>🔒 </span>Encrypted with AES-256-GCM · hosted in Frankfurt, Germany
+            <span aria-hidden>🔒 </span>{tSignUp('encrypted')}
           </p>
         )}
       </form>
@@ -1339,12 +1340,12 @@ function LoginForm() {
 
       {(registrationEnabled || isRegister) && (
         <p className="text-center text-sm text-[var(--text-2)] mt-3">
-          {isRegister ? 'Already have an account?' : t('noAccount')}{' '}
+          {isRegister ? tSignUp('haveAccount') : t('noAccount')}{' '}
           <button
             onClick={() => { setIsRegister(!isRegister); setError(''); }}
             className="text-[var(--brand)] hover:underline font-medium"
           >
-            {isRegister ? 'Sign In' : t('register')}
+            {isRegister ? tSignUp('signIn') : t('register')}
           </button>
         </p>
       )}

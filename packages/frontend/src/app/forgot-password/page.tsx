@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { auth } from '@/lib/api';
 import { LogoIcon } from '@/components/logo-icon';
 import { useToast } from '@/components/toast';
@@ -28,6 +29,7 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const toast = useToast();
+  const t = useTranslations('forgotPassword');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,13 +41,13 @@ export default function ForgotPasswordPage() {
       setSent(true);
       toast.show({
         tone: 'success',
-        title: 'Reset link requested',
-        description: 'If that email is registered, a reset link is on the way.',
+        title: t('toast.sentTitle'),
+        description: t('toast.sentDescription'),
       });
     } catch (err: any) {
-      const message = err.message || 'Something went wrong';
+      const message = err.message || t('errors.generic');
       setError(message);
-      toast.show({ tone: 'error', title: 'Request failed', description: message });
+      toast.show({ tone: 'error', title: t('toast.failedTitle'), description: message });
     } finally {
       setLoading(false);
     }
@@ -68,22 +70,22 @@ export default function ForgotPasswordPage() {
                   <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
                 </svg>
               </div>
-              <h2 className="text-base font-semibold mb-2 text-[var(--text)]">Check your email</h2>
+              <h2 className="text-base font-semibold mb-2 text-[var(--text)]">{t('sentTitle')}</h2>
               <p className="text-sm text-[var(--text-2)] mb-4">
-                If an account with that email exists, we&apos;ve sent a password reset link.
+                {t('sentBody')}
               </p>
               <Link
                 href="/login"
                 className="text-[var(--brand)] hover:underline text-sm font-medium"
               >
-                Back to Sign In
+                {t('backToSignIn')}
               </Link>
             </div>
           ) : (
             <>
-              <h2 className="text-base font-semibold mb-2 text-center text-[var(--text)]">Forgot Password</h2>
+              <h2 className="text-base font-semibold mb-2 text-center text-[var(--text)]">{t('title')}</h2>
               <p className="text-sm text-[var(--text-2)] mb-4 text-center">
-                Enter your email address and we&apos;ll send you a link to reset your password.
+                {t('intro')}
               </p>
 
               {error && (
@@ -94,7 +96,7 @@ export default function ForgotPasswordPage() {
 
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div>
-                  <label htmlFor="forgot-email" className="block text-sm font-medium mb-1 text-[var(--text)]">Email</label>
+                  <label htmlFor="forgot-email" className="block text-sm font-medium mb-1 text-[var(--text)]">{t('email')}</label>
                   <input
                     id="forgot-email"
                     name="email"
@@ -108,13 +110,13 @@ export default function ForgotPasswordPage() {
                   />
                 </div>
                 <Button type="submit" disabled={loading} className="w-full" size="lg">
-                  {loading ? 'Sending...' : 'Send Reset Link'}
+                  {loading ? t('sending') : t('submit')}
                 </Button>
               </form>
 
               <p className="text-center text-sm text-[var(--text-2)] mt-4">
                 <Link href="/login" className="text-[var(--brand)] hover:underline font-medium">
-                  Back to Sign In
+                  {t('backToSignIn')}
                 </Link>
               </p>
             </>

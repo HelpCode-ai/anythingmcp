@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { adapters, users } from '@/lib/api';
 import { setupNeeds } from '@/lib/setup-needs';
@@ -23,6 +24,7 @@ export default function WelcomePage() {
   const [skipping, setSkipping] = useState(false);
   const [catalog, setCatalog] = useState<any[]>([]);
   const [query, setQuery] = useState('');
+  const t = useTranslations('welcome');
 
   useEffect(() => {
     // Bounce to /login if the user landed here unauthenticated.
@@ -81,7 +83,7 @@ export default function WelcomePage() {
   if (isLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
-        <div className="text-sm text-[var(--text-2)]">Loading…</div>
+        <div className="text-sm text-[var(--text-2)]">{t('loading')}</div>
       </div>
     );
   }
@@ -103,7 +105,7 @@ export default function WelcomePage() {
             disabled={skipping}
             className="text-sm text-[var(--text-2)] hover:text-[var(--text)] disabled:opacity-50"
           >
-            {skipping ? 'Skipping…' : 'Skip for now'}
+            {skipping ? t('skipping') : t('skip')}
           </button>
         </div>
       </header>
@@ -111,15 +113,13 @@ export default function WelcomePage() {
       <main className="max-w-5xl mx-auto px-6 py-12">
         <div className="text-center mb-10">
           <p className="text-xs uppercase tracking-[0.18em] text-[var(--brand)] font-mono mb-3">
-            Welcome
+            {t('eyebrow')}
           </p>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3 text-[var(--text)]">
-            Connect your first tool, {user.name?.split(' ')[0] || 'friend'}.
+            {user.name?.split(' ')[0] ? t('title', { name: user.name.split(' ')[0] }) : t('titleNoName')}
           </h1>
           <p className="text-[var(--text-2)] max-w-xl mx-auto">
-            AnythingMCP turns any API into MCP tools your AI agent can call.
-            Start with a few ready-made connectors, pick more from the
-            marketplace, or bring your own API.
+            {t('intro')}
           </p>
         </div>
 
@@ -128,19 +128,19 @@ export default function WelcomePage() {
         {token && user.role !== 'VIEWER' && (
           <section className="mb-10">
             <label htmlFor="connect-search" className="mb-2 block text-sm font-semibold text-[var(--text)]">
-              What should your AI client work with?
+              {t('searchLabel')}
             </label>
             <input
               id="connect-search"
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Etsy, Odoo, weclapp, Lexware, Shopify…"
+              placeholder={t('searchPlaceholder')}
               className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-[16px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--border-strong)] focus:outline-none"
             />
             {!query.trim() && popular.length > 0 && (
               <p className="mt-4 text-xs font-medium uppercase tracking-[0.12em] text-[var(--text-3)]">
-                What new workspaces connect most
+                {t('popular')}
               </p>
             )}
             <div className="mt-3 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
@@ -155,7 +155,7 @@ export default function WelcomePage() {
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-[var(--text)]">{a.name}</div>
                     <div className="truncate text-xs text-[var(--text-2)]" title={setupNeeds(a)}>
-                      {a.installed ? 'Already added' : setupNeeds(a)}
+                      {a.installed ? t('alreadyAdded') : setupNeeds(a)}
                     </div>
                   </div>
                 </Link>
@@ -163,8 +163,11 @@ export default function WelcomePage() {
             </div>
             {query.trim() && catalog.length > 0 && matches.length === 0 && (
                 <p className="mt-3 text-sm text-[var(--text-2)]">
-                  Nothing in the catalog matches. You can still{' '}
-                  <Link href="/connectors/new?from=welcome" className="text-[var(--brand)] underline">add your own API</Link>.
+                  {t.rich('noMatch', {
+                    link: (chunks) => (
+                      <Link href="/connectors/new?from=welcome" className="text-[var(--brand)] underline">{chunks}</Link>
+                    ),
+                  })}
                 </p>
               )}
           </section>
@@ -177,17 +180,16 @@ export default function WelcomePage() {
             className="group border border-[var(--border)] rounded-[14px] p-6 bg-[var(--surface)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors text-left"
           >
             <div className="text-xs uppercase tracking-wider text-[var(--brand)] font-mono mb-2">
-              Recommended
+              {t('marketplace.eyebrow')}
             </div>
             <h2 className="text-lg font-semibold mb-1.5 text-[var(--text)]">
-              Browse the marketplace
+              {t('marketplace.title')}
             </h2>
             <p className="text-sm text-[var(--text-2)] mb-4">
-              265 pre-built connectors. OAuth, API keys, refresh-token
-              rotation, all wired up. Pick one and follow the setup.
+              {t('marketplace.body')}
             </p>
             <div className="text-sm font-medium text-[var(--brand)] group-hover:underline">
-              Open marketplace →
+              {t('marketplace.cta')}
             </div>
           </Link>
 
@@ -196,15 +198,14 @@ export default function WelcomePage() {
             className="group border border-[var(--border)] rounded-[14px] p-6 bg-[var(--surface)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors text-left"
           >
             <div className="text-xs uppercase tracking-wider text-[var(--text-3)] font-mono mb-2">
-              Bring your own
+              {t('custom.eyebrow')}
             </div>
-            <h2 className="text-lg font-semibold mb-1.5 text-[var(--text)]">Add your own API</h2>
+            <h2 className="text-lg font-semibold mb-1.5 text-[var(--text)]">{t('custom.title')}</h2>
             <p className="text-sm text-[var(--text-2)] mb-4">
-              Paste an OpenAPI URL or JSON spec and we generate MCP tools
-              for every endpoint. Works for REST, SOAP, GraphQL.
+              {t('custom.body')}
             </p>
             <div className="text-sm font-medium text-[var(--brand)] group-hover:underline">
-              Start from scratch →
+              {t('custom.cta')}
             </div>
           </Link>
         </div>
@@ -224,21 +225,19 @@ export default function WelcomePage() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="6" r="2.4" /><circle cx="19" cy="6" r="2.4" /><circle cx="12" cy="18" r="2.4" /><path d="M7.2 7.2 10.6 16M16.8 7.2 13.4 16M7 6h10" /></svg>
             </span>
             <div>
-              <h3 className="text-base font-semibold text-[var(--text)]">More than a proxy — it learns how your tools connect</h3>
+              <h3 className="text-base font-semibold text-[var(--text)]">{t('graph.title')}</h3>
               <p className="mt-1 text-sm text-[var(--text-2)]">
-                As you use your connectors, AnythingMCP builds a <strong>knowledge graph</strong> of how your
-                entities relate and turns recurring patterns into <strong>skills</strong> — so your agent chains
-                the right tools in the right order instead of guessing. It gets smarter the more you use it.
+                {t.rich('graph.body', { strong: (chunks) => <strong>{chunks}</strong> })}
               </p>
               <Link href="/knowledge-graph" className="mt-3 inline-block text-sm font-medium text-[var(--brand)] hover:underline">
-                Explore the knowledge graph →
+                {t('graph.cta')}
               </Link>
             </div>
           </div>
         </div>
 
         <p className="mt-10 text-center text-xs text-[var(--text-2)]">
-          You can always come back and add more connectors from the dashboard.
+          {t('comeBack')}
         </p>
       </main>
     </div>

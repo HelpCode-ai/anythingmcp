@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { license, productEvents } from '@/lib/api';
 import { LogoIcon } from '@/components/logo-icon';
@@ -13,7 +14,6 @@ import {
   cardTrialDisplayEnd,
   cardTrialEligible,
   formatEur,
-  formatPlanPrice,
   formatTrialEnd,
   planById,
   readAuthorizationReturn,
@@ -73,6 +73,10 @@ export default function StartTrialPage() {
   const { token, user, isLoading, deploymentMode, deploymentModeLoaded } = useAuth();
   const localPricing = useLocalPricing(deploymentMode === 'cloud');
   const router = useRouter();
+  const t = useTranslations('startTrial');
+  // Dates in the UI language; English keeps the British "7 October 2026".
+  const locale = useLocale();
+  const dateLocale = locale === 'en' ? 'en-GB' : locale;
   const checkout = useCardCheckout();
   const [trialEnd, setTrialEnd] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -172,28 +176,29 @@ export default function StartTrialPage() {
   if (!ready) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
-        <div className="text-sm text-[var(--text-2)]">Loading…</div>
+        <div className="text-sm text-[var(--text-2)]">{t('loading')}</div>
       </div>
     );
   }
 
-  const endLong = formatTrialEnd(trialEnd, 'long');
-  const freeTrialEndLong = formatTrialEnd(freeTrialEnd, 'long');
+  const endLong = formatTrialEnd(trialEnd, 'long', undefined, dateLocale);
+  const freeTrialEndLong = formatTrialEnd(freeTrialEnd, 'long', undefined, dateLocale);
   const plan = planById(selection.plan);
   // Outside the euro area Stripe charges in the visitor's currency: say
   // roughly how much, next to the exact euro price.
   const euros = selection.period === 'yearly' ? plan.yearly : plan.monthly;
   const local = formatLocal(euros, localPricing);
-  const exactPrice = formatPlanPrice(plan, selection.period);
-  const price = local ? `≈ ${local}/${selection.period === 'yearly' ? 'year' : 'month'} (${exactPrice})` : exactPrice;
+  const exactPrice = t('price', { amount: formatEur(euros), period: selection.period });
+  const price = local ? t('priceLocal', { local, period: selection.period, exact: exactPrice }) : exactPrice;
   const dueToday = local ? `≈ ${local} (${formatEur(euros)})` : formatEur(euros);
+  const strong = (chunks: React.ReactNode) => <strong className="text-[var(--text)]">{chunks}</strong>;
   const startLabel = checkout.loading
-    ? 'Opening checkout…'
+    ? t('start.opening')
     : checkout.error
-      ? 'Try again'
+      ? t('start.tryAgain')
       : paysToday
-        ? 'Continue to checkout'
-        : 'Start free trial with card';
+        ? t('start.checkout')
+        : t('start.withCard');
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
@@ -212,46 +217,36 @@ export default function StartTrialPage() {
           onClick={handleSkip}
           className="text-xs text-[var(--text-3)] underline-offset-2 hover:text-[var(--text-2)] hover:underline"
         >
-          Continue without payment details
+          {t('skipCorner')}
         </button>
       </header>
 
       <main className="max-w-3xl mx-auto px-6 py-10 sm:py-14">
         <div className="text-center mb-8">
           <p className="text-xs uppercase tracking-[0.18em] text-[var(--brand)] font-mono mb-3">
-            {paysToday ? 'Choose your plan' : endLong ? `Free until ${endLong}` : 'Free trial'}
+            {paysToday ? t('eyebrow.choosePlan') : endLong ? t('eyebrow.freeUntil', { date: endLong }) : t('eyebrow.freeTrial')}
           </p>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
-            {paysToday ? 'Keep your workspace running' : 'Your free trial'}
+            {paysToday ? t('title.paysToday') : t('title.trial')}
           </h1>
           {kind === 'ending' ? (
             <p className="text-[var(--text-2)] max-w-xl mx-auto">
-              Your free trial ends{freeTrialEndLong ? <> on <strong className="text-[var(--text)]">{freeTrialEndLong}</strong></> : ' soon'},
-              too soon to carry on with a card trial.{' '}
-              <strong className="text-[var(--text)]">Your plan starts today and is billed today.</strong> Your
-              workspace, connectors and settings stay exactly as they are.
+              {freeTrialEndLong
+                ? t.rich('ending', { date: freeTrialEndLong, strong })
+                : t.rich('endingSoon', { strong })}
             </p>
           ) : paysToday ? (
             <p className="text-[var(--text-2)] max-w-xl mx-auto">
-              This email address has had an AnythingMCP subscription before, so a new free trial is
-              not available with a card. <strong className="text-[var(--text)]">Your plan starts today
-              and is billed today.</strong> Your workspace, connectors and settings stay exactly as they
-              are{endLong ? <>, and your current trial keeps running until{' '}
-              <strong className="text-[var(--text)]">{endLong}</strong> if you decide later</> : ''}.
+              {endLong ? t.rich('returning', { date: endLong, strong }) : t.rich('returningNoDate', { strong })}
             </p>
           ) : (
             <p className="text-[var(--text-2)] max-w-xl mx-auto">
-              Every feature, free until{' '}
-              {endLong ? <strong className="text-[var(--text)]">{endLong}</strong> : 'your trial ends'}. Add
-              a card now and your plan simply carries on after the trial, with nothing charged before
-              then. Or keep trying without payment details: the no-card trial has a{' '}
-              <strong className="text-[var(--text)]">lower connector limit</strong>, and you can add a card
-              any time to unlock your full plan.
+              {endLong ? t.rich('trial', { date: endLong, strong }) : t.rich('trialNoDate', { strong })}
             </p>
           )}
           {authorizationReturn && (
             <p className="mt-3 text-sm text-[var(--text-2)] max-w-xl mx-auto">
-              Either way, you go straight back to finish connecting your AI client.
+              {t('authorizationReturn')}
             </p>
           )}
         </div>
@@ -266,7 +261,7 @@ export default function StartTrialPage() {
           <div className="mt-6 flex flex-col items-center gap-3">
             {checkout.chargesTodayUrl && (
               <p role="status" className="text-sm text-[var(--text)] text-center max-w-md">
-                This address already had a subscription, so the checkout will charge {dueToday} today.
+                {t('chargesToday', { amount: dueToday })}
               </p>
             )}
             <Button
@@ -279,7 +274,7 @@ export default function StartTrialPage() {
             </Button>
             {promo && (
               <p className="text-xs font-medium text-[var(--ok)] text-center">
-                Code {promo} will be applied at checkout.
+                {t('promo', { code: promo })}
               </p>
             )}
             {checkout.error && (
@@ -288,27 +283,20 @@ export default function StartTrialPage() {
               </p>
             )}
             <p className="text-xs text-[var(--text-3)] text-center max-w-md">
-              {paysToday ? (
-                <>
-                  {plan.name}, {price}, billed today and then {selection.period === 'yearly' ? 'every year' : 'every month'}.
-                  Secure checkout by Stripe. Cancel anytime from the billing portal.
-                </>
-              ) : (
-                <>
-                  €0 today. {plan.name}, billed {selection.period === 'yearly' ? 'yearly' : 'monthly'} from{' '}
-                  {endLong ?? 'the end of your trial'}. Secure checkout by Stripe. Cancel before then and
-                  you pay nothing.
-                </>
-              )}
+              {paysToday
+                ? t('finePrintPaysToday', { plan: plan.name, price, period: selection.period })
+                : endLong
+                  ? t('finePrintTrial', { plan: plan.name, period: selection.period, date: endLong })
+                  : t('finePrintTrialNoDate', { plan: plan.name, period: selection.period })}
             </p>
             <p className="text-xs text-[var(--text-2)] text-center">
-              {paysToday ? 'Not ready yet?' : 'Not ready to add a card?'}{' '}
+              {paysToday ? t('notReady') : t('notReadyCard')}{' '}
               <button
                 type="button"
                 onClick={handleSkip}
                 className="font-medium text-[var(--brand)] underline-offset-2 hover:underline"
               >
-                {paysToday ? 'Keep using the free trial' : 'Try free without payment details'}
+                {paysToday ? t('keepFree') : t('tryFree')}
               </button>
             </p>
           </div>

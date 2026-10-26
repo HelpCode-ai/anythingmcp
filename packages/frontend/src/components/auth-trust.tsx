@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
 import type { TrustStatsDisplay } from '@/lib/trust-stats';
 
@@ -34,15 +35,16 @@ export function TrustPanel({
   stats: TrustStatsDisplay | null;
   directoryBadge?: boolean;
 }) {
+  const t = useTranslations('trust');
   const tiles = [
-    stats?.downloads ? { n: stats.downloads, l: 'downloads' } : null,
-    stats?.toolCalls ? { n: stats.toolCalls, l: 'AI tool calls last month' } : null,
-    stats?.workspaces ? { n: stats.workspaces, l: 'workspaces on AnythingMCP Cloud' } : null,
+    stats?.downloads ? { n: stats.downloads, l: t('stats.downloads') } : null,
+    stats?.toolCalls ? { n: stats.toolCalls, l: t('stats.toolCalls') } : null,
+    stats?.workspaces ? { n: stats.workspaces, l: t('stats.workspaces') } : null,
   ].filter(Boolean) as Array<{ n: string; l: string }>;
 
   return (
     <aside
-      aria-label="Why teams build on AnythingMCP"
+      aria-label={t('panelLabel')}
       className="relative overflow-hidden bg-[#0b1220] px-5 py-8 text-[#e7ebf3] sm:px-10 lg:flex lg:flex-col lg:justify-center lg:px-14 lg:py-14"
     >
       <div
@@ -51,11 +53,10 @@ export function TrustPanel({
       />
       <div className="relative max-w-[540px]">
         <p className="mb-3.5 text-[22px] font-semibold leading-[1.2] tracking-[-0.02em] lg:text-[30px]">
-          Your AI, connected to <span className="text-[#8fb0ff]">the software your company already runs.</span>
+          {t.rich('headline', { accent: (chunks) => <span className="text-[#8fb0ff]">{chunks}</span> })}
         </p>
         <p className="mb-7 text-sm leading-relaxed text-[#aeb7c9] lg:text-[15px]">
-          AnythingMCP turns any REST, SOAP, GraphQL or SQL system into tools your AI assistant can use: securely,
-          with roles and a full audit log.
+          {t('intro')}
         </p>
 
         {tiles.length > 0 && (
@@ -83,10 +84,10 @@ export function TrustPanel({
               className="inline-flex items-center gap-[7px] rounded-full border border-[rgba(217,119,87,.55)] bg-[rgba(217,119,87,.10)] px-2.5 py-1.5 text-[11.5px] text-[#ffd9c9] hover:bg-[rgba(217,119,87,.18)] sm:px-3 sm:text-[12.5px]"
             >
               <img src="/logos/clients/claude.svg" width={14} height={14} alt="" />
-              Listed in the Claude Directory
+              {t('directory')}
             </a>
           )}
-          {['🇪🇺 EU-hosted · Frankfurt', 'GDPR · DPA included', 'AES-256-GCM', 'Open source · AGPL-3.0'].map((b) => (
+          {[t('badges.euHosted'), t('badges.gdpr'), 'AES-256-GCM', t('badges.openSource')].map((b) => (
             <span
               key={b}
               className="inline-flex items-center rounded-full border border-white/[.14] bg-white/[.03] px-2.5 py-1.5 text-[11.5px] text-[#dfe5f0] sm:px-3 sm:text-[12.5px]"
@@ -97,7 +98,7 @@ export function TrustPanel({
         </div>
 
         <div className="mb-7 flex flex-wrap items-center gap-x-3.5 gap-y-2.5 text-[12.5px] text-[#97a1b5]">
-          <span>Works with</span>
+          <span>{t('worksWith')}</span>
           {CLIENTS.map((c) => (
             <span key={c.file} className="inline-flex items-center gap-1.5 text-[#dfe5f0]">
               <img src={`/logos/clients/${c.file}.svg`} width={20} height={20} alt="" className="rounded-[6px] bg-white p-[3px]" />
@@ -107,25 +108,25 @@ export function TrustPanel({
         </div>
 
         <div className="border-t border-white/10 pt-5">
-          <h2 className="mb-2.5 text-[13px] font-medium text-[#97a1b5]">Your 7-day trial includes</h2>
+          <h2 className="mb-2.5 text-[13px] font-medium text-[#97a1b5]">{t('trialIncludes')}</h2>
           <ul className="space-y-2 text-sm text-[#dfe5f0]">
             <li className="flex gap-2.5">
               <Tick />
-              200+ ready-made connectors: DATEV, SAP, HubSpot, Shopify, Postgres…
+              {t('trialItems.connectors')}
             </li>
             <li className="flex gap-2.5">
               <Tick />
-              Your own MCP servers with roles and a full audit log
+              {t('trialItems.servers')}
             </li>
             <li className="flex gap-2.5">
               <Tick />
-              Nothing to install, cancel any time, your data stays in the EU
+              {t('trialItems.noInstall')}
             </li>
           </ul>
         </div>
 
         <p className="mt-5 text-[12.5px] text-[#7f8aa1]">
-          In production at KOCH Freiburg GmbH, connecting its ERP to Claude with single sign-on.
+          {t('customer')}
         </p>
       </div>
     </aside>
@@ -134,10 +135,11 @@ export function TrustPanel({
 
 /** One quiet line under a sign-in card. */
 export function TrustLine({ cloud }: { cloud: boolean }) {
+  const t = useTranslations('trust.line');
   const items = [
-    'AES-256-GCM encryption',
-    ...(cloud ? ['Hosted in Frankfurt', 'GDPR · DPA'] : []),
-    'Every call in your audit log',
+    t('encryption'),
+    ...(cloud ? [t('hosted'), t('gdpr')] : []),
+    t('auditLog'),
   ];
   return (
     <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-xs text-[var(--text-3)]">
@@ -150,7 +152,7 @@ export function TrustLine({ cloud }: { cloud: boolean }) {
         rel="noopener noreferrer"
         className="font-medium text-[var(--text-2)] hover:text-[var(--text)]"
       >
-        Open source on GitHub
+        {t('github')}
       </a>
     </div>
   );
