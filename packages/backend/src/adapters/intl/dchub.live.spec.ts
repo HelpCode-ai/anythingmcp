@@ -7,7 +7,7 @@ import { LoginTokenService } from '../../connectors/engines/login-token.service'
  * Two layers of verification for the DC Hub adapter:
  *
  *   1. Static — always runs. Pins the thing that makes this connector unusual:
- *      the API key is OPTIONAL. Twelve of the sixteen tools answer without
+ *      the API key is OPTIONAL. Sixteen of the twenty tools answer without
  *      credentials, so DCHUB_API_KEY lives in optionalEnvVars and
  *      requiredEnvVars is empty (an empty X-API-Key header is accepted by DC
  *      Hub on the keyless endpoints — verified live, 200). If anyone later
@@ -45,6 +45,7 @@ const a = adapter as unknown as {
     baseUrl: string;
     authType: string;
     authConfig: { headerName: string; apiKey: string };
+    headers: Record<string, string>;
   };
   tools: Tool[];
 };
@@ -78,6 +79,12 @@ const ANON_BEHAVIOUR: Record<string, 'open' | 'gated' | 'paid' | 'redacted'> = {
   dchub_energy_prices: 'gated',
   dchub_analyze_parcel: 'open',
   dchub_rank_sites: 'open',
+  dchub_dcpi_receipt: 'open',
+  dchub_queue_receipt: 'open',
+  dchub_listings_summary: 'open',
+  // 200 anonymously, with teaser cards whose provider is withheld; the
+  // listing data itself is not tier-gated.
+  dchub_search_listings: 'open',
 };
 
 /** Every tool that cannot be used on an unkeyed install must say so itself. */
@@ -96,6 +103,13 @@ describe('dchub adapter — static spec conformance', () => {
     expect(a.connector.authConfig.headerName).toBe('X-API-Key');
     expect(a.connector.authConfig.apiKey).toBe('{{DCHUB_API_KEY}}');
     expect(a.connector.baseUrl).toBe('https://dchub.cloud');
+  });
+
+  it('tags every request with the attribution header DC Hub asked for', () => {
+    // DC Hub counts the traffic AnythingMCP sends them by this header; it
+    // changes neither access nor results. The instructions say so too.
+    expect(a.connector.headers['X-DCHub-Via']).toBe('anythingmcp');
+    expect(a.instructions).toContain('X-DCHub-Via: anythingmcp');
   });
 
   it('tells the model, in the tool description, which tools need a key', () => {
@@ -131,7 +145,7 @@ describe('dchub adapter — static spec conformance', () => {
     }
   });
 
-  it('covers all sixteen published operations, and nothing invented', () => {
+  it('covers the twenty operations we chose to wrap, and nothing invented', () => {
     const mapped = a.tools
       .map((t) => `${t.endpointMapping.method} ${t.endpointMapping.path}`)
       .sort();
@@ -146,9 +160,13 @@ describe('dchub adapter — static spec conformance', () => {
         'GET /api/v1/facilities',
         'GET /api/v1/facilities/{facility_id}',
         'GET /api/v1/interconnection-queue/refined',
+        'GET /api/v1/listings',
+        'GET /api/v1/listings/summary',
         'GET /api/v1/markets',
         'GET /api/v1/markets/compare',
         'GET /api/v1/pipeline',
+        'GET /api/v1/receipt/dcpi/{market_slug}',
+        'GET /api/v1/receipt/queue',
         'GET /api/v1/stats',
         'GET /api/v1/transactions',
         'POST /api/v1/analyze-parcel',
@@ -168,8 +186,20 @@ describe('dchub adapter — static spec conformance', () => {
     }
   });
 
+  it('never registers deals or accepts terms on the person\'s behalf', () => {
+    // Capacity Source introductions put the person's name and company into
+    // DC Hub's lead register and bind them to a 12-month introduction term.
+    // That is the person's decision on dchub.cloud, so neither endpoint is a
+    // tool, and the listing tool tells the model so.
+    const paths = a.tools.map((t) => t.endpointMapping.path);
+    expect(paths.some((p) => p.includes('/intro'))).toBe(false);
+    expect(paths.some((p) => p.includes('/terms'))).toBe(false);
+    const search = a.tools.find((t) => t.name === 'dchub_search_listings')!;
+    expect(search.description).toMatch(/introduction .* on dchub\.cloud/i);
+  });
+
   it('prefixes every tool name with dchub_', () => {
-    expect(a.tools).toHaveLength(16);
+    expect(a.tools).toHaveLength(20);
     for (const tool of a.tools) {
       expect(tool.name.startsWith('dchub_')).toBe(true);
     }
@@ -182,6 +212,8 @@ const live = process.env.RUN_DCHUB_LIVE ? describe : describe.skip;
 const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   dchub_facility_detail: { facility_id: '11342' },
   dchub_market_dcpi: { market_slug: 'northern-virginia' },
+  dchub_dcpi_receipt: { market_slug: 'phoenix' },
+  dchub_queue_receipt: { iso: 'pjm' },
   dchub_compare_markets: { markets: 'northern-virginia,phoenix' },
   dchub_grid_fuel_mix: { iso: 'PJM' },
   dchub_energy_prices: { state: 'VA' },
