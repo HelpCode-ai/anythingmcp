@@ -8,12 +8,12 @@ import { LoginTokenService } from '../../connectors/engines/login-token.service'
  *
  *   1. Static — always runs. Pins the thing that makes this connector unusual:
  *      the API key is OPTIONAL. Sixteen of the twenty tools answer without
- *      credentials, so DCHUB_API_KEY lives in optionalEnvVars and
- *      requiredEnvVars is empty (an empty X-API-Key header is accepted by DC
- *      Hub on the keyless endpoints — verified live, 200). If anyone later
- *      moves the variable into requiredEnvVars, the install stops being one
- *      click and the reason to ship this adapter mostly goes away, so it is
- *      worth failing a test over. Also pins that the four endpoints which DO
+ *      credentials (eleven in full, five redacted), so DCHUB_API_KEY lives in
+ *      optionalEnvVars and requiredEnvVars is empty (an empty X-API-Key
+ *      header is accepted by DC Hub on the keyless endpoints — verified
+ *      live, 200). If anyone later moves the variable into requiredEnvVars,
+ *      the install stops being one click and the reason to ship this adapter
+ *      mostly goes away, so it is worth failing a test over. Also pins that the four endpoints which DO
  *      need a key say so in their own description, because that is the only
  *      place the model can read it.
  *
@@ -52,10 +52,11 @@ const a = adapter as unknown as {
 
 /**
  * What each tool actually does without credentials, verified against the live
- * API on 2026-09-20. Not copied from DC Hub's spec: the spec declared
- * `dchub_facility_detail` as gated when it in fact answers 200 with a redacted
- * body, and declared nothing for `dchub_pipeline` and `dchub_energy_prices`
- * when both answer 403.
+ * API on 2026-09-20 and re-checked on 2026-10-27, when the market, DCPI, AI
+ * capacity and queue tools moved from open to redacted. Not copied from DC
+ * Hub's spec: the spec declared `dchub_facility_detail` as gated when it in
+ * fact answers 200 with a redacted body, and declared nothing for
+ * `dchub_pipeline` and `dchub_energy_prices` when both answer 403.
  *
  *   'open'     — 200 with real data, no key.
  *   'gated'    — 403; a free developer key unlocks it.
@@ -67,10 +68,10 @@ const ANON_BEHAVIOUR: Record<string, 'open' | 'gated' | 'paid' | 'redacted'> = {
   dchub_search_facilities: 'open',
   dchub_facility_detail: 'redacted',
   dchub_list_markets: 'open',
-  dchub_compare_markets: 'open',
-  dchub_market_dcpi: 'open',
-  dchub_ai_capacity_index: 'open',
-  dchub_interconnection_queue: 'open',
+  dchub_compare_markets: 'redacted',
+  dchub_market_dcpi: 'redacted',
+  dchub_ai_capacity_index: 'redacted',
+  dchub_interconnection_queue: 'redacted',
   dchub_pipeline: 'gated',
   dchub_transactions: 'open',
   dchub_news: 'open',
