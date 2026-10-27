@@ -608,7 +608,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `MCP_API_KEY` | No | API key for legacy MCP auth |
 | `SERVER_URL` | No | Server URL for OAuth2 metadata (default: `http://localhost:4000`) |
 | `MCP_RATE_LIMIT_PER_MINUTE` | No | Rate limit per client (default: 60) |
-| `TOOL_MAX_RESPONSE_BYTES` | No | Largest upstream response body, in bytes after decompression, that one tool call reads from a REST, JSON-RPC, OData, GraphQL or SOAP API (default: `10485760`, 10 MB, on Cloud and self-hosted). A bigger response fails the call with code `TOOL_RESPONSE_TOO_LARGE` and a message that asks the model to narrow the request |
+| `TOOL_MAX_RESPONSE_BYTES` | No | Largest upstream response body, in bytes after decompression, that one tool call reads from a REST, JSON-RPC, OData, GraphQL or SOAP API (default: `10485760`, 10 MB, on Cloud and self-hosted). A bigger response fails the call with code `TOOL_RESPONSE_TOO_LARGE` and a message that asks the model to narrow the request. The same limit applies to the text sent to the MCP client, for every connector type (database and MCP connectors too): a result over it is sent as compact JSON, and if that is still too big the call fails with the same code |
 | `SMTP_HOST` | No | SMTP server for instance emails; used when no SMTP is configured in the admin Settings page |
 | `SMTP_PORT` | No | SMTP port (default: 587) |
 | `SMTP_SECURE` | No | `true` for implicit TLS (default: `false`; always on for port 465) |
@@ -3524,7 +3524,7 @@ the API actually returned.
 | `select` | Output template: keys are output names, leaves are paths (`$.a.b[*].c`) or literals |
 | `expression` | JMESPath expression, for reshaping a template cannot express |
 | `fallbackToRaw` | On error, return the raw response instead of failing. Default `true` |
-| `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap. It shapes a response that was read; the instance-wide `TOOL_MAX_RESPONSE_BYTES` (10 MB by default) decides whether the upstream body is read at all |
+| `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap. It shapes a response that was read; the instance-wide `TOOL_MAX_RESPONSE_BYTES` (10 MB by default) decides whether the upstream body is read at all, and caps the text sent to the client (compact JSON first, then the `TOOL_RESPONSE_TOO_LARGE` error) |
 | `cacheTtl` | Seconds to cache the **raw** upstream response; shaping happens on read |
 | `images` | Paths to base64 images in the response, returned to the client as MCP image content (see below) |
 | `binary` | How a file the API returns as raw bytes is handed over: `{ "as": "auto" \| "base64", "maxBytes": n }` (see below) |

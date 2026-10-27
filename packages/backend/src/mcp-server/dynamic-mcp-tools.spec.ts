@@ -1032,3 +1032,138 @@ describe('DynamicMcpTools — MCP tool error envelopes', () => {
     expect(built.mcpClientEngine.execute).not.toHaveBeenCalled();
   });
 });
+
+describe('DynamicMcpTools — the size limit on the rendered result', () => {
+  const PAYLOAD = {
+    items: Array.from({ length: 40 }, (_, i) => ({ id: i, name: `device-${i}`, tags: ['a', 'b'] })),
+  };
+  const PRETTY = JSON.stringify(PAYLOAD, null, 2);
+  const COMPACT = JSON.stringify(PAYLOAD);
+  let saved: string | undefined;
+
+  function setLimit(bytes: number) {
+    process.env.TOOL_MAX_RESPONSE_BYTES = String(bytes);
+  }
+
+  function expectTooLarge(res: Awaited<ReturnType<DynamicMcpTools['executeTool']>>) {
+    expect(res.isError).toBe(true);
+    expect(res.structured).toBeUndefined();
+    expect(res.content).toHaveLength(1);
+    const detail = JSON.parse(res.content[0].text);
+    expect(detail.code).toBe('TOOL_RESPONSE_TOO_LARGE');
+    expect(detail.error).toMatch(/^The tool result is larger than .*, the limit for one tool call/);
+    expect(detail.error).toMatch(/Narrow the request/);
+    expect(detail.error).toMatch(/TOOL_MAX_RESPONSE_BYTES/);
+  }
+
+  beforeEach(() => {
+    saved = process.env.TOOL_MAX_RESPONSE_BYTES;
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env.TOOL_MAX_RESPONSE_BYTES;
+    else process.env.TOOL_MAX_RESPONSE_BYTES = saved;
+    jest.restoreAllMocks();
+  });
+
+  it('leaves a result under the limit untouched (pretty-printed)', async () => {
+    setLimit(PRETTY.length);
+    const { executor, audit } = build(makeTool(), { engineResult: PAYLOAD });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].text).toBe(PRETTY);
+    expect(res.structured).toEqual(PAYLOAD);
+    expect(audit.logInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'SUCCESS', output: PAYLOAD }),
+    );
+  });
+
+  it('sends compact JSON when only the indentation puts the result over the limit', async () => {
+    setLimit(COMPACT.length);
+    const { executor, audit } = build(makeTool(), { engineResult: PAYLOAD });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].text).toBe(COMPACT);
+    expect(res.structured).toEqual(PAYLOAD);
+    expect(audit.logInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'SUCCESS' }),
+    );
+  });
+
+  it('keeps the workflow hint in the compact text and counts it', async () => {
+    const followUp = 'now call get_device';
+    const hint = `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${followUp}`;
+    setLimit(COMPACT.length + hint.length);
+    const { executor } = build(makeTool({ followUp }), { engineResult: PAYLOAD });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.content[0].text).toBe(COMPACT + hint);
+
+    setLimit(COMPACT.length + hint.length - 1);
+    expectTooLarge(
+      await build(makeTool({ followUp }), { engineResult: PAYLOAD }).executor.executeTool('list_devices', {}),
+    );
+  });
+
+  it('returns the TOOL_RESPONSE_TOO_LARGE error when even compact JSON is over the limit', async () => {
+    setLimit(COMPACT.length - 1);
+    const { executor, audit, redis } = build(makeTool({ cacheTtl: 300 }), { engineResult: PAYLOAD });
+    const res = await executor.executeTool('list_devices', {});
+    expectTooLarge(res);
+    // Logged as the error the client got, without the payload; not cached.
+    const row = audit.logInvocation.mock.calls[0][0];
+    expect(row.status).toBe('ERROR');
+    expect(row.output).toBeUndefined();
+    expect(row.error).toMatch(/^The tool result is larger than/);
+    expect(redis.set).not.toHaveBeenCalled();
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ msg: 'tool_result_too_large', toolName: 'list_devices' }),
+    );
+  });
+
+  it('counts bytes, not characters, and does not re-serialize a plain string', async () => {
+    const text = 'é'.repeat(100); // 100 characters, 202 bytes with the quotes
+    setLimit(150);
+    const { executor } = build(makeTool(), { engineResult: text });
+    const stringify = jest.spyOn(JSON, 'stringify');
+    const res = await executor.executeTool('list_devices', {});
+    expectTooLarge(res);
+    expect(stringify.mock.calls.filter(([v]) => v === text)).toHaveLength(1);
+  });
+
+  it.each(['DATABASE', 'MCP', 'GRAPHQL', 'SOAP'])(
+    'applies to %s connectors, whatever their engine read',
+    async (connectorType) => {
+      setLimit(COMPACT.length - 1);
+      const tool = {
+        ...makeTool(),
+        connectorType,
+        useProxy: false,
+        endpointMapping: { method: 'GET', path: '/devices' },
+      } as RegisteredTool;
+      const built = build(tool);
+      const engine = built.engines[connectorType as keyof typeof built.engines];
+      engine.execute.mockResolvedValue(PAYLOAD);
+      const res = await built.executor.executeTool('list_devices', {});
+      expect(engine.execute).toHaveBeenCalled();
+      expectTooLarge(res);
+    },
+  );
+
+  it('applies to a result read back from the response cache', async () => {
+    setLimit(COMPACT.length - 1);
+    const { executor, restEngine } = build(makeTool({ cacheTtl: 300 }), {
+      cached: JSON.stringify(PAYLOAD),
+    });
+    const res = await executor.executeTool('list_devices', {});
+    expect(restEngine.execute).not.toHaveBeenCalled();
+    expectTooLarge(res);
+  });
+
+  it('uses the 10 MB default when TOOL_MAX_RESPONSE_BYTES is unset', async () => {
+    delete process.env.TOOL_MAX_RESPONSE_BYTES;
+    const big = { blob: 'x'.repeat(10 * 1024 * 1024) };
+    const { executor } = build(makeTool(), { engineResult: big });
+    expectTooLarge(await executor.executeTool('list_devices', {}));
+  });
+});
