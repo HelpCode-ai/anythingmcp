@@ -1,5 +1,5 @@
 import type { Event } from '@sentry/nestjs';
-import { cutQueries, scrubBreadcrumb, scrubEvent, scrubSpan, stripQuery, type StreamedSpan } from './sentry-scrub';
+import { cutQueries, isMcpTransportError, scrubBreadcrumb, scrubEvent, scrubSpan, stripQuery, type StreamedSpan } from './sentry-scrub';
 
 describe('sentry-scrub', () => {
   it('keeps only method, bare URL and user-agent of the request', () => {
@@ -134,5 +134,29 @@ describe('sentry-scrub', () => {
     expect(stripQuery('/authorize?client_id=a&code_challenge=b')).toBe('/authorize');
     expect(stripQuery('not a url#x')).toBe('not a url');
     expect(cutQueries('POST /token?grant_type=refresh_token')).toBe('POST /token');
+  });
+
+  it('recognises client rejections reported by the MCP integration', () => {
+    const fromMcp = (errorType: string) =>
+      ({
+        exception: {
+          values: [
+            {
+              type: 'Error',
+              value: 'Not Acceptable: Client must accept both application/json and text/event-stream',
+              mechanism: { type: 'auto.ai.mcp_server', handled: false, data: { error_type: errorType } },
+            },
+          ],
+        },
+      }) as Event;
+
+    expect(isMcpTransportError(fromMcp('transport'))).toBe(true);
+    expect(isMcpTransportError(fromMcp('tool_execution'))).toBe(false);
+    expect(
+      isMcpTransportError({
+        exception: { values: [{ type: 'Error', mechanism: { type: 'auto.http', handled: false, data: { error_type: 'transport' } } }] },
+      } as Event),
+    ).toBe(false);
+    expect(isMcpTransportError({ message: 'plain' } as Event)).toBe(false);
   });
 });
