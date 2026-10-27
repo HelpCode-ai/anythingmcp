@@ -12,7 +12,8 @@ DECLARE
     'connectors', 'invitation_tokens', 'kg_connector_state', 'kg_edges',
     'kg_nodes', 'kg_skill_suggestions', 'kg_value_seen', 'licenses',
     'mcp_api_keys', 'mcp_server_configs', 'org_settings',
-    'organization_members', 'roles', 'tool_invocations', 'users'
+    'organization_members', 'roles', 'tool_invocations', 'user_connector_credentials',
+    'users'
   ];
 BEGIN
   FOREACH t IN ARRAY org_tables LOOP

@@ -18,6 +18,8 @@ import { connectorSecretValues } from './connector-secrets.util';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
+import { UserCredentialError, UserCredentialsService } from './user-credentials.service';
+import { withoutUserTokens } from './user-credential.util';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { openEnvVarsStrict, sealEnvVars } from '../common/crypto/env-vars-at-rest';
 import { getRequiredSecret } from '../common/secrets.util';
@@ -68,6 +70,7 @@ export class ConnectorsService {
     @Optional() private readonly oauth2TokenService?: OAuth2TokenService,
     @Optional() private readonly authStatus?: ConnectorAuthStatusService,
     @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
+    @Optional() private readonly userCredentials?: UserCredentialsService,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -253,6 +256,36 @@ export class ConnectorsService {
   }
 
   /**
+   * Switch whose credential the connector's calls carry (user-credential.util).
+   *
+   * To USER, the connector's own tokens are removed in the same write: they
+   * belong to whoever authorized it and would otherwise sit there, unused but
+   * one setting away from being sent for everyone. Back to SHARED, every
+   * user's own sign-in is removed: nothing uses it any more, and the
+   * connector needs one authorization of its own again.
+   */
+  async setCredentialScope(id: string, scope: 'SHARED' | 'USER'): Promise<Connector> {
+    const connector = await this.findByIdInternal(id);
+    if (connector.credentialScope === scope) return connector;
+    let authConfig = connector.authConfig;
+    if (scope === 'USER' && authConfig) {
+      const client = withoutUserTokens(JSON.parse(decrypt(authConfig, this.encryptionKey)));
+      authConfig = encrypt(JSON.stringify(client), this.encryptionKey);
+    }
+    const updated = await this.prisma.connector.update({
+      where: { id },
+      data: { credentialScope: scope, authConfig },
+    });
+    this.oauth2TokenService?.forget(id);
+    await this.authStatus?.clear(id);
+    if (scope === 'SHARED') {
+      await this.userCredentials?.removeAll(id, connector.organizationId);
+    }
+    this.logger.log(`Connector ${id}: credentials are now ${scope === 'USER' ? 'per user' : 'shared'}`);
+    return updated;
+  }
+
+  /**
    * Adds variables to a connector, keeping the ones it has. Used when a
    * secret typed into a URL, header or tool is moved into a variable; the
    * column is encrypted at rest (env-vars-at-rest.ts).
@@ -305,6 +338,8 @@ export class ConnectorsService {
 
   async testConnection(
     id: string,
+    /** Who tests: a connector with per-user credentials is tested with that user's own sign-in. */
+    options: { userId?: string } = {},
   ): Promise<{
     ok: boolean;
     message: string;
@@ -337,17 +372,30 @@ export class ConnectorsService {
       // credentials the workspace actually has rather than the placeholders the
       // adapter shipped with.
       const envVars = (connector.envVars as Record<string, string> | null) || {};
-      const authConfig = withTokenRenewal(
-        connector.authType,
-        connector.authConfig
-          ? interpolateDeep(
-              JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
-              envVars,
-            )
-          : undefined,
-        connector.config,
-        envVars,
-      );
+      let storedAuth: Record<string, unknown> | undefined = connector.authConfig
+        ? interpolateDeep(JSON.parse(decrypt(connector.authConfig, this.encryptionKey)), envVars)
+        : undefined;
+      let credentialKey = connector.id;
+      if (connector.credentialScope === 'USER') {
+        if (!this.userCredentials) {
+          return { ok: false, kind: 'auth_failed', message: 'Per-user sign-in is not available on this server.' };
+        }
+        try {
+          const resolved = await this.userCredentials.resolveForCall({
+            connectorId: credentialKey,
+            connectorName: connector.name,
+            organizationId: connector.organizationId,
+            userId: options.userId,
+            connectorAuthConfig: storedAuth,
+          });
+          storedAuth = resolved.authConfig;
+          credentialKey = resolved.credentialKey;
+        } catch (err: any) {
+          if (err instanceof UserCredentialError) return { ok: false, kind: 'auth_failed', message: err.message };
+          throw err;
+        }
+      }
+      const authConfig = withTokenRenewal(connector.authType, storedAuth, connector.config, envVars);
       const baseUrl = interpolateDeep(connector.baseUrl, envVars);
       const headers = interpolateDeep(
         (connector.headers as Record<string, string>) || undefined,
@@ -390,7 +438,7 @@ export class ConnectorsService {
               // Without it an OAuth2 refresh here was never saved: the
               // provider rotated the refresh token, the connector kept the
               // spent one, and its next refresh was refused as revoked.
-              connectorId: connector.id,
+              connectorId: credentialKey,
               errorWhen: connectorErrorWhen(connector.config),
               logSecrets,
             },
@@ -406,7 +454,7 @@ export class ConnectorsService {
               authType: connector.authType,
               authConfig,
               headers,
-              connectorId: connector.id,
+              connectorId: credentialKey,
               logSecrets,
             },
             { method: 'query', path: '{ __typename }' },
@@ -428,7 +476,7 @@ export class ConnectorsService {
           );
           const isSap = !!settings?.sap || !!settings?.sapClient;
           const out = (await this.odataEngine.execute(
-            { baseUrl, authType: connector.authType, authConfig, headers, connectorId: connector.id },
+            { baseUrl, authType: connector.authType, authConfig, headers, connectorId: credentialKey },
             { method: isSap ? 'odata_list_services' : 'odata_describe_service', path: '' },
             {},
             settings,
@@ -450,7 +498,7 @@ export class ConnectorsService {
             authType: connector.authType,
             authConfig,
             headers,
-            connectorId: connector.id,
+            connectorId: credentialKey,
             mcpPath: mcpPathOf(connector.config),
             logSecrets,
           });
@@ -738,8 +786,11 @@ export class ConnectorsService {
      * as an MCP call honours it. Without this the setup check and "Run Test"
      * went direct and failed for vendors that refuse our servers' address
      * (Uzum Market, 12 Oct 2026) while real calls would have worked.
+     *
+     * `userId`: who runs it. A connector with per-user credentials runs with
+     * that user's own sign-in, as their MCP calls do, and refuses without one.
      */
-    options: { useProxy?: boolean } = {},
+    options: { useProxy?: boolean; userId?: string } = {},
   ): Promise<unknown> {
     // Inject env vars as parameter defaults
     const envVars = connector.envVars as Record<string, string> | undefined;
@@ -770,13 +821,28 @@ export class ConnectorsService {
     // variable nor the fix — and a variable filled in after install was
     // never picked up here at all.
     const resolveVars = { reservedPrefix: CALLER_CONTEXT_PREFIX };
-    const authConfig = connector.authConfig
+    let authConfig: Record<string, unknown> | undefined = connector.authConfig
       ? interpolateDeep(
           JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
           envVars ?? {},
           resolveVars,
         )
       : undefined;
+    let credentialKey: string | undefined;
+    if (connector.credentialScope === 'USER') {
+      if (!this.userCredentials) {
+        throw new Error('Per-user sign-in is not available on this server. No request was sent to the API.');
+      }
+      const resolved = await this.userCredentials.resolveForCall({
+        connectorId: connector.id,
+        connectorName: connector.name,
+        organizationId: connector.organizationId,
+        userId: options.userId,
+        connectorAuthConfig: authConfig,
+      });
+      authConfig = resolved.authConfig;
+      credentialKey = resolved.credentialKey;
+    }
     const { config: resolved, endpointMapping: resolvedMapping } =
       interpolateConnectorConfig(
         {
@@ -820,7 +886,7 @@ export class ConnectorsService {
       authConfig: withTokenRenewal(connector.authType, authConfig, connector.config, envVars),
       headers: resolved.headers as Record<string, string>,
       specUrl: connector.specUrl ?? undefined,
-      connectorId: connector.id,
+      connectorId: credentialKey ?? connector.id,
       errorWhen: connectorErrorWhen(connector.config),
       logSecrets: connectorSecretValues(connector),
       ...(options.useProxy && process.env.CONNECTOR_PROXY_URL

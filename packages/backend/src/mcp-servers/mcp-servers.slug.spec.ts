@@ -59,7 +59,7 @@ describe('MCP server slugs', () => {
 });
 
 describe('McpServersService.createDefaultForUser — slug', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const { McpServersService } = require('./mcp-servers.service');
 
   function build(existing: string[], name = 'Mario Rossi') {

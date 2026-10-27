@@ -149,6 +149,11 @@ The MCP Bridge supports automatic token refresh for OAuth2-protected remote serv
 The redirect URI to register with a provider is `<SERVER_URL>/api/mcp-oauth/callback`
 (`GET /api/connectors/oauth/redirect-uri` returns it).
 
+With **AnythingMCP Enterprise**, an OAuth2 connector can require every user to
+sign in with their own account instead of sharing one authorization, so the
+remote server answers each user with their own permissions. See
+[Per-user sign-in](per-user-sign-in.md).
+
 ### Connector settings (`connector.config`)
 
 A catalog adapter sets these under `connector.config`; they are copied into the connector at

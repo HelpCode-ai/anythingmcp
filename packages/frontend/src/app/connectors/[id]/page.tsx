@@ -21,6 +21,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { authTypeLabel, cn } from '@/lib/utils';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
+import { UserCredentialsCard } from '@/components/user-credentials-card';
 
 const IMPORT_SOURCES = [
   { id: 'openapi', label: 'OpenAPI / Swagger', placeholder: 'Paste OpenAPI JSON/YAML or enter URL...' },
@@ -157,7 +158,7 @@ function slimHarForUpload(rawText: string, baseUrl?: string): { json: string; by
 }
 
 export default function ConnectorDetailPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1748,19 +1749,36 @@ export default function ConnectorDetailPage() {
           )}
         </Card>
 
-        {/* OAuth2 Authorization */}
+        {/* Who signs in: one shared authorization, or each user (Enterprise) */}
+        {connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant)) && (
+          <UserCredentialsCard
+            connectorId={connector.id}
+            credentialScope={connector.credentialScope === 'USER' ? 'USER' : 'SHARED'}
+            canManage={
+              user?.role === 'ADMIN' || (user?.role !== 'VIEWER' && user?.id === connector.userId)
+            }
+            isMcp={connector.type === 'MCP'}
+            onScopeChanged={fetchConnector}
+          />
+        )}
+
+        {/* OAuth2 Authorization (shared sign-in; per-user sign-in lives in the card above) */}
         {connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant)) && (
           <Card className="p-[22px]">
             <h3 className="text-sm font-semibold mb-2">OAuth2 Authorization</h3>
             <p className="text-sm text-[var(--text-3)] mb-4">
-              {connector.type === 'MCP'
+              {connector.credentialScope === 'USER'
+                ? 'Each user connects their own account above. Re-discovering tools lists them with your own sign-in.'
+                : connector.type === 'MCP'
                 ? 'Authorize this connector to access the remote MCP server. After authorization, tools will be automatically discovered.'
                 : 'Authorize this connector with the OAuth2 provider. After authorization, tokens will be stored securely for API calls.'}
             </p>
             <div className="flex gap-3 flex-wrap">
-              <Button variant="primary" size="lg" onClick={handleOAuthAuthorize} disabled={authorizing}>
-                {authorizing ? 'Redirecting...' : connector.type === 'MCP' ? 'Authorize with Remote Server' : 'Authorize with Provider'}
-              </Button>
+              {connector.credentialScope !== 'USER' && (
+                <Button variant="primary" size="lg" onClick={handleOAuthAuthorize} disabled={authorizing}>
+                  {authorizing ? 'Redirecting...' : connector.type === 'MCP' ? 'Authorize with Remote Server' : 'Authorize with Provider'}
+                </Button>
+              )}
               {connector.type === 'MCP' && (
                 <Button variant="secondary" size="lg" onClick={handleDiscoverTools} disabled={discovering}>
                   {discovering ? 'Discovering...' : 'Re-discover Tools'}

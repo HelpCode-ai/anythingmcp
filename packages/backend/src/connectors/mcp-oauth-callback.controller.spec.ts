@@ -19,6 +19,7 @@ function makeController(overrides: {
   noFlow?: boolean;
   returnTo?: string;
   exchangeThrows?: Error;
+  credentialScope?: 'SHARED' | 'USER';
 } = {}) {
   const reloadConnectorTools = jest.fn().mockResolvedValue(undefined);
   const updateAuthConfigMerge = jest.fn().mockResolvedValue(undefined);
@@ -49,6 +50,9 @@ function makeController(overrides: {
   const connectorsService: any = {
     updateAuthConfigMerge,
     findByIdInternal: jest.fn().mockResolvedValue({
+      id: 'conn-1',
+      organizationId: 'org-1',
+      credentialScope: overrides.credentialScope ?? 'SHARED',
       type: overrides.connectorType ?? 'REST',
       baseUrl: 'https://accounting-clients.api.datev.de/platform-sandbox/v2',
       headers: {},
@@ -73,6 +77,7 @@ function makeController(overrides: {
   const productEvents: any = { log: jest.fn().mockResolvedValue(undefined) };
   const mcpServer: any = { reloadConnectorTools };
   const configService: any = { get: jest.fn().mockReturnValue('https://cloud.example.com') };
+  const userCredentials: any = { store: jest.fn().mockResolvedValue(undefined) };
 
   const controller = new McpOAuthCallbackController(
     mcpOAuthService,
@@ -82,9 +87,11 @@ function makeController(overrides: {
     mcpServer,
     configService,
     productEvents,
+    userCredentials,
   );
   return {
     controller,
+    userCredentials,
     productEvents,
     reloadConnectorTools,
     updateAuthConfigMerge,
@@ -454,5 +461,43 @@ describe('McpOAuthCallbackController: MCP bridges', () => {
     expect(out.toolsImported).toBe(0);
     expect(prisma.mcpTool.update).not.toHaveBeenCalled();
     expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('McpOAuthCallbackController — per-user credentials', () => {
+  it("stores the user's own tokens on their row and only the client on the connector", async () => {
+    const { controller, updateAuthConfigMerge, userCredentials } = makeController({
+      credentialScope: 'USER',
+      flow: { forUser: true },
+    });
+    await controller.complete(asUser('user-1'), { state: 's', code: 'c' });
+
+    const written = updateAuthConfigMerge.mock.calls[0][1];
+    expect(written).not.toHaveProperty('accessToken');
+    expect(written).not.toHaveProperty('refreshToken');
+    expect(written.clientId).toBe('cid');
+
+    expect(userCredentials.store).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conn-1', organizationId: 'org-1' }),
+      'user-1',
+      expect.objectContaining({ accessToken: 'AT', refreshToken: 'RT' }),
+    );
+  });
+
+  it('stores nothing when the connector went per-user during a shared authorization', async () => {
+    const { controller, updateAuthConfigMerge, userCredentials } = makeController({ credentialScope: 'USER' });
+    await expect(controller.complete(asUser('user-1'), { state: 's', code: 'c' })).rejects.toThrow(/switched/);
+    expect(updateAuthConfigMerge).not.toHaveBeenCalled();
+    expect(userCredentials.store).not.toHaveBeenCalled();
+  });
+
+  it('stores nothing when the connector went back to shared during a user sign-in', async () => {
+    const { controller, updateAuthConfigMerge, userCredentials } = makeController({
+      credentialScope: 'SHARED',
+      flow: { forUser: true },
+    });
+    await expect(controller.complete(asUser('user-1'), { state: 's', code: 'c' })).rejects.toThrow(/switched/);
+    expect(updateAuthConfigMerge).not.toHaveBeenCalled();
+    expect(userCredentials.store).not.toHaveBeenCalled();
   });
 });

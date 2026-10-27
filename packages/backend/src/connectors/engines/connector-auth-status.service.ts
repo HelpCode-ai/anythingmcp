@@ -3,6 +3,7 @@ import { pbkdf2Sync } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
 import { connectorPageUrl } from '../../common/url.util';
 import { EmailService } from '../../settings/email.service';
+import { parseCredentialKey } from '../../common/credential-key.util';
 
 /**
  * Credential health of a connector, kept on the connector row
@@ -24,6 +25,10 @@ import { EmailService } from '../../settings/email.service';
  *                 (token_expired), on the next call or the hourly sweep
  *
  * Nothing here is ever a secret: `ref` is a truncated SHA-256.
+ *
+ * The key of a user's own credential (credential-key.util) keeps its status on
+ * that user's `UserConnectorCredential` row instead, and the email goes to
+ * that user: one user's revoked sign-in neither blocks nor concerns the others.
  */
 export type AuthStatus = 'needs_reauth' | 'expiring';
 
@@ -144,6 +149,7 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
    * workspace owner is emailed.
    */
   async mark(connectorId: string, issue: AuthIssue): Promise<void> {
+    if (parseCredentialKey(connectorId).userId) return this.markUser(connectorId, issue);
     try {
       const current = await this.prisma.connector.findUnique({
         where: { id: connectorId },
@@ -196,6 +202,8 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
     connectorId: string,
     opts: { onlyCodes?: string[]; exceptRef?: string } = {},
   ): Promise<void> {
+    const { userId } = parseCredentialKey(connectorId);
+    if (userId) return this.clearUser(connectorId, opts);
     try {
       const res = await this.prisma.connector.updateMany({
         where: {
@@ -223,18 +231,19 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
 
   /** The stored status, or null when the credential is fine. */
   async get(connectorId: string): Promise<(AuthIssue & { at: Date | null }) | null> {
-    const row = await this.prisma.connector
-      .findUnique({
-        where: { id: connectorId },
-        select: {
-          authStatus: true,
-          authStatusCode: true,
-          authStatusMessage: true,
-          authStatusRef: true,
-          authStatusAt: true,
-        },
-      })
-      .catch(() => null);
+    const { connectorId: id, userId } = parseCredentialKey(connectorId);
+    const select = {
+      authStatus: true,
+      authStatusCode: true,
+      authStatusMessage: true,
+      authStatusRef: true,
+      authStatusAt: true,
+    } as const;
+    const row = userId
+      ? await this.prisma.userConnectorCredential
+          .findFirst({ where: { connectorId: id, userId }, select })
+          .catch(() => null)
+      : await this.prisma.connector.findUnique({ where: { id }, select }).catch(() => null);
     if (!row?.authStatus) return null;
     return {
       status: row.authStatus as AuthStatus,
@@ -247,6 +256,8 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
 
   /** When the connector's pasted token expires (null: never, or unknown). */
   async setTokenExpiry(connectorId: string, expiresAt: Date | null): Promise<void> {
+    // Pasted tokens only; a user's own credential is always an OAuth2 sign-in.
+    if (parseCredentialKey(connectorId).userId) return;
     try {
       await this.prisma.connector.updateMany({
         where: { id: connectorId },
@@ -289,6 +300,119 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
         connectorPath: `/connectors/${encodeURIComponent(connectorId)}`,
       },
       connector.organizationId,
+    );
+  }
+  /** mark() for one user's own credential: recorded on that user's row. */
+  private async markUser(key: string, issue: AuthIssue): Promise<void> {
+    const { connectorId, userId } = parseCredentialKey(key);
+    const where = { connectorId, userId: userId! };
+    try {
+      const current = await this.prisma.userConnectorCredential.findFirst({
+        where,
+        select: { authStatus: true, authStatusCode: true, authStatusRef: true, authStatusMessage: true },
+      });
+      if (!current) return;
+      const same =
+        current.authStatus === issue.status &&
+        current.authStatusCode === issue.code &&
+        (current.authStatusRef ?? null) === (issue.ref ?? null) &&
+        current.authStatusMessage === issue.message;
+      if (!same) {
+        const newIncident =
+          current.authStatus !== issue.status || (current.authStatusRef ?? null) !== (issue.ref ?? null);
+        await this.prisma.userConnectorCredential.updateMany({
+          where,
+          data: {
+            authStatus: issue.status,
+            authStatusCode: issue.code,
+            authStatusMessage: issue.message,
+            authStatusRef: issue.ref ?? null,
+            ...(newIncident ? { authStatusAt: new Date(), authNotifiedAt: null } : {}),
+          },
+        });
+        this.logger.log(
+          `Connector ${connectorId}, user ${userId}: credential status ${issue.status} (${issue.code})`,
+        );
+      }
+      if (issue.status === 'needs_reauth') {
+        void this.notifyUserOnce(connectorId, userId!).catch((err) =>
+          this.logger.warn(`Could not email about connector ${connectorId}: ${err?.message ?? err}`),
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Could not record the user credential status of connector ${connectorId}: ${err?.message ?? err}`,
+      );
+    }
+  }
+
+  /** clear() for one user's own credential. */
+  private async clearUser(
+    key: string,
+    opts: { onlyCodes?: string[]; exceptRef?: string },
+  ): Promise<void> {
+    const { connectorId, userId } = parseCredentialKey(key);
+    try {
+      const res = await this.prisma.userConnectorCredential.updateMany({
+        where: {
+          connectorId,
+          userId: userId!,
+          authStatus: { not: null },
+          ...(opts.onlyCodes ? { authStatusCode: { in: opts.onlyCodes } } : {}),
+          ...(opts.exceptRef
+            ? { OR: [{ authStatusRef: null }, { authStatusRef: { not: opts.exceptRef } }] }
+            : {}),
+        },
+        data: {
+          authStatus: null,
+          authStatusCode: null,
+          authStatusMessage: null,
+          authStatusAt: null,
+          authStatusRef: null,
+          authNotifiedAt: null,
+        },
+      });
+      if (res.count > 0) {
+        this.logger.log(`Connector ${connectorId}, user ${userId}: credential status cleared`);
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Could not clear the user credential status of connector ${connectorId}: ${err?.message ?? err}`,
+      );
+    }
+  }
+
+  /**
+   * Email the user whose own sign-in needs renewing, once per incident. The
+   * workspace owner cannot sign in for them, so the owner is not told.
+   */
+  private async notifyUserOnce(connectorId: string, userId: string): Promise<void> {
+    if (!this.email) return;
+    const claimed = await this.prisma.userConnectorCredential.updateMany({
+      where: { connectorId, userId, authStatus: 'needs_reauth', authNotifiedAt: null },
+      data: { authNotifiedAt: new Date() },
+    });
+    if (claimed.count !== 1) return;
+
+    const credential = await this.prisma.userConnectorCredential.findFirst({
+      where: { connectorId, userId },
+      select: {
+        authStatusMessage: true,
+        organizationId: true,
+        connector: { select: { name: true } },
+        user: { select: { email: true, name: true } },
+      },
+    });
+    if (!credential?.user?.email) return;
+    await this.email.sendConnectorAuthEmail(
+      credential.user.email,
+      {
+        name: credential.user.name,
+        connectorName: credential.connector.name,
+        message: credential.authStatusMessage ?? '',
+        connectorPath: `/connectors/${encodeURIComponent(connectorId)}`,
+      },
+      credential.organizationId,
     );
   }
 }

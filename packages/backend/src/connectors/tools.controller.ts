@@ -956,7 +956,7 @@ export class ToolsController {
           inputs,
           tool.name,
           tool.parameters,
-          { useProxy: tool.useProxy === true },
+          { useProxy: tool.useProxy === true, userId: req.user?.sub },
         ),
       );
       const durationMs = Date.now() - startTime;

@@ -16,6 +16,7 @@ import {
   BadRequestException,
   NotFoundException,
   ValidationPipe,
+  Optional,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -102,12 +103,31 @@ import {
 import { parseODataTools } from './parsers/odata.parser';
 import { normalizeSettings } from './engines/odata.engine';
 import { computeSetupState } from './connector-setup-status.util';
+import { EditionService } from '../ee/licensing/edition.service';
+import {
+  USER_CREDENTIALS_FEATURE,
+  UserCredentialsService,
+} from './user-credentials.service';
+import { supportsUserCredentials } from './user-credential.util';
 import {
   SECRET_GUARDED_TYPES,
   SecretExtractor,
   mergeSummaries,
   type SecretMoveSummary,
 } from './secret-extraction.util';
+
+class UpdateCredentialScopeDto {
+  @ApiProperty({
+    description:
+      'Whose credential the connector\'s calls carry. `SHARED`: the one ' +
+      'stored on the connector, for every caller. `USER` (Enterprise, OAuth2 ' +
+      'connectors only): each user signs in to the provider with their own ' +
+      'account, and the provider decides what each one may see.',
+    enum: ['SHARED', 'USER'],
+  })
+  @IsIn(['SHARED', 'USER'])
+  credentialScope!: 'SHARED' | 'USER';
+}
 
 class CreateConnectorDto {
   @ApiProperty({
@@ -658,6 +678,8 @@ export class ConnectorsController {
     private readonly licenseGuard: LicenseGuardService,
     private readonly mcpServers: McpServersService,
     private readonly deployment: DeploymentService,
+    @Optional() private readonly edition?: EditionService,
+    @Optional() private readonly userCredentials?: UserCredentialsService,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -710,6 +732,7 @@ export class ConnectorsController {
     authType: string;
     baseUrl: string;
     config?: unknown;
+    credentialScope?: string;
     tools?: Array<{ endpointMapping: unknown }>;
   }>(connector: C) {
     let authConfig: unknown = undefined;
@@ -727,6 +750,7 @@ export class ConnectorsController {
       headers: connector.headers,
       envVars: connector.envVars,
       config: connector.config,
+      credentialScope: connector.credentialScope,
       toolMappings: connector.tools?.map((t) => t.endpointMapping),
     });
     return {
@@ -1203,6 +1227,91 @@ export class ConnectorsController {
     };
   }
 
+  /** 403 EDITION_REQUIRED without Enterprise; fails closed when the edition cannot be read. */
+  private async assertUserCredentialsLicensed(organizationId: string): Promise<void> {
+    if (!this.edition) throw new ForbiddenException(`${USER_CREDENTIALS_FEATURE} is not available on this server.`);
+    await this.edition.assertEnterprise(organizationId, USER_CREDENTIALS_FEATURE);
+  }
+
+  @Patch(':id/credential-scope')
+  @ApiOperation({
+    summary: 'Choose a shared credential or per-user sign-in for a connector',
+    description:
+      'USER (Enterprise, OAuth2 connectors only) removes the tokens stored on the ' +
+      'connector; from then on every call carries the caller\'s own sign-in. ' +
+      'SHARED removes every user\'s own sign-in; the connector then needs one ' +
+      'authorization of its own again.',
+  })
+  async updateCredentialScope(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body(new ValidationPipe({ whitelist: true })) dto: UpdateCredentialScopeDto,
+  ) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+    if (dto.credentialScope === 'USER') {
+      await this.assertUserCredentialsLicensed(connector.organizationId);
+      let authConfig: Record<string, unknown> | undefined;
+      try {
+        authConfig = connector.authConfig
+          ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
+          : undefined;
+      } catch {
+        authConfig = undefined;
+      }
+      if (!supportsUserCredentials(connector.type, connector.authType, authConfig)) {
+        throw new BadRequestException(
+          'Per-user sign-in needs a REST, GraphQL, MCP or OData connector with OAuth2 that users ' +
+            'authorize in the browser. API keys, passwords and client-credentials grants stay shared.',
+        );
+      }
+    }
+    const updated = await this.connectorsService.setCredentialScope(id, dto.credentialScope);
+    await this.reloadToolsQuietly(id);
+    return { credentialScope: updated.credentialScope };
+  }
+
+  @Get(':id/my-credential')
+  @ApiOperation({
+    summary: 'Your own sign-in to a connector with per-user credentials',
+    description:
+      'Whether you are connected, since when, and whether the provider refused your sign-in. ' +
+      '`available` says whether the workspace may use per-user sign-in at all (Enterprise). No token is returned.',
+  })
+  async getMyCredential(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertOrgMatch(connector, req);
+    const available = (await this.edition?.hasEnterprise(connector.organizationId)) ?? false;
+    if (!this.userCredentials || connector.credentialScope !== 'USER') return { connected: false, available };
+    return {
+      ...(await this.userCredentials.status(connector.id, connector.organizationId, req.user.sub)),
+      available,
+    };
+  }
+
+  @Delete(':id/my-credential')
+  @ApiOperation({
+    summary: 'Disconnect your own account from a connector with per-user credentials',
+    description: 'Removes your stored tokens. The provider-side authorization stays until you revoke it there.',
+  })
+  async deleteMyCredential(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertOrgMatch(connector, req);
+    const removed = this.userCredentials
+      ? await this.userCredentials.remove(connector.id, connector.organizationId, req.user.sub)
+      : false;
+    return { removed };
+  }
+
+  /** The registry holds a snapshot of the connector; refresh it after a change. */
+  private async reloadToolsQuietly(connectorId: string): Promise<void> {
+    try {
+      await this.mcpServer.reloadConnectorTools(connectorId);
+    } catch (err: any) {
+      this.logger.warn(`Failed to reload tools for connector ${connectorId}: ${err?.message ?? err}`);
+    }
+  }
+
   @Patch(':id/oauth-config')
   @ApiOperation({
     summary: 'Update the OAuth2 settings of a connector (partial)',
@@ -1360,7 +1469,7 @@ export class ConnectorsController {
   async test(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
-    return this.connectorsService.testConnection(id);
+    return this.connectorsService.testConnection(id, { userId: req.user.sub });
   }
 
   @Get('oauth/redirect-uri')
@@ -1393,7 +1502,15 @@ export class ConnectorsController {
     @Body() body?: { returnTo?: string },
   ) {
     const connector = await this.connectorsService.findById(id);
-    this.assertCanWrite(connector, req);
+    // Per-user credentials: every member signs in with their own account,
+    // which changes nothing on the connector but that member's own sign-in.
+    const forUser = connector.credentialScope === 'USER';
+    if (forUser) {
+      this.assertOrgMatch(connector, req);
+      await this.assertUserCredentialsLicensed(connector.organizationId);
+    } else {
+      this.assertCanWrite(connector, req);
+    }
 
     if (connector.authType !== 'OAUTH2') {
       return { error: 'Connector auth type must be OAUTH2' };
@@ -1564,6 +1681,7 @@ export class ConnectorsController {
         ...(userAgent ? { userAgent } : {}),
         ...(resource ? { resource } : {}),
         ...(dynamicClient ? { dynamicClient } : {}),
+        ...(forUser ? { forUser } : {}),
         createdAt: Date.now(),
       }, { returnTo: body?.returnTo });
 
@@ -1601,7 +1719,24 @@ export class ConnectorsController {
     }
 
     try {
-      const { baseUrl, headers, authConfig } = this.resolvedAddress(connector);
+      const { baseUrl, headers, authConfig: connectorAuth } = this.resolvedAddress(connector);
+      // Per-user credentials: listed with the admin's own sign-in, so the
+      // tools are what that account may see; MCP servers answer each user
+      // with their own permissions at call time anyway.
+      let authConfig = connectorAuth;
+      let credentialKey = connector.id;
+      if (connector.credentialScope === 'USER') {
+        if (!this.userCredentials) return { error: 'Per-user sign-in is not available on this server.' };
+        const resolved = await this.userCredentials.resolveForCall({
+          connectorId: connector.id,
+          connectorName: connector.name,
+          organizationId: connector.organizationId,
+          userId: req.user.sub,
+          connectorAuthConfig: connectorAuth,
+        });
+        authConfig = resolved.authConfig;
+        credentialKey = resolved.credentialKey;
+      }
 
       const mcpPath = mcpPathOf(connector.config);
       const remoteTools = await this.mcpClientEngine.listTools({
@@ -1609,7 +1744,7 @@ export class ConnectorsController {
         authType: connector.authType,
         authConfig,
         headers,
-        connectorId: connector.id,
+        connectorId: credentialKey,
         mcpPath,
         logSecrets: connectorSecretValues(connector),
       });

@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { parseCredentialKey } from './credential-key.util';
 
 // Connector types whose baseUrl is an http(s) endpoint. DATABASE connectors
 // carry their own scheme (mysql://, mongodb://, sqlite:, …) and must not be
@@ -149,10 +150,11 @@ function withPath(base: URL, pathname: string, search: string): URL {
  * Public dashboard address of a connector's page, for messages a person reads
  * in a chat client ("open the connector and set X"). FRONTEND_URL is where the
  * dashboard is served; undefined when it is not configured, so callers can
- * fall back to wording without a link.
+ * fall back to wording without a link. Takes a connector id or the key of a
+ * user's own credential for it (credential-key.util): both name the same page.
  */
 export function connectorPageUrl(connectorId: string | undefined | null): string | undefined {
   const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
   if (!connectorId || !/^https?:\/\//i.test(base)) return undefined;
-  return `${base}/connectors/${encodeURIComponent(connectorId)}`;
+  return `${base}/connectors/${encodeURIComponent(parseCredentialKey(connectorId).connectorId)}`;
 }
