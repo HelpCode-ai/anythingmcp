@@ -346,6 +346,16 @@ export const mcpConnections = {
  * `password` ask the token endpoint with stored credentials, again whenever
  * the token expires.
  */
+/** Whose credential a connector's calls carry: the connector's own, or each user's. */
+export type CredentialScope = 'SHARED' | 'USER';
+
+export interface MyConnectorCredential {
+  connected: boolean;
+  authorizedAt?: string;
+  authStatus?: string | null;
+  authStatusMessage?: string | null;
+}
+
 export type OAuthGrant = 'authorization_code' | 'client_credentials' | 'password';
 
 /** True for the grants that need no sign-in at the provider. */
@@ -592,6 +602,24 @@ export const connectors = {
       `/api/connectors/${id}/oauth/authorize`,
       { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
     ),
+  /**
+   * Shared credential or per-user sign-in (Enterprise, OAuth2 connectors).
+   * USER removes the connector's own tokens; SHARED removes every user's.
+   */
+  setCredentialScope: (id: string, credentialScope: CredentialScope, token: string) =>
+    request<{ credentialScope: CredentialScope }>(`/api/connectors/${encodeURIComponent(id)}/credential-scope`, {
+      method: 'PATCH',
+      token,
+      body: { credentialScope },
+    }),
+  /** The signed-in user's own sign-in to a per-user connector. No token is returned. */
+  getMyCredential: (id: string, token: string) =>
+    request<MyConnectorCredential>(`/api/connectors/${encodeURIComponent(id)}/my-credential`, { token }),
+  disconnectMyCredential: (id: string, token: string) =>
+    request<{ removed: boolean }>(`/api/connectors/${encodeURIComponent(id)}/my-credential`, {
+      method: 'DELETE',
+      token,
+    }),
   /** Second half of "Authorize with Provider": exchange the code the provider sent back. */
   oauthComplete: (state: string, code: string, token: string) =>
     request<{ connectorId: string; toolsImported: number; returnTo?: string }>(

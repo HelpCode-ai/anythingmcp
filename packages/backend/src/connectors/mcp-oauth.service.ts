@@ -86,6 +86,12 @@ export interface PendingOAuthFlow {
    * completed by its own endpoint; unset on every OAuth flow.
    */
   provider?: 'shopee';
+  /**
+   * The user signs in with their own account on a connector whose
+   * credentials are per user: the tokens go to that user's
+   * UserConnectorCredential, never to the connector.
+   */
+  forUser?: boolean;
   createdAt: number;
 }
 

@@ -18,6 +18,8 @@ export interface RegisteredTool {
   // by-name lookups so cross-tenant collisions on the global /mcp endpoint
   // can't leak tools across organizations.
   organizationId: string;
+  // The connector's name, for messages that tell the user which one to open.
+  connectorName?: string;
   name: string;
   description: string;
   parameters: Record<string, unknown>;
@@ -33,6 +35,9 @@ export interface RegisteredTool {
     headers?: Record<string, string>;
     envVars?: Record<string, string>; // runtime environment variables
     config?: Record<string, unknown>; // connector-specific settings (e.g. readOnly for DATABASE)
+    // USER: each call carries the caller's own sign-in (UserCredentialsService),
+    // never the tokens in authConfig. Undefined counts as SHARED.
+    credentialScope?: 'SHARED' | 'USER';
   };
   endpointMapping: {
     method: string;

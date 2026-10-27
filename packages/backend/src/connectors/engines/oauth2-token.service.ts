@@ -15,6 +15,8 @@ import { outboundAxiosOptions } from '../../common/outbound-http';
 import { connectorPageUrl } from '../../common/url.util';
 import { isMachineGrant } from '../oauth-grant.util';
 import { ConnectorAuthStatusService, credentialRef } from './connector-auth-status.service';
+import { parseCredentialKey } from '../../common/credential-key.util';
+import { mergeUserCredential } from '../user-credential.util';
 
 /** Refresh tokens that expire within this window (5 minutes). */
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -64,7 +66,7 @@ interface RenewOptions {
 }
 
 /** The connector reads and writes a renewal makes: the client, or the lock's transaction. */
-type ConnectorDb = Pick<PrismaService, 'connector'>;
+type ConnectorDb = Pick<PrismaService, 'connector' | 'userConnectorCredential'>;
 
 /** A renewed token that still has to be stored. */
 interface Rotation {
@@ -796,19 +798,16 @@ export class OAuth2TokenService {
    * Reads and decrypts the connector's current authConfig straight from the DB.
    * Used to obtain the freshest (possibly-rotated) refresh token, bypassing the
    * stale in-memory registry snapshot. Returns null if unavailable.
+   *
+   * For the key of a user's own credential (credential-key.util) it is the
+   * connector's client with that user's tokens, and that user's status.
    */
   private async loadAuthConfigFromDb(
     connectorId: string,
     db: ConnectorDb = this.prisma,
-  ): Promise<{
-    authConfig: Record<string, unknown>;
-    headers: unknown;
-    status?: {
-      authStatus: string | null;
-      authStatusRef: string | null;
-      authStatusMessage: string | null;
-    };
-  } | null> {
+  ): Promise<StoredAuth | null> {
+    const { userId } = parseCredentialKey(connectorId);
+    if (userId) return this.loadUserAuthConfigFromDb(connectorId, db);
     try {
       const connector = await db.connector.findUnique({
         where: { id: connectorId },
@@ -850,9 +849,60 @@ export class OAuth2TokenService {
     }
   }
 
+  /** loadAuthConfigFromDb for one user's own credential. */
+  private async loadUserAuthConfigFromDb(
+    key: string,
+    db: ConnectorDb,
+  ): Promise<StoredAuth | null> {
+    const { connectorId, userId } = parseCredentialKey(key);
+    try {
+      const [connector, credential] = await Promise.all([
+        db.connector.findUnique({
+          where: { id: connectorId },
+          select: { authConfig: true, envVars: true, headers: true },
+        }),
+        db.userConnectorCredential.findUnique({
+          where: { connectorId_userId: { connectorId, userId: userId! } },
+          select: {
+            authConfig: true,
+            authStatus: true,
+            authStatusRef: true,
+            authStatusMessage: true,
+          },
+        }),
+      ]);
+      // Signed out meanwhile, or the connector is gone: nothing to renew with.
+      if (!connector || !credential) return null;
+      const envVars = (connector.envVars as Record<string, string> | null) ?? {};
+      const client = connector.authConfig
+        ? interpolateDeep(JSON.parse(decrypt(connector.authConfig, this.encryptionKey)), envVars)
+        : {};
+      return {
+        authConfig: mergeUserCredential(
+          client,
+          JSON.parse(decrypt(credential.authConfig, this.encryptionKey)),
+        ),
+        headers: interpolateDeep(connector.headers ?? undefined, envVars),
+        status: {
+          authStatus: credential.authStatus ?? null,
+          authStatusRef: credential.authStatusRef ?? null,
+          authStatusMessage: credential.authStatusMessage ?? null,
+        },
+      };
+    } catch (err: any) {
+      this.logger.warn(
+        `OAuth2: failed to load the user credential of connector ${connectorId}: ${err.message}`,
+      );
+      return null;
+    }
+  }
+
   /**
    * Store a renewed token on the connector. False when the write failed, so
    * the caller can try again outside a transaction that may not commit.
+   *
+   * For the key of a user's own credential it is stored on that user's row:
+   * the connector's own authConfig is never touched.
    */
   private async persistRefreshedToken(
     db: ConnectorDb,
@@ -862,6 +912,14 @@ export class OAuth2TokenService {
     expiresAt: number,
     expiresIn?: number,
   ): Promise<boolean> {
+    if (parseCredentialKey(connectorId).userId) {
+      return this.persistUserRefreshedToken(db, connectorId, {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+        expiresAt,
+        expiresIn,
+      });
+    }
     try {
       const connector = await db.connector.findUnique({
         where: { id: connectorId },
@@ -901,6 +959,56 @@ export class OAuth2TokenService {
       return false;
     }
   }
+
+  /** persistRefreshedToken for one user's own credential. */
+  private async persistUserRefreshedToken(
+    db: ConnectorDb,
+    key: string,
+    rotation: Rotation,
+  ): Promise<boolean> {
+    const { connectorId, userId } = parseCredentialKey(key);
+    const where = { connectorId_userId: { connectorId, userId: userId! } };
+    try {
+      const credential = await db.userConnectorCredential.findUnique({
+        where,
+        select: { authConfig: true },
+      });
+      // Signed out meanwhile: the token is not kept for an account that left.
+      if (!credential) return true;
+
+      const tokens = JSON.parse(decrypt(credential.authConfig, this.encryptionKey));
+      tokens.accessToken = rotation.accessToken;
+      tokens.refreshToken = rotation.refreshToken;
+      tokens.expiresAt = rotation.expiresAt;
+      if (typeof rotation.expiresIn === 'number' && rotation.expiresIn > 0) {
+        tokens.expiresIn = rotation.expiresIn;
+      }
+      tokens.lastRefreshedAt = new Date().toISOString();
+
+      await db.userConnectorCredential.update({
+        where,
+        data: { authConfig: encrypt(JSON.stringify(tokens), this.encryptionKey) },
+      });
+      this.logger.debug(`OAuth2: persisted refreshed user token for connector ${connectorId}`);
+      return true;
+    } catch (err: any) {
+      this.logger.warn(
+        `OAuth2: failed to persist the refreshed user token for connector ${connectorId}: ${err.message}`,
+      );
+      return false;
+    }
+  }
+}
+
+/** What loadAuthConfigFromDb read: the auth config to renew with, and its status. */
+interface StoredAuth {
+  authConfig: Record<string, unknown>;
+  headers: unknown;
+  status?: {
+    authStatus: string | null;
+    authStatusRef: string | null;
+    authStatusMessage: string | null;
+  };
 }
 
 /**

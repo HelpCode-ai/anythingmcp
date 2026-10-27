@@ -143,6 +143,7 @@ export class McpServerService implements OnModuleInit {
       headers: connector.headers,
       envVars: connector.envVars,
       config: connector.config,
+      credentialScope: connector.credentialScope,
       toolMappings: connector.tools.map((t) => t.endpointMapping),
     }).status;
     for (const tool of connector.tools) {
@@ -150,6 +151,7 @@ export class McpServerService implements OnModuleInit {
         id: tool.id,
         connectorId: connector.id,
         organizationId: connector.organizationId,
+        connectorName: connector.name,
         name: tool.name,
         description: tool.description,
         parameters: tool.parameters as Record<string, unknown>,
@@ -163,6 +165,7 @@ export class McpServerService implements OnModuleInit {
           envVars: connector.envVars as Record<string, string> | undefined,
           specUrl: connector.specUrl ?? undefined,
           config: connector.config as Record<string, unknown> | undefined,
+          credentialScope: connector.credentialScope,
         },
         setupStatus,
         endpointMapping: tool.endpointMapping as any,

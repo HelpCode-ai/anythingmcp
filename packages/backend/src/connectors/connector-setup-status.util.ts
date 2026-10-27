@@ -38,6 +38,12 @@ export interface SetupStatusInput {
   envVars?: unknown;
   config?: unknown;
   /**
+   * USER: every user authorizes on their own (user-credential.util), so the
+   * connector itself is never "authorized" and that is not a reason to hold
+   * it back. Each call checks the caller's own sign-in instead.
+   */
+  credentialScope?: string;
+  /**
    * The endpoint mappings of the connector's tools. Some adapters use a
    * variable only there: Odoo's JSON-RPC adapter sends ODOO_API_KEY in the
    * request body, so without the tools a connector with no key looked ready,
@@ -154,7 +160,12 @@ export function computeSetupState(input: SetupStatusInput): SetupState {
     .sort();
   if (missing.length > 0) return { status: 'needs_input', missing };
 
-  if (isBrowserOAuth && !hasRealValue(authConfig.refreshToken) && !hasRealValue(authConfig.accessToken)) {
+  if (
+    isBrowserOAuth &&
+    input.credentialScope !== 'USER' &&
+    !hasRealValue(authConfig.refreshToken) &&
+    !hasRealValue(authConfig.accessToken)
+  ) {
     return { status: 'needs_authorization', missing: [] };
   }
   // A Shopee shop (HMAC with tokenProvider "shopee") is authorized from the
