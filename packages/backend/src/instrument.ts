@@ -12,7 +12,7 @@
  */
 import * as Sentry from '@sentry/nestjs';
 import { APP_VERSION } from './common/app-version';
-import { scrubBreadcrumb, scrubEvent, scrubSpan } from './common/sentry-scrub';
+import { isMcpTransportError, scrubBreadcrumb, scrubEvent, scrubSpan } from './common/sentry-scrub';
 import { sampleRateFor } from './common/sentry-sampler';
 
 const dsn = process.env.SENTRY_DSN;
@@ -74,7 +74,7 @@ if (dsn) {
     // 4 Oct 2026 (ANYTHINGMCP-CLOUD-BACKEND-6).
     ignoreErrors: [/^request aborted$/],
 
-    beforeSend: scrubEvent,
+    beforeSend: (event) => (isMcpTransportError(event) ? null : scrubEvent(event)),
     // SDK v11 streams spans instead of sending transactions, so spans are
     // scrubbed one by one here (beforeSendTransaction no longer runs).
     beforeSendSpan: scrubSpan,

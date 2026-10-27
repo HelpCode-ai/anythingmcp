@@ -4,6 +4,12 @@ import { PrismaService } from '../common/prisma.service';
 import { buildStaticGraph } from './static/static-extractor';
 import { StaticGraph, ToolLike } from './static/types';
 
+// Prisma closes an interactive transaction after 5 s by default. A connector
+// with thousands of tools has thousands of nodes to upsert one by one, so the
+// transaction expired every time, the hash was never stored and every cron
+// run tried to write the whole graph again (16,608 tools on Cloud, Oct 2026).
+const PERSIST_TRANSACTION = { maxWait: 10_000, timeout: 180_000 };
+
 /**
  * Persists the STATIC knowledge-graph layer for a connector, org-scoped.
  *
@@ -257,7 +263,7 @@ export class KgStaticService {
           id: { notIn: keptEdgeIds.length ? keptEdgeIds : ['__none__'] },
         },
       });
-    });
+    }, PERSIST_TRANSACTION);
   }
 }
 
