@@ -72,7 +72,7 @@ describe('mirakl-connect adapter: static spec conformance', () => {
   it('is told apart from the single-marketplace Mirakl Seller API', () => {
     expect(a.slug).toBe('mirakl-connect');
     expect(a.instructions).toMatch(/Mirakl Seller API/);
-    expect(a.connector.baseUrl).not.toMatch(/mirakl\.net/);
+    expect(new URL(a.connector.baseUrl).hostname).toBe('miraklconnect.com');
   });
 
   it('maps the v2 order routes with the documented filters', () => {
