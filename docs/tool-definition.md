@@ -654,7 +654,7 @@ the API actually returned.
 | `select` | Output template: keys are output names, leaves are paths (`$.a.b[*].c`) or literals |
 | `expression` | JMESPath expression, for reshaping a template cannot express |
 | `fallbackToRaw` | On error, return the raw response instead of failing. Default `true` |
-| `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap. It shapes a response that was read; the instance-wide `TOOL_MAX_RESPONSE_BYTES` (10 MB by default) decides whether the upstream body is read at all |
+| `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap. It shapes a response that was read; the instance-wide `TOOL_MAX_RESPONSE_BYTES` (10 MB by default) decides whether the upstream body is read at all, and caps the text sent to the client (compact JSON first, then the `TOOL_RESPONSE_TOO_LARGE` error) |
 | `cacheTtl` | Seconds to cache the **raw** upstream response; shaping happens on read |
 | `images` | Paths to base64 images in the response, returned to the client as MCP image content (see below) |
 | `binary` | How a file the API returns as raw bytes is handed over: `{ "as": "auto" \| "base64", "maxBytes": n }` (see below) |
