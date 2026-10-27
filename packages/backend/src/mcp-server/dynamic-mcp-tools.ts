@@ -64,6 +64,11 @@ import { ResponseBodyError } from '../connectors/engines/response-error.util';
 import { connectorSecretValues } from '../connectors/connector-secrets.util';
 import { redactSecretsDeep } from '../common/secret-literals.util';
 import { withTokenRenewal } from '../connectors/engines/bearer-token-renewal.service';
+import {
+  ResponseTooLargeError,
+  fitsResponseLimit,
+  toolMaxResponseBytes,
+} from '../common/response-size-limit';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -328,9 +333,9 @@ export class DynamicMcpTools {
               toolName,
               raw.meta,
               tool.endpointMapping?.queryParams,
-            );
+            ).result;
           }
-          return this.renderResult(raw, responseMapping, toolName);
+          return this.renderResult(raw, responseMapping, toolName).result;
         } catch {
           // Unreadable entry — fall through and re-execute.
           this.logger.warn(`Discarding unparsable cache entry for tool ${toolName}`);
@@ -550,6 +555,16 @@ export class DynamicMcpTools {
 
       const durationMs = Date.now() - startTime;
 
+      // Rendered before the log row, so a result over the size limit is
+      // logged as the error the client gets.
+      const { result: rendered, tooLarge } = this.renderResult(
+        result,
+        responseMapping,
+        toolName,
+        meta,
+        tool.endpointMapping?.queryParams,
+      );
+
       await this.auditService.logInvocation({
         toolId: tool.id,
         userId: context?.userId,
@@ -561,10 +576,16 @@ export class DynamicMcpTools {
         intent: context?.intent,
         learnable: context?.learnable ?? false,
         input: params,
-        // A file's bytes stay out of the call log: only what it was.
-        output: withoutBinaryData(result) as Record<string, unknown>,
-        status: 'SUCCESS',
+        // A file's bytes stay out of the call log: only what it was. An
+        // oversized result is not stored either: like an upstream body over
+        // the limit, the row keeps the error, and the excerpt would cost one
+        // more serialization of the whole payload.
+        output: tooLarge
+          ? undefined
+          : (withoutBinaryData(result) as Record<string, unknown>),
+        status: tooLarge ? 'ERROR' : 'SUCCESS',
         durationMs,
+        error: tooLarge ? this.formatStoredError({ error: tooLarge.message }) : undefined,
         clientInfo: context ? JSON.stringify({
           authMethod: context.authMethod,
           apiKeyName: context.apiKeyName,
@@ -572,6 +593,12 @@ export class DynamicMcpTools {
           mcpServerName: context.mcpServerName,
         }) : undefined,
       });
+
+      if (tooLarge) {
+        // Nothing to learn from or cache: every read would fail the same way.
+        this.logToolCall(tool, context, durationMs, 'ERROR');
+        return rendered;
+      }
 
       // Grow the knowledge graph from this real call (debounced, fire-and-forget).
       void this.kgService.scheduleObservationalIngest(context?.organizationId);
@@ -592,13 +619,6 @@ export class DynamicMcpTools {
         }
       }
 
-      const rendered = this.renderResult(
-        result,
-        responseMapping,
-        toolName,
-        meta,
-        tool.endpointMapping?.queryParams,
-      );
       this.logToolCall(tool, context, durationMs, 'SUCCESS', textOf(rendered.content));
       return rendered;
     } catch (error: any) {
@@ -683,6 +703,12 @@ export class DynamicMcpTools {
    * A broken mapping must never break a working tool, so a transform error
    * falls back to the raw response and only warns — unless the operator set
    * `fallbackToRaw: false`, which is an explicit "I'd rather see the error".
+   *
+   * The text is held to `TOOL_MAX_RESPONSE_BYTES`, the limit the engines
+   * already apply to the upstream body, for every connector type. A text over
+   * it is written again as compact JSON; if that is still over, the result is
+   * the `TOOL_RESPONSE_TOO_LARGE` error instead (`tooLarge` is set), so no
+   * text, structuredContent, image or file of that call reaches the client.
    */
   private renderResult(
     raw: unknown,
@@ -691,9 +717,12 @@ export class DynamicMcpTools {
     meta?: ResponseMeta,
     queryParams?: Record<string, unknown>,
   ): {
-    content: ToolResultContent;
-    isError?: boolean;
-    structured?: unknown;
+    result: {
+      content: ToolResultContent;
+      isError?: boolean;
+      structured?: unknown;
+    };
+    tooLarge?: ResponseTooLargeError;
   } {
     // A file (image, PDF, …): described in the text and attached after it.
     // A response mapping has nothing to shape in raw bytes, so it is skipped.
@@ -711,17 +740,19 @@ export class DynamicMcpTools {
     if (outcome.error) {
       if (outcome.fatal) {
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify(
-                { error: `Response mapping failed: ${outcome.error}` },
-                null,
-                2,
-              ),
-            },
-          ],
-          isError: true,
+          result: {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(
+                  { error: `Response mapping failed: ${outcome.error}` },
+                  null,
+                  2,
+                ),
+              },
+            ],
+            isError: true,
+          },
         };
       }
       this.logger.warn(
@@ -735,9 +766,43 @@ export class DynamicMcpTools {
       ? attachResponseMeta(outcome.value, meta, queryParams)
       : outcome.value;
 
-    let resultText = JSON.stringify(value, null, 2) ?? 'null';
-    if (responseMapping?.followUp) {
-      resultText += `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`;
+    const hint = responseMapping?.followUp
+      ? `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`
+      : '';
+    let resultText = (JSON.stringify(value, null, 2) ?? 'null') + hint;
+
+    const limitBytes = toolMaxResponseBytes();
+    if (!fitsResponseLimit(resultText, limitBytes)) {
+      // Indentation can make up much of a large text. Only an object or an
+      // array has any: anything else would serialize to the same text again.
+      const prettyChars = resultText.length;
+      if (value !== null && typeof value === 'object') {
+        resultText = (JSON.stringify(value) ?? 'null') + hint;
+      }
+      if (!fitsResponseLimit(resultText, limitBytes)) {
+        const tooLarge = new ResponseTooLargeError(limitBytes, { source: 'result' });
+        this.logger.warn({
+          msg: 'tool_result_too_large',
+          toolName,
+          limitBytes,
+          // Characters, a lower bound of the bytes: measuring them would walk
+          // the whole text once more just for this line.
+          renderedChars: prettyChars,
+          compactChars: resultText.length,
+        });
+        return {
+          result: {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({ error: tooLarge.message, code: tooLarge.code }, null, 2),
+              },
+            ],
+            isError: true,
+          },
+          tooLarge,
+        };
+      }
     }
 
     // `responseMapping.images`: the pictures follow the text, which keeps a
@@ -750,8 +815,10 @@ export class DynamicMcpTools {
     }));
 
     return {
-      content: [{ type: 'text' as const, text: resultText }, ...images, ...binaryContent],
-      structured: value,
+      result: {
+        content: [{ type: 'text' as const, text: resultText }, ...images, ...binaryContent],
+        structured: value,
+      },
     };
   }
 
