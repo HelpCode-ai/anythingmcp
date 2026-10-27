@@ -870,7 +870,7 @@
     },
     "needsAuthorization": {
       "pill": "Accesso richiesto",
-      "banner": "Va autorizzato presso il provider prima che il tuo client AI possa usarlo."
+      "banner": "Il connettore va autorizzato presso il provider prima che il tuo client AI possa usarlo."
     },
     "stillEmpty": "Ancora vuoti: {names}",
     "finishSetup": "Completa la configurazione"

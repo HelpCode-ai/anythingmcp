@@ -866,7 +866,7 @@
   "setupStatus": {
     "needsInput": {
       "pill": "Einrichtung offen",
-      "banner": "Ein Zugangsdatum oder eine Einstellung ist noch leer, daher sieht Ihr KI-Client diesen Connector noch nicht."
+      "banner": "Zugangsdaten oder eine Einstellung fehlen noch, daher sieht Ihr KI-Client diesen Connector noch nicht."
     },
     "needsAuthorization": {
       "pill": "Anmeldung nötig",
