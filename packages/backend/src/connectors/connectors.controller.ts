@@ -1274,13 +1274,19 @@ export class ConnectorsController {
   @Get(':id/my-credential')
   @ApiOperation({
     summary: 'Your own sign-in to a connector with per-user credentials',
-    description: 'Whether you are connected, since when, and whether the provider refused your sign-in. No token is returned.',
+    description:
+      'Whether you are connected, since when, and whether the provider refused your sign-in. ' +
+      '`available` says whether the workspace may use per-user sign-in at all (Enterprise). No token is returned.',
   })
   async getMyCredential(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertOrgMatch(connector, req);
-    if (!this.userCredentials || connector.credentialScope !== 'USER') return { connected: false };
-    return this.userCredentials.status(connector.id, connector.organizationId, req.user.sub);
+    const available = (await this.edition?.hasEnterprise(connector.organizationId)) ?? false;
+    if (!this.userCredentials || connector.credentialScope !== 'USER') return { connected: false, available };
+    return {
+      ...(await this.userCredentials.status(connector.id, connector.organizationId, req.user.sub)),
+      available,
+    };
   }
 
   @Delete(':id/my-credential')

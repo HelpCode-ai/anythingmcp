@@ -10,13 +10,40 @@
 -- ENCRYPTION_KEY like `connectors.auth_config`, and the credential health of
 -- that one user (auth_status*), so a revoked token blocks only its owner.
 -- Rows go away with the connector, the user or the organization.
+--
+-- Adding the column is instant (a constant default rewrites nothing), but it
+-- needs an exclusive lock on `connectors`. Waiting for it behind a transaction
+-- that is still open on the table (a token refresh holds one for up to 10 s
+-- while the provider answers) would stall every connector query queued behind
+-- the wait, for the whole time. So the lock is asked for 1 s at a time: if it
+-- is not free, the attempt gives up, the queued queries run, and it tries
+-- again, for up to about two minutes before the migration fails (the release
+-- then keeps the old backend serving).
 -- =============================================================================
 
 -- CreateEnum
 CREATE TYPE "CredentialScope" AS ENUM ('SHARED', 'USER');
 
 -- AlterTable
-ALTER TABLE "connectors" ADD COLUMN     "credential_scope" "CredentialScope" NOT NULL DEFAULT 'SHARED';
+DO $$
+DECLARE
+  attempt int := 0;
+BEGIN
+  LOOP
+    BEGIN
+      PERFORM set_config('lock_timeout', '1s', true);
+      ALTER TABLE "connectors" ADD COLUMN     "credential_scope" "CredentialScope" NOT NULL DEFAULT 'SHARED';
+      EXIT;
+    EXCEPTION WHEN lock_not_available THEN
+      attempt := attempt + 1;
+      IF attempt >= 60 THEN
+        RAISE;
+      END IF;
+      PERFORM pg_sleep(1);
+    END;
+  END LOOP;
+  PERFORM set_config('lock_timeout', '0', true);
+END $$;
 
 -- CreateTable
 CREATE TABLE "user_connector_credentials" (

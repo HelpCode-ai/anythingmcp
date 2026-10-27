@@ -17,7 +17,8 @@ import { StatusPill } from '@/components/ui/badge';
  * gets an error with a link here, never someone else's data.
  *
  * The owner or an admin switches the mode; every member connects their own
- * account. Enterprise is checked by the server, which answers 403 without it.
+ * account. Enterprise is checked by the server, which answers 403 without it;
+ * without it a shared connector shows no card at all, as before this feature.
  */
 export function UserCredentialsCard({
   connectorId,
@@ -41,14 +42,15 @@ export function UserCredentialsCard({
   const perUser = credentialScope === 'USER';
 
   const loadMine = useCallback(() => {
-    if (!token || !perUser) return;
+    if (!token) return;
     connectors
       .getMyCredential(connectorId, token)
       .then(setMine)
       .catch(() => setMine(null));
-  }, [token, perUser, connectorId]);
+  }, [token, connectorId]);
 
-  useEffect(loadMine, [loadMine]);
+  // Read again after the mode changes: switching back to shared signs everyone out.
+  useEffect(() => loadMine(), [loadMine, credentialScope]);
 
   const switchScope = async () => {
     if (!token || !pendingScope) return;
@@ -96,6 +98,10 @@ export function UserCredentialsCard({
       setBusy(false);
     }
   };
+
+  // A shared connector of a workspace without Enterprise (or still loading):
+  // nothing to offer, so the page stays as it was.
+  if (!perUser && !mine?.available) return null;
 
   return (
     <Card className="p-[22px]">

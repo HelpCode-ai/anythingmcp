@@ -18,6 +18,7 @@ function build(opts: {
     setCredentialScope: jest.fn(async (_id: string, scope: string) => ({ credentialScope: scope })),
   };
   const edition = {
+    hasEnterprise: jest.fn(async () => !!opts.enterprise),
     assertEnterprise: jest.fn(async () => {
       if (!opts.enterprise) throw new ForbiddenException('Per-user sign-in for connectors is available with AnythingMCP Enterprise.');
     }),
@@ -160,9 +161,23 @@ describe('POST /connectors/:id/oauth/authorize on a per-user connector', () => {
 
 describe('/connectors/:id/my-credential', () => {
   it("answers with the caller's own status", async () => {
-    const { controller, userCredentials } = build({ connector: oauthConnector({ credentialScope: 'USER' }) });
-    await expect(controller.getMyCredential(req('VIEWER'), 'c1')).resolves.toEqual({ connected: true });
+    const { controller, userCredentials } = build({
+      connector: oauthConnector({ credentialScope: 'USER' }),
+      enterprise: true,
+    });
+    await expect(controller.getMyCredential(req('VIEWER'), 'c1')).resolves.toEqual({
+      connected: true,
+      available: true,
+    });
     expect(userCredentials.status).toHaveBeenCalledWith('c1', 'org1', 'u-member');
+  });
+
+  it('says per-user sign-in is not available without Enterprise', async () => {
+    const { controller } = build({ connector: oauthConnector(), enterprise: false });
+    await expect(controller.getMyCredential(req('ADMIN'), 'c1')).resolves.toEqual({
+      connected: false,
+      available: false,
+    });
   });
 
   it("removes the caller's own sign-in only", async () => {

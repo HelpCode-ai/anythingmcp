@@ -351,6 +351,8 @@ export type CredentialScope = 'SHARED' | 'USER';
 
 export interface MyConnectorCredential {
   connected: boolean;
+  /** Whether the workspace may use per-user sign-in at all (Enterprise). */
+  available?: boolean;
   authorizedAt?: string;
   authStatus?: string | null;
   authStatusMessage?: string | null;
