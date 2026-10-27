@@ -1,0 +1,14 @@
+- How much stock of article "LED-Panel 60x60" do we have in each warehouse, and how much is locked for shipment?
+- Has sales order AU-2026-10482 shipped yet, and what is the tracking number?
+- Look up the order with external shop order number SH-88341 and show its status and line items.
+- List all sales orders created today with their order numbers, customers and shipping methods.
+- Find the customer "Weber Elektrotechnik GmbH" and show their billing and delivery addresses.
+- Show the line items of sales order AU-2026-10450, including quantities ordered, delivered and returned.
+- Which warehouses are configured in our JTL-Wawi, and what types are they?
+- Find the article with EAN 4012345678901 and show its SKU, net price and dimensions.
+- List the last ten sales orders for customer 10422 and check which ones already have a delivery note.
+- Which lines on sales order AU-2026-10390 have only been partially delivered so far?
+- Show all delivery notes and tracking links for customer "Nordlicht Handel KG".
+- Search the item master for "Kabelkanal" and list the matching SKUs, manufacturers and prices.
+- Check whether article 1084 is available in the main warehouse or if the stock is reserved for open orders.
+- Show the payment method, shipping details and cancellation state for sales order AU-2026-10501.
