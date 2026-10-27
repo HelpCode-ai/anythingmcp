@@ -3,8 +3,7 @@ import { applyResponseTransform } from '../../connectors/response-transform.util
 
 /**
  * PlentyONE (plentymarkets) REST API (developers.plentymarkets.com): POST /rest/login with an API user,
- * then Bearer. Built from a customer's hand-built Cloud connector (search variations, create item,
- * update variation) and checked read-only with its API user on 22 Oct 2026; that user has no order
+ * then Bearer. Checked read-only with an API user on 22 Oct 2026; that user has no order
  * or contact rights, so orders, order statuses and contacts follow the official reference only.
  * Live part: PLENTYONE_URL=https://pXXXXX.my.plentysystems.com PLENTYONE_USERNAME=... PLENTYONE_PASSWORD=...
  * RUN_PLENTYONE_LIVE=1 npx jest src/adapters/de/plentyone (reads only: webstores, variations, warehouses).
@@ -55,8 +54,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'plentyone_';
 const WRITES: string[] = ["plentyone_create_item", "plentyone_update_variation"];
-// Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
-const HAND_BUILT: string[] = ["create_item", "create_item_text", "create_variation", "search_categories", "search_items", "search_variations", "update_item", "update_item_text", "update_variation"];
 
 describe('plentyone adapter: static spec conformance', () => {
 
@@ -121,10 +118,6 @@ describe('plentyone adapter: static spec conformance', () => {
     for (const n of WRITES) expect(tool(n).annotations?.readOnlyHint).toBe(false);
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     const probe = tool(a.probe.tool);

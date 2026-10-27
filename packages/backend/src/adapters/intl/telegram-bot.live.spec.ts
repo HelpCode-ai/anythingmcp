@@ -101,7 +101,7 @@ describe('telegram-bot adapter: albums and media sends', () => {
     expect(sent()).toEqual(expect.objectContaining({ method: 'POST', url: `${BASE}${path}` }));
   });
 
-  it('sends the album as a JSON array, the shape that works in hand-built tools', async () => {
+  it('sends the album as a JSON array, the shape Telegram accepts', async () => {
     mockedAxios.mockResolvedValue({ data: { ok: true } });
     const media = [
       { type: 'photo', media: 'https://example.com/1.jpg', caption: '<b>New</b>', parse_mode: 'HTML' },

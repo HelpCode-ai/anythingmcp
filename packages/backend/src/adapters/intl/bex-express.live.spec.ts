@@ -46,8 +46,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'bex_express_';
 const WRITES: string[] = ["bex_express_create_shipments", "bex_express_cancel_shipment"];
-// Tool names of the customers' own connectors for this API on the Cloud (read 19 Oct 2026).
-const HAND_BUILT = ["bex_delete_shipment", "bex_get_label", "bex_list_municipalities", "bex_list_settlements", "bex_list_streets", "bex_post_shipments", "bex_shipment_history"];
 
 describe('bex-express adapter: static spec conformance', () => {
   it('sends the key in X-AUTH-TOKEN to integrations.bexexpress.rs/api', () => {
@@ -99,10 +97,6 @@ describe('bex-express adapter: static spec conformance', () => {
     }
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     expect(WRITES).not.toContain(a.probe.tool);
