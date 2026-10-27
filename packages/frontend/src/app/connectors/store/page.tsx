@@ -1,19 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { Suspense, useEffect, useMemo, useState, useRef } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { adapters, type SetupEffort, type SetupEffortKind } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { adapterAuthLabel, adapterNeedsCredentials, cn } from '@/lib/utils';
+import { adapterNeedsCredentials, cn } from '@/lib/utils';
+import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { searchCatalog } from '@/lib/catalog-search';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { useCatalogSearchReport } from '@/lib/use-catalog-search-report';
-import { EFFORT_FILTERS, effortLabel, effortTone } from '@/lib/setup-effort';
+import { EFFORT_FILTERS, effortTone } from '@/lib/setup-effort';
 
 const REGION_LABELS: Record<string, string> = {
   de: 'Germany',
@@ -206,8 +208,7 @@ const CHIP_OFF =
  * Title-case an unlabelled slug rather than printing it raw. The catalog gains
  * categories over time and `time-tracking` in a filter chip reads as a bug.
  */
-function categoryLabel(slug: string): string {
-  if (CATEGORY_LABELS[slug]) return CATEGORY_LABELS[slug];
+function titleCase(slug: string): string {
   return slug
     .split('-')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -244,6 +245,22 @@ export default function AdapterStorePage() {
 
 function AdapterStoreContent() {
   const { token } = useAuth();
+  const t = useTranslations('connectorStore');
+  const tEffort = useTranslations('setupEffort');
+  const authTypeLabel = useAuthTypeLabel();
+  // Category and region names in the UI language. A category the messages
+  // don't know yet (the catalog grows) is title-cased, as before.
+  const categoryLabel = useCallback(
+    (slug: string) => (slug && t.has(`categories.${slug}`) ? t(`categories.${slug}`) : titleCase(slug)),
+    [t],
+  );
+  const regionLabel = useCallback((code: string) => (code && t.has(`regions.${code}`) ? t(`regions.${code}`) : code), [t]);
+  const effortFilterLabel = useCallback((effort: SetupEffortKind) => tEffort(`filters.${effort}`), [tEffort]);
+  /** "API key · 2 min": what a setup asks of the user, before they open it. */
+  const effortLabel = (e: SetupEffort) =>
+    e.effort === 'none' || e.effort === 'one_click'
+      ? tEffort(`names.${e.effort}`)
+      : tEffort('withMinutes', { name: tEffort(`names.${e.effort}`), minutes: e.minutes });
   const router = useRouter();
   const searchParams = useSearchParams();
   const [list, setList] = useState<AdapterItem[]>([]);
@@ -305,7 +322,7 @@ function AdapterStoreContent() {
     return [...counts.entries()]
       .map(([slug, count]) => ({ slug, count, label: categoryLabel(slug) }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [list]);
+  }, [list, categoryLabel]);
 
   /**
    * Twelve is about two wrapped rows on a desktop and three swipes on a
@@ -325,20 +342,22 @@ function AdapterStoreContent() {
 
   // Match what the card actually says, not just the stored slug: the card
   // reads "GERMANY" and "E-commerce", so those are the words people type.
+  // In another language the card says "DEUTSCHLAND", so the translated names
+  // are searched too; the English ones stay, as the catalog text is English.
   // Built once per catalog load; the search runs on every keystroke.
   const searchEntries = useMemo(
     () =>
-      list.map((a) => ({
-        ...a,
-        text: [
-          a.description,
-          a.category ?? '',
-          categoryLabel(a.category ?? ''),
-          a.region ?? '',
-          REGION_LABELS[a.region] ?? '',
-        ],
-      })),
-    [list],
+      list.map((a) => {
+        const category = a.category ?? '';
+        const region = a.region ?? '';
+        const english = [CATEGORY_LABELS[category] ?? titleCase(category), REGION_LABELS[region] ?? ''];
+        const shown = [categoryLabel(category), regionLabel(region)].filter((s) => s && !english.includes(s));
+        return {
+          ...a,
+          text: [a.description, category, english[0], region, english[1], ...shown],
+        };
+      }),
+    [list, categoryLabel, regionLabel],
   );
   // Ranked, typo-tolerant, and the same search the chat uses (catalog-search.ts).
   const searchResult = useMemo(
@@ -356,8 +375,12 @@ function AdapterStoreContent() {
   const effortCounts = useMemo(() => {
     const counts = new Map<SetupEffortKind, number>();
     for (const a of list) if (a.setupEffort) counts.set(a.setupEffort.effort, (counts.get(a.setupEffort.effort) ?? 0) + 1);
-    return EFFORT_FILTERS.filter((f) => counts.has(f.effort)).map((f) => ({ ...f, count: counts.get(f.effort)! }));
-  }, [list]);
+    return EFFORT_FILTERS.filter((f) => counts.has(f.effort)).map((f) => ({
+      ...f,
+      label: effortFilterLabel(f.effort),
+      count: counts.get(f.effort)!,
+    }));
+  }, [list, effortFilterLabel]);
 
   // Reported across the whole catalog, not the category chip: the question
   // is whether we have the app at all.
@@ -365,14 +388,14 @@ function AdapterStoreContent() {
 
   return (
     <AppShell
-      backTo={{ label: 'Connectors', href: '/connectors' }}
-      title="Marketplace"
-      subtitle="Ready-made connectors for popular apps. Each card says what setting it up takes."
+      backTo={{ label: t('back'), href: '/connectors' }}
+      title={t('title')}
+      subtitle={t('subtitle')}
       actions={
         <Link href="/connectors/new">
           <Button>
             <PlusIcon />
-            Custom Connector
+            {t('customConnector')}
           </Button>
         </Link>
       }
@@ -390,7 +413,7 @@ function AdapterStoreContent() {
               onClick={() => setMsg('')}
               className="ml-3 text-xs underline hover:opacity-70"
             >
-              dismiss
+              {t('dismiss')}
             </button>
           </div>
         ) : null}
@@ -403,8 +426,8 @@ function AdapterStoreContent() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search adapters..."
-              aria-label="Search adapters"
+              placeholder={t('search.placeholder')}
+              aria-label={t('search.label')}
               autoComplete="off"
               className="h-9 w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] pl-9 pr-3 text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--border-strong)] focus:outline-none"
             />
@@ -413,10 +436,10 @@ function AdapterStoreContent() {
           {effortCounts.length > 1 && (
             <div
               role="group"
-              aria-label="Setup"
+              aria-label={t('setup')}
               className="flex items-center gap-2 max-sm:scrollbar-none max-sm:-mx-4 max-sm:overflow-x-auto max-sm:px-4 sm:flex-wrap"
             >
-              <span className="flex-shrink-0 text-[11.5px] font-medium text-[var(--text-3)]">Setup</span>
+              <span className="flex-shrink-0 text-[11.5px] font-medium text-[var(--text-3)]">{t('setup')}</span>
               {effortCounts.map((f) => {
                 const active = activeEffort === f.effort;
                 return (
@@ -454,7 +477,7 @@ function AdapterStoreContent() {
                   aria-pressed={activeCategory === null}
                   className={cn(CHIP, activeCategory === null ? CHIP_ON : CHIP_OFF)}
                 >
-                  All
+                  {t('all')}
                 </button>
                 {(activeIsHidden
                   ? [...shownCategories, categories.find((c) => c.slug === activeCategory)!]
@@ -482,7 +505,7 @@ function AdapterStoreContent() {
                     onClick={() => setShowAllCategories(true)}
                     className={cn(CHIP, CHIP_OFF, 'border-dashed')}
                   >
-                    +{hiddenCategoryCount} more
+                    {t('more', { count: hiddenCategoryCount })}
                   </button>
                 )}
                 {showAllCategories && (
@@ -490,7 +513,7 @@ function AdapterStoreContent() {
                     onClick={() => setShowAllCategories(false)}
                     className={cn(CHIP, 'border-transparent text-[var(--text-3)] hover:text-[var(--text)]')}
                   >
-                    Show fewer
+                    {t('showFewer')}
                   </button>
                 )}
               </div>
@@ -498,12 +521,12 @@ function AdapterStoreContent() {
               {/* What the filters actually did, in one line. */}
               <p className="text-[11.5px] text-[var(--text-3)]">
                 {filtered.length === list.length
-                  ? `${list.length} adapters`
-                  : `${filtered.length} of ${list.length} adapters`}
+                  ? t('summary.all', { total: list.length })
+                  : t('summary.some', { shown: filtered.length, total: list.length })}
                 {activeCategory && ` · ${categoryLabel(activeCategory)}`}
-                {activeEffort && ` · ${EFFORT_FILTERS.find((f) => f.effort === activeEffort)?.label}`}
-                {searchResult?.match === 'fuzzy' && ` · no exact match, showing similar names`}
-                {searchResult?.match === 'partial' && ` · matching some of the words`}
+                {activeEffort && ` · ${effortFilterLabel(activeEffort)}`}
+                {searchResult?.match === 'fuzzy' && ` · ${t('summary.fuzzy')}`}
+                {searchResult?.match === 'partial' && ` · ${t('summary.partial')}`}
               </p>
             </div>
           )}
@@ -522,17 +545,18 @@ function AdapterStoreContent() {
         ) : filtered.length === 0 ? (
           <div className="rounded-[14px] border border-dashed border-[var(--border)] px-5 py-16 text-center">
             {list.length === 0 ? (
-              <p className="text-[var(--text-3)]">No adapters available yet.</p>
+              <p className="text-[var(--text-3)]">{t('empty')}</p>
             ) : (
               <>
                 <p className="text-sm text-[var(--text-2)]">
-                  Nothing matches{search ? ` “${search}”` : ''}
-                  {activeCategory ? ` in ${categoryLabel(activeCategory)}` : ''}
-                  {activeEffort ? ` with ${EFFORT_FILTERS.find((f) => f.effort === activeEffort)?.label.toLowerCase()}` : ''}.
+                  {t('noMatch.text', {
+                    search: search ? t('noMatch.search', { search }) : '',
+                    category: activeCategory ? t('noMatch.category', { category: categoryLabel(activeCategory) }) : '',
+                    effort: activeEffort ? t('noMatch.effort', { effort: tEffort(`inSentence.${activeEffort}`) }) : '',
+                  })}
                 </p>
                 <p className="mx-auto mt-1 max-w-[46ch] text-[13px] text-[var(--text-3)]">
-                  Any REST, SOAP, GraphQL or SQL system can still become a
-                  connector — the adapters are just a head start.
+                  {t('noMatch.hint')}
                 </p>
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                   <Button
@@ -544,10 +568,10 @@ function AdapterStoreContent() {
                       setActiveEffort(null);
                     }}
                   >
-                    Clear filters
+                    {t('noMatch.clear')}
                   </Button>
                   <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
-                    Build a custom connector
+                    {t('noMatch.custom')}
                   </Link>
                 </div>
               </>
@@ -579,7 +603,7 @@ function AdapterStoreContent() {
                         </span>
                         {popular.has(adapter.slug) && (
                           <Badge tone="brand" className="shrink-0">
-                            Popular
+                            {t('card.popular')}
                           </Badge>
                         )}
                       </div>
@@ -588,7 +612,7 @@ function AdapterStoreContent() {
                           {categoryLabel(adapter.category)}
                         </span>
                         <span className="text-[var(--border-strong)]">·</span>
-                        <span>{REGION_LABELS[adapter.region] || adapter.region}</span>
+                        <span>{regionLabel(adapter.region)}</span>
                       </div>
                     </div>
                   </div>
@@ -602,7 +626,7 @@ function AdapterStoreContent() {
                       <span className="font-semibold text-[var(--text)]">
                         {adapter.toolCount}
                       </span>
-                      <span>tool{adapter.toolCount !== 1 ? 's' : ''}</span>
+                      <span>{t('card.tools', { count: adapter.toolCount })}</span>
                       <span aria-hidden className="ml-1 inline-flex gap-[1.5px]">
                         {Array.from({ length: 10 }, (_, i) => (
                           <span
@@ -618,7 +642,7 @@ function AdapterStoreContent() {
                         <Badge
                           tone={effortTone(adapter.setupEffort)}
                           className="max-w-full min-w-0 truncate"
-                          title="What setting it up takes"
+                          title={t('card.effortTitle')}
                         >
                           {effortLabel(adapter.setupEffort)}
                         </Badge>
@@ -628,7 +652,7 @@ function AdapterStoreContent() {
                           className="max-w-full min-w-0 gap-1 truncate font-mono uppercase tracking-wider"
                         >
                           {isPublic ? <SparklesIcon /> : <LockIcon />}
-                          {adapterAuthLabel(adapter)}
+                          {authTypeLabel(adapter.authType === 'NONE' && !isPublic ? 'API_KEY' : adapter.authType)}
                         </Badge>
                       )}
                       {adapter.docsUrl && (
@@ -636,8 +660,8 @@ function AdapterStoreContent() {
                           href={adapter.docsUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          title="API documentation"
-                          aria-label="API documentation"
+                          title={t('card.docs')}
+                          aria-label={t('card.docs')}
                           className="inline-flex size-7 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-3)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)]"
                         >
                           <ExternalLinkIcon />
@@ -648,7 +672,7 @@ function AdapterStoreContent() {
                         onClick={() => handleImportClick(adapter)}
                         className="h-7 gap-1 px-2.5"
                       >
-                        Install
+                        {t('card.install')}
                         <ArrowRightIcon />
                       </Button>
                     </div>
