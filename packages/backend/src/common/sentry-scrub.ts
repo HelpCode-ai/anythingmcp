@@ -132,6 +132,21 @@ export function scrubSpan(span: StreamedSpan): StreamedSpan {
   return span;
 }
 
+/**
+ * SDK v11's MCP server integration reports every error the MCP transport
+ * raises as an unhandled exception. Those errors are the SDK refusing a
+ * client's request (wrong Accept header, unknown session, malformed JSON),
+ * already answered with a 4xx and logged at WARN, so a crawler on /mcp/demo
+ * could open backend issues at will (ANYTHINGMCP-CLOUD-BACKEND-A).
+ */
+export function isMcpTransportError(event: Event): boolean {
+  return (event.exception?.values ?? []).some(
+    (value) =>
+      value.mechanism?.type === 'auto.ai.mcp_server' &&
+      value.mechanism.data?.error_type === 'transport',
+  );
+}
+
 export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
   if (breadcrumb.category === 'console') return null;
   scrubUrlData(breadcrumb.data);
