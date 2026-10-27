@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { OpenApiParser } from './openapi.parser';
 
 describe('OpenApiParser', () => {
@@ -14,6 +17,74 @@ describe('OpenApiParser', () => {
   };
 
   // ── Basics ──────────────────────────────────────────────────────────────
+
+  describe('documents only', () => {
+    let dir: string;
+    let localFile: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'openapi-parser-'));
+      localFile = join(dir, 'local.json');
+      writeFileSync(
+        localFile,
+        JSON.stringify({ ...minimalSpec, paths: { '/leaked': { get: { operationId: 'leaked', responses: { '200': { description: 'ok' } } } } } }),
+      );
+    });
+
+    afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+    it('rejects text that is not a document instead of reading it as a path', async () => {
+      await expect(parser.parse(localFile)).rejects.toThrow('This is not an OpenAPI document');
+      await expect(parser.parse('curl https://api.example.com/v1/items')).rejects.toThrow(
+        'This is not an OpenAPI document',
+      );
+      await expect(parser.parse('[]')).rejects.toThrow('This is not an OpenAPI document');
+    });
+
+    it('does not follow external $refs', async () => {
+      const spec = {
+        ...minimalSpec,
+        paths: {
+          '/items': {
+            get: {
+              operationId: 'listItems',
+              responses: {
+                '200': {
+                  description: 'ok',
+                  content: { 'application/json': { schema: { $ref: `${localFile}#/paths` } } },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      let output = '';
+      try {
+        output = JSON.stringify(await parser.parseSpec(spec));
+      } catch (err) {
+        output = String(err);
+      }
+      expect(output).not.toContain('leaked');
+    });
+
+    it('still resolves $refs inside the document', async () => {
+      const tools = await parser.parse({
+        ...minimalSpec,
+        components: { schemas: { Item: { type: 'object', properties: { id: { type: 'string' } } } } },
+        paths: {
+          '/items': {
+            post: {
+              operationId: 'createItem',
+              requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } },
+              responses: { '200': { description: 'ok' } },
+            },
+          },
+        },
+      });
+      expect(JSON.stringify(tools[0].parameters)).toContain('"id"');
+    });
+  });
 
   it('should parse an empty spec', async () => {
     const tools = await parser.parse(minimalSpec);
