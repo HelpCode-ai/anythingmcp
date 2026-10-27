@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { mcpServers, connectors as connectorsApi, mcpKeys, productEvents, server as serverApi } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
@@ -31,6 +32,7 @@ export default function McpServerDetailPage() {
   const { token, deploymentMode } = useAuth();
   const isCloud = deploymentMode === 'cloud';
   const router = useRouter();
+  const t = useTranslations('mcpServer');
 
   const [server, setServer] = useState<any>(null);
   // Bumped a moment after the first request arrives, so the card-trial offer
@@ -46,12 +48,14 @@ export default function McpServerDetailPage() {
   const [editDescription, setEditDescription] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [editSkillsDelivery, setEditSkillsDelivery] = useState<'auto' | 'inline' | 'index'>('auto');
-  const [saveMsg, setSaveMsg] = useState('');
+  // `error` colours the line; it used to be read from an "Error" prefix,
+  // which a translated message does not have.
+  const [saveMsg, setSaveMsg] = useState<{ text: string; error: boolean } | null>(null);
 
   // API key state
   const [newKeyName, setNewKeyName] = useState('');
   const [generatedKey, setGeneratedKey] = useState('');
-  const [keyMsg, setKeyMsg] = useState('');
+  const [keyMsg, setKeyMsg] = useState<{ text: string; error: boolean } | null>(null);
 
   // Connector assignment state. A change is saved the moment it is made: the
   // list used to wait for a "Save assignments" button below it, which went
@@ -128,10 +132,10 @@ export default function McpServerDetailPage() {
         skillsDelivery: editSkillsDelivery,
       }, token);
       setServer((prev: any) => ({ ...prev, ...updated }));
-      setSaveMsg('Saved');
-      setTimeout(() => setSaveMsg(''), 2000);
+      setSaveMsg({ text: t('saved'), error: false });
+      setTimeout(() => setSaveMsg(null), 2000);
     } catch (err: any) {
-      setSaveMsg(`Error: ${err.message}`);
+      setSaveMsg({ text: t('error', { message: err.message }), error: true });
     }
   };
 
@@ -164,7 +168,7 @@ export default function McpServerDetailPage() {
           currentIds.current = savedIds.current;
           setAssignedIds(new Set(savedIds.current));
           setAssignStatus('error');
-          setAssignError(err?.message || 'Could not save');
+          setAssignError(err?.message || t('assignError'));
         }
       }
     });
@@ -184,12 +188,12 @@ export default function McpServerDetailPage() {
       productEvents.track('api_key_generated', token, { serverId: id });
       setGeneratedKey(result.key);
       setNewKeyName('');
-      setKeyMsg('Key generated! Copy it now — it will not be shown again.');
+      setKeyMsg({ text: t('keyGenerated'), error: false });
       // Reload server to refresh key list
       const srv = await mcpServers.get(id, token);
       setServer(srv);
     } catch (err: any) {
-      setKeyMsg(`Error: ${err.message}`);
+      setKeyMsg({ text: t('error', { message: err.message }), error: true });
     }
   };
 
@@ -199,26 +203,26 @@ export default function McpServerDetailPage() {
       await mcpKeys.revoke(keyId, token);
       const srv = await mcpServers.get(id, token);
       setServer(srv);
-      setKeyMsg('Key revoked');
+      setKeyMsg({ text: t('keyRevoked'), error: false });
     } catch (err: any) {
-      setKeyMsg(`Error: ${err.message}`);
+      setKeyMsg({ text: t('error', { message: err.message }), error: true });
     }
   };
 
   const handleDeleteKey = async (keyId: string) => {
-    if (!token || !confirm('Delete this API key permanently?')) return;
+    if (!token || !confirm(t('confirmDeleteKey'))) return;
     try {
       await mcpKeys.delete(keyId, token);
       const srv = await mcpServers.get(id, token);
       setServer(srv);
-      setKeyMsg('Key deleted');
+      setKeyMsg({ text: t('keyDeleted'), error: false });
     } catch (err: any) {
-      setKeyMsg(`Error: ${err.message}`);
+      setKeyMsg({ text: t('error', { message: err.message }), error: true });
     }
   };
 
   const handleDeleteServer = async () => {
-    if (!token || !id || !confirm('Delete this MCP server? API keys will be unlinked.')) return;
+    if (!token || !id || !confirm(t('confirmDeleteServer'))) return;
     try {
       await mcpServers.delete(id, token);
       router.push('/mcp-server');
@@ -243,7 +247,7 @@ export default function McpServerDetailPage() {
 
   if (loading) {
     return (
-      <AppShell backTo={{ label: 'MCP Servers', href: '/mcp-server' }} title="Loading...">
+      <AppShell backTo={{ label: t('back'), href: '/mcp-server' }} title={t('loading')}>
         <div className="animate-pulse space-y-4">
           <div className="h-8 w-1/3 rounded-[9px] bg-[var(--surface-2)]" />
           <div className="h-40 rounded-[14px] bg-[var(--surface-2)]" />
@@ -255,9 +259,9 @@ export default function McpServerDetailPage() {
 
   if (!server) {
     return (
-      <AppShell backTo={{ label: 'MCP Servers', href: '/mcp-server' }} title="Not Found">
+      <AppShell backTo={{ label: t('back'), href: '/mcp-server' }} title={t('notFoundTitle')}>
         <Card className="p-10 text-center">
-          <p className="text-[var(--text-3)]">MCP server not found.</p>
+          <p className="text-[var(--text-3)]">{t('notFound')}</p>
         </Card>
       </AppShell>
     );
@@ -370,6 +374,22 @@ export default function McpServerDetailPage() {
     { id: 'inspector', name: 'MCP Inspector', init: 'In', tone: 'neutral' },
   ];
 
+  // Tags for the translated instructions (`t.rich`), in this page's inline styles.
+  const inlineCode = 'rounded bg-[var(--surface-2)] px-1 font-mono';
+  const rich = {
+    strong: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
+    em: (chunks: React.ReactNode) => <em>{chunks}</em>,
+    code: (chunks: React.ReactNode) => <code className={inlineCode}>{chunks}</code>,
+  };
+  const richXs = {
+    ...rich,
+    code: (chunks: React.ReactNode) => <code className={`${inlineCode} text-xs`}>{chunks}</code>,
+  };
+  const richLabel = {
+    ...rich,
+    strong: (chunks: React.ReactNode) => <strong className="text-[var(--text-2)]">{chunks}</strong>,
+  };
+
   const codeBlock = (text: string, label: string) => (
     <div>
       <div className="mb-1.5 flex items-center justify-between">
@@ -378,7 +398,7 @@ export default function McpServerDetailPage() {
           onClick={() => handleCopy(text, `modal-${label}`)}
           className="text-[12px] font-semibold text-[var(--brand)] hover:underline"
         >
-          {copied === `modal-${label}` ? 'Copied!' : 'Copy'}
+          {copied === `modal-${label}` ? t('copied') : t('copy')}
         </button>
       </div>
       <pre className="overflow-x-auto rounded-[10px] bg-[#0c0f16] p-[13px] font-mono text-[12px] leading-[1.6] text-[#cdd6e8]">{text}</pre>
@@ -392,28 +412,22 @@ export default function McpServerDetailPage() {
   // the wrong one showed tools the user thought they had removed.
   const exposesLine = (className = '') => (
     <p className={cn('text-[11.5px] leading-[1.5] text-[var(--text-3)]', className)}>
-      {assignedConnectors.length === 0 ? (
-        <>This URL exposes <strong className="text-[var(--text-2)]">no connectors yet</strong>. Tick some under Assigned connectors.</>
-      ) : (
-        <>
-          This URL exposes{' '}
-          <strong className="text-[var(--text-2)]">{assignedConnectors.map((c) => c.name).join(', ')}</strong>
-          {' '}and nothing else.
-        </>
-      )}
+      {assignedConnectors.length === 0
+        ? t.rich('exposesNone', richLabel)
+        : t.rich('exposesSome', { ...richLabel, names: assignedConnectors.map((c) => c.name).join(', ') })}
     </p>
   );
 
   const endpointRow = (copyKey: string) => (
     <div>
-      <label className="mb-1.5 block text-[11px] text-[var(--text-3)]">MCP Endpoint URL</label>
+      <label className="mb-1.5 block text-[11px] text-[var(--text-3)]">{t('endpointUrl')}</label>
       <div className="flex gap-2">
         <code className="flex-1 break-all rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[9px] font-mono text-[12px] text-[var(--text-2)]">{endpointUrl}</code>
         <button
           onClick={() => handleCopy(endpointUrl, copyKey)}
           className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'flex-shrink-0')}
         >
-          {copied === copyKey ? 'Copied!' : 'Copy'}
+          {copied === copyKey ? t('copied') : t('copy')}
         </button>
       </div>
       {exposesLine('mt-1.5')}
@@ -438,12 +452,13 @@ export default function McpServerDetailPage() {
     isCloud ? (
       <div className="space-y-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3" data-testid="claude-directory">
         <p className="text-[13px] font-semibold text-[var(--text)]">
-          Fastest: add AnythingMCP from the Claude Directory
+          {t('directory.title')}
         </p>
-        {linkAction(CLAUDE_DIRECTORY_URL, 'Open the Claude Directory', true)}
+        {linkAction(CLAUDE_DIRECTORY_URL, t('directory.open'), true)}
         <p className="text-xs leading-[1.55] text-[var(--text-3)]">
-          The directory connects your shared <code className="rounded bg-[var(--surface)] px-1 font-mono">/mcp</code> endpoint:
-          you choose which servers it reaches when you sign in. The steps below add this server only.
+          {t.rich('directory.body', {
+            code: (chunks) => <code className="rounded bg-[var(--surface)] px-1 font-mono">{chunks}</code>,
+          })}
         </p>
       </div>
     ) : null;
@@ -454,39 +469,42 @@ export default function McpServerDetailPage() {
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              Click the button below to automatically add this MCP server to Cursor. Cursor must be installed on your machine.
+              {t('modal.cursorBody')}
             </p>
-            {linkAction(cursorDeepLink(), 'Open in Cursor')}
+            {linkAction(cursorDeepLink(), t('modal.openCursor'))}
           </div>
         );
       case 'vscode':
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              Click the button below to automatically add this MCP server to VS Code. GitHub Copilot extension required for MCP support.
+              {t('modal.vscodeBody')}
             </p>
-            {linkAction(vscodeDeepLink(), 'Open in VS Code')}
+            {linkAction(vscodeDeepLink(), t('modal.openVscode'))}
           </div>
         );
       case 'copilot':
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              GitHub Copilot supports remote MCP servers in <strong>VS Code</strong>,{' '}
-              <strong>Visual Studio</strong> (desktop), JetBrains, Eclipse and Xcode.
-              Add the config below to the matching file for your IDE, then start the
-              server from the Copilot Chat → <strong>Tools</strong> menu.
+              {t.rich('modal.copilotBody', rich)}
             </p>
             {codeBlock(copilotConfig, 'copilot-oauth')}
             <div className="space-y-1 text-[12px] leading-[1.6] text-[var(--text-3)]">
-              <div><strong className="text-[var(--text-2)]">VS Code:</strong> workspace <code className="rounded bg-[var(--surface-2)] px-1 font-mono">.vscode/mcp.json</code> (or use the one-click button below).</div>
-              <div><strong className="text-[var(--text-2)]">Visual Studio (desktop):</strong> <code className="rounded bg-[var(--surface-2)] px-1 font-mono">{'<solution>\\.mcp.json'}</code> or <code className="rounded bg-[var(--surface-2)] px-1 font-mono">%USERPROFILE%\\.mcp.json</code>.</div>
-              <div><strong className="text-[var(--text-2)]">JetBrains / Eclipse / Xcode:</strong> Copilot Chat → MCP settings → add server, paste the endpoint URL.</div>
+              <div>{t.rich('modal.copilotVscode', richLabel)}</div>
+              <div>
+                {t.rich('modal.copilotVisualStudio', {
+                  ...richLabel,
+                  solutionPath: '<solution>\\.mcp.json',
+                  userPath: '%USERPROFILE%\\.mcp.json',
+                })}
+              </div>
+              <div>{t.rich('modal.copilotOther', richLabel)}</div>
             </div>
-            {linkAction(vscodeDeepLink(), 'One-click add to VS Code')}
+            {linkAction(vscodeDeepLink(), t('modal.copilotOneClick'))}
             <details className="group pt-1">
               <summary className="cursor-pointer text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)]">
-                Using an API key instead of OAuth?
+                {t('modal.apiKeyInstead')}
               </summary>
               <div className="mt-3">{codeBlock(copilotConfigApiKey, 'copilot-apikey')}</div>
             </details>
@@ -497,14 +515,13 @@ export default function McpServerDetailPage() {
           <div className="space-y-4">
             {claudeDirectoryNote()}
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. Click the button below: Claude opens its <strong>Add custom connector</strong> dialog.<br />
-              2. Enter a name and paste the MCP endpoint URL below, then click <strong>Add</strong>.<br />
-              3. Click <strong>Connect</strong> and approve access.
+              {t.rich('modal.claudeWebStep1', rich)}<br />
+              {t.rich('modal.claudeWebStep2', rich)}<br />
+              {t.rich('modal.claudeWebStep3', rich)}
             </p>
-            {linkAction(CLAUDE_ADD_CONNECTOR_URL, 'Add to Claude', true)}
+            {linkAction(CLAUDE_ADD_CONNECTOR_URL, t('modal.addToClaude'), true)}
             <p className="text-xs leading-[1.55] text-[var(--text-3)]">
-              Dialog not showing? In Claude open <strong>Customize → Connectors</strong>,
-              click <strong>+</strong>, then <strong>Add custom connector</strong>.
+              {t.rich('modal.claudeWebFallback', rich)}
             </p>
             {endpointRow('modal-endpoint')}
           </div>
@@ -514,29 +531,23 @@ export default function McpServerDetailPage() {
           <div className="space-y-4">
             {claudeDirectoryNote()}
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              <strong>Recommended:</strong> add this server from Claude Desktop&apos;s
-              built-in connector settings — it runs the OAuth login for you, with
-              no file editing. Editing <code className="rounded bg-[var(--surface-2)] px-1 font-mono text-xs">claude_desktop_config.json</code> with
-              a remote URL does <em>not</em> work: that file only launches local
-              commands, so Claude skips it as &ldquo;not a valid MCP server configuration&rdquo;.
+              {t.rich('modal.claudeDesktopRecommended', richXs)}
             </p>
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. Open <strong>Customize → Connectors</strong> (in Claude Desktop, or with the button below).<br />
-              2. Click <strong>+</strong>, then <strong>Add custom connector</strong>.<br />
-              3. Enter a name and paste the MCP endpoint URL below, then click <strong>Add</strong>.
+              {t.rich('modal.claudeDesktopStep1', rich)}<br />
+              {t.rich('modal.claudeDesktopStep2', rich)}<br />
+              {t.rich('modal.claudeDesktopStep3', rich)}
             </p>
-            {linkAction(CLAUDE_ADD_CONNECTOR_URL, 'Add to Claude', true)}
+            {linkAction(CLAUDE_ADD_CONNECTOR_URL, t('modal.addToClaude'), true)}
             {endpointRow('modal-claude-desktop-url')}
 
             <details className="group pt-1">
               <summary className="cursor-pointer text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)]">
-                Prefer the config file? Use the mcp-remote bridge
+                {t('modal.bridgeSummary')}
               </summary>
               <div className="mt-3 space-y-4">
                 <p className="text-xs leading-[1.55] text-[var(--text-3)]">
-                  Requires Node.js. The <code className="rounded bg-[var(--surface-2)] px-1 font-mono">mcp-remote</code> package
-                  wraps the remote server as a local command. Add to <code className="rounded bg-[var(--surface-2)] px-1 font-mono">claude_desktop_config.json</code> and
-                  restart Claude Desktop.
+                  {t.rich('modal.bridgeBody', rich)}
                 </p>
                 {codeBlock(claudeDesktopBridgeOAuth, 'claude-bridge-oauth')}
                 {codeBlock(claudeDesktopBridgeApiKey, 'claude-bridge-apikey')}
@@ -549,7 +560,7 @@ export default function McpServerDetailPage() {
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              Run this command in your terminal:
+              {t('modal.runCommand')}
             </p>
             <div className="flex gap-2">
               <code className="flex-1 break-all rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[9px] font-mono text-[12px] text-[var(--text-2)]">{cmd}</code>
@@ -557,7 +568,7 @@ export default function McpServerDetailPage() {
                 onClick={() => handleCopy(cmd, 'modal-claude-code')}
                 className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'flex-shrink-0')}
               >
-                {copied === 'modal-claude-code' ? 'Copied!' : 'Copy'}
+                {copied === 'modal-claude-code' ? t('copied') : t('copy')}
               </button>
             </div>
           </div>
@@ -567,17 +578,15 @@ export default function McpServerDetailPage() {
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. Click the button below to open <strong>Plugins</strong> in ChatGPT, then click <strong>+</strong> and <strong>Add custom MCP server</strong>.<br />
-              2. Enter a name (e.g. AnythingMCP), paste the MCP endpoint URL below as the <strong>Server URL</strong> and keep <strong>Authentication</strong> on <strong>OAuth</strong>.<br />
-              3. Select <strong>I understand and want to continue</strong>, then <strong>Create as a plugin</strong>, and sign in to AnythingMCP when asked.<br />
-              4. Install the plugin from your personal plugins, then type <strong>@</strong> in a chat to use it.
+              {t.rich('modal.chatgptStep1', rich)}<br />
+              {t.rich('modal.chatgptStep2', rich)}<br />
+              {t.rich('modal.chatgptStep3', rich)}<br />
+              {t.rich('modal.chatgptStep4', rich)}
             </p>
-            {linkAction('https://chatgpt.com/plugins', 'Open ChatGPT Plugins', true)}
+            {linkAction('https://chatgpt.com/plugins', t('modal.openChatgpt'), true)}
             {endpointRow('modal-chatgpt-url')}
             <p className="text-xs leading-[1.55] text-[var(--text-3)]">
-              No developer mode needed. On a Business workspace only admins and owners can add
-              custom MCP servers; on Enterprise and Edu an admin can grant the <strong>Create plugins with MCPs</strong> permission
-              under <strong>Workspace settings → Permissions &amp; roles</strong>.
+              {t.rich('modal.chatgptNote', rich)}
             </p>
           </div>
         );
@@ -592,19 +601,18 @@ Auth: OAuth`;
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. In Meta Muse, open <strong>Settings → Connectors → Add custom connector</strong>.<br />
-              2. Paste the MCP endpoint URL below.<br />
-              3. Muse opens the AnythingMCP sign-in page: sign in and approve access.<br />
-              4. Ask Muse to use one of the tools.
+              {t.rich('modal.museStep1', rich)}<br />
+              {t('modal.museStep2')}<br />
+              {t('modal.museStep3')}<br />
+              {t('modal.museStep4')}
             </p>
             {endpointRow('modal-muse-url')}
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              Or paste this into a Muse chat (web, iOS, Android or WhatsApp):
+              {t('modal.museChat')}
             </p>
             {codeBlock(musePrompt, 'muse-chat')}
             <p className="text-xs leading-[1.55] text-[var(--text-3)]">
-              Meta does not review custom connectors; you can disconnect this one any time in
-              Muse under <strong>Settings → Connectors</strong>. Muse is currently available in the US and Canada only.
+              {t.rich('modal.museNote', rich)}
             </p>
           </div>
         );
@@ -614,7 +622,7 @@ Auth: OAuth`;
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              Run this command in your terminal:
+              {t('modal.runCommand')}
             </p>
             <div className="flex gap-2">
               <code className="flex-1 break-all rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[9px] font-mono text-[12px] text-[var(--text-2)]">{cmd}</code>
@@ -622,7 +630,7 @@ Auth: OAuth`;
                 onClick={() => handleCopy(cmd, 'modal-gemini')}
                 className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'flex-shrink-0')}
               >
-                {copied === 'modal-gemini' ? 'Copied!' : 'Copy'}
+                {copied === 'modal-gemini' ? t('copied') : t('copy')}
               </button>
             </div>
           </div>
@@ -632,7 +640,7 @@ Auth: OAuth`;
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              Add this to your <code className="rounded bg-[var(--surface-2)] px-1 font-mono text-xs">~/.codeium/windsurf/mcp_config.json</code>:
+              {t.rich('modal.windsurfBody', richXs)}
             </p>
             {codeBlock(windsurfConfig, 'windsurf')}
           </div>
@@ -642,7 +650,7 @@ Auth: OAuth`;
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              Run this command in your terminal (Node 22.19 or later). It starts the Inspector already pointed at this server:
+              {t('modal.inspectorRun')}
             </p>
             <div className="flex gap-2">
               <code className="flex-1 break-all rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[9px] font-mono text-[12px] text-[var(--text-2)]">{cmd}</code>
@@ -650,18 +658,18 @@ Auth: OAuth`;
                 onClick={() => handleCopy(cmd, 'modal-inspector')}
                 className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'flex-shrink-0')}
               >
-                {copied === 'modal-inspector' ? 'Copied!' : 'Copy'}
+                {copied === 'modal-inspector' ? t('copied') : t('copy')}
               </button>
             </div>
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              The Inspector opens in your browser. If it doesn&apos;t, open it here:
+              {t('modal.inspectorOpens')}
             </p>
-            {linkAction(INSPECTOR_URL, 'Open in MCP Inspector', true)}
+            {linkAction(INSPECTOR_URL, t('modal.openInspector'), true)}
             <p className="text-xs leading-[1.55] text-[var(--text-3)]">
-              The Inspector hands its session token (<code className="rounded bg-[var(--surface-2)] px-1 font-mono">MCP_INSPECTOR_API_TOKEN</code>) to the page it opens, so you don&apos;t need to copy it.
+              {t.rich('modal.inspectorToken', rich)}
             </p>
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              Sign in with OAuth when the Inspector asks (connect, sign in and approve access), or use an API key: set an <code className="rounded bg-[var(--surface-2)] px-1 font-mono text-xs">X-API-Key</code> header in the server&apos;s settings in the Inspector. You can also add <code className="rounded bg-[var(--surface-2)] px-1 font-mono text-xs">--header &quot;X-API-Key: &lt;your key&gt;&quot;</code> to the command, but the key then stays in your shell history.
+              {t.rich('modal.inspectorAuth', { ...richXs, headerFlag: '--header "X-API-Key: <your key>"' })}
             </p>
             {endpointRow('modal-inspector-url')}
           </div>
@@ -674,12 +682,12 @@ Auth: OAuth`;
 
   // Tools from assigned connectors
   const toolsList = assignedConnectors.flatMap((c) =>
-    (c.tools || []).map((t: any) => ({ ...t, connectorName: c.name, connectorType: c.type })),
+    (c.tools || []).map((tool: any) => ({ ...tool, connectorName: c.name, connectorType: c.type })),
   );
 
   return (
     <AppShell
-      backTo={{ label: 'MCP Servers', href: '/mcp-server' }}
+      backTo={{ label: t('back'), href: '/mcp-server' }}
       title={server.name}
       maxWidth={1200}
       actions={
@@ -688,10 +696,10 @@ Auth: OAuth`;
               below it, which is where state belongs — labelling the button
               "Active" left it unclear whether it was a state or a switch. */}
           <Button variant="secondary" size="md" onClick={handleToggleActive}>
-            {server.isActive ? 'Deactivate' : 'Activate'}
+            {server.isActive ? t('deactivate') : t('activate')}
           </Button>
           <Button variant="outlineDanger" size="md" onClick={handleDeleteServer}>
-            Delete
+            {t('delete')}
           </Button>
         </div>
       }
@@ -709,7 +717,7 @@ Auth: OAuth`;
             <div className="flex items-center gap-[9px]">
               <span className="text-[18px] font-semibold tracking-[-0.02em]">{server.name}</span>
               <StatusPill tone={server.isActive ? 'success' : 'neutral'} dot={server.isActive ? 'var(--ok)' : 'var(--text-3)'}>
-                {server.isActive ? 'Active' : 'Inactive'}
+                {server.isActive ? t('active') : t('inactive')}
               </StatusPill>
             </div>
             <div className="mt-0.5 break-all font-mono text-[12.5px] text-[var(--text-3)]">{endpointUrl}</div>
@@ -729,21 +737,21 @@ Auth: OAuth`;
         )}
         <FirstSuccessOffer via="connect" refreshKey={offerKey} />
         <Card className="p-[22px]">
-          <div className="mb-[14px] text-sm font-semibold">Connect your MCP client</div>
-          <div className="mb-1.5 text-[11px] text-[var(--text-3)]">MCP endpoint</div>
+          <div className="mb-[14px] text-sm font-semibold">{t('connect.title')}</div>
+          <div className="mb-1.5 text-[11px] text-[var(--text-3)]">{t('connect.endpoint')}</div>
           <div className="mb-[18px] flex gap-2">
             <code className="flex-1 break-all rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-[10px] font-mono text-[12.5px] text-[var(--text-2)]">{endpointUrl}</code>
             <button
               onClick={() => handleCopy(endpointUrl, 'endpoint')}
               className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'flex-shrink-0')}
             >
-              {copied === 'endpoint' ? 'Copied!' : 'Copy'}
+              {copied === 'endpoint' ? t('copied') : t('copy')}
             </button>
           </div>
           {exposesLine('mb-3')}
 
           <div className="mb-[10px] text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--text-3)]">
-            Quick Connect
+            {t('connect.quickConnect')}
           </div>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
             {aiClients.map((client) => (
@@ -771,42 +779,40 @@ Auth: OAuth`;
           {/* Manual Config (collapsible) */}
           <details className="group mt-[18px]">
             <summary className="cursor-pointer text-sm font-medium text-[var(--text-3)] transition-colors hover:text-[var(--text)]">
-              Manual Configuration (Advanced)
+              {t('connect.manual')}
             </summary>
             <div className="mt-3 space-y-4">
               {/* OAuth config */}
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <h4 className="text-sm font-medium">OAuth (Cursor, VS Code, Claude Code)</h4>
+                  <h4 className="text-sm font-medium">{t('connect.oauthTitle')}</h4>
                   <button
                     onClick={() => handleCopy(claudeConfigOAuth, 'claude-oauth')}
                     className="text-[12px] font-semibold text-[var(--brand)] hover:underline"
                   >
-                    {copied === 'claude-oauth' ? 'Copied!' : 'Copy config'}
+                    {copied === 'claude-oauth' ? t('copied') : t('copyConfig')}
                   </button>
                 </div>
                 <pre className="overflow-x-auto rounded-[10px] bg-[#0c0f16] p-[13px] font-mono text-[12px] leading-[1.6] text-[#cdd6e8]">{claudeConfigOAuth}</pre>
                 <p className="mt-2 text-[11.5px] text-[var(--text-3)]">
-                  The client will auto-discover OAuth endpoints and prompt you to log in.
-                  Requires <code className="rounded bg-[var(--surface-2)] px-1 font-mono">MCP_AUTH_MODE=oauth2</code> or <code className="rounded bg-[var(--surface-2)] px-1 font-mono">both</code>.
+                  {t.rich('connect.oauthNote', rich)}
                 </p>
               </div>
 
               {/* API Key config */}
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <h4 className="text-sm font-medium">API Key (Claude Code, custom clients)</h4>
+                  <h4 className="text-sm font-medium">{t('connect.apiKeyTitle')}</h4>
                   <button
                     onClick={() => handleCopy(claudeConfigApiKey, 'claude-apikey')}
                     className="text-[12px] font-semibold text-[var(--brand)] hover:underline"
                   >
-                    {copied === 'claude-apikey' ? 'Copied!' : 'Copy config'}
+                    {copied === 'claude-apikey' ? t('copied') : t('copyConfig')}
                   </button>
                 </div>
                 <pre className="overflow-x-auto rounded-[10px] bg-[#0c0f16] p-[13px] font-mono text-[12px] leading-[1.6] text-[#cdd6e8]">{claudeConfigApiKey}</pre>
                 <p className="mt-2 text-[11.5px] text-[var(--text-3)]">
-                  Replace <code className="rounded bg-[var(--surface-2)] px-1 font-mono">YOUR_MCP_API_KEY</code> with a key generated below.
-                  Requires <code className="rounded bg-[var(--surface-2)] px-1 font-mono">MCP_AUTH_MODE=legacy</code> or <code className="rounded bg-[var(--surface-2)] px-1 font-mono">both</code>.
+                  {t.rich('connect.apiKeyNote', rich)}
                 </p>
               </div>
             </div>
@@ -814,14 +820,13 @@ Auth: OAuth`;
         </Card>
         {mcpAuthMode && (
         <Card className="p-[22px]" data-testid="share-server">
-          <div className="mb-[6px] text-sm font-semibold">Share this server</div>
+          <div className="mb-[6px] text-sm font-semibold">{t('share.title')}</div>
           <p className="mb-[14px] text-[12px] text-[var(--text-3)]">
-            Put one-click install badges in your team README, wiki or onboarding page.
-            They contain only the MCP URL; whoever clicks still signs in.
+            {t('share.body')}
           </p>
           {!badgesSupported ? (
             <p className="text-[12px] text-[var(--text-2)]" data-testid="share-oauth-required">
-              One-click installs need OAuth: set <code className="rounded bg-[var(--surface-2)] px-1 font-mono">MCP_AUTH_MODE=oauth2</code> or <code className="rounded bg-[var(--surface-2)] px-1 font-mono">both</code>.
+              {t.rich('share.oauthRequired', rich)}
             </p>
           ) : (
             <div className="space-y-3">
@@ -831,7 +836,7 @@ Auth: OAuth`;
                   style={{ background: 'var(--t-warn-bg)', color: 'var(--t-warn-fg)' }}
                   data-testid="share-localhost-warning"
                 >
-                  This MCP URL points to localhost, so the badges only work on this machine.
+                  {t('share.localhost')}
                 </p>
               )}
               {/* Local preview: styled links only, no remote images (offline installs). */}
@@ -841,14 +846,14 @@ Auth: OAuth`;
                   className="inline-flex items-center overflow-hidden rounded-[6px] bg-[#0b1220] text-[12px] font-semibold text-white"
                 >
                   <span className="px-2 py-1">Cursor</span>
-                  <span className="bg-[#1f2937] px-2 py-1">Add to Cursor</span>
+                  <span className="bg-[#1f2937] px-2 py-1">{t('share.addToCursor')}</span>
                 </a>
                 <a
                   href={vscodeInstallUrl(installTarget)}
                   className="inline-flex items-center overflow-hidden rounded-[6px] bg-[#0b1220] text-[12px] font-semibold text-white"
                 >
                   <span className="px-2 py-1">VS Code</span>
-                  <span className="bg-[#0066CC] px-2 py-1">Add to VS Code</span>
+                  <span className="bg-[#0066CC] px-2 py-1">{t('share.addToVscode')}</span>
                 </a>
               </div>
               <div className="flex gap-2">
@@ -856,13 +861,13 @@ Auth: OAuth`;
                   onClick={() => handleCopy(badgesMarkdown, 'badge-markdown')}
                   className={buttonVariants({ variant: 'secondary', size: 'md' })}
                 >
-                  {copied === 'badge-markdown' ? 'Copied!' : 'Copy Markdown'}
+                  {copied === 'badge-markdown' ? t('copied') : t('share.copyMarkdown')}
                 </button>
                 <button
                   onClick={() => handleCopy(badgesHtml, 'badge-html')}
                   className={buttonVariants({ variant: 'secondary', size: 'md' })}
                 >
-                  {copied === 'badge-html' ? 'Copied!' : 'Copy HTML'}
+                  {copied === 'badge-html' ? t('copied') : t('share.copyHtml')}
                 </button>
               </div>
               <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-[10px] bg-[#0c0f16] p-[13px] font-mono text-[12px] leading-[1.6] text-[#cdd6e8]">{badgesMarkdown}</pre>
@@ -884,7 +889,7 @@ Auth: OAuth`;
             >
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-base font-semibold">
-                  Connect to {aiClients.find((c) => c.id === connectClient)?.name}
+                  {t('modal.title', { client: aiClients.find((c) => c.id === connectClient)?.name ?? '' })}
                 </h3>
                 <button
                   onClick={() => setConnectClient(null)}
@@ -904,16 +909,16 @@ Auth: OAuth`;
         <Card className="p-[22px]">
           <div className="mb-1.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="text-sm font-semibold">Assigned connectors ({assignedIds.size})</div>
+              <div className="text-sm font-semibold">{t('assigned.title', { count: assignedIds.size })}</div>
               <span
                 role="status"
                 aria-live="polite"
                 className="text-[12px]"
                 style={{ color: assignStatus === 'error' ? 'var(--danger)' : 'var(--text-3)' }}
               >
-                {assignStatus === 'saving' && 'Saving…'}
-                {assignStatus === 'saved' && 'Saved'}
-                {assignStatus === 'error' && `Not saved: ${assignError}`}
+                {assignStatus === 'saving' && t('assigned.saving')}
+                {assignStatus === 'saved' && t('assigned.saved')}
+                {assignStatus === 'error' && t('assigned.notSaved', { error: assignError })}
               </span>
             </div>
             {allConnectors.length > 0 && (
@@ -922,22 +927,22 @@ Auth: OAuth`;
                   onClick={() => saveAssignments(new Set(allConnectors.map((c) => c.id)))}
                   className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-[10px] py-[5px] text-[12px] text-[var(--text-2)] hover:border-[var(--border-strong)]"
                 >
-                  Select all
+                  {t('assigned.selectAll')}
                 </button>
                 <button
                   onClick={() => saveAssignments(new Set())}
                   className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-[10px] py-[5px] text-[12px] text-[var(--text-2)] hover:border-[var(--border-strong)]"
                 >
-                  Deselect all
+                  {t('assigned.deselectAll')}
                 </button>
               </div>
             )}
           </div>
           <p className="mb-[14px] text-[12.5px] text-[var(--text-3)]">
-            Select which connectors expose their tools through this server. Changes are saved as you make them.
+            {t('assigned.description')}
           </p>
           {allConnectors.length === 0 ? (
-            <p className="text-[12.5px] text-[var(--text-3)]">No connectors available. Create a connector first.</p>
+            <p className="text-[12.5px] text-[var(--text-3)]">{t('assigned.none')}</p>
           ) : (
             <>
               <div className="mb-2 space-y-2">
@@ -967,8 +972,8 @@ Auth: OAuth`;
                       </span>
                       <span className="flex-1 text-[13.5px] font-medium">{c.name}</span>
                       <Badge tone="neutral">{c.type}</Badge>
-                      <span className="w-[60px] text-right text-[12px] text-[var(--text-3)]">
-                        {(c.tools || []).length} tools
+                      <span className="min-w-[60px] whitespace-nowrap text-right text-[12px] text-[var(--text-3)]">
+                        {t('assigned.tools', { count: (c.tools || []).length })}
                       </span>
                     </label>
                   );
@@ -979,8 +984,9 @@ Auth: OAuth`;
                 // this, "I added the connector and Claude sees nothing" reads
                 // as a broken server.
                 <p className="mt-2 text-[12.5px] text-[var(--text-3)]">
-                  AI clients that are already connected keep the tool list they loaded. Refresh it there: in
-                  Claude, open the connector and choose <span className="font-medium">⋮ → Refresh tools list</span>.
+                  {t.rich('assigned.refreshHint', {
+                    menu: (chunks) => <span className="font-medium">{chunks}</span>,
+                  })}
                 </p>
               )}
             </>
@@ -989,26 +995,26 @@ Auth: OAuth`;
 
         {/* API Keys */}
         <Card className="p-[22px]">
-          <div className="mb-1.5 text-sm font-semibold">API keys</div>
+          <div className="mb-1.5 text-sm font-semibold">{t('keys.title')}</div>
           <p className="mb-[14px] text-[12.5px] text-[var(--text-3)]">
-            Keys scoped to this server. Only tools from assigned connectors are available.
+            {t('keys.description')}
           </p>
 
           <div className="mb-4 space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <div className="flex-1 sm:max-w-sm">
-                <label className="mb-1.5 block text-[12.5px] font-medium">Key label</label>
+                <label className="mb-1.5 block text-[12.5px] font-medium">{t('keys.label')}</label>
                 <input
                   type="text"
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
-                  placeholder="e.g. Claude Desktop, Cursor"
+                  placeholder={t('keys.labelPlaceholder')}
                   className="h-[38px] w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13.5px] outline-none focus:border-[var(--brand)]"
                 />
               </div>
               <Button onClick={handleGenerateKey} disabled={!newKeyName.trim()} variant="primary" size="lg">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-                Generate
+                {t('keys.generate')}
               </Button>
             </div>
 
@@ -1018,25 +1024,31 @@ Auth: OAuth`;
                 style={{ background: 'var(--t-success-bg)', border: '1px solid color-mix(in srgb, var(--t-success-fg) 25%, transparent)' }}
               >
                 <p className="mb-1 text-[11.5px] font-semibold" style={{ color: 'var(--t-success-fg)' }}>
-                  Copy this key now! It will not be shown again.
+                  {t('keys.copyNow')}
                 </p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 select-all break-all rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 font-mono text-xs">
                     {generatedKey}
                   </code>
                   <button
-                    onClick={async () => setKeyMsg((await copyText(generatedKey)) ? 'Copied!' : 'Error: copy blocked by the browser. Select the key and copy it manually.')}
+                    onClick={async () =>
+                      setKeyMsg(
+                        (await copyText(generatedKey))
+                          ? { text: t('copied'), error: false }
+                          : { text: t('keys.copyBlocked'), error: true },
+                      )
+                    }
                     className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'flex-shrink-0')}
                   >
-                    Copy
+                    {t('copy')}
                   </button>
                 </div>
               </div>
             )}
 
             {keyMsg && (
-              <p className="text-[13px]" style={{ color: keyMsg.startsWith('Error') ? 'var(--danger)' : 'var(--ok)' }}>
-                {keyMsg}
+              <p className="text-[13px]" style={{ color: keyMsg.error ? 'var(--danger)' : 'var(--ok)' }}>
+                {keyMsg.text}
               </p>
             )}
           </div>
@@ -1054,10 +1066,12 @@ Auth: OAuth`;
                   </div>
                   <div className="flex items-center gap-3">
                     <StatusPill tone={k.isActive ? 'success' : 'neutral'}>
-                      {k.isActive ? 'active' : 'revoked'}
+                      {k.isActive ? t('keys.active') : t('keys.revoked')}
                     </StatusPill>
                     <span className="whitespace-nowrap text-[12px] text-[var(--text-3)]">
-                      Used {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : 'never'}
+                      {k.lastUsedAt
+                        ? t('keys.usedOn', { date: new Date(k.lastUsedAt).toLocaleDateString() })
+                        : t('keys.usedNever')}
                     </span>
                     <div className="ml-auto flex gap-1 sm:ml-0">
                       {k.isActive && (
@@ -1065,14 +1079,14 @@ Auth: OAuth`;
                           onClick={() => handleRevokeKey(k.id)}
                           className="text-[12px] text-[var(--text-2)] hover:text-[var(--text)] hover:underline"
                         >
-                          Revoke
+                          {t('keys.revoke')}
                         </button>
                       )}
                       <button
                         onClick={() => handleDeleteKey(k.id)}
                         className="text-[12px] text-[var(--danger)] hover:underline"
                       >
-                        Delete
+                        {t('keys.delete')}
                       </button>
                     </div>
                   </div>
@@ -1084,26 +1098,26 @@ Auth: OAuth`;
 
         {/* Active Tools */}
         <Card className="p-[22px]">
-          <div className="mb-[14px] text-sm font-semibold">Active tools ({toolsList.length})</div>
+          <div className="mb-[14px] text-sm font-semibold">{t('tools.title', { count: toolsList.length })}</div>
           {toolsList.length === 0 ? (
             <p className="text-[12.5px] text-[var(--text-3)]">
-              No tools available. Assign connectors with enabled tools above.
+              {t('tools.none')}
             </p>
           ) : (
             <div className="space-y-2">
-              {toolsList.map((t: any) => (
-                <div key={t.id} className="flex flex-col gap-1 rounded-[10px] bg-[var(--surface-2)] p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+              {toolsList.map((tool: any) => (
+                <div key={tool.id} className="flex flex-col gap-1 rounded-[10px] bg-[var(--surface-2)] p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     <span
                       className="h-2 w-2 flex-shrink-0 rounded-full"
-                      style={{ background: t.isEnabled ? 'var(--ok)' : 'var(--text-3)' }}
+                      style={{ background: tool.isEnabled ? 'var(--ok)' : 'var(--text-3)' }}
                     />
-                    <span className="break-all font-mono text-[13.5px] font-medium">{t.name}</span>
+                    <span className="break-all font-mono text-[13.5px] font-medium">{tool.name}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2 pl-4 sm:justify-end sm:pl-0">
-                    <span className="truncate text-[12px] text-[var(--text-3)]">{t.connectorName}</span>
-                    <StatusPill tone={t.isEnabled ? 'success' : 'neutral'}>
-                      {t.isEnabled ? 'enabled' : 'disabled'}
+                    <span className="truncate text-[12px] text-[var(--text-3)]">{tool.connectorName}</span>
+                    <StatusPill tone={tool.isEnabled ? 'success' : 'neutral'}>
+                      {tool.isEnabled ? t('tools.enabled') : t('tools.disabled')}
                     </StatusPill>
                   </div>
                 </div>
@@ -1114,11 +1128,11 @@ Auth: OAuth`;
 
         {/* Server settings + instructions — pinned to the top of the main column */}
         <Card className="order-first p-[22px]">
-          <div className="mb-4 text-sm font-semibold">Server settings</div>
+          <div className="mb-4 text-sm font-semibold">{t('settings.title')}</div>
           <div className="flex max-w-[520px] flex-col gap-[14px]">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1.5 block text-[12.5px] font-medium">Name</label>
+                <label className="mb-1.5 block text-[12.5px] font-medium">{t('settings.name')}</label>
                 <input
                   type="text"
                   value={editName}
@@ -1127,7 +1141,7 @@ Auth: OAuth`;
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-[12.5px] font-medium">Slug</label>
+                <label className="mb-1.5 block text-[12.5px] font-medium">{t('settings.slug')}</label>
                 <input
                   type="text"
                   value={server.slug}
@@ -1137,31 +1151,31 @@ Auth: OAuth`;
               </div>
             </div>
             <div>
-              <label className="mb-1.5 block text-[12.5px] font-medium">Description</label>
+              <label className="mb-1.5 block text-[12.5px] font-medium">{t('settings.description')}</label>
               <input
                 type="text"
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="What this MCP server is for"
+                placeholder={t('settings.descriptionPlaceholder')}
                 className="h-[38px] w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13.5px] outline-none placeholder:text-[var(--text-3)] focus:border-[var(--brand)]"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-[12.5px] font-medium">Instructions</label>
+              <label className="mb-1.5 block text-[12.5px] font-medium">{t('settings.instructions')}</label>
               <textarea
                 value={editInstructions}
                 onChange={(e) => setEditInstructions(e.target.value)}
-                placeholder="Custom instructions sent to AI clients when they connect to this MCP server. These are combined with instructions from assigned connectors."
+                placeholder={t('settings.instructionsPlaceholder')}
                 rows={4}
                 className="w-full resize-y rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 py-[10px] text-[13px] leading-[1.55] text-[var(--text-2)] outline-none placeholder:text-[var(--text-3)] focus:border-[var(--brand)]"
               />
               <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
-                Sent to AI clients on connect, combined with connector-level instructions.
+                {t('settings.instructionsHint')}
               </p>
             </div>
             <div>
               <label htmlFor="skills-delivery" className="mb-1.5 block text-[12.5px] font-medium">
-                Workspace skills on connect
+                {t('settings.skills')}
               </label>
               <select
                 id="skills-delivery"
@@ -1169,26 +1183,27 @@ Auth: OAuth`;
                 onChange={(e) => setEditSkillsDelivery(e.target.value as 'auto' | 'inline' | 'index')}
                 className="h-[38px] w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13.5px] outline-none focus:border-[var(--brand)]"
               >
-                <option value="auto">Automatic: full text while short, otherwise a list to open on demand</option>
-                <option value="inline">Always the full text</option>
-                <option value="index">Always a list (the AI opens a skill with skill_get)</option>
+                <option value="auto">{t('settings.skillsAuto')}</option>
+                <option value="inline">{t('settings.skillsInline')}</option>
+                <option value="index">{t('settings.skillsIndex')}</option>
               </select>
               <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
-                How this server&apos;s{' '}
-                <Link href="/knowledge-graph/skills" className="text-[var(--brand)] hover:underline">
-                  AI Skills
-                </Link>{' '}
-                reach the AI client. A list keeps the instructions short; long procedures are always
-                opened on demand.
+                {t.rich('settings.skillsHint', {
+                  link: (chunks) => (
+                    <Link href="/knowledge-graph/skills" className="text-[var(--brand)] hover:underline">
+                      {chunks}
+                    </Link>
+                  ),
+                })}
               </p>
             </div>
             {saveMsg && (
-              <p className="text-[13px]" style={{ color: saveMsg.startsWith('Error') ? 'var(--danger)' : 'var(--ok)' }}>
-                {saveMsg}
+              <p className="text-[13px]" style={{ color: saveMsg.error ? 'var(--danger)' : 'var(--ok)' }}>
+                {saveMsg.text}
               </p>
             )}
             <Button onClick={handleSave} variant="primary" size="lg" className="self-start">
-              Save
+              {t('settings.save')}
             </Button>
           </div>
         </Card>
