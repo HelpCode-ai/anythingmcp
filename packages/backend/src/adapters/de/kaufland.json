@@ -189,7 +189,10 @@
             "type": "number",
             "description": "Rows to skip, for paging."
           }
-        }
+        },
+        "required": [
+          "storefront"
+        ]
       },
       "endpointMapping": {
         "method": "GET",

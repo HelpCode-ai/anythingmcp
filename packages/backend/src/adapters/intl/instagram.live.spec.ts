@@ -51,3 +51,11 @@ describe('instagram adapter: static spec conformance', () => {
     expect(tool('instagram_publish_media').enabled).toBe(false);
   });
 });
+
+describe('instagram_get_media_insights metrics', () => {
+  it('does not offer follows or profile_visits, which the media insights API rejects', () => {
+    const t = tool('instagram_get_media_insights') as Tool & { description: string };
+    expect(t.description).not.toMatch(/follows|profile_visits/);
+    expect(t.parameters?.properties?.metric.description).not.toMatch(/follows|profile_visits/);
+  });
+});
