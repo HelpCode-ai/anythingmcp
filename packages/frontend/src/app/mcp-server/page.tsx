@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { mcpServers } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
@@ -11,10 +12,13 @@ import { StatusPill } from '@/components/ui/badge';
 import { AppSelect } from '@/components/ui/select';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { copyText } from '@/lib/clipboard';
+import { timeAgo, type TimeAgoTranslate } from '@/components/connection-check';
 
 export default function McpServerListPage() {
   const { token } = useAuth();
   const router = useRouter();
+  const t = useTranslations('mcpServers');
+  const tAgo = useTranslations('timeAgo');
   const [servers, setServers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -47,7 +51,7 @@ export default function McpServerListPage() {
       router.push(`/mcp-server/${server.id}`);
     } catch (err: any) {
       // Used to be swallowed: a failed create left the button doing nothing.
-      setCreateError(err?.message || 'Could not create the MCP server');
+      setCreateError(err?.message || t('createError'));
     } finally {
       setCreating(false);
     }
@@ -71,11 +75,11 @@ export default function McpServerListPage() {
 
   return (
     <AppShell
-      title="MCP Servers"
+      title={t('title')}
       actions={
         <Button onClick={() => setShowCreate(true)}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-          New MCP Server
+          {t('new')}
         </Button>
       }
     >
@@ -83,26 +87,26 @@ export default function McpServerListPage() {
         {/* Create dialog */}
         {showCreate && (
           <Card className="border-[var(--brand)] p-6">
-            <h3 className="mb-4 text-base font-semibold tracking-[-0.01em]">Create MCP Server</h3>
+            <h3 className="mb-4 text-base font-semibold tracking-[-0.01em]">{t('createTitle')}</h3>
             <div className="max-w-md space-y-3">
               <div>
-                <label className="mb-1 block text-[13px] font-medium text-[var(--text-2)]">Name</label>
+                <label className="mb-1 block text-[13px] font-medium text-[var(--text-2)]">{t('name')}</label>
                 <input
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g. Production, Development, Sales Tools"
+                  placeholder={t('namePlaceholder')}
                   className="w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
                   autoFocus
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[13px] font-medium text-[var(--text-2)]">Description (optional)</label>
+                <label className="mb-1 block text-[13px] font-medium text-[var(--text-2)]">{t('description')}</label>
                 <input
                   type="text"
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="What this MCP server is for"
+                  placeholder={t('descriptionPlaceholder')}
                   className="w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
                 />
               </div>
@@ -115,13 +119,13 @@ export default function McpServerListPage() {
               ) : null}
               <div className="flex gap-2 pt-1">
                 <Button onClick={handleCreate} disabled={!newName.trim() || creating}>
-                  {creating ? 'Creating…' : 'Create'}
+                  {creating ? t('creating') : t('create')}
                 </Button>
                 <Button
                   variant="secondary"
                   onClick={() => { setShowCreate(false); setNewName(''); setNewDescription(''); setCreateError(''); }}
                 >
-                  Cancel
+                  {t('cancel')}
                 </Button>
               </div>
             </div>
@@ -139,7 +143,7 @@ export default function McpServerListPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search MCP servers…"
+                placeholder={t('searchPlaceholder')}
                 className="w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] py-2 pl-10 pr-3 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
               />
             </div>
@@ -148,9 +152,9 @@ export default function McpServerListPage() {
               onValueChange={setStatusFilter}
               className="rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)]"
               options={[
-                { value: '', label: 'All statuses' },
-                { value: 'active', label: 'Active' },
-                { value: 'inactive', label: 'Inactive' },
+                { value: '', label: t('allStatuses') },
+                { value: 'active', label: t('active') },
+                { value: 'inactive', label: t('inactive') },
               ]}
             />
           </div>
@@ -171,12 +175,12 @@ export default function McpServerListPage() {
             <span className="flex h-12 w-12 items-center justify-center rounded-[12px]" style={{ background: 'var(--t-emerald-bg)', color: 'var(--t-emerald-fg)' }}>
               <ServerIcon />
             </span>
-            <p className="text-sm text-[var(--text-3)]">No MCP servers configured yet.</p>
-            <Button onClick={() => setShowCreate(true)}>Create your first MCP Server</Button>
+            <p className="text-sm text-[var(--text-3)]">{t('empty')}</p>
+            <Button onClick={() => setShowCreate(true)}>{t('createFirst')}</Button>
           </Card>
         ) : filtered.length === 0 ? (
           <Card className="px-6 py-12 text-center">
-            <p className="text-sm text-[var(--text-3)]">No MCP servers match your search.</p>
+            <p className="text-sm text-[var(--text-3)]">{t('noMatches')}</p>
           </Card>
         ) : (
           <div className="grid gap-4">
@@ -204,7 +208,7 @@ export default function McpServerListPage() {
                           )}
                         </div>
                         <div className="mt-0.5 text-xs text-[var(--text-3)]">
-                          {usageLine(s.usage)}
+                          {usageLine(s.usage, t, tAgo)}
                         </div>
                       </div>
                     </div>
@@ -213,7 +217,7 @@ export default function McpServerListPage() {
                       dot={active ? 'var(--ok)' : 'var(--danger)'}
                       className="flex-shrink-0"
                     >
-                      {active ? 'Active' : 'Inactive'}
+                      {active ? t('active') : t('inactive')}
                     </StatusPill>
                   </div>
 
@@ -222,16 +226,12 @@ export default function McpServerListPage() {
                   )}
 
                   <p className="mb-3 text-xs text-[var(--text-3)]">
-                    {s.connectors?.length ? (
-                      <>
-                        Exposes{' '}
-                        <span className="text-[var(--text-2)]">
-                          {s.connectors.map((c: any) => c.connector.name).join(', ')}
-                        </span>
-                      </>
-                    ) : (
-                      'No connectors assigned yet'
-                    )}
+                    {s.connectors?.length
+                      ? t.rich('exposes', {
+                          names: s.connectors.map((c: any) => c.connector.name).join(', '),
+                          b: (chunks) => <span className="text-[var(--text-2)]">{chunks}</span>,
+                        })
+                      : t('noConnectors')}
                   </p>
 
                   {/* Endpoint URL row with copy */}
@@ -242,8 +242,8 @@ export default function McpServerListPage() {
                     <button
                       type="button"
                       onClick={(e) => handleCopy(e, s.id)}
-                      aria-label="Copy endpoint URL"
-                      title="Copy endpoint URL"
+                      aria-label={t('copyEndpoint')}
+                      title={t('copyEndpoint')}
                       className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[7px] text-[var(--text-3)] hover:bg-[var(--surface-3)] hover:text-[var(--text)]"
                     >
                       {copiedId === s.id ? (
@@ -257,10 +257,10 @@ export default function McpServerListPage() {
                   {/* Stats row */}
                   <div className="flex flex-wrap gap-x-6 gap-y-1.5 border-t border-[var(--border)] pt-3 text-xs">
                     <span className="text-[var(--text-3)]">
-                      <span className="font-semibold text-[var(--text)]">{s._count?.connectors || 0}</span> connectors
+                      {t.rich('connectorsCount', { count: s._count?.connectors || 0, b: boldCount })}
                     </span>
                     <span className="text-[var(--text-3)]">
-                      <span className="font-semibold text-[var(--text)]">{s._count?.apiKeys || 0}</span> API keys
+                      {t.rich('apiKeysCount', { count: s._count?.apiKeys || 0, b: boldCount })}
                     </span>
                   </div>
                 </Card>
@@ -277,20 +277,18 @@ export default function McpServerListPage() {
  * What a server has actually been doing. The card used to count API keys as
  * "clients connected", which read 0 on servers used daily over OAuth.
  */
-function usageLine(usage?: { calls30d: number; lastCallAt: string | null }): string {
-  if (!usage?.lastCallAt || usage.calls30d === 0) return 'No calls in the last 30 days';
-  const calls = `${usage.calls30d.toLocaleString('en-US')} call${usage.calls30d === 1 ? '' : 's'} in 30 days`;
-  return `Last used ${timeAgo(usage.lastCallAt)} · ${calls}`;
+function usageLine(
+  usage: { calls30d: number; lastCallAt: string | null } | undefined,
+  t: (key: string, values?: Record<string, string | number>) => string,
+  tAgo: TimeAgoTranslate,
+): string {
+  if (!usage?.lastCallAt || usage.calls30d === 0) return t('noCalls');
+  return t('usage', { when: timeAgo(usage.lastCallAt, tAgo), calls: usage.calls30d });
 }
 
-function timeAgo(iso: string): string {
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.round(hours / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
+/** The number in the stats row, bold: `<b>{count}</b>` in the message. */
+function boldCount(chunks: React.ReactNode) {
+  return <span className="font-semibold text-[var(--text)]">{chunks}</span>;
 }
 
 function ServerIcon() {

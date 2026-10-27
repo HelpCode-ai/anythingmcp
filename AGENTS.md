@@ -74,6 +74,10 @@ Record baseline failures separately from regressions; never claim a failed run p
 Avoid root `npm test`: it runs tests in all workspaces and fails because the
 frontend has no `test` script. Use the backend command above for catalog tests.
 
+After changing docs, run `node scripts/generate-llms-txt.mjs` from the root and
+commit the generated files. Verify freshness with
+`node scripts/generate-llms-txt.mjs --check`.
+
 Run frontend checks in `packages/frontend`:
 
 ```bash
@@ -126,7 +130,9 @@ Read [docs/tool-definition.md](docs/tool-definition.md); run adapter commands fr
 5. Check the quoted counts and update the files the checker names:
    ```bash
    node scripts/adapter-count.mjs --check
+   node scripts/generate-llms-txt.mjs
    ```
+   Commit the updated counts and regenerated `llms.txt` and `llms-full.txt`.
 6. Add the logo at `packages/frontend/public/logos/connectors/<icon>.svg`.
 
 ## Hard rules and deployment modes

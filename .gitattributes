@@ -22,6 +22,8 @@ CHANGELOG.md        linguist-documentation
 
 # Lockfiles and large generated artefacts shouldn't pollute language stats.
 package-lock.json   linguist-generated
+llms.txt            linguist-generated
+llms-full.txt       linguist-generated
 *.svg               linguist-generated
 *.png binary
 *.jpg binary

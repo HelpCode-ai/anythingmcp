@@ -511,6 +511,91 @@ test.describe('audit log and analytics from Accept-Language', () => {
   });
 });
 
+/** The signed-in session plus one MCP server with a connector, for the server pages. */
+async function mcpServerSession(page: Page) {
+  await fakeSession(page);
+  const server = {
+    id: 's1',
+    name: 'Search',
+    slug: 'search',
+    isActive: true,
+    apiKeys: [],
+    connectors: [{ connector: { id: 'c1', name: 'Echo Service' } }],
+    _count: { connectors: 1, apiKeys: 0 },
+    usage: { calls30d: 1, lastCallAt: new Date(Date.now() - 2 * 86_400_000).toISOString() },
+  };
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\/(mcp-servers|connectors)/, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/mcp-servers')) return route.fulfill({ json: [server] });
+    if (path.endsWith('/mcp-servers/s1')) return route.fulfill({ json: { ...server, connectors: [] } });
+    if (path.endsWith('/mcp-servers/s1/activity')) return route.fulfill({ json: { lastCallAt: null, calls30d: 0 } });
+    if (path.endsWith('/connectors')) {
+      return route.fulfill({ json: [{ id: 'c1', name: 'Echo Service', type: 'REST', tools: [{ id: 't1', name: 'echo', isEnabled: true }] }] });
+    }
+    return route.fulfill({ json: {} });
+  });
+}
+
+test.describe('MCP server pages from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders /mcp-server in German, with plurals', async ({ page }) => {
+      await mcpServerSession(page);
+      await page.goto('/mcp-server');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('button', { name: 'Neuer MCP-Server' })).toBeVisible();
+      await expect(page.getByText('Zuletzt genutzt vor 2 Tagen · 1 Aufruf in 30 Tagen', { exact: true })).toBeVisible();
+      await expect(page.getByText('Aktiv', { exact: true }).last()).toBeVisible();
+      await expect(page.getByText('Stellt bereit: Echo Service', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 Connector', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders /mcp-server/[id] in Italian, including a Quick Connect modal', async ({ page }) => {
+      await mcpServerSession(page);
+      await page.goto('/mcp-server/s1');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByText('Connettori assegnati (0)', { exact: true })).toBeVisible();
+      await expect(page.getByText('Connetti il tuo client MCP', { exact: true })).toBeVisible();
+      await expect(page.getByText('Impostazioni del server', { exact: true })).toBeVisible();
+      // The connection check, waiting for the first request.
+      await expect(page.getByRole('region', { name: 'Verifica della connessione' })).toContainText(
+        'In attesa della prima richiesta',
+      );
+      // A rich-text line: the bold part is its own element.
+      await expect(page.getByText('ancora nessun connettore', { exact: true }).first()).toBeVisible();
+
+      await page.getByRole('button', { name: /Claude Desktop$/ }).click();
+      await expect(page.getByRole('heading', { name: 'Connetti a Claude Desktop' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Aggiungi a Claude', exact: true })).toBeVisible();
+      await expect(page.getByText('Consigliato:', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps /mcp-server and /mcp-server/[id] in English', async ({ page }) => {
+      await mcpServerSession(page);
+      await page.goto('/mcp-server');
+      await expect(page.getByText('Last used 2 days ago · 1 call in 30 days', { exact: true })).toBeVisible();
+      await expect(page.getByText('Exposes Echo Service', { exact: true })).toBeVisible();
+
+      await page.goto('/mcp-server/s1');
+      await expect(page.getByText('Assigned connectors (0)', { exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Connection check' })).toContainText('Waiting for the first request');
+      await page.getByRole('button', { name: 'Select all', exact: true }).click();
+      await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 tools', { exact: true })).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;

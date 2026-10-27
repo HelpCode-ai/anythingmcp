@@ -1,8 +1,21 @@
-import { createHash } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { buildStaticGraph } from './static/static-extractor';
 import { StaticGraph, ToolLike } from './static/types';
+
+// Prisma closes an interactive transaction after 5 s by default. A connector
+// with thousands of tools has thousands of nodes to upsert one by one, so the
+// transaction expired every time, the hash was never stored and every cron
+// run tried to write the whole graph again (16,608 tools on Cloud, Oct 2026).
+const PERSIST_TRANSACTION = { maxWait: 10_000, timeout: 180_000 };
+
+// Connectors above this many tools get no static graph. Far above anything
+// seen so far (16,608 on Cloud, Oct 2026); it only bounds the worst case.
+const MAX_STATIC_TOOLS = 50_000;
+
+// Part of the stored fingerprint: bump it when buildStaticGraph changes what
+// it derives from the same tools, so every connector is rebuilt once.
+const STATIC_SURFACE_VERSION = 'surface-v1';
 
 /**
  * Persists the STATIC knowledge-graph layer for a connector, org-scoped.
@@ -57,18 +70,7 @@ export class KgStaticService {
   ): Promise<{ nodes: number; edges: number; skipped: boolean }> {
     const connector = await this.prisma.connector.findUnique({
       where: { id: connectorId },
-      select: {
-        id: true,
-        organizationId: true,
-        tools: {
-          select: {
-            name: true,
-            description: true,
-            parameters: true,
-            outputSchema: true,
-          },
-        },
-      },
+      select: { id: true, organizationId: true },
     });
     if (!connector) return { nodes: 0, edges: 0, skipped: true };
 
@@ -76,23 +78,44 @@ export class KgStaticService {
     if (!(await this.isEnabled(organizationId))) {
       return { nodes: 0, edges: 0, skipped: true };
     }
-    const tools: ToolLike[] = connector.tools.map((t) => ({
+
+    // Skip unchanged connectors before loading their tools: on a connector
+    // with 16,608 tools, loading them and building the graph blocked the
+    // event loop for up to 2.6 s on every cron run (Cloud, Oct 2026), even
+    // though nothing had changed. Postgres fingerprints the tool surface.
+    const surface = await this.toolSurface(connectorId);
+    const state = await this.prisma.kgConnectorState.findUnique({
+      where: { connectorId },
+      select: { staticHash: true },
+    });
+    if (!opts?.force && state?.staticHash === surface.key) {
+      const [nodes, edges] = await Promise.all([
+        this.prisma.kgNode.count({ where: { organizationId, connectorId, source: 'STATIC' } }),
+        this.prisma.kgEdge.count({ where: { organizationId, source: 'STATIC', sourceNode: { connectorId } } }),
+      ]);
+      return { nodes, edges, skipped: true };
+    }
+    if (surface.tools > MAX_STATIC_TOOLS) {
+      this.logger.warn(
+        `KG static sync ${connectorId}: ${surface.tools} tools, above the ${MAX_STATIC_TOOLS} limit; skipped`,
+      );
+      return { nodes: 0, edges: 0, skipped: true };
+    }
+
+    const rows = await this.prisma.mcpTool.findMany({
+      where: { connectorId },
+      select: { name: true, description: true, parameters: true, outputSchema: true },
+    });
+    const tools: ToolLike[] = rows.map((t) => ({
       name: t.name,
       description: t.description,
       parameters: t.parameters as ToolLike['parameters'],
       outputSchema: t.outputSchema as ToolLike['outputSchema'],
     }));
-    const slug = deriveSlug(connector.tools.map((t) => t.name));
+    // Let pending requests run between the load and the (synchronous) build.
+    await new Promise((resolve) => setImmediate(resolve));
+    const slug = deriveSlug(rows.map((t) => t.name));
     const graph = buildStaticGraph(slug, tools);
-    const hash = hashGraph(graph);
-
-    const state = await this.prisma.kgConnectorState.findUnique({
-      where: { connectorId },
-      select: { staticHash: true },
-    });
-    if (!opts?.force && state?.staticHash === hash) {
-      return { nodes: graph.nodes.length, edges: graph.edges.length, skipped: true };
-    }
 
     await this.persist(organizationId, connectorId, graph);
 
@@ -101,16 +124,37 @@ export class KgStaticService {
       create: {
         organizationId,
         connectorId,
-        staticHash: hash,
+        staticHash: surface.key,
         lastStaticAt: new Date(),
       },
-      update: { staticHash: hash, lastStaticAt: new Date() },
+      update: { staticHash: surface.key, lastStaticAt: new Date() },
     });
 
     this.logger.debug(
       `KG static sync ${connectorId}: ${graph.nodes.length} nodes, ${graph.edges.length} edges`,
     );
     return { nodes: graph.nodes.length, edges: graph.edges.length, skipped: false };
+  }
+
+  /**
+   * Fingerprint of everything the static graph is built from (tool names,
+   * descriptions, parameters, output schemas), computed in Postgres so an
+   * unchanged connector costs one small query instead of loading every tool.
+   * The jsonb columns are hashed as jsonb: turning them into text first made
+   * the query take twice as long (1.4 s against 0.7 s for 16,608 tools). A
+   * Postgres upgrade may change these hashes; that only rebuilds once.
+   */
+  private async toolSurface(connectorId: string): Promise<{ tools: number; key: string }> {
+    const [row] = await this.prisma.$queryRaw<Array<{ tools: number; digest: string }>>`
+      SELECT count(*)::int AS tools,
+             md5(coalesce(string_agg(
+               hashtextextended(name, 0)::text || ',' || hashtextextended(description, 0)::text || ',' ||
+                 jsonb_hash_extended(parameters, 0)::text || ',' || coalesce(jsonb_hash_extended(output_schema, 0)::text, ''),
+               ';' ORDER BY name), '')) AS digest
+      FROM mcp_tools
+      WHERE connector_id = ${connectorId}
+    `;
+    return { tools: row?.tools ?? 0, key: `${STATIC_SURFACE_VERSION}:${row?.digest ?? ''}` };
   }
 
   /** Sync every connector in an organization. Returns aggregate counts. */
@@ -257,7 +301,7 @@ export class KgStaticService {
           id: { notIn: keptEdgeIds.length ? keptEdgeIds : ['__none__'] },
         },
       });
-    });
+    }, PERSIST_TRANSACTION);
   }
 }
 
@@ -273,21 +317,4 @@ export function deriveSlug(toolNames: string[]): string {
     if (!prefix.length) break;
   }
   return prefix.join('_');
-}
-
-/** Stable content hash of the static graph for incremental skip. */
-function hashGraph(graph: StaticGraph): string {
-  const canonical = {
-    nodes: [...graph.nodes]
-      .map((n) => ({
-        e: n.entity,
-        f: n.fields.map((f) => `${f.name}:${f.type}`).sort(),
-        o: [...n.outputFields].sort(),
-      }))
-      .sort((a, b) => a.e.localeCompare(b.e)),
-    edges: [...graph.edges]
-      .map((e) => `${e.sourceEntity}|${e.targetEntity}|${e.kind}|${e.matchKey ?? ''}`)
-      .sort(),
-  };
-  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }

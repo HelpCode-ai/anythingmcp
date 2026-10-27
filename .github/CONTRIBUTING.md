@@ -151,6 +151,8 @@ An adapter is one JSON file; the rest is generated and checked.
 4. Add `<region>/<slug>.live.spec.ts` (copy `intl/todoist.live.spec.ts`):
    static assertions always, live calls behind `RUN_<SLUG>_LIVE=1`.
 5. `node scripts/adapter-count.mjs --check` — bump the quoted counts it names.
+   Then run `node scripts/generate-llms-txt.mjs` and commit the regenerated
+   `llms.txt` and `llms-full.txt` alongside the count updates.
 6. Drop the brand logo at
    `packages/frontend/public/logos/connectors/<icon>.svg`.
 
@@ -189,7 +191,11 @@ Open an issue before starting work on:
 
 ## Pull Request Process
 
-1. **Update documentation** if your change affects user-facing behavior
+1. **Update documentation** if your change affects user-facing behavior.
+   After changing docs, run `node scripts/generate-llms-txt.mjs` from the root
+   and commit the generated files.
+   Keep sources inside the repository; the generator rejects symlinked inputs
+   and output files.
 2. **Add tests** for new functionality
 3. **Ensure all tests pass** (`npm test`)
 4. **Keep PRs focused** — one feature or fix per PR

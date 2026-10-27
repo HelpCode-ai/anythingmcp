@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { mcpServers, productEvents } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 
@@ -9,14 +10,17 @@ const POLL_MS = 5_000;
 /** After this long without a request the page stops asking (a reload restarts it). */
 const POLL_FOR_MS = 30 * 60_000;
 
-export function timeAgo(iso: string, now: number = Date.now()): string {
+/** Translator for the `timeAgo` namespace, from `useTranslations('timeAgo')`. */
+export type TimeAgoTranslate = (key: string, values?: Record<string, number>) => string;
+
+export function timeAgo(iso: string, t: TimeAgoTranslate, now: number = Date.now()): string {
   const minutes = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1) return t('justNow');
+  if (minutes < 60) return t('minutes', { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
+  if (hours < 24) return t('hours', { count: hours });
   const days = Math.round(hours / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
+  return t('days', { count: days });
 }
 
 type State =
@@ -43,6 +47,8 @@ export function ConnectionCheck({
   /** Called once when the first request arrives while the page is open. */
   onFirstCall?: () => void;
 }) {
+  const t = useTranslations('connectionCheck');
+  const tAgo = useTranslations('timeAgo');
   const [state, setState] = useState<State>({ kind: 'loading' });
   const sawWaiting = useRef(false);
   // Latest callback without restarting the poll when the parent re-renders.
@@ -100,14 +106,14 @@ export function ConnectionCheck({
         style={{ background: 'var(--t-emerald-bg)', color: 'var(--t-emerald-fg)' }}
       >
         <span className="h-2 w-2 rounded-full bg-[var(--ok)]" aria-hidden />
-        Connected · last request {timeAgo(state.at)} · {state.calls.toLocaleString('en-US')} in 30 days
+        {t('active', { when: timeAgo(state.at, tAgo), calls: state.calls })}
       </div>
     );
   }
 
   if (state.kind === 'arrived') {
     return (
-      <Card className="p-[18px]" role="region" aria-label="Connection check" aria-live="polite">
+      <Card className="p-[18px]" role="region" aria-label={t('label')} aria-live="polite">
         <div className="flex items-start gap-3">
           <span
             className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold"
@@ -117,9 +123,9 @@ export function ConnectionCheck({
             ✓
           </span>
           <div>
-            <div className="text-sm font-semibold">Connected — your AI client just called this server</div>
+            <div className="text-sm font-semibold">{t('arrivedTitle')}</div>
             <div className="mt-1 text-[12.5px] text-[var(--text-2)]">
-              Everything works. Ask it anything your connectors can answer.
+              {t('arrivedBody')}
             </div>
           </div>
         </div>
@@ -128,18 +134,18 @@ export function ConnectionCheck({
   }
 
   return (
-    <Card className="p-[18px]" role="region" aria-label="Connection check" aria-live="polite">
+    <Card className="p-[18px]" role="region" aria-label={t('label')} aria-live="polite">
       <div className="flex items-start gap-3">
         <span className="relative mt-1 flex h-2.5 w-2.5 flex-shrink-0" aria-hidden>
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--brand)] opacity-60" />
           <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[var(--brand)]" />
         </span>
         <div>
-          <div className="text-sm font-semibold">Waiting for the first request</div>
+          <div className="text-sm font-semibold">{t('waitingTitle')}</div>
           <ol className="mt-2 list-decimal space-y-1 pl-4 text-[12.5px] text-[var(--text-2)]">
-            <li>Pick your AI client under Quick Connect and add this server.</li>
-            <li>Ask it to use one of your tools, e.g. &ldquo;What can you do with my connectors?&rdquo;</li>
-            <li>This box turns green as soon as the request arrives.</li>
+            <li>{t('waitingStep1')}</li>
+            <li>{t('waitingStep2')}</li>
+            <li>{t('waitingStep3')}</li>
           </ol>
         </div>
       </div>

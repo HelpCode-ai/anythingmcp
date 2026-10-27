@@ -3,6 +3,7 @@ import {
   DEFAULT_TOOL_MAX_RESPONSE_BYTES,
   RESPONSE_TOO_LARGE_CODE,
   ResponseTooLargeError,
+  fitsResponseLimit,
   restateResponseTooLarge,
   toolMaxResponseBytes,
 } from './response-size-limit';
@@ -53,6 +54,43 @@ describe('ResponseTooLargeError', () => {
   it('formats small limits readably', () => {
     expect(new ResponseTooLargeError(1536).message).toMatch(/larger than 1\.5 KB/);
     expect(new ResponseTooLargeError(100).message).toMatch(/larger than 100 bytes/);
+  });
+
+  it('speaks of the tool result, not the API response, for an oversized result', () => {
+    const err = new ResponseTooLargeError(10 * 1024 * 1024, { source: 'result' });
+    expect(err.code).toBe(RESPONSE_TOO_LARGE_CODE);
+    expect(err.message).toMatch(/^The tool result is larger than 10 MB, the limit for one tool call/);
+    expect(err.message).not.toMatch(/stopped reading/);
+    expect(err.message).toMatch(/fewer fields/);
+    expect(err.message).toMatch(/TOOL_MAX_RESPONSE_BYTES/);
+    expect(err.cause).toBeUndefined();
+  });
+});
+
+describe('fitsResponseLimit', () => {
+  it('compares the UTF-8 bytes, not the characters, with the limit', () => {
+    expect(fitsResponseLimit('a'.repeat(10), 10)).toBe(true);
+    expect(fitsResponseLimit('a'.repeat(11), 10)).toBe(false);
+    // 'é' is 2 bytes, '€' is 3 and an emoji (a surrogate pair) is 4.
+    expect(fitsResponseLimit('é'.repeat(5), 10)).toBe(true);
+    expect(fitsResponseLimit('é'.repeat(6), 10)).toBe(false);
+    expect(fitsResponseLimit('€'.repeat(4), 10)).toBe(false);
+    expect(fitsResponseLimit('€'.repeat(3), 9)).toBe(true);
+    expect(fitsResponseLimit('😀'.repeat(2), 8)).toBe(true);
+    expect(fitsResponseLimit('😀'.repeat(3), 11)).toBe(false);
+  });
+
+  it('settles short and long texts by their length alone', () => {
+    const byteLength = jest.spyOn(Buffer, 'byteLength');
+    try {
+      expect(fitsResponseLimit('€'.repeat(3), 9)).toBe(true);
+      expect(fitsResponseLimit('a'.repeat(11), 10)).toBe(false);
+      expect(byteLength).not.toHaveBeenCalled();
+      expect(fitsResponseLimit('a'.repeat(5), 10)).toBe(true);
+      expect(byteLength).toHaveBeenCalledTimes(1);
+    } finally {
+      byteLength.mockRestore();
+    }
   });
 });
 

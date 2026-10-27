@@ -284,6 +284,7 @@ AI 处理默认关闭，使用你自己的 OpenAI、OpenRouter 或 Anthropic 密
 - 👥 **用户：**[哪些团队在生产环境中使用 AnythingMCP](docs/ADOPTERS.md)，以及如何添加你自己
 - 🔐 **安全：**请不要公开提交 issue，请遵循[安全策略](.github/SECURITY.md)
 - 🤖 **面向 AI 智能体和爬虫：**[anythingmcp.com/llms.txt](https://anythingmcp.com/llms.txt)
+- 🤖 **面向 AI 智能体的仓库文档：**[llms.txt](llms.txt) · [完整文本](llms-full.txt)
 - 🏢 由德国弗赖堡的 [helpcode.ai](https://helpcode.ai) 开发。AI 辅助开发，人工审核：[AUTHORS.md](docs/AUTHORS.md) 说明了哪些部分以及如何进行。
 
 ## 参与贡献
