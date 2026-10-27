@@ -1,0 +1,12 @@
+- Wie viel Bestand von Artikel „LED-Panel 60x60" liegt in jedem Lager, und wie viel ist für den Versand reserviert?
+- Ist Auftrag AU-2026-10482 schon verschickt, und wie lautet die Sendungsnummer?
+- Such den Auftrag zur externen Shop-Bestellnummer SH-88341 und zeig mir Status und Positionen.
+- Welche Aufträge wurden heute angelegt, mit Auftragsnummer, Kunde und Versandart?
+- Finde den Kunden „Weber Elektrotechnik GmbH" und zeig Rechnungs- und Lieferadresse.
+- Zeig die Positionen von Auftrag AU-2026-10450 mit bestellter, gelieferter und retournierter Menge.
+- Welche Lager sind in unserer JTL-Wawi eingerichtet und von welchem Typ sind sie?
+- Such den Artikel mit der EAN 4012345678901 und zeig Artikelnummer, Preis und Maße.
+- Liste die letzten zehn Aufträge von Kunde 10422 und prüfe, zu welchen es schon einen Lieferschein gibt.
+- Bei welchen Positionen aus Auftrag AU-2026-10390 steht noch eine Teillieferung aus?
+- Zeig alle Lieferscheine und Tracking-Links für den Kunden „Nordlicht Handel KG".
+- Such im Artikelstamm nach „Kabelkanal" und liste Artikelnummern, Hersteller und Preise auf.

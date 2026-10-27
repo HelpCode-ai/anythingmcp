@@ -1,0 +1,14 @@
+- Which entity sets and fields does our Sage 100 Web API publish in $metadata?
+- Find the address record with matchcode "MUSTER" in Adressen and show its contact and city details.
+- List the sales documents (Belege) from this month with their document number, customer and total.
+- Show document 20260415 from Belege together with its line item positions.
+- Search the article master (Artikel) for items matching "Schraube M8" and show their unit and price.
+- List all addresses in Munich from Adressen with their address number and matchcode.
+- Show the full article record for item key "100420" from Artikel.
+- Which sales documents created since 2026-01-01 have a total above 10,000 EUR?
+- List the last 20 documents for address number 10015 ordered by document date descending.
+- Query the custom entity sets exposed on our Sage 100 installation and summarise what each one holds.
+- Show address 10015 from Adressen and expand its linked contact or account records.
+- Which items in Artikel belong to product group "ERSATZTEILE" and what are their prices?
+- List today's documents from Belege with their document type, number and address.
+- Inspect $metadata to find which entity set stores warehouse stock on our Sage 100 system and query the top 20 rows.
