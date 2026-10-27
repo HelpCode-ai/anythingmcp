@@ -1,0 +1,597 @@
+{
+  "slug": "mirakl-connect",
+  "name": "Mirakl Connect",
+  "aliases": [
+    "Mirakl Connect API",
+    "Mirakl Channel Manager"
+  ],
+  "description": "Mirakl Connect for sellers: orders from every connected marketplace and sales channel in one place, returns, order documents, customer conversations, and the Connect catalog with prices and stock. Shipping, cancelling and accepting order lines are included, installed switched off. Different from the Mirakl Seller API of a single marketplace.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "mirakl-connect",
+  "docsUrl": "https://developer.mirakl.com/content/product/connect/rest/connect/openapi3",
+  "instructions": "## Mirakl Connect\nThis connector uses the **Mirakl Connect API** (`https://miraklconnect.com/api`), the seller-side channel platform where one company manages its stores on many marketplaces and sales channels from one place: orders from every connected channel, returns, order documents, customer conversations and the Connect product catalog with prices and stock. Shipping, cancelling and accepting order lines are included but installed switched off.\n\n**Not the same as the Mirakl Seller API**: the separate `Mirakl Seller API` connector (`mirakl`) talks to **one** Mirakl-powered marketplace at a time (its own `https://<marketplace>.mirakl.net/api`, shop API key, OR/OF/P APIs). Mirakl Connect is the multi-channel layer above that: one login and one API for all your channels, with its own order ids, OAuth2 credentials and endpoints. Install this one when your company works in Mirakl Connect.\n\n**Setup (about 5 minutes)**\n1. Create OAuth2 API credentials for your company in Mirakl Connect, as described in Mirakl's guide *Integrating with Connect APIs* (Mirakl Connect help for sellers). You get a **client ID** and a **client secret**; the secret is shown once.\n2. Paste them into `MIRAKL_CONNECT_CLIENT_ID` and `MIRAKL_CONNECT_CLIENT_SECRET`. AnythingMCP exchanges them at the Mirakl Authentication System (`https://auth.mirakl.net/oauth/token`, client credentials grant) for a bearer token of about one hour and renews it by itself.\n3. Run `mirakl_connect_list_orders` to check the connection.\n\n**Workflow**\n- Orders: `mirakl_connect_list_orders` (filter by `statuses`, `updated_from`, `fulfillment_type`; 10 per page by default, up to 100), then `mirakl_connect_get_order` for one order by its Connect id. The sales channel and store of each order are in `origin` (`channel_name`, `channel_store_name`); the channel's own order number is `channel_order_id`. Without `updated_from` or ids, Mirakl returns the last 30 days.\n- Catalog, offers and stock: `mirakl_connect_list_products` returns each product with `standard_prices`, `discount_prices` and stock `quantities`.\n- After-sales: `mirakl_connect_list_returns` (needs `updated_from`), `mirakl_connect_list_order_documents`, `mirakl_connect_list_conversations` and `mirakl_connect_get_conversation`.\n- Paging: every list answers `next_page_token` while more items exist; pass it as `page_token`.\n\n**Writes switched off**: `mirakl_connect_ship_order`, `mirakl_connect_cancel_order_lines` and `mirakl_connect_accept_order_lines` act on the live sales channel, where the customer is notified and refunds happen, so an admin turns them on deliberately. Before each call show the user the order, the lines and the values and wait for a yes. Take the line ids from `order_lines[].id` of the order. These calls are asynchronous: they return an `action_id`; check the outcome with `mirakl_connect_get_action_status`, since the channel can still reject the action.\n\n**Channels**: the Mirakl Connect API has no endpoint that lists your connected channels; read them from the `origin` of the orders.\n\n**Rate limits**: Mirakl asks to call the order, return and product lists at most once per minute when syncing; 429 answers carry a `Retry-After` header. Dates are ISO 8601 with a zone.\n\n**Errors**: 401 means the client ID or secret is wrong or the token expired; 403 means the API client lacks the scope for that call (e.g. `connect:order:read`, `connect:shipment:create`); 402 means the feature (for example conversations) is not part of the account's Mirakl Connect plan; 404 an unknown order or conversation id.",
+  "prerequisites": "A Mirakl Connect seller account and OAuth2 API credentials (client ID and client secret) created for your company in Mirakl Connect.",
+  "requiredEnvVars": [
+    "MIRAKL_CONNECT_CLIENT_ID",
+    "MIRAKL_CONNECT_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "MIRAKL_CONNECT_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "The client ID of the API credentials created for your company in Mirakl Connect.",
+      "link": "https://developer.mirakl.com/content/product/connect",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the client ID, without spaces."
+    },
+    "MIRAKL_CONNECT_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The client secret shown once when the API credentials were created in Mirakl Connect.",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the client secret, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Mirakl refused the client ID or secret. Copy both again from the API credentials in Mirakl Connect; a regenerated secret replaces the old one.",
+    "403": "The credentials work but lack the scope for this call. Check the permissions of the API client in Mirakl Connect."
+  },
+  "probe": {
+    "tool": "mirakl_connect_list_orders",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Mirakl Connect API",
+    "type": "REST",
+    "baseUrl": "https://miraklconnect.com/api",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{MIRAKL_CONNECT_CLIENT_ID}}",
+      "clientSecret": "{{MIRAKL_CONNECT_CLIENT_SECRET}}",
+      "tokenUrl": "https://auth.mirakl.net/oauth/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v2/orders?limit=1"
+  },
+  "tools": [
+    {
+      "name": "mirakl_connect_list_orders",
+      "description": "List orders from every sales channel connected to Mirakl Connect, most recently updated first: Connect order id, channel order id, status, origin (channel_id, channel_name, store), order lines with product, quantity, price, taxes and line status, shipping and billing info, fulfillment type. Without updated_from or order_ids, Mirakl returns the last 30 days. Page with page_token = next_page_token until it is missing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "description": "Only orders in these statuses.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "AWAITING_FRAUD_CHECK",
+                "AWAITING_ACCEPTANCE",
+                "AWAITING_PAYMENT",
+                "AWAITING_SHIPMENT",
+                "SHIPPED",
+                "DELIVERED",
+                "CLOSED"
+              ]
+            }
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Only orders last updated in Mirakl Connect at or after this time, ISO 8601 with a zone, e.g. 2026-10-01T00:00:00Z."
+          },
+          "fulfillment_type": {
+            "type": "string",
+            "description": "FULFILLED_BY_SELLER for orders you ship, FULFILLED_BY_PARTNER for orders the channel or a partner ships.",
+            "enum": [
+              "FULFILLED_BY_SELLER",
+              "FULFILLED_BY_PARTNER"
+            ]
+          },
+          "order_ids": {
+            "type": "array",
+            "description": "Only these Connect order ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, default 10, maximum 100."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders",
+        "queryParams": {
+          "statuses": "$statuses",
+          "updated_from": "$updated_from",
+          "fulfillment_type": "$fulfillment_type",
+          "order_ids": "$order_ids",
+          "limit": "$limit",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "mirakl_connect_get_order",
+      "description": "Get one order by its Mirakl Connect order id (the id field of mirakl_connect_list_orders, not the channel's order number): status, channel, order lines with their ids and statuses, shipping and billing info. The order is data[0] of the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Mirakl Connect order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders",
+        "queryParams": {
+          "order_ids": "$order_id"
+        }
+      }
+    },
+    {
+      "name": "mirakl_connect_list_products",
+      "description": "List the products of your Mirakl Connect catalog, sorted by product id: id, titles, brand, category, GTINs, images, standard and discount prices, stock quantities (quantities, partner_quantities) and attributes. This is where Connect keeps offers and stock for all channels. Page with page_token = next_page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, default and maximum 1000. Use a small value such as 50 unless you need the whole catalog."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "limit": "$limit",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "mirakl_connect_list_returns",
+      "description": "List returns updated since a time, across channels: return id, channel return id, order id, channel (origin), status (REQUEST_INITIATED, REQUEST_DECLINED, OPENED, RECEIVED, CLOSED), return lines, method, RMA id, label URL, tracking and rejection reason. Page with page_token = next_page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updated_from": {
+            "type": "string",
+            "description": "Only returns last updated in Mirakl Connect at or after this time, ISO 8601 with a zone, e.g. 2026-10-01T00:00:00Z."
+          },
+          "statuses": {
+            "type": "array",
+            "description": "Only returns in these statuses.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "REQUEST_INITIATED",
+                "REQUEST_DECLINED",
+                "OPENED",
+                "RECEIVED",
+                "CLOSED"
+              ]
+            }
+          },
+          "order_ids": {
+            "type": "array",
+            "description": "Only returns of these Connect order ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Returns per page, default 10, maximum 100."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "updated_from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders/returns",
+        "queryParams": {
+          "updated_from": "$updated_from",
+          "statuses": "$statuses",
+          "order_ids": "$order_ids",
+          "limit": "$limit",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "mirakl_connect_list_order_documents",
+      "description": "List the documents of orders (customer invoices, delivery slips, return labels, channel-specific documents) with order id, name, type, size and date. Give order_ids or updated_from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "description": "Only documents of these Connect order ids. Required when updated_from is empty.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Only documents last updated in Mirakl Connect at or after this time, ISO 8601 with a zone, e.g. 2026-10-01T00:00:00Z."
+          },
+          "types": {
+            "type": "array",
+            "description": "Only these document types.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "RETURN_LABEL",
+                "CUSTOMER_INVOICE",
+                "DELIVERY_SLIP",
+                "SHIPMENT_DELIVERY_SLIP",
+                "CHANNEL_SPECIFIC"
+              ]
+            }
+          },
+          "channel_types": {
+            "type": "array",
+            "description": "Channel-specific document types, only with the type CHANNEL_SPECIFIC.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Documents per page, default 50, maximum 100."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders/documents",
+        "queryParams": {
+          "order_ids": "$order_ids",
+          "updated_from": "$updated_from",
+          "types": "$types",
+          "channel_types": "$channel_types",
+          "limit": "$limit",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "mirakl_connect_list_conversations",
+      "description": "List customer conversations about orders, most recently updated first: id, linked order (entity), channel (origin), topic, participants, created and updated time. Give updated_from or conversation_ids. Page with page_token = next_page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updated_from": {
+            "type": "string",
+            "description": "Only conversations last updated in Mirakl Connect at or after this time, ISO 8601 with a zone, e.g. 2026-10-01T00:00:00Z."
+          },
+          "conversation_ids": {
+            "type": "array",
+            "description": "Only these conversation ids. Required when updated_from is empty.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "entity_type": {
+            "type": "string",
+            "description": "Type of the linked entity, with entity_ids.",
+            "enum": [
+              "ORDER"
+            ]
+          },
+          "entity_ids": {
+            "type": "array",
+            "description": "Only conversations about these Connect order ids, with entity_type ORDER.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Conversations per page, default 50, maximum 100."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations",
+        "queryParams": {
+          "updated_from": "$updated_from",
+          "conversation_ids": "$conversation_ids",
+          "entity_type": "$entity_type",
+          "entity_ids": "$entity_ids",
+          "limit": "$limit",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "mirakl_connect_get_conversation",
+      "description": "Read the messages of one conversation, newest first, with their author, text, attachments and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from mirakl_connect_list_conversations."
+          },
+          "message_after": {
+            "type": "string",
+            "description": "Only messages created after this time, ISO 8601 with a zone."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}",
+        "queryParams": {
+          "message_after": "$message_after"
+        }
+      }
+    },
+    {
+      "name": "mirakl_connect_get_action_status",
+      "description": "Check the result of an asynchronous order action (shipment, cancellation, acceptance): status and any errors from the sales channel. The action_id comes from the answer of the write tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "description": "action_id returned by mirakl_connect_ship_order, mirakl_connect_cancel_order_lines or mirakl_connect_accept_order_lines."
+          }
+        },
+        "required": [
+          "action_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders/actions/{action_id}"
+      }
+    },
+    {
+      "name": "mirakl_connect_ship_order",
+      "description": "Ship items of one order in one package with the same tracking: Mirakl Connect marks the lines shipped and passes carrier and tracking to the sales channel, which usually notifies the customer. Asynchronous: returns an action_id to check with mirakl_connect_get_action_status. Switched off by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Mirakl Connect order id."
+          },
+          "items": {
+            "type": "array",
+            "description": "Lines to ship: [{\"order_line_id\": \"...\", \"quantity\": 1}] (order_line_id from the order's order_lines[].id; id is the seller product id, an alternative where the channel uses it).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_line_id": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "quantity"
+              ]
+            }
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Carrier name, e.g. DHL Express, UPS, DPD."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Carrier tracking number."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Tracking page URL."
+          },
+          "return_tracking_number": {
+            "type": "string",
+            "description": "Return tracking number, only for channels that require it at shipment."
+          },
+          "warehouse_id": {
+            "type": "string",
+            "description": "Warehouse the items ship from, where the channel needs it."
+          }
+        },
+        "required": [
+          "order_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/{order_id}/shipments",
+        "bodyMapping": {
+          "items": "$items",
+          "carrier": "$carrier",
+          "tracking_number": "$tracking_number",
+          "tracking_url": "$tracking_url",
+          "return_tracking_number": "$return_tracking_number",
+          "warehouse_id": "$warehouse_id"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "mirakl_connect_cancel_order_lines",
+      "description": "Cancel all or part of order lines: Connect cancels them on the sales channel and the customer is refunded and notified there. Cannot be undone. Asynchronous: returns an action_id. Switched off by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Mirakl Connect order id."
+          },
+          "cancelations": {
+            "type": "array",
+            "description": "One entry per line: {\"order_line_id\": \"...\", \"quantity\": 1, \"reason\": \"OUT_OF_STOCK\", \"price\": {\"amount\": 19.99, \"currency\": \"EUR\"}, \"shipping_price\": {\"amount\": 0, \"currency\": \"EUR\"}}; optional taxes and shipping_taxes as [{\"code\": \"...\", \"amount\": {...}}]. Prices exclude taxes. reason: CUSTOMER_CANCELATION, OUT_OF_STOCK, RETURN, ITEM_NOT_RECEIVED, AGREEMENT, DEFECT, UNABLE_TO_DELIVER.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_line_id": {
+                  "type": "string"
+                },
+                "product_id": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "CUSTOMER_CANCELATION",
+                    "OUT_OF_STOCK",
+                    "RETURN",
+                    "ITEM_NOT_RECEIVED",
+                    "AGREEMENT",
+                    "DEFECT",
+                    "UNABLE_TO_DELIVER"
+                  ]
+                },
+                "price": {
+                  "type": "object"
+                },
+                "shipping_price": {
+                  "type": "object"
+                },
+                "taxes": {
+                  "type": "array"
+                },
+                "shipping_taxes": {
+                  "type": "array"
+                }
+              },
+              "required": [
+                "quantity",
+                "reason",
+                "price",
+                "shipping_price"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "cancelations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/{order_id}/cancel",
+        "bodyMapping": {
+          "cancelations": "$cancelations"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "mirakl_connect_accept_order_lines",
+      "description": "Accept or refuse order lines in AWAITING_ACCEPTANCE; Connect passes the decision to the sales channel. Refusing cancels the line for the customer and cannot be undone. Asynchronous: returns an action_id. Switched off by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Mirakl Connect order id."
+          },
+          "order_lines": {
+            "type": "array",
+            "description": "Every line to decide: [{\"id\": \"<order line id>\", \"accepted\": true}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "accepted": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "accepted"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "order_lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/orders/{order_id}/accept",
+        "bodyMapping": {
+          "order_lines": "$order_lines"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    }
+  ]
+}

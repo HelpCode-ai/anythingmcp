@@ -103,6 +103,23 @@ describe('klardaten adapter: static spec conformance', () => {
     expect(tool('klardaten_list_datev_groups').endpointMapping.path).toBe('/datevconnect/iam/v1/groups');
   });
 
+  // DATEVconnect Diagnostics and Functional Tests module (developer.datev.de):
+  // GET diagnostics/v1/domains and GET diagnostics/v1/echo.
+  it('reads the DATEVconnect diagnostics as typed tools, named in the instructions', () => {
+    for (const [name, path] of [
+      ['klardaten_list_datevconnect_domains', '/datevconnect/diagnostics/v1/domains'],
+      ['klardaten_get_datevconnect_echo', '/datevconnect/diagnostics/v1/echo'],
+    ]) {
+      expect(tool(name).endpointMapping).toEqual({
+        method: 'GET',
+        path,
+        headers: { 'x-profile-id': '${KLARDATEN_PROFILE_ID}' },
+      });
+      expect(tool(name).parameters.properties).toEqual({});
+      expect(a.instructions).toContain(`\`${name}\``);
+    }
+  });
+
   it('monitoring reads the configured instance from the path', () => {
     expect(tool('klardaten_get_datevconnect_health').endpointMapping.path).toBe(
       '/api/monitoring/instance/{{KLARDATEN_INSTANCE_ID}}/datev-connect-health',
@@ -197,6 +214,15 @@ describe('klardaten adapter: requests', () => {
     m.path = m.path.replace('{{KLARDATEN_INSTANCE_ID}}', 'inst-1');
     await engine.execute(config, m, { log_name: 'audit 2026-10-20.log' });
     expect(sent().url).toBe('https://api.klardaten.com/api/monitoring/instance/inst-1/audit-logs/audit%202026-10-20.log/download');
+  });
+
+  it('trims the parties of a law file with select', async () => {
+    await engine.execute(config, tool('klardaten_list_law_file_parties').endpointMapping as any, {
+      file_id: 'f-guid',
+      select: 'id,name,role',
+    });
+    expect(sent().url).toBe('https://api.klardaten.com/datevconnect/law/v1/files/f-guid/parties');
+    expect(sent().params).toEqual({ select: 'id,name,role' });
   });
 
   it('sends the configured profile as x-profile-id', async () => {
