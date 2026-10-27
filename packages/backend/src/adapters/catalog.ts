@@ -166,6 +166,7 @@ import * as databricks from './intl/databricks.json';
 import * as datadog from './intl/datadog.json';
 import * as dataforseo from './intl/dataforseo.json';
 import * as dchub from './intl/dchub.json';
+import * as deedPage from './intl/deed-page.json';
 import * as deel from './intl/deel.json';
 import * as deribit from './intl/deribit.json';
 import * as dialpad from './intl/dialpad.json';
@@ -968,6 +969,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   datadog as unknown as AdapterDefinition,
   dataforseo as unknown as AdapterDefinition,
   dchub as unknown as AdapterDefinition,
+  deedPage as unknown as AdapterDefinition,
   deel as unknown as AdapterDefinition,
   deribit as unknown as AdapterDefinition,
   dialpad as unknown as AdapterDefinition,
