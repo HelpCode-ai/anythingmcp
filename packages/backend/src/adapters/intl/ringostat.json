@@ -1,0 +1,285 @@
+{
+  "slug": "ringostat",
+  "name": "Ringostat",
+  "aliases": [
+    "Ringostat call tracking",
+    "Ringostat API"
+  ],
+  "description": "Ringostat call tracking and virtual PBX: call log export with traffic sources, talk time, status, employees and recording links, SIP online and in-call status, employees with departments and directions, daily SIP online report and Smart Phone statuses. Starting a callback is installed switched off.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "ringostat",
+  "docsUrl": "https://help.ringostat.com/en/articles/6306981-how-to-configure-the-integration-with-your-system-via-ringostat-api",
+  "instructions": "## Ringostat\nThis connector uses the **Ringostat API** (`https://api.ringostat.net`) of Ringostat, the call tracking and virtual PBX service: the call log with traffic sources, talk times, employees and recordings, the current SIP status of employees, the employee list, a daily SIP online report and the custom Smart Phone statuses. Starting a callback is included but installed switched off.\n\n**Setup (about 2 minutes, project administrator)**\n1. In Ringostat open **Settings**, **Integrations**, **Ringostat API** and copy the **Auth-key** into `RINGOSTAT_AUTH_KEY`. It belongs to one project.\n2. `RINGOSTAT_PROJECT_ID` is the number of that project: the value after `project_id=` or `projectId=` in the address bar of the Ringostat web app. Only the employee, SIP report and custom status tools use it.\n3. Install and run `ringostat_list_online_sip` to check the key.\n\n**Workflow**\n- Calls: `ringostat_list_calls` with `from` and `to` as `YYYY-MM-DD HH:MM:SS` (without them it returns the last 24 hours). The answer is one array with every call of the period, not paginated: keep periods short (a day or a week) on busy projects and ask only for the `fields` you need. Talk time is `billsec` in seconds; `disposition` is the call status; `call_type` is in, out, callback, transitin or transitout; `proper_flag` and `repeated_flag` mark target and repeated calls. Statistics per employee: group the rows by `employee_fio` and sum `billsec`.\n- Filters are Ringostat expressions joined by commas, e.g. `call_type=in,billsec>=30`; sort with `order` such as `calldate desc`; `merge` groups calls by caller.\n- Who is available: `ringostat_list_online_sip` and `ringostat_list_speaking_sip` (SIP logins), `ringostat_list_employees` for names, departments, extensions and directions, `ringostat_get_sip_status_report` for online and offline time per day, `ringostat_list_custom_statuses` for the Smart Phone statuses.\n- Recording links in `recording` and `recording_wav` stay available for one year. Treat them and phone numbers as personal data.\n\n**Callback (switched off)**: `ringostat_start_callback` dials immediately and costs call minutes. An admin turns it on deliberately; before each call show the user both numbers and wait for a yes.\n\n**Errors**: 401 or 403 means a missing or wrong Auth-key (Settings, Integrations, Ringostat API). A JSON-RPC error from the employee, report or status tools usually means a wrong `RINGOSTAT_PROJECT_ID`; \"User does not exist\" means the employee filter matched nobody.",
+  "prerequisites": "A Ringostat project and its Auth-key from Settings, Integrations, Ringostat API, plus the project id from the web app address.",
+  "requiredEnvVars": [
+    "RINGOSTAT_AUTH_KEY",
+    "RINGOSTAT_PROJECT_ID"
+  ],
+  "envVarMeta": {
+    "RINGOSTAT_AUTH_KEY": {
+      "label": "Auth-key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Ringostat, Settings, Integrations, Ringostat API: the Auth-key of the project.",
+      "link": "https://help.ringostat.com/en/articles/6306981-how-to-configure-the-integration-with-your-system-via-ringostat-api",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the key, without spaces or quotes."
+    },
+    "RINGOSTAT_PROJECT_ID": {
+      "label": "Project id",
+      "kind": "setting",
+      "help": "The number after project_id= or projectId= in the address bar of the Ringostat web app.",
+      "example": "39071",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "Only the number, e.g. 39071."
+    }
+  },
+  "verifyHints": {
+    "401": "Ringostat refused the Auth-key. Copy it again from Settings, Integrations, Ringostat API.",
+    "403": "Ringostat refused the Auth-key for this project. Check that key and project id belong to the same project."
+  },
+  "probe": {
+    "tool": "ringostat_list_online_sip"
+  },
+  "connector": {
+    "name": "Ringostat API",
+    "type": "REST",
+    "baseUrl": "https://api.ringostat.net",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Auth-key",
+      "apiKey": "{{RINGOSTAT_AUTH_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/sipstatus/online"
+  },
+  "tools": [
+    {
+      "name": "ringostat_list_calls",
+      "description": "Export the call log of the project for a period: one row per call with the fields you ask for, e.g. date, caller and called number, call type (in, out, callback, transitin, transitout), status (disposition), talk time (billsec, seconds), total duration, waiting time, employee name and department, number pool, forwarding scheme, proper and repeated flags, UTM source, medium and campaign, landing page, call id and recording link. Filter and sort with Ringostat's own expressions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period, 'YYYY-MM-DD HH:MM:SS'. Default: 24 hours before to."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period, 'YYYY-MM-DD HH:MM:SS'. Default: now."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated columns to return. Available: calldate, caller, dst, pool_name, disposition, category_mark, duration, call_type, waittime, billsec, connected_with, call_counter, proper_flag, repeated_flag, utm_source, utm_medium, utm_campaign, utm_content, utm_term, uniqueid, category_number, employee_number, employee_mark, client_id, remote_ip, refferrer, landing, recording, recording_wav, call_card, additional_number, has_recording, scheme_name, duration_ms, employee_fio, department, caller_number, missing_reason, who_missed, csat_survey_name, csat_survey, csat_rating.",
+            "default": "calldate,caller,dst,call_type,disposition,missing_reason,billsec,duration,waittime,employee_fio,department,connected_with,pool_name,scheme_name,proper_flag,repeated_flag,utm_source,utm_medium,utm_campaign,landing,uniqueid,has_recording,recording"
+          },
+          "filters": {
+            "type": "string",
+            "description": "Conditions separated by commas, each field, operator and value: =, <>, >, <, >=, <= or ~ (regular expression, base64-encoded). Examples: call_type=in, billsec>=60."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sorting: field and direction separated by a space, several separated by commas. Default calldate asc; e.g. calldate desc."
+          },
+          "merge": {
+            "type": "integer",
+            "description": "Group calls by caller number: 0 no (default), 1 per day, 2 for the whole period.",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calls/list",
+        "querySpaces": "%20",
+        "queryParams": {
+          "export_type": "json",
+          "from": "$from",
+          "to": "$to",
+          "fields": "$fields",
+          "filters": "$filters",
+          "order": "$order",
+          "merge": "$merge"
+        }
+      }
+    },
+    {
+      "name": "ringostat_list_online_sip",
+      "description": "List the SIP accounts of the project that are online right now (logins as strings). An employee whose SIP account is missing cannot take calls on it.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sipstatus/online"
+      }
+    },
+    {
+      "name": "ringostat_list_speaking_sip",
+      "description": "List the SIP accounts of the project that are in a call right now (logins as strings). Compare with ringostat_list_online_sip to see who is free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sipstatus/speaking"
+      }
+    },
+    {
+      "name": "ringostat_list_employees",
+      "description": "List the employees of the project with their SIP status (status true means online), full name (fio), e-mail, extension number, staffId, departments and call directions (main and backup SIP accounts or phone numbers). Optionally filter by staffId (exact), fio or email (partial match). Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each {\"param\": \"staffId\" | \"fio\" | \"email\", \"value\": ...}, combined. Leave out for all employees. Example: [{\"param\": \"fio\", \"value\": \"Olena\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "param": {
+                  "type": "string",
+                  "enum": [
+                    "staffId",
+                    "fio",
+                    "email"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "value": {
+                  "description": "Value to match: staffId exactly, fio and email partially."
+                }
+              }
+            },
+            "default": [
+              {}
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/json-rpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "getProjectStaffListAndDirections",
+          "params": {
+            "projectId": "{{RINGOSTAT_PROJECT_ID}}",
+            "departmentsFullFormat": true,
+            "filter": "$filter"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ringostat_get_sip_status_report",
+      "description": "Get how long each employee's SIP account was online and offline per day in a date range (times as HH:MM:SS). An employee with one SIP online and one in DND counts as online. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/json-rpc",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "getSipStatusDailyReport",
+          "params": {
+            "projectId": "{{RINGOSTAT_PROJECT_ID}}",
+            "filter": {
+              "from": "$from",
+              "to": "$to"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ringostat_list_custom_statuses",
+      "description": "List the custom employee statuses set up for Ringostat Smart Phone (id and title), e.g. Lunch or Meeting. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rsp-api-v3",
+        "bodyMapping": {
+          "id": 1,
+          "method": "getCustomStatuses",
+          "params": {
+            "projectId": "{{RINGOSTAT_PROJECT_ID}}"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ringostat_start_callback",
+      "description": "Start a real phone call that connects two numbers: Ringostat calls from a project number to the destination (a phone number or an employee's SIP login). The call is placed and billed at once, so this tool is installed switched off; confirm both numbers with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "extension": {
+            "type": "string",
+            "description": "Project number to call from, connected as incoming in Virtual PBX, international format without +, e.g. 380441112233."
+          },
+          "destination": {
+            "type": "string",
+            "description": "Number (international format without +) or SIP login to call."
+          }
+        },
+        "required": [
+          "extension",
+          "destination"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/callback/outward_call",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "extension": "$extension",
+          "destination": "$destination"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    }
+  ]
+}

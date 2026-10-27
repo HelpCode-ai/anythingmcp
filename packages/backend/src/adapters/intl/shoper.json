@@ -1,0 +1,640 @@
+{
+  "slug": "shoper",
+  "name": "Shoper",
+  "aliases": [
+    "Shoper.pl",
+    "Shoparena",
+    "Sklep Shoper"
+  ],
+  "description": "Shoper online shops (Poland): orders with line items and parcels, products and stock per variant, categories, registered customers, order statuses, shipping and payment methods. Can set stock quantities; changing an order status (which may e-mail the customer) is installed switched off.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "shoper",
+  "docsUrl": "https://developers.shoper.pl/docs/",
+  "instructions": "## Shoper\nThis connector uses the **Shoper REST API** (`https://<your shop>/webapi/rest`) of a Shoper online shop (Poland): orders and their line items, parcels, products, product stocks (variants with quantity and prices), categories and the category tree, registered customers, order statuses, shipping and payment methods. Two writes are included: setting a stock quantity, and changing an order status (installed switched off).\n\n**Setup (about 5 minutes, shop administrator)**\n1. In the Shoper admin panel open **Ustawienia**, **Ogólne**, **Administratorzy sklepu**. Click **WIĘCEJ**, **Dodaj grupę administratorów**, name it (e.g. AI) and choose the access type **dostęp do webapi**. Save.\n2. Open the group, tab **Uprawnienia**: allow reading of orders, products, customers and the settings you want the AI to see (and editing of orders and products only if you switch the writes on). Save.\n3. Tab **Administratorzy**, **DODAJ ADMINISTRATORA**: create a login and password. Enter them in `SHOPER_API_LOGIN` and `SHOPER_API_PASSWORD`. A registered Shoper app can use its client_id and client_secret here instead.\n4. `SHOPER_SHOP_HOST` is the shop address without https:// and without a path, e.g. `myshop.shoparena.pl` or your own domain `sklep.example.pl`.\n5. Install. The connector signs in at `/webapi/rest/auth` with HTTP Basic and receives a token valid for 30 days, renewed by itself.\n\n**Workflow**\n- Orders: `shoper_list_orders` with `filters` and `order` (e.g. `{\"date\": {\">=\": \"2026-10-01 00:00:00\"}}` and `-date`), `shoper_get_order`, then `shoper_list_order_products` with `{\"order_id\": <id>}` for the items and `shoper_list_parcels` with the same filter for tracking numbers. Names of statuses, payments and shipping methods: `shoper_list_statuses`, `shoper_list_payments`, `shoper_list_shippings`.\n- Catalogue: `shoper_list_products`, `shoper_get_product`, `shoper_list_product_stocks` / `shoper_get_product_stock` for quantities and prices per variant, `shoper_list_categories` and `shoper_get_category_tree`.\n- Customers: `shoper_list_customers` (filter by e-mail or name) and `shoper_get_customer`. Guest orders have no user_id; use the e-mail of the order.\n\n**Filters and pages**: `filters` is an object of field conditions joined with AND. A plain value means equal; operators are `=`, `!=`, `>`, `>=`, `<`, `<=`, `LIKE` (with `%`), `NOT LIKE`, `IN` and `NOT IN` (with a list). Nested fields use dots, e.g. `translations.pl_PL.name`. Lists answer `{count, pages, page, list}`; at most 50 items per page, so call again with `page` + 1 until `page` equals `pages`. Dates are `YYYY-MM-DD HH:MM:SS` in the shop's time zone; amounts are strings in the shop currency. Texts are per language under `translations` (e.g. `pl_PL`, `en_GB`).\n\n**Writes**: `shoper_update_product_stock` overwrites the quantity of a variant (or of each warehouse when the shop uses warehouses); confirm the new value with the user first. `shoper_update_order_status` is installed switched off: statuses with `email_change` 1 e-mail the customer immediately.\n\n**Errors**: 401 means a wrong login or password, or a group without webapi access. 403 (`insufficient_scope` / `access_denied`) means the administrator group lacks the permission for this area. 404 on every call usually means a wrong `SHOPER_SHOP_HOST`. 429: Shoper's leaky bucket allows a burst of about 10 calls and then 2 per second; wait for `Retry-After`.",
+  "prerequisites": "A Shoper shop and an administrator account with WebAPI access (Ustawienia, Ogólne, Administratorzy sklepu), or the client_id and client_secret of a registered Shoper app.",
+  "requiredEnvVars": [
+    "SHOPER_SHOP_HOST",
+    "SHOPER_API_LOGIN",
+    "SHOPER_API_PASSWORD"
+  ],
+  "envVarMeta": {
+    "SHOPER_SHOP_HOST": {
+      "label": "Shop address",
+      "kind": "address",
+      "help": "The address of the shop without https:// and without a path: the technical myshop.shoparena.pl address or your own domain.",
+      "example": "myshop.shoparena.pl",
+      "pattern": "^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$",
+      "patternMessage": "Only the host, e.g. myshop.shoparena.pl, without https:// or /webapi."
+    },
+    "SHOPER_API_LOGIN": {
+      "label": "WebAPI login",
+      "kind": "credential",
+      "help": "Login of an administrator in a group with WebAPI access (Ustawienia, Ogólne, Administratorzy sklepu), or the client_id of a Shoper app.",
+      "link": "https://www.shoper.pl/learn/artykul/jak-w-shoperze-utworzyc-dostep-po-api",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the login without spaces."
+    },
+    "SHOPER_API_PASSWORD": {
+      "label": "WebAPI password",
+      "kind": "credential",
+      "secret": true,
+      "help": "Password of that administrator, or the client_secret of the app.",
+      "link": "https://www.shoper.pl/learn/artykul/jak-w-shoperze-utworzyc-dostep-po-api"
+    }
+  },
+  "verifyHints": {
+    "401": "Shoper refused the login. Check SHOPER_API_LOGIN and SHOPER_API_PASSWORD and that the administrator group has the access type dostęp do webapi.",
+    "403": "The login works, but the administrator group may not read this. Extend its permissions under Uprawnienia.",
+    "404": "Nothing found at this address. SHOPER_SHOP_HOST must be only the shop host, e.g. myshop.shoparena.pl.",
+    "429": "Shoper is rate limiting (about 2 calls per second after a short burst). Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "shoper_list_orders",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Shoper REST API",
+    "type": "REST",
+    "baseUrl": "https://{{SHOPER_SHOP_HOST}}/webapi/rest",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{SHOPER_API_LOGIN}}",
+      "clientSecret": "{{SHOPER_API_PASSWORD}}",
+      "tokenUrl": "https://{{SHOPER_SHOP_HOST}}/webapi/rest/auth",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/orders?limit=1"
+  },
+  "tools": [
+    {
+      "name": "shoper_list_orders",
+      "description": "List orders of the shop (pass order -date for newest first): order id, date, status_id, customer (user_id, e-mail, billing and delivery address), sum, paid amount and is_paid, shipping and payment method, shipping cost, notes, origin, tags and parcel count. Filter by status, date, payment state, customer and more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Conditions on order fields, ANDed. A value alone means equal; an object sets operators (=, !=, >, >=, <, <=, LIKE, NOT LIKE, IN, NOT IN). Examples: {\"status_id\": 2}, {\"date\": {\">=\": \"2026-10-01 00:00:00\", \"<\": \"2026-11-01 00:00:00\"}}, {\"is_paid\": 0}, {\"email\": \"anna@example.com\"}, {\"status_id\": {\"in\": [2, 3]}}."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field with direction, e.g. -date (newest first), +date, -sum, -order_id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). The answer says how many pages there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "filters": "$filters",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "shoper_get_order",
+      "description": "Get one order with all its fields: status, customer, billing and delivery address, sums, payment and shipping, pickup point, notes, additional fields and tags. Its line items come from shoper_list_order_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id (order_id from shoper_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      }
+    },
+    {
+      "name": "shoper_list_order_products",
+      "description": "List order line items: order_id, product_id, stock_id, name, code, option (variant), quantity, unit, price, discount, tax rate and value, weight. Pass {\"order_id\": 123} in filters for the items of one order, or a product_id to see what was sold of a product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Conditions on line item fields, ANDed, e.g. {\"order_id\": 123}, {\"order_id\": {\"in\": [123, 124]}}, {\"product_id\": 55}, {\"code\": {\"LIKE\": \"ABC%\"}}."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field with direction, e.g. -order_id or +name."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). The answer says how many pages there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order-products",
+        "queryParams": {
+          "filters": "$filters",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "shoper_list_products",
+      "description": "List products of the catalogue: product_id, code, EAN, category, producer, translations (name, description, active, SEO per language such as pl_PL), main stock with price and quantity, tags, collections, dates. Filter by any product field, e.g. category or code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Conditions on product fields, ANDed. Examples: {\"code\": \"SKU-1\"}, {\"category_id\": 5}, {\"category_tree_id\": {\"in\": [5, 12]}}, {\"translations.pl_PL.name\": {\"LIKE\": \"%koszulka%\"}}, {\"translations.pl_PL.active\": 1}, {\"edit_date\": {\">=\": \"2026-10-01 00:00:00\"}}."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field with direction, e.g. -add_date, -edit_date, +code."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). The answer says how many pages there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "filters": "$filters",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "shoper_get_product",
+      "description": "Get one product with translations, categories, stock (price, quantity, availability), options, attributes, related products, dimensions and tax.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id (product_id from shoper_list_products)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}"
+      }
+    },
+    {
+      "name": "shoper_list_product_stocks",
+      "description": "List product stocks, i.e. the sellable variants of products: stock_id, product_id, code, EAN, stock quantity, warehouse quantities, price, special and wholesale price, buying price, availability, weight, active and default flags. Filter by product_id or code to find the stock of one product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Conditions on stock fields, ANDed, e.g. {\"product_id\": 55}, {\"code\": \"SKU-1-RED\"}, {\"stock\": {\"<=\": 5}} for low stock, {\"active\": 1}."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field with direction, e.g. +stock (lowest first) or +code."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). The answer says how many pages there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product-stocks",
+        "queryParams": {
+          "filters": "$filters",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "shoper_get_product_stock",
+      "description": "Get one product stock (variant) with its quantity, warehouse quantities, prices, availability and options.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_id": {
+            "type": "integer",
+            "description": "Stock id (stock_id from shoper_list_product_stocks or an order line item)."
+          }
+        },
+        "required": [
+          "stock_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product-stocks/{stock_id}"
+      }
+    },
+    {
+      "name": "shoper_list_categories",
+      "description": "List product categories: category_id, order, root flag and translations (name, description, active, SEO per language). For the parent and child structure use shoper_get_category_tree.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Conditions on category fields, ANDed, e.g. {\"root\": 1} or {\"translations.pl_PL.name\": {\"LIKE\": \"Buty%\"}}."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field with direction, e.g. +order."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). The answer says how many pages there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "filters": "$filters",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "shoper_get_category_tree",
+      "description": "Get the whole category tree as nested nodes (id and children). Combine with shoper_list_categories for the names. The answer is not paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories-tree"
+      }
+    },
+    {
+      "name": "shoper_list_customers",
+      "description": "List registered customers (Shoper users): user_id, login, e-mail, first and last name, customer group, discount, newsletter consent, active flag, registration date, last visit, loyalty points, tags and additional fields. Filter by e-mail, name, group or activity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Conditions on customer fields, ANDed, e.g. {\"email\": \"anna@example.com\"}, {\"lastname\": {\"LIKE\": \"Kowal%\"}}, {\"group_id\": 2}, {\"newsletter\": 1}, {\"date_add\": {\">=\": \"2026-01-01 00:00:00\"}}."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field with direction, e.g. -date_add or +lastname."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). The answer says how many pages there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "filters": "$filters",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "shoper_get_customer",
+      "description": "Get one registered customer by user_id (e.g. the user_id of an order).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "Customer id (user_id)."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "shoper_list_statuses",
+      "description": "List the order statuses of the shop: status_id, type (1 new, 2 opened, 3 closed, 4 not completed), translations (names per language), color, default flag and email_change (1 means the customer gets an e-mail when an order moves to this status).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Conditions on status fields, e.g. {\"type\": 3} or {\"active\": 1}."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field with direction, e.g. +order."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). The answer says how many pages there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/statuses",
+        "queryParams": {
+          "filters": "$filters",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "shoper_list_shippings",
+      "description": "List shipping methods: shipping_id, name, translations, cost, free shipping threshold, weight and order value limits, zone, allowed payments and active flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Conditions on shipping fields, e.g. {\"active\": 1}."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field with direction, e.g. +order."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). The answer says how many pages there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shippings",
+        "queryParams": {
+          "filters": "$filters",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "shoper_list_payments",
+      "description": "List payment methods: payment_id, name, translations, currencies and amount limits. Use it to name the payment_id of an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Conditions on payment fields."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field with direction, e.g. +order."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). The answer says how many pages there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "filters": "$filters",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "shoper_list_parcels",
+      "description": "List parcels (shipments) of orders: parcel_id, order_id, shipping_id, shipping_code (tracking number), sent flag and send date, weight, cash on delivery, insurance, products and addresses. Pass {\"order_id\": 123} in filters for the parcels of one order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Conditions on parcel fields, e.g. {\"order_id\": 123}, {\"sent\": 0}, {\"send_date\": {\">=\": \"2026-10-01\"}}."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field with direction, e.g. -parcel_id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). The answer says how many pages there are.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 50 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parcels",
+        "queryParams": {
+          "filters": "$filters",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "shoper_update_order_status",
+      "description": "Move an order to another status (status_id from shoper_list_statuses). If that status has email_change 1, Shoper e-mails the customer at once, so this tool is installed switched off. Show the user the order, the current and the new status and wait for a yes.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id."
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "New status id from shoper_list_statuses."
+          }
+        },
+        "required": [
+          "order_id",
+          "status_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}",
+        "bodyMapping": {
+          "status_id": "$status_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "shoper_update_product_stock",
+      "description": "Set the quantity of one product stock (variant). With the warehouses feature enabled, stock is read-only and the quantities go per warehouse in warehouses instead. It overwrites the current value and changes what customers can order at once: confirm the stock id, current and new quantity with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_id": {
+            "type": "integer",
+            "description": "Stock id from shoper_list_product_stocks."
+          },
+          "stock": {
+            "type": "number",
+            "description": "New quantity. Leave out when the shop uses warehouses."
+          },
+          "warehouses": {
+            "type": "object",
+            "description": "New quantity per warehouse, keyed by warehouse id, e.g. {\"1\": 10, \"2\": 4}. Only for shops with the warehouses feature."
+          }
+        },
+        "required": [
+          "stock_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/product-stocks/{stock_id}",
+        "bodyMapping": {
+          "stock": "$stock",
+          "warehouses": "$warehouses"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

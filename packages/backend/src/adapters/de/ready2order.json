@@ -5,7 +5,7 @@
   "aliases": [
     "r2o"
   ],
-  "instructions": "## ready2order\nThis connector calls the **ready2order Public API** (`https://api.ready2order.com/v1`) of one ready2order account (the cloud POS from Austria, used in retail and gastronomy in Austria and Germany): products and stock, product groups, bills (Belege), open orders, customers, payment methods, VAT rates and users.\n\n**Setup (about 10 minutes, once per account)**\nready2order issues an **Account Token** per register account through a short approval flow:\n1. Register as a developer at https://api.ready2order.com. ready2order e-mails you a **Developer Token**.\n2. Request access with it:\n   `curl -X POST https://api.ready2order.com/v1/developerToken/grantAccessToken -H \"Authorization: Bearer <DEVELOPER_TOKEN>\" -H \"Content-Type: application/json\" -d \"{}\"`\n   The answer holds `grantAccessToken` and `grantAccessUri`.\n3. Open `grantAccessUri` within 10 minutes, sign in with the ready2order account owner and click **Approve**.\n4. Read the Account Token:\n   `curl https://api.ready2order.com/v1/developerToken/grantAccessToken/<grantAccessToken> -H \"Authorization: Bearer <DEVELOPER_TOKEN>\"`\n   and paste `accountToken` into `READY2ORDER_ACCOUNT_TOKEN`. It is sent as `Authorization: Bearer`, only to ready2order, and stays valid until it is revoked in the ready2order admin under Settings > API access.\n\nThe Developer Token alone is refused with 403: the connector needs the Account Token.\n\n**Tools**\n- Products and stock: `ready2order_list_products`, `ready2order_get_product`, `ready2order_get_product_stock`, `ready2order_get_stock_by_item_number`, `ready2order_list_product_groups`, `ready2order_list_group_products`.\n- Sales: `ready2order_list_bills` (with `items` true for the sold lines, `payments` true for payment methods), `ready2order_get_bill`, `ready2order_get_bill_pdf`, `ready2order_list_open_orders`, `ready2order_get_daily_report_status`.\n- Master data: `ready2order_list_customers`, `ready2order_get_customer`, `ready2order_list_customer_groups`, `ready2order_list_payment_methods`, `ready2order_list_vat_rates`, `ready2order_list_users`.\n- Writes: `ready2order_create_product`, `ready2order_update_product`, `ready2order_update_product_stock`, `ready2order_create_product_group`, `ready2order_create_customer`, `ready2order_update_customer`. `ready2order_delete_product` is installed switched off.\n\n**Writes change the live register at once.** Name the product or customer and the new values, and wait for the user's yes before any write. To take a product out of sale, prefer `product_active` false over deleting it.\n\n**Sales figures**: `ready2order_list_bills` with `dateFrom`/`dateTo`. By default the dates filter by the daily report a bill belongs to (the business day); `dateField` bill uses the bill's own timestamp. Page with `offset` and `limit` until `offset + limit` reaches `count`. Bills are fiscal records: there is no tool to change or cancel them.\n\n**Numbers are strings**: prices, VAT rates and stock quantities are decimal strings (`\"4.50\"`, `\"20\"`, `\"-2\"`).\n\n**Rate limit**: 60 requests a minute per Account Token; on 429 wait a minute.\n\n**Common errors**\n- 401 `Sorry, but your token is invalid.`: the token is wrong or revoked. Repeat the approval flow.\n- 403: a Developer Token was pasted instead of the Account Token.\n- 429: more than 60 requests in a minute.\n- 400 or 422: a field is invalid; the message names it (for example a product without product_vat or product_vat_id).\n\n**Out of scope here**: creating or cancelling bills (Storno), printing, coupons, discounts, tables, payment terminals, webhooks and accounting exports.",
+  "instructions": "## ready2order\nThis connector calls the **ready2order Public API** (`https://api.ready2order.com/v1`) of one ready2order account (the cloud POS from Austria, used in retail and gastronomy in Austria and Germany): products and stock, product groups, bills (Belege), open orders, tables and table areas, customers, payment methods, VAT rates and users.\n\n**Setup (about 10 minutes, once per account)**\nready2order issues an **Account Token** per register account through a short approval flow:\n1. Register as a developer at https://api.ready2order.com. ready2order e-mails you a **Developer Token**.\n2. Request access with it:\n   `curl -X POST https://api.ready2order.com/v1/developerToken/grantAccessToken -H \"Authorization: Bearer <DEVELOPER_TOKEN>\" -H \"Content-Type: application/json\" -d \"{}\"`\n   The answer holds `grantAccessToken` and `grantAccessUri`.\n3. Open `grantAccessUri` within 10 minutes, sign in with the ready2order account owner and click **Approve**.\n4. Read the Account Token:\n   `curl https://api.ready2order.com/v1/developerToken/grantAccessToken/<grantAccessToken> -H \"Authorization: Bearer <DEVELOPER_TOKEN>\"`\n   and paste `accountToken` into `READY2ORDER_ACCOUNT_TOKEN`. It is sent as `Authorization: Bearer`, only to ready2order, and stays valid until it is revoked in the ready2order admin under Settings > API access.\n\nThe Developer Token alone is refused with 403: the connector needs the Account Token.\n\n**Tools**\n- Products and stock: `ready2order_list_products`, `ready2order_get_product`, `ready2order_get_product_stock`, `ready2order_get_stock_by_item_number`, `ready2order_list_product_groups`, `ready2order_list_group_products`.\n- Sales: `ready2order_list_bills` (with `items` true for the sold lines, `payments` true for payment methods), `ready2order_get_bill`, `ready2order_get_bill_pdf`, `ready2order_list_open_orders`, `ready2order_get_daily_report_status`.\n- Gastronomy: `ready2order_list_tables` and `ready2order_list_table_areas` (table ids for `ready2order_list_open_orders` with `table_id`).\n- Master data: `ready2order_list_customers`, `ready2order_get_customer`, `ready2order_list_customer_groups`, `ready2order_list_payment_methods`, `ready2order_list_vat_rates`, `ready2order_list_users`.\n- Writes: `ready2order_create_product`, `ready2order_update_product`, `ready2order_update_product_stock`, `ready2order_create_product_group`, `ready2order_create_customer`, `ready2order_update_customer`. `ready2order_delete_product` is installed switched off.\n\n**Writes change the live register at once.** Name the product or customer and the new values, and wait for the user's yes before any write. To take a product out of sale, prefer `product_active` false over deleting it.\n\n**Sales figures**: `ready2order_list_bills` with `dateFrom`/`dateTo`. By default the dates filter by the daily report a bill belongs to (the business day); `dateField` bill uses the bill's own timestamp. Page with `offset` and `limit` until `offset + limit` reaches `count`. Bills are fiscal records: there is no tool to change or cancel them.\n\n**Numbers are strings**: prices, VAT rates and stock quantities are decimal strings (`\"4.50\"`, `\"20\"`, `\"-2\"`).\n\n**Rate limit**: 60 requests a minute per Account Token; on 429 wait a minute.\n\n**Common errors**\n- 401 `Sorry, but your token is invalid.`: the token is wrong or revoked. Repeat the approval flow.\n- 403: a Developer Token was pasted instead of the Account Token.\n- 429: more than 60 requests in a minute.\n- 400 or 422: a field is invalid; the message names it (for example a product without product_vat or product_vat_id).\n\n**Out of scope here**: creating or cancelling bills (Storno), printing, coupons, discounts, changing tables or table areas, payment terminals, webhooks and accounting exports.",
   "region": "de",
   "category": "payments",
   "icon": "ready2order",
@@ -831,6 +831,60 @@
           "table_id": "$table_id",
           "product_id": "$product_id",
           "groupBy": "$groupBy",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ready2order_list_tables",
+      "description": "List the tables of the register (gastronomy floor plan), with id, name or number, description, sort order, table area and whether the table is temporary. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Tables per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tables",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ready2order_list_table_areas",
+      "description": "List the table areas (rooms or zones such as inside, terrace or bar) with id, name, short name, sort order and whether they are active. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Table areas per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tableAreas",
+        "queryParams": {
           "page": "$page",
           "limit": "$limit"
         }

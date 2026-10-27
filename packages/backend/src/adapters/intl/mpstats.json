@@ -1,0 +1,2309 @@
+{
+  "slug": "mpstats",
+  "name": "MPSTATS",
+  "aliases": [
+    "МПСТАТС",
+    "MPSTATS Analytics",
+    "mpstats.io"
+  ],
+  "description": "MPSTATS marketplace analytics for Wildberries and Ozon, read-only: sales, estimated revenue, prices and stock per warehouse and size for any item, search queries and positions, competitors of an item, and market figures and trends of subjects or niches, categories, brands and sellers.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "mpstats",
+  "docsUrl": "https://mpstats.io/integrations/docs/description",
+  "prerequisites": "An MPSTATS account on a plan with API access and its API token from the account settings.",
+  "instructions": "## MPSTATS\nThis connector uses the **MPSTATS Analytics API** (`https://mpstats.io/api/analytics/v1`): market analytics for **Wildberries** (`/wb`) and **Ozon** (`/oz`) collected by MPSTATS. It reads public marketplace data for any item, subject or niche, category, brand or seller, yours or a competitor's: sales, estimated revenue, prices, stock per warehouse and size, search queries and positions. Every tool only reads; nothing on the marketplaces is changed. It does not reach your own seller cabinet: for orders and finance use the Wildberries or Ozon connector.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://mpstats.io with an account whose plan includes API requests, open the account settings and copy the token from the **API token** block into `MPSTATS_API_TOKEN`.\n2. Install and run `mpstats_wb_get_keyword_frequency` to check the token.\n\nThe token is sent in the `X-Mpstats-TOKEN` header. It changes when the account password is changed or **Change API token** is pressed; paste the new one then.\n\n**Cost and limits**: every call counts against the request quota of your MPSTATS plan. 429 means the quota is used up (the message says why, `Retry-After` says when to retry); 202 means MPSTATS is still preparing the report, so call again a little later. Keep periods short and pages small, and reuse what you already fetched instead of calling again.\n\n**Wildberries workflow**\n- Resolve names first: `mpstats_wb_find_items` (SKUs or keyword), `mpstats_wb_search_subjects`, `mpstats_wb_search_sellers`, `mpstats_wb_search_brands`.\n- One item: `mpstats_wb_get_item`, `mpstats_wb_get_item_sales` (per day: sales, revenue, stock, price, category position), `mpstats_wb_get_item_search_stats`, `mpstats_wb_list_item_keywords` (queries and positions), `mpstats_wb_get_item_stock_by_warehouse`, `mpstats_wb_get_item_stock_by_size`, `mpstats_wb_get_item_sales_by_warehouse`, `mpstats_wb_get_item_sales_by_size`.\n- Competitors of an item: `mpstats_wb_list_related_items` (relation similar, in_similar, identical_wb or identical).\n- Niche analysis: `mpstats_wb_list_subject_items`, `mpstats_wb_list_subject_breakdown` (categories, brands, sellers), `mpstats_wb_get_subject_trend` (seasonality).\n- Category analysis: `mpstats_wb_list_category_items`, `mpstats_wb_list_category_breakdown` (subcategories, subjects, brands, sellers), `mpstats_wb_get_category_trend`.\n- A shop or brand: `mpstats_wb_list_seller_items`, `mpstats_wb_list_brand_items`. Search demand: `mpstats_wb_get_keyword_frequency`.\n\n**Ozon workflow**: `mpstats_oz_find_items`, `mpstats_oz_get_item`, `mpstats_oz_get_item_sales`, `mpstats_oz_list_item_keywords`, `mpstats_oz_get_item_category_positions`, `mpstats_oz_get_item_stock_by_warehouse` (one day), `mpstats_oz_get_item_sales_by_warehouse`, `mpstats_oz_list_similar_items`; niches with `mpstats_oz_search_niches` and `mpstats_oz_list_niche_items`; categories with `mpstats_oz_list_category_items`, `mpstats_oz_list_category_breakdown` (subcategories, niches, brands, sellers) and `mpstats_oz_get_category_trend`; shops and brands with `mpstats_oz_search_sellers`, `mpstats_oz_list_seller_items` and `mpstats_oz_list_brand_items`.\n\n**Identifiers**: items are marketplace SKUs (the Wildberries article number nmId, the Ozon SKU). Wildberries subjects and Ozon niches and sellers use numeric ids from the search tools; categories are full paths with `/`, exactly as MPSTATS shows them (e.g. `Женщинам/Джинсы`); brands are names.\n\n**Periods and figures**: `d1` and `d2` are `YYYY-MM-DD`; always pass them, the default period differs from method to method. Data runs to yesterday. Sales and revenue are MPSTATS estimates from public marketplace data, in roubles; quote them as estimates, not as the seller's accounting. `fbs=1` adds sales shipped from the seller's own warehouse (FBS), `0` counts marketplace warehouses (FBO) only.\n\n**Paging, sorting and filters**: list tools return `startRow`, `endRow`, `total` and `data`. At most 500 rows per call: raise `startRow`/`endRow` to page. `sortModel` sorts, e.g. `[{\"colId\": \"revenue\", \"sort\": \"desc\"}]`; `filterModel` filters columns, e.g. `{\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}` (text filters: equals, contains, startsWith...; number and date filters: lessThan, greaterThan, inRange with filterTo).\n\n**Errors**: 401 means a wrong or changed token. 429 means the plan's request quota is used up. 202 means the report is not ready yet. 500 carries the reason in `message`.",
+  "requiredEnvVars": [
+    "MPSTATS_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "MPSTATS_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "MPSTATS, account settings, API token block: copy the token. It changes when the password is changed or Change API token is pressed.",
+      "link": "https://mpstats.io/integrations/docs/description",
+      "pattern": "^[A-Za-z0-9.]{20,}$",
+      "patternMessage": "Paste only the token (letters, digits and a dot), without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "MPSTATS refused the token. Copy it again from the API token block of the account settings; it changes when the password is changed.",
+    "rate_limited": "The request quota of your MPSTATS plan is used up. Wait for the time in Retry-After or check the plan."
+  },
+  "probe": {
+    "tool": "mpstats_wb_get_keyword_frequency",
+    "params": {
+      "keyword": "джинсы"
+    }
+  },
+  "connector": {
+    "name": "MPSTATS Analytics API",
+    "type": "REST",
+    "baseUrl": "https://mpstats.io/api/analytics/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Mpstats-TOKEN",
+      "apiKey": "{{MPSTATS_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "mpstats_wb_find_items",
+      "description": "Wildberries: look up items by SKU list or by a keyword. Returns id, name, brand, seller and thumbnail, to resolve names into SKUs before the per-item tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated Wildberries SKUs, e.g. \"180740354, 279067034\"."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Keyword to search item names for, e.g. \"ботинки\"."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/items",
+        "queryParams": {
+          "ids": "$ids",
+          "keyword": "$keyword",
+          "d1": "$d1",
+          "d2": "$d2"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_get_item",
+      "description": "Wildberries: full card of one item: name, brand, seller, rating, stock (FBO/FBS), orders, price and discount, sizes, photos, first seen date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Wildberries article number (nmId / SKU), e.g. 29934835."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wb/items/{sku}/full",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        }
+      }
+    },
+    {
+      "name": "mpstats_wb_get_item_sales",
+      "description": "Wildberries: one row per day for an item: sales, estimated revenue, stock, price and discounts, rating, comments, average category position and visibility. withSearchStats=1 adds search positions and traffic.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Wildberries article number (nmId / SKU), e.g. 29934835."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "withSearchStats": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 adds search position, visibility and traffic per day."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wb/items/{sku}/by_period",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs",
+          "withSearchStats": "$withSearchStats"
+        }
+      }
+    },
+    {
+      "name": "mpstats_wb_get_item_search_stats",
+      "description": "Wildberries: search summary of an item for a period compared with the previous one: number of search queries it ranks for, average organic and ad position, visibility and estimated traffic.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Wildberries article number (nmId / SKU), e.g. 29934835."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wb/items/{sku}/search_stats",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2"
+        }
+      }
+    },
+    {
+      "name": "mpstats_wb_list_item_keywords",
+      "description": "Wildberries: search queries an item ranks for, with query frequency, results count and the item's position per day (organic and advertised), plus daily sales and visibility. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Wildberries article number (nmId / SKU), e.g. 29934835."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "dateSort": {
+            "type": "string",
+            "description": "Day whose positions the rows are sorted by, YYYY-MM-DD (default d2)."
+          },
+          "dateSortDirection": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction for dateSort."
+          },
+          "positionType": {
+            "type": "string",
+            "enum": [
+              "position",
+              "ad_position",
+              "organic_position"
+            ],
+            "description": "Which position to sort by (default position)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/items/{sku}/keywords",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs",
+          "dateSort": "$dateSort",
+          "dateSortDirection": "$dateSortDirection",
+          "positionType": "$positionType"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_get_item_stock_by_warehouse",
+      "description": "Wildberries: stock of an item per Wildberries warehouse (store id, name, balance) for the period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Wildberries article number (nmId / SKU), e.g. 29934835."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wb/items/{sku}/balance/stores",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2"
+        }
+      }
+    },
+    {
+      "name": "mpstats_wb_get_item_stock_by_size",
+      "description": "Wildberries: stock of an item per size for the period, to spot sizes that are sold out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Wildberries article number (nmId / SKU), e.g. 29934835."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wb/items/{sku}/balance/sizes",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2"
+        }
+      }
+    },
+    {
+      "name": "mpstats_wb_get_item_sales_by_warehouse",
+      "description": "Wildberries: sales of an item for the period split by warehouse.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Wildberries article number (nmId / SKU), e.g. 29934835."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wb/items/{sku}/sales/stores",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        }
+      }
+    },
+    {
+      "name": "mpstats_wb_get_item_sales_by_size",
+      "description": "Wildberries: sales of an item for the period split by size or variant.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Wildberries article number (nmId / SKU), e.g. 29934835."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wb/items/{sku}/sales/sizes",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        }
+      }
+    },
+    {
+      "name": "mpstats_wb_list_related_items",
+      "description": "Wildberries: competitor items related to one SKU, with sales, revenue, price and stock for the period. relation: similar = what Wildberries shows as similar on the item page, in_similar = items whose similar block shows this SKU, identical_wb = items Wildberries marks as identical, identical = similar items as matched by MPSTATS. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "relation": {
+            "type": "string",
+            "enum": [
+              "similar",
+              "in_similar",
+              "identical_wb",
+              "identical"
+            ],
+            "description": "Which relation to list."
+          },
+          "sku": {
+            "type": "integer",
+            "description": "Wildberries article number (nmId / SKU), e.g. 29934835."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "newsmode": {
+            "type": "integer",
+            "enum": [
+              7,
+              14,
+              30
+            ],
+            "description": "Only items that appeared in the last 7, 14 or 30 days."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "relation",
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/{relation}/items",
+        "queryParams": {
+          "path": "$sku",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs",
+          "newsmode": "$newsmode"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_search_subjects",
+      "description": "Wildberries: find subjects (niches, the product type such as \"Джинсы\") by name, with their id, parent category, commissions and market figures. Use the id with the subject tools. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the subject name, e.g. \"Телевизоры\"."
+          },
+          "date": {
+            "type": "string",
+            "description": "Day the figures refer to, YYYY-MM-DD (default latest)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/subject/list",
+        "queryParams": {
+          "search": "$search",
+          "date": "$date",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_list_subject_items",
+      "description": "Wildberries: items of a subject (niche) with sales, revenue, price, stock, rating and position for the period; sales count only the days the item was in this subject. Paged; sort with sortModel, e.g. by revenue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject_id": {
+            "type": "integer",
+            "description": "Wildberries subject (niche) id, from mpstats_wb_search_subjects, e.g. 69."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "newsmode": {
+            "type": "integer",
+            "enum": [
+              7,
+              14,
+              30
+            ],
+            "description": "Only items that appeared in the last 7, 14 or 30 days."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "subject_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/subject/items",
+        "queryParams": {
+          "path": "$subject_id",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs",
+          "newsmode": "$newsmode"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_list_subject_breakdown",
+      "description": "Wildberries: a subject (niche) split by its categories, brands or sellers, each with items, sales and revenue for the period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "breakdown": {
+            "type": "string",
+            "enum": [
+              "categories",
+              "brands",
+              "sellers"
+            ],
+            "description": "How to split the subject."
+          },
+          "subject_id": {
+            "type": "integer",
+            "description": "Wildberries subject (niche) id, from mpstats_wb_search_subjects, e.g. 69."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "breakdown",
+          "subject_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/subject/{breakdown}",
+        "queryParams": {
+          "path": "$subject_id",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_get_subject_trend",
+      "description": "Wildberries: market figures of a subject (niche) per day, week, month or quarter: sales, revenue, average price, stock, items, brands and sellers with sales. For seasonality and trend.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject_id": {
+            "type": "integer",
+            "description": "Wildberries subject (niche) id, from mpstats_wb_search_subjects, e.g. 69."
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "quarter"
+            ],
+            "description": "Period of each row (default day)."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          }
+        },
+        "required": [
+          "subject_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/subject/by_date",
+        "queryParams": {
+          "path": "$subject_id",
+          "groupBy": "$groupBy",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_list_category_items",
+      "description": "Wildberries: items of a category with sales, revenue, price, stock, rating and category position for the period. Paged; sort with sortModel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Full Wildberries category path as on the site, with / between levels, e.g. \"Женщинам/Джинсы\"."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "newsmode": {
+            "type": "integer",
+            "enum": [
+              7,
+              14,
+              30
+            ],
+            "description": "Only items that appeared in the last 7, 14 or 30 days."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/category/items",
+        "queryParams": {
+          "path": "$category",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs",
+          "newsmode": "$newsmode"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_list_category_breakdown",
+      "description": "Wildberries: a category split by subcategories, subjects (niches), brands or sellers, each with items, sales and revenue for the period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "breakdown": {
+            "type": "string",
+            "enum": [
+              "categories",
+              "subjects",
+              "brands",
+              "sellers"
+            ],
+            "description": "How to split the category (categories = its subcategories)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Full Wildberries category path as on the site, with / between levels, e.g. \"Женщинам/Джинсы\"."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "breakdown",
+          "category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/category/{breakdown}",
+        "queryParams": {
+          "path": "$category",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_get_category_trend",
+      "description": "Wildberries: market figures of a category per day, week, month or quarter: sales, revenue, average price, stock, items, brands and sellers with sales.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Full Wildberries category path as on the site, with / between levels, e.g. \"Женщинам/Джинсы\"."
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "quarter"
+            ],
+            "description": "Period of each row (default day)."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/category/by_date",
+        "queryParams": {
+          "path": "$category",
+          "groupBy": "$groupBy",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_search_sellers",
+      "description": "Wildberries: find sellers by name, with their id (supplier_id), INN, items and sales. Use that id with mpstats_wb_list_seller_items. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the seller name, e.g. \"Кари\"."
+          },
+          "date": {
+            "type": "string",
+            "description": "Day the figures refer to, YYYY-MM-DD (default latest)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/seller/list",
+        "queryParams": {
+          "search": "$search",
+          "date": "$date",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_list_seller_items",
+      "description": "Wildberries: items of a seller (your own shop or a competitor) with sales, revenue, price and stock for the period. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "integer",
+            "description": "Wildberries seller id, e.g. 8475 (supplier_id in mpstats_wb_search_sellers, or an item's seller.id)."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "newsmode": {
+            "type": "integer",
+            "enum": [
+              7,
+              14,
+              30
+            ],
+            "description": "Only items that appeared in the last 7, 14 or 30 days."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "seller_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/seller/items",
+        "queryParams": {
+          "path": "$seller_id",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs",
+          "newsmode": "$newsmode"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_search_brands",
+      "description": "Wildberries: find brands by name, with their items and sales. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the brand name."
+          },
+          "date": {
+            "type": "string",
+            "description": "Day the figures refer to, YYYY-MM-DD (default latest)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/brand/list",
+        "queryParams": {
+          "search": "$search",
+          "date": "$date",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_list_brand_items",
+      "description": "Wildberries: items of a brand with sales, revenue, price and stock for the period. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand": {
+            "type": "string",
+            "description": "Brand name as on Wildberries, e.g. \"Adidas\"."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "newsmode": {
+            "type": "integer",
+            "enum": [
+              7,
+              14,
+              30
+            ],
+            "description": "Only items that appeared in the last 7, 14 or 30 days."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "brand"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wb/brand/items",
+        "queryParams": {
+          "path": "$brand",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs",
+          "newsmode": "$newsmode"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_wb_get_keyword_frequency",
+      "description": "Wildberries: how often a search query is searched on Wildberries, as a weekly series (date, frequency).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "The search query, e.g. \"ботинки\"."
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wb/keywords/frequency",
+        "queryParams": {
+          "keyword": "$keyword"
+        }
+      }
+    },
+    {
+      "name": "mpstats_oz_find_items",
+      "description": "Ozon: look up items by SKU list or by a keyword. Returns id, name, brand, seller and thumbnail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated Ozon SKUs."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Keyword to search item names for, e.g. \"кроссовки\"."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/oz/items",
+        "queryParams": {
+          "ids": "$ids",
+          "keyword": "$keyword",
+          "d1": "$d1",
+          "d2": "$d2"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_oz_get_item",
+      "description": "Ozon: full card of one item: name, brand, seller, rating, stock, price, category and figures for the period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Ozon product SKU, e.g. 1786874757."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oz/items/{sku}/full",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        }
+      }
+    },
+    {
+      "name": "mpstats_oz_get_item_sales",
+      "description": "Ozon: one row per day for an item: sales, revenue, stock, price, rating and comments. withSearchStats=1 adds search positions and traffic.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Ozon product SKU, e.g. 1786874757."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "withSearchStats": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 adds search position, visibility and traffic per day."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oz/items/{sku}/by_period",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs",
+          "withSearchStats": "$withSearchStats"
+        }
+      }
+    },
+    {
+      "name": "mpstats_oz_list_item_keywords",
+      "description": "Ozon: search queries an item ranks for, with query frequency and its positions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Ozon product SKU, e.g. 1786874757."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oz/items/{sku}/keywords",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2"
+        }
+      }
+    },
+    {
+      "name": "mpstats_oz_get_item_category_positions",
+      "description": "Ozon: positions of an item in each of its categories per day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Ozon product SKU, e.g. 1786874757."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oz/items/{sku}/categories",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2"
+        }
+      }
+    },
+    {
+      "name": "mpstats_oz_get_item_stock_by_warehouse",
+      "description": "Ozon: stock of an item per Ozon warehouse on one day (date), FBO and optionally FBS.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Ozon product SKU, e.g. 1786874757."
+          },
+          "date": {
+            "type": "string",
+            "description": "Day of the stock, YYYY-MM-DD."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oz/items/{sku}/balance",
+        "queryParams": {
+          "date": "$date",
+          "fbs": "$fbs"
+        }
+      }
+    },
+    {
+      "name": "mpstats_oz_get_item_sales_by_warehouse",
+      "description": "Ozon: sales of an item for the period split by the warehouse they shipped from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Ozon product SKU, e.g. 1786874757."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oz/items/{sku}/sales",
+        "queryParams": {
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        }
+      }
+    },
+    {
+      "name": "mpstats_oz_list_similar_items",
+      "description": "Ozon: items similar to one SKU (competitors as matched by MPSTATS) with sales, revenue, price and stock for the period. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "description": "Ozon product SKU, e.g. 1786874757."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/oz/identical/items",
+        "queryParams": {
+          "path": "$sku",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_oz_search_niches",
+      "description": "Ozon: find niches (product types) by name, with their id (category_id), name and market figures. Use that id with mpstats_oz_list_niche_items. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the niche name, e.g. \"Телевизоры\"."
+          },
+          "date": {
+            "type": "string",
+            "description": "Day the figures refer to, YYYY-MM-DD (default latest)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/oz/niche/list",
+        "queryParams": {
+          "search": "$search",
+          "date": "$date",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_oz_list_niche_items",
+      "description": "Ozon: items of a niche with sales, revenue, price and stock for the period. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "niche_id": {
+            "type": "integer",
+            "description": "Ozon niche id (category_id in mpstats_oz_search_niches), e.g. 7502."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "niche_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/oz/niche/items",
+        "queryParams": {
+          "path": "$niche_id",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_oz_list_category_items",
+      "description": "Ozon: items of a category with sales, revenue, price and stock for the period. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Full Ozon category path with / between levels, e.g. \"Одежда/Женская одежда\"."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/oz/category/items",
+        "queryParams": {
+          "path": "$category",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_oz_list_category_breakdown",
+      "description": "Ozon: a category split by subcategories, niches, brands or sellers, each with items, sales and revenue for the period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "breakdown": {
+            "type": "string",
+            "enum": [
+              "categories",
+              "niches",
+              "brands",
+              "sellers"
+            ],
+            "description": "How to split the category (categories = its subcategories)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Full Ozon category path with / between levels, e.g. \"Одежда/Женская одежда\"."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "breakdown",
+          "category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/oz/category/{breakdown}",
+        "queryParams": {
+          "path": "$category",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_oz_get_category_trend",
+      "description": "Ozon: market figures of a category per day, week, month or quarter: sales, revenue, average price, stock, items, brands and sellers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Full Ozon category path with / between levels, e.g. \"Одежда/Женская одежда\"."
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "quarter"
+            ],
+            "description": "Period of each row (default day)."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/oz/category/by_date",
+        "queryParams": {
+          "path": "$category",
+          "groupBy": "$groupBy",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_oz_search_sellers",
+      "description": "Ozon: find sellers by name, with their id (supplier_id), OGRN, items and sales. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the seller name."
+          },
+          "date": {
+            "type": "string",
+            "description": "Day the figures refer to, YYYY-MM-DD (default latest)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/oz/seller/list",
+        "queryParams": {
+          "search": "$search",
+          "date": "$date",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_oz_list_seller_items",
+      "description": "Ozon: items of a seller with sales, revenue, price and stock for the period. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "integer",
+            "description": "Ozon seller id (supplier_id in mpstats_oz_search_sellers, or an item's seller.id)."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "seller_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/oz/seller/items",
+        "queryParams": {
+          "path": "$seller_id",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mpstats_oz_list_brand_items",
+      "description": "Ozon: items of a brand with sales, revenue, price and stock for the period. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand": {
+            "type": "string",
+            "description": "Brand name as on Ozon, e.g. \"Adidas\"."
+          },
+          "d1": {
+            "type": "string",
+            "description": "Start date of the report, YYYY-MM-DD."
+          },
+          "d2": {
+            "type": "string",
+            "description": "End date of the report, YYYY-MM-DD (data is complete up to yesterday)."
+          },
+          "fbs": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also counts FBS sales and stock (shipped from the seller's own warehouse), 0 only marketplace warehouses (FBO)."
+          },
+          "startRow": {
+            "type": "integer",
+            "default": 0,
+            "description": "First row to return, from 0."
+          },
+          "endRow": {
+            "type": "integer",
+            "default": 100,
+            "description": "Row to stop at (exclusive). At most 500 rows per call: page with startRow/endRow and read total."
+          },
+          "filterModel": {
+            "type": "object",
+            "description": "Column filters, e.g. {\"revenue\": {\"filterType\": \"number\", \"type\": \"greaterThan\", \"filter\": 100000}}. Types: equals, notEqual, contains, notContains, startsWith, endsWith, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual, inRange (with filterTo)."
+          },
+          "sortModel": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sorting, e.g. [{\"colId\": \"revenue\", \"sort\": \"desc\"}]."
+          }
+        },
+        "required": [
+          "brand"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/oz/brand/items",
+        "queryParams": {
+          "path": "$brand",
+          "d1": "$d1",
+          "d2": "$d2",
+          "fbs": "$fbs"
+        },
+        "bodyMapping": {
+          "startRow": "$startRow",
+          "endRow": "$endRow",
+          "filterModel": "$filterModel",
+          "sortModel": "$sortModel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

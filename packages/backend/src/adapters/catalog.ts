@@ -40,6 +40,7 @@ import * as lexwareOffice from './de/lexware-office.json';
 import * as matrix42 from './de/matrix42.json';
 import * as mfrFieldservice from './de/mfr-fieldservice.json';
 import * as moco from './de/moco.json';
+import * as moss from './de/moss.json';
 import * as ninaWarnung from './de/nina-warnung.json';
 import * as openplz from './de/openplz.json';
 import * as openproject from './de/openproject.json';
@@ -61,6 +62,7 @@ import * as sendcloud from './de/sendcloud.json';
 import * as sevdesk from './de/sevdesk.json';
 import * as shipcloud from './de/shipcloud.json';
 import * as shopware6 from './de/shopware-6.json';
+import * as shopware6Admin from './de/shopware-6-admin.json';
 import * as sistrix from './de/sistrix.json';
 import * as sistrixMcp from './de/sistrix-mcp.json';
 import * as superchat from './de/superchat.json';
@@ -126,6 +128,7 @@ import * as blockcypher from './intl/blockcypher.json';
 import * as bluesky from './intl/bluesky.json';
 import * as botpress from './intl/botpress.json';
 import * as box from './intl/box.json';
+import * as braveSearch from './intl/brave-search.json';
 import * as braze from './intl/braze.json';
 import * as brevo from './intl/brevo.json';
 import * as brex from './intl/brex.json';
@@ -150,6 +153,7 @@ import * as cloudinary from './intl/cloudinary.json';
 import * as coda from './intl/coda.json';
 import * as coinbase from './intl/coinbase.json';
 import * as coingecko from './intl/coingecko.json';
+import * as coinglass from './intl/coinglass.json';
 import * as contentful from './intl/contentful.json';
 import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
@@ -163,6 +167,7 @@ import * as datadog from './intl/datadog.json';
 import * as dataforseo from './intl/dataforseo.json';
 import * as dchub from './intl/dchub.json';
 import * as deel from './intl/deel.json';
+import * as deribit from './intl/deribit.json';
 import * as dialpad from './intl/dialpad.json';
 import * as digitalocean from './intl/digitalocean.json';
 import * as directus from './intl/directus.json';
@@ -202,6 +207,7 @@ import * as firma from './intl/firma.json';
 import * as flutterwave from './intl/flutterwave.json';
 import * as folk from './intl/folk.json';
 import * as footballData from './intl/football-data.json';
+import * as fred from './intl/fred.json';
 import * as freepik from './intl/freepik.json';
 import * as freshbooks from './intl/freshbooks.json';
 import * as freshchat from './intl/freshchat.json';
@@ -318,6 +324,7 @@ import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as microsoftTodo from './intl/microsoft-todo.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mirakl from './intl/mirakl.json';
+import * as miraklConnect from './intl/mirakl-connect.json';
 import * as miro from './intl/miro.json';
 import * as mistral from './intl/mistral.json';
 import * as mixpanel from './intl/mixpanel.json';
@@ -328,6 +335,7 @@ import * as monday from './intl/monday.json';
 import * as monet from './intl/monet.json';
 import * as mongodb from './intl/mongodb.json';
 import * as moz from './intl/moz.json';
+import * as mpstats from './intl/mpstats.json';
 import * as mssql from './intl/mssql.json';
 import * as mysql from './intl/mysql.json';
 import * as neon from './intl/neon.json';
@@ -404,6 +412,7 @@ import * as render from './intl/render.json';
 import * as replicate from './intl/replicate.json';
 import * as resy from './intl/resy.json';
 import * as revolutBusiness from './intl/revolut-business.json';
+import * as ringostat from './intl/ringostat.json';
 import * as rivile from './intl/rivile.json';
 import * as rocketreach from './intl/rocketreach.json';
 import * as rozetka from './intl/rozetka.json';
@@ -434,6 +443,7 @@ import * as servicenow from './intl/servicenow.json';
 import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
 import * as shopee from './intl/shopee.json';
+import * as shoper from './intl/shoper.json';
 import * as shopify from './intl/shopify.json';
 import * as shoptet from './intl/shoptet.json';
 import * as shortcut from './intl/shortcut.json';
@@ -520,6 +530,7 @@ import * as zabbix from './intl/zabbix.json';
 import * as zendesk from './intl/zendesk.json';
 import * as zenhub from './intl/zenhub.json';
 import * as zenkit from './intl/zenkit.json';
+import * as zerion from './intl/zerion.json';
 import * as zohoBooks from './intl/zoho-books.json';
 import * as zohoCrm from './intl/zoho-crm.json';
 import * as zohoMail from './intl/zoho-mail.json';
@@ -829,6 +840,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   matrix42 as unknown as AdapterDefinition,
   mfrFieldservice as unknown as AdapterDefinition,
   moco as unknown as AdapterDefinition,
+  moss as unknown as AdapterDefinition,
   ninaWarnung as unknown as AdapterDefinition,
   openplz as unknown as AdapterDefinition,
   openproject as unknown as AdapterDefinition,
@@ -850,6 +862,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sevdesk as unknown as AdapterDefinition,
   shipcloud as unknown as AdapterDefinition,
   shopware6 as unknown as AdapterDefinition,
+  shopware6Admin as unknown as AdapterDefinition,
   sistrix as unknown as AdapterDefinition,
   sistrixMcp as unknown as AdapterDefinition,
   superchat as unknown as AdapterDefinition,
@@ -915,6 +928,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   bluesky as unknown as AdapterDefinition,
   botpress as unknown as AdapterDefinition,
   box as unknown as AdapterDefinition,
+  braveSearch as unknown as AdapterDefinition,
   braze as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
   brex as unknown as AdapterDefinition,
@@ -939,6 +953,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   coda as unknown as AdapterDefinition,
   coinbase as unknown as AdapterDefinition,
   coingecko as unknown as AdapterDefinition,
+  coinglass as unknown as AdapterDefinition,
   contentful as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
@@ -952,6 +967,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   dataforseo as unknown as AdapterDefinition,
   dchub as unknown as AdapterDefinition,
   deel as unknown as AdapterDefinition,
+  deribit as unknown as AdapterDefinition,
   dialpad as unknown as AdapterDefinition,
   digitalocean as unknown as AdapterDefinition,
   directus as unknown as AdapterDefinition,
@@ -991,6 +1007,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   flutterwave as unknown as AdapterDefinition,
   folk as unknown as AdapterDefinition,
   footballData as unknown as AdapterDefinition,
+  fred as unknown as AdapterDefinition,
   freepik as unknown as AdapterDefinition,
   freshbooks as unknown as AdapterDefinition,
   freshchat as unknown as AdapterDefinition,
@@ -1107,6 +1124,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   microsoftTodo as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mirakl as unknown as AdapterDefinition,
+  miraklConnect as unknown as AdapterDefinition,
   miro as unknown as AdapterDefinition,
   mistral as unknown as AdapterDefinition,
   mixpanel as unknown as AdapterDefinition,
@@ -1117,6 +1135,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   monet as unknown as AdapterDefinition,
   mongodb as unknown as AdapterDefinition,
   moz as unknown as AdapterDefinition,
+  mpstats as unknown as AdapterDefinition,
   mssql as unknown as AdapterDefinition,
   mysql as unknown as AdapterDefinition,
   neon as unknown as AdapterDefinition,
@@ -1193,6 +1212,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   replicate as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
   revolutBusiness as unknown as AdapterDefinition,
+  ringostat as unknown as AdapterDefinition,
   rivile as unknown as AdapterDefinition,
   rocketreach as unknown as AdapterDefinition,
   rozetka as unknown as AdapterDefinition,
@@ -1223,6 +1243,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
   shopee as unknown as AdapterDefinition,
+  shoper as unknown as AdapterDefinition,
   shopify as unknown as AdapterDefinition,
   shoptet as unknown as AdapterDefinition,
   shortcut as unknown as AdapterDefinition,
@@ -1309,6 +1330,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zendesk as unknown as AdapterDefinition,
   zenhub as unknown as AdapterDefinition,
   zenkit as unknown as AdapterDefinition,
+  zerion as unknown as AdapterDefinition,
   zohoBooks as unknown as AdapterDefinition,
   zohoCrm as unknown as AdapterDefinition,
   zohoMail as unknown as AdapterDefinition,
