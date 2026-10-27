@@ -1,0 +1,230 @@
+{
+  "slug": "home-assistant",
+  "name": "Home Assistant",
+  "description": "Let your AI read your Home Assistant: the current state of every sensor, light, door and thermostat, the recorded history, the logbook of what happened when, and your calendars. Read-only: it never controls devices. Works with self-hosted Home Assistant.",
+  "instructions": "## Home Assistant\nThis connector reads one **Home Assistant** instance through its REST API: the current state of every entity (sensors, lights, climate, doors, presence), the recorded history, the logbook and calendars, plus the instance configuration. It is **read-only**: every tool is a GET request. It cannot call actions (services), turn anything on or off, unlock doors, run scripts or change states. Note that Home Assistant's own action endpoint is not admin-only, so the read-only guarantee comes from this connector exposing only GET requests, not from the token.\n\n**Setup (about 3 minutes)**\n1. Set `HOME_ASSISTANT_URL` to the address you open Home Assistant at, without a trailing slash and without `/api`, for example `https://home.example.com` or `http://192.168.1.10:8123` (the default port is 8123).\n2. Recommended: create a dedicated, non-admin Home Assistant user for AnythingMCP (Settings, People, Users, Add user, with Administrator switched off). None of the endpoints used here needs admin rights.\n3. Log in as that user, open your profile (click your name at the bottom left), open the **Security** tab, and under **Long-lived access tokens** click **Create token**. Copy it (it is shown once; Home Assistant makes these tokens valid for 10 years) and paste it into `HOME_ASSISTANT_TOKEN`. It is sent as `Authorization: Bearer <token>`.\n4. Check the setup with `home_assistant_get_config`.\n\n**Where Home Assistant runs**\n- **Self-hosted AnythingMCP**: Home Assistant usually lives on a private network (`http://192.168.x.x:8123`, `homeassistant.local`). The outbound SSRF guard blocks private and local addresses by default, so an administrator must allow the host through the `SSRF_ALLOWED_HOSTS` environment variable or the allowlist in the admin settings.\n- **AnythingMCP Cloud**: Cloud can only reach a Home Assistant instance exposed on the public internet over HTTPS (for example behind a reverse proxy or Home Assistant Cloud remote access). A private IP or a local hostname is refused, and the allowlist cannot be changed on Cloud.\n\n**Privacy**: home data reveals who is at home and daily routines. Assign this connector only to MCP servers whose users may see this household's data.\n\n**How to work**\n1. `home_assistant_list_states` for a compact list of every entity (entity_id, state, name, unit, last change); `home_assistant_get_state` for one entity with all its attributes.\n2. History of values (e.g. overnight temperature): `home_assistant_get_history` with `start_time` and one or more `filter_entity_id`.\n3. What happened and when (e.g. when the garage door last opened): `home_assistant_get_logbook`.\n4. Calendars: `home_assistant_list_calendars` for the calendar entity ids, then `home_assistant_get_calendar_events` with `start` and `end`.\n\n**Times**: send every timestamp as ISO 8601 in UTC with a `Z` suffix, e.g. `2026-10-01T00:00:00Z`. An offset such as `+02:00` puts a `+` into the path or query string, which is easy to get wrong; convert to UTC first. `home_assistant_get_config` returns the instance's time zone for presenting results.\n\n**Identifiers**: entity ids look like `domain.object_id`, e.g. `sensor.living_room_temperature`, `binary_sensor.garage_door`, `calendar.family`.\n\n**Common errors**\n- 401: the token is wrong or was deleted.\n- 404 on get_state or calendar events: no entity with that id; check `home_assistant_list_states`. 404 everywhere: `HOME_ASSISTANT_URL` is wrong or already ends in `/api`.\n- 400 on calendar events: `start` or `end` missing or not a valid timestamp.\n- Connection refused or blocked: on self-hosted, allow the host in the SSRF allowlist; on Cloud, the instance must be public over HTTPS.\n\n**Out of scope**: calling actions/services, writing or deleting states, firing events, rendering templates, camera images, the event stream, the error log and the WebSocket API (areas, devices, entity registry).",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "home-assistant",
+  "docsUrl": "https://contributors.home-assistant.io/core/internals/rest-api/",
+  "prerequisites": "A Home Assistant instance reachable from AnythingMCP (on Cloud: public over HTTPS) and a long-lived access token, ideally from a dedicated non-admin user. About 3 minutes.",
+  "requiredEnvVars": [
+    "HOME_ASSISTANT_URL",
+    "HOME_ASSISTANT_TOKEN"
+  ],
+  "envVarMeta": {
+    "HOME_ASSISTANT_URL": {
+      "label": "Home Assistant URL",
+      "kind": "address",
+      "help": "The address you open Home Assistant at, without a trailing slash and without /api (default port 8123). On AnythingMCP Cloud it must be public over HTTPS.",
+      "example": "https://home.example.com",
+      "pattern": "^https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Enter the full address starting with https:// or http://, without a trailing slash, e.g. https://home.example.com or http://192.168.1.10:8123."
+    },
+    "HOME_ASSISTANT_TOKEN": {
+      "label": "Long-lived access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Your profile in Home Assistant, Security tab, Long-lived access tokens, Create token. It is shown once. A dedicated non-admin user is recommended.",
+      "link": "https://contributors.home-assistant.io/core/internals/auth-api/",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Home Assistant refused the token: it is wrong or was deleted. Create a new long-lived access token in your profile, Security tab.",
+    "403": "Home Assistant accepted the connection but refused this request. Check that the user behind the token is active.",
+    "404": "Nothing answered at this address. Check HOME_ASSISTANT_URL: the address you open Home Assistant at, without /api and without a trailing slash."
+  },
+  "probe": {
+    "tool": "home_assistant_get_config"
+  },
+  "connector": {
+    "name": "Home Assistant REST API",
+    "type": "REST",
+    "baseUrl": "{{HOME_ASSISTANT_URL}}/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{HOME_ASSISTANT_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/"
+  },
+  "tools": [
+    {
+      "name": "home_assistant_get_config",
+      "description": "Get the Home Assistant configuration: version, location name, time zone, unit system, coordinates and loaded components. Use it to check the setup and to present times in the home's time zone. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/config"
+      }
+    },
+    {
+      "name": "home_assistant_list_states",
+      "description": "List every entity the token may read, shortened to entity_id, state, friendly name, unit and last_changed. Use it to find entity ids (sensor.*, light.*, binary_sensor.*). For all attributes of one entity call home_assistant_get_state. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/states"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{entity_id: entity_id, state: state, name: attributes.friendly_name, unit: attributes.unit_of_measurement, last_changed: last_changed}"
+        }
+      }
+    },
+    {
+      "name": "home_assistant_get_state",
+      "description": "Get the current state of one entity with all its attributes, last_changed and last_updated, e.g. a thermostat's target temperature or whether a window is open. Home Assistant answers 404 if the entity does not exist. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$",
+            "description": "Entity id, e.g. sensor.living_room_temperature or binary_sensor.kitchen_window."
+          }
+        },
+        "required": [
+          "entity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/states/{entity_id}"
+      }
+    },
+    {
+      "name": "home_assistant_get_history",
+      "description": "Get the recorded state changes of one or more entities over a period, e.g. the living room temperature overnight. Returns one list of {state, last_changed} per entity, without attributes. Without end_time the period is one day from start_time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "string",
+            "description": "Start of the period. ISO 8601 in UTC with a Z suffix, e.g. 2026-10-01T00:00:00Z (an offset such as +02:00 puts a + into the URL; convert to UTC instead)."
+          },
+          "filter_entity_id": {
+            "type": "string",
+            "description": "One or more entity ids, comma-separated, e.g. sensor.living_room_temperature,sensor.outdoor_temperature."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End of the period (default one day after start_time). ISO 8601 in UTC with a Z suffix, e.g. 2026-10-01T00:00:00Z (an offset such as +02:00 puts a + into the URL; convert to UTC instead)."
+          }
+        },
+        "required": [
+          "start_time",
+          "filter_entity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/history/period/{start_time}",
+        "queryParams": {
+          "filter_entity_id": "$filter_entity_id",
+          "end_time": "$end_time",
+          "minimal_response": "1",
+          "no_attributes": "1"
+        }
+      }
+    },
+    {
+      "name": "home_assistant_get_logbook",
+      "description": "Get logbook entries from a start time: human-readable events such as a door opening, a light turning on or a person arriving home, with entity_id, name, message, state and when. Use it for 'when did X last happen'. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "string",
+            "description": "Start of the period. ISO 8601 in UTC with a Z suffix, e.g. 2026-10-01T00:00:00Z (an offset such as +02:00 puts a + into the URL; convert to UTC instead)."
+          },
+          "entity": {
+            "type": "string",
+            "description": "Only these entities, comma-separated, e.g. binary_sensor.garage_door or cover.garage_door,person.alex."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End of the period. ISO 8601 in UTC with a Z suffix, e.g. 2026-10-01T00:00:00Z (an offset such as +02:00 puts a + into the URL; convert to UTC instead)."
+          },
+          "period": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Length of the period in days when end_time is not given (default 1), e.g. 7."
+          }
+        },
+        "required": [
+          "start_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/logbook/{start_time}",
+        "queryParams": {
+          "entity": "$entity",
+          "end_time": "$end_time",
+          "period": "$period"
+        }
+      }
+    },
+    {
+      "name": "home_assistant_list_calendars",
+      "description": "List the calendar entities of this Home Assistant instance (entity_id and name, e.g. calendar.family). The entity_id is what home_assistant_get_calendar_events takes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendars"
+      }
+    },
+    {
+      "name": "home_assistant_get_calendar_events",
+      "description": "Get the events of one calendar between start and end: summary, start, end, description and location. Both start and end are required; Home Assistant answers 400 without them. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$",
+            "description": "Calendar entity id from home_assistant_list_calendars, e.g. calendar.family."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the range. ISO 8601 in UTC with a Z suffix, e.g. 2026-10-01T00:00:00Z (an offset such as +02:00 puts a + into the URL; convert to UTC instead)."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the range, e.g. 2026-10-08T00:00:00Z. ISO 8601 in UTC with a Z suffix, e.g. 2026-10-01T00:00:00Z (an offset such as +02:00 puts a + into the URL; convert to UTC instead)."
+          }
+        },
+        "required": [
+          "entity_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendars/{entity_id}",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end"
+        }
+      }
+    }
+  ]
+}
