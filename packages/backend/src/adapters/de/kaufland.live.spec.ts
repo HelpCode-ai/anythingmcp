@@ -87,3 +87,12 @@ describe('kaufland_get_order embedded', () => {
     expect(tool.parameters.properties.embedded.enum).toEqual(['order_invoices', 'delivery', 'kss_delivery']);
   });
 });
+
+describe('kaufland_list_units storefront', () => {
+  it('requires the storefront, which Kaufland rejects the call without', () => {
+    const tool = (adapter as unknown as {
+      tools: { name: string; parameters: { required?: string[] } }[];
+    }).tools.find((t) => t.name === 'kaufland_list_units')!;
+    expect(tool.parameters.required).toEqual(['storefront']);
+  });
+});

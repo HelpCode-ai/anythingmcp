@@ -194,7 +194,7 @@
     },
     {
       "name": "instagram_get_media_insights",
-      "description": "Get lifetime insights for one post, reel or story: reach, views, likes, comments, saved, shares, total_interactions, profile_visits, follows, or for stories replies and navigation. Returns one entry per metric. Use it to compare how individual posts performed.",
+      "description": "Get lifetime insights for one post, reel or story: reach, views, likes, comments, saved, shares, total_interactions, or for stories replies and navigation. Returns one entry per metric. Use it to compare how individual posts performed.",
       "parameters": {
         "type": "object",
         "properties": {

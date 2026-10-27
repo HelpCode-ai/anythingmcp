@@ -9,6 +9,11 @@ import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { normalizeOpenApi31 } from './openapi-3.1-normalizer';
 import { outboundAxiosOptions } from '../../common/outbound-http';
 
+// Resolve only the $refs inside the document. Without these options
+// swagger-parser reads a string spec as a file path or URL, and follows
+// external $refs to local files or to any host, past assertSafeOutboundUrl.
+const SWAGGER_PARSER_OPTIONS = { resolve: { external: false, file: false, http: false } };
+
 export interface ParsedTool {
   name: string;
   /**
@@ -74,6 +79,11 @@ export class OpenApiParser {
     this.logger.debug('Parsing OpenAPI specification...');
 
     const rawSpec = typeof spec === 'string' ? this.decodeSpecString(spec) : spec;
+    if (!rawSpec || typeof rawSpec !== 'object' || Array.isArray(rawSpec)) {
+      throw new Error(
+        'This is not an OpenAPI document. Paste the JSON or YAML of the spec, or import it from its URL.',
+      );
+    }
 
     // OpenAPI 3.1 isn't supported by swagger-parser's validator (the upstream
     // schema is OAS 3.0 only). Skip validation in that case — the dereference
@@ -102,8 +112,8 @@ export class OpenApiParser {
     let api: unknown;
     try {
       api = isOpenApi31
-        ? await SwaggerParser.dereference(rawSpec as any)
-        : await SwaggerParser.validate(rawSpec as any);
+        ? await SwaggerParser.dereference(rawSpec as any, SWAGGER_PARSER_OPTIONS)
+        : await SwaggerParser.validate(rawSpec as any, SWAGGER_PARSER_OPTIONS);
     } catch (err: any) {
       // swagger-parser's bundled validator only knows OAS 3.0.0–3.0.3, so newer
       // patch releases (e.g. 3.0.4, current as of 2024) are rejected as
@@ -111,7 +121,7 @@ export class OpenApiParser {
       // so fall back to it (same path as 3.1) to still extract tools.
       if (err?.message?.includes('Unsupported OpenAPI version')) {
         try {
-          api = await SwaggerParser.dereference(rawSpec as any);
+          api = await SwaggerParser.dereference(rawSpec as any, SWAGGER_PARSER_OPTIONS);
         } catch {
           throw new Error(
             'This OpenAPI document declares a version we don\'t fully support. ' +

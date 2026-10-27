@@ -255,6 +255,7 @@ import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
 import * as heygen from './intl/heygen.json';
 import * as higgsfield from './intl/higgsfield.json';
+import * as homeAssistant from './intl/home-assistant.json';
 import * as hubspot from './intl/hubspot.json';
 import * as huggingface from './intl/huggingface.json';
 import * as hunter from './intl/hunter.json';
@@ -1042,6 +1043,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   hetznerCloud as unknown as AdapterDefinition,
   heygen as unknown as AdapterDefinition,
   higgsfield as unknown as AdapterDefinition,
+  homeAssistant as unknown as AdapterDefinition,
   hubspot as unknown as AdapterDefinition,
   huggingface as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
