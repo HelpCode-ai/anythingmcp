@@ -12,3 +12,13 @@ describe('freshdesk adapter — static spec conformance', () => {
     expect(a.connector.authConfig.password).toBe('X');
   });
 });
+
+describe('freshdesk_search_tickets query', () => {
+  it('asks for the double quotes Freshdesk requires', () => {
+    const tool = (adapter as unknown as {
+      tools: { name: string; description: string; parameters: { properties: { query: { description: string } } } }[];
+    }).tools.find((t) => t.name === 'freshdesk_search_tickets')!;
+    expect(tool.parameters.properties.query.description).toContain('double quotes');
+    expect(tool.description).not.toContain("'status:2");
+  });
+});
