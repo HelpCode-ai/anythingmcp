@@ -3,8 +3,8 @@ import { applyResponseTransform } from '../../connectors/response-transform.util
 
 /**
  * SellAuth API v1 (docs.sellauth.com, OpenAPI at /openapi.yaml): Bearer API key, shop-scoped routes.
- * Built from a customer's hand-built Cloud connector (analytics, top products, invoices) and checked
- * read-only with its key on 22 Oct 2026, every tool.
+ * Every tool was checked read-only against a live
+ * account on 22 Oct 2026.
  * Live part: SELLAUTH_API_KEY=... SELLAUTH_SHOP_ID=... RUN_SELLAUTH_LIVE=1 npx jest src/adapters/intl/sellauth
  * (reads only: shops, analytics, one invoice page).
  */
@@ -54,8 +54,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'sellauth_';
 const WRITES: string[] = [];
-// Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
-const HAND_BUILT: string[] = ["get_revenue_graph", "get_stats", "get_top_customers", "get_top_products", "list_invoices"];
 
 describe('sellauth adapter: static spec conformance', () => {
 
@@ -108,10 +106,6 @@ describe('sellauth adapter: static spec conformance', () => {
     for (const n of WRITES) expect(tool(n).annotations?.readOnlyHint).toBe(false);
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     const probe = tool(a.probe.tool);

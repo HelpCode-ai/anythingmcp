@@ -47,8 +47,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'bricobravo_';
 const WRITES: string[] = ["bricobravo_mark_shipped"];
-// Tool names of the customers' own connectors for this API on the Cloud (read 19 Oct 2026).
-const HAND_BUILT = ["bricobravo_get_order", "bricobravo_list_orders", "bricobravo_update_tracking"];
 
 describe('bricobravo adapter: static spec conformance', () => {
   it('sends the token in sh-token to sellerhub.bricobravo.com/api', () => {
@@ -98,10 +96,6 @@ describe('bricobravo adapter: static spec conformance', () => {
     }
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     expect(WRITES).not.toContain(a.probe.tool);

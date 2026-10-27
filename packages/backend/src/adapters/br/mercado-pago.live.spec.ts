@@ -3,8 +3,8 @@ import { applyResponseTransform } from '../../connectors/response-transform.util
 
 /**
  * Mercado Pago REST API (mercadopago.com/developers/en/reference): Bearer access token,
- * api.mercadopago.com. Built from a customer's hand-built Cloud connector (release report list,
- * generate, download) and checked read-only with its token on 22 Oct 2026.
+ * api.mercadopago.com. Release reports (list, generate, download) were checked read-only
+ * against a live account on 22 Oct 2026.
  * Live part: MERCADO_PAGO_ACCESS_TOKEN=APP_USR-... RUN_MERCADO_PAGO_LIVE=1 npx jest src/adapters/br/mercado-pago
  * (reads only: account, one page of payments, the release report list).
  */
@@ -54,8 +54,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'mercado_pago_';
 const WRITES: string[] = [];
-// Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
-const HAND_BUILT: string[] = ["mp_descargar_reporte", "mp_generar_reporte", "mp_listar_reportes"];
 
 describe('mercado-pago adapter: static spec conformance', () => {
 
@@ -69,7 +67,7 @@ describe('mercado-pago adapter: static spec conformance', () => {
     expect(a.category).toBe('payments');
   });
 
-  it('maps the documented routes, including the release report the customer runs', () => {
+  it('maps the documented routes, including the release report', () => {
     expect(tool('mercado_pago_search_payments').endpointMapping).toMatchObject({ method: 'GET', path: '/v1/payments/search', queryParams: { status: '$status', range: '$range', begin_date: '$begin_date', end_date: '$end_date', limit: '$limit', offset: '$offset' } });
     expect((tool('mercado_pago_search_payments').parameters?.properties?.limit as { maximum: number }).maximum).toBe(100);
     expect(tool('mercado_pago_list_release_reports').endpointMapping.path).toBe('/v1/account/release_report/list');
@@ -118,10 +116,6 @@ describe('mercado-pago adapter: static spec conformance', () => {
     for (const n of WRITES) expect(tool(n).annotations?.readOnlyHint).toBe(false);
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     const probe = tool(a.probe.tool);

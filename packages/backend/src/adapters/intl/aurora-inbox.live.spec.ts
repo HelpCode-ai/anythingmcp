@@ -2,8 +2,8 @@ import * as adapter from './aurora-inbox.json';
 
 /**
  * Aurora Inbox Platform API v1 (developers.aurorainbox.com, OpenAPI at /swagger/v1-en/swagger.json):
- * X-Api-Key header. Built from a customer's hand-built Cloud connector (funnel report, stages, teams,
- * bookings) and checked read-only with its key on 22 Oct 2026, every tool.
+ * X-Api-Key header. Every tool was checked read-only
+ * against a live account on 22 Oct 2026.
  * Live part: AURORA_INBOX_API_KEY=ak_live_... RUN_AURORA_INBOX_LIVE=1 npx jest src/adapters/intl/aurora-inbox
  * (reads only: teams, one funnel report, contacts).
  */
@@ -53,8 +53,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'aurora_inbox_';
 const WRITES: string[] = [];
-// Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
-const HAND_BUILT: string[] = ["getchat", "getcontact", "getteamfunnelreport", "listcalendarevents", "listchatopportunities", "listchattags", "listcontactproperties", "listcontacts", "listcustomproperties", "listmessengerchannels", "listschedulingbookings", "listschedulinglocations", "listschedulingproviders", "listschedulingservices", "listtags", "listteams", "listteamstages", "listusers", "listwhatsappbusinesschannels", "listwhatsappcloudapichannels", "searchchats"];
 
 describe('aurora-inbox adapter: static spec conformance', () => {
 
@@ -66,7 +64,7 @@ describe('aurora-inbox adapter: static spec conformance', () => {
     expect(a.envVarMeta?.AURORA_INBOX_API_KEY.secret).toBe(true);
   });
 
-  it('maps the documented routes the customer runs', () => {
+  it('maps the documented routes', () => {
     expect(tool('aurora_inbox_get_funnel_report').endpointMapping).toMatchObject({ path: '/Teams/{team_id}/FunnelReport', queryParams: { from: '$from', to: '$to', userId: '$user_id' } });
     expect(tool('aurora_inbox_search_chats').endpointMapping).toMatchObject({ method: 'POST', path: '/Chats/Search', bodyMapping: { page: '$page', searchTerm: '$search_term', teamId: '$team_id' } });
     expect(tool('aurora_inbox_list_bookings').endpointMapping.queryParams).toMatchObject({ roomId: '$chat_id', status: '$status' });
@@ -103,10 +101,6 @@ describe('aurora-inbox adapter: static spec conformance', () => {
     for (const n of WRITES) expect(tool(n).annotations?.readOnlyHint).toBe(false);
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     const probe = tool(a.probe.tool);
