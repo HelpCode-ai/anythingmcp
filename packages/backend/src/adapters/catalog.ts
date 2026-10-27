@@ -217,6 +217,7 @@ import * as genapi from './intl/genapi.json';
 import * as georgianRailway from './intl/georgian-railway.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
+import * as gitea from './intl/gitea.json';
 import * as github from './intl/github.json';
 import * as gitlab from './intl/gitlab.json';
 import * as glide from './intl/glide.json';
@@ -1005,6 +1006,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   georgianRailway as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
+  gitea as unknown as AdapterDefinition,
   github as unknown as AdapterDefinition,
   gitlab as unknown as AdapterDefinition,
   glide as unknown as AdapterDefinition,
