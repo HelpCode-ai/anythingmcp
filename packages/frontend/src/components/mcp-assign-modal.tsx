@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { mcpServers } from '@/lib/api';
 
 interface McpAssignModalProps {
@@ -12,6 +13,7 @@ interface McpAssignModalProps {
 }
 
 export function McpAssignModal({ connectorId, connectorName, token, onDone, onClose }: McpAssignModalProps) {
+  const t = useTranslations('mcpAssign');
   const [servers, setServers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -42,7 +44,7 @@ export function McpAssignModal({ connectorId, connectorName, token, onDone, onCl
 
       if (createNew) {
         if (!newName.trim()) {
-          setError('Enter a name for the new MCP server');
+          setError(t('nameRequired'));
           setSaving(false);
           return;
         }
@@ -51,7 +53,7 @@ export function McpAssignModal({ connectorId, connectorName, token, onDone, onCl
       } else if (selectedId) {
         targetId = selectedId;
       } else {
-        setError('Select an MCP server or create a new one');
+        setError(t('selectRequired'));
         setSaving(false);
         return;
       }
@@ -66,7 +68,7 @@ export function McpAssignModal({ connectorId, connectorName, token, onDone, onCl
 
       onDone(targetId);
     } catch (err: any) {
-      setError(err.message || 'Failed to assign connector');
+      setError(err.message || t('assignFailed'));
       setSaving(false);
     }
   };
@@ -78,16 +80,16 @@ export function McpAssignModal({ connectorId, connectorName, token, onDone, onCl
         <button
           onClick={onClose}
           className="absolute top-3 right-3 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-          aria-label="Close"
+          aria-label={t('close')}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M18 6 6 18" /><path d="m6 6 12 12" />
           </svg>
         </button>
 
-        <h3 className="text-lg font-semibold mb-1">Add to MCP Server</h3>
+        <h3 className="text-lg font-semibold mb-1">{t('title')}</h3>
         <p className="text-sm text-[var(--muted-foreground)] mb-4">
-          Choose which MCP server should expose <strong>{connectorName}</strong> tools to AI agents.
+          {t.rich('description', { name: connectorName, b: (chunks) => <strong>{chunks}</strong> })}
         </p>
 
         {error && (
@@ -97,7 +99,7 @@ export function McpAssignModal({ connectorId, connectorName, token, onDone, onCl
         )}
 
         {loading ? (
-          <div className="py-8 text-center text-sm text-[var(--muted-foreground)]">Loading MCP servers...</div>
+          <div className="py-8 text-center text-sm text-[var(--muted-foreground)]">{t('loading')}</div>
         ) : (
           <div className="flex-1 overflow-y-auto min-h-0">
             {/* Existing servers */}
@@ -108,7 +110,7 @@ export function McpAssignModal({ connectorId, connectorName, token, onDone, onCl
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search MCP servers..."
+                    placeholder={t('search')}
                     autoComplete="off"
                     className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] mb-3"
                   />
@@ -137,7 +139,7 @@ export function McpAssignModal({ connectorId, connectorName, token, onDone, onCl
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate">{srv.name}</div>
                           <div className="text-xs text-[var(--muted-foreground)]">
-                            {connCount} connector{connCount !== 1 ? 's' : ''}
+                            {t('connectorCount', { count: connCount })}
                             {srv.description && ` · ${srv.description}`}
                           </div>
                         </div>
@@ -167,7 +169,7 @@ export function McpAssignModal({ connectorId, connectorName, token, onDone, onCl
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M5 12h14" /><path d="M12 5v14" />
                         </svg>
-                        Create new MCP server
+                        {t('createNew')}
                       </div>
                     </div>
                   </label>
@@ -178,12 +180,12 @@ export function McpAssignModal({ connectorId, connectorName, token, onDone, onCl
             {/* New server name input */}
             {createNew && (
               <div className="mb-3">
-                <label className="block text-sm font-medium mb-1">Server name</label>
+                <label className="block text-sm font-medium mb-1">{t('serverName')}</label>
                 <input
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g. My API Server"
+                  placeholder={t('serverNamePlaceholder')}
                   autoFocus
                   className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
                 />
@@ -197,14 +199,14 @@ export function McpAssignModal({ connectorId, connectorName, token, onDone, onCl
             onClick={onClose}
             className="px-4 py-2 rounded-md text-sm border border-[var(--border)] hover:bg-[var(--muted)]"
           >
-            Skip for now
+            {t('skip')}
           </button>
           <button
             onClick={handleSubmit}
             disabled={saving || (!selectedId && !createNew) || (createNew && !newName.trim())}
             className="bg-[var(--brand)] text-[var(--primary-foreground)] px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
           >
-            {saving ? 'Assigning...' : 'Assign to MCP Server'}
+            {saving ? t('assigning') : t('assign')}
           </button>
         </div>
       </div>

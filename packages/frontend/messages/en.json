@@ -904,5 +904,320 @@
     "CONNECTION_STRING": "Connection String",
     "HMAC": "HMAC Signature",
     "LOGIN_TOKEN": "Login Token"
+  },
+  "connectorSetup": {
+    "notAvailable": "This connector is not available.",
+    "authIncomplete": "The authorization did not complete. Try again.",
+    "authStartFailed": "Could not start the authorization.",
+    "genericError": "Something went wrong.",
+    "backToMarketplace": "Back to the marketplace",
+    "loading": "Loading…",
+    "groups": {
+      "address": "Where it is",
+      "credential": "Credentials",
+      "setting": "Settings"
+    },
+    "actions": {
+      "install": "Install {name}",
+      "saveAndSignIn": "Save and sign in to {name}",
+      "checkAndSave": "Check and save",
+      "checkAndInstall": "Check and install",
+      "checkAndSignIn": "Check and sign in to {name}",
+      "checkAndConnect": "Check and connect"
+    },
+    "verify": {
+      "authFailed": "{name} did not accept these credentials.",
+      "invalidInput": "Some values are missing or not valid.",
+      "providerError": "{name} answered with an error.",
+      "suggest": "Set up {name} instead",
+      "suggestOther": "Set up the other connector instead",
+      "saveAnyway": "Save anyway"
+    },
+    "field": {
+      "required": "Required",
+      "looksWrongExample": "Looks wrong. Example: {example}",
+      "looksWrong": "Looks wrong",
+      "optional": "(optional)",
+      "stored": "Stored. Leave empty to keep it",
+      "hide": "Hide",
+      "show": "Show",
+      "open": "Open"
+    },
+    "advanced": "Advanced",
+    "guide": {
+      "oauthNext": "Next, {name} asks you to approve access. You come back here on your own.",
+      "back": "Back",
+      "checking": "Checking…",
+      "continue": "Continue",
+      "tickHint": "Tick the box above once it is done."
+    },
+    "title": {
+      "finish": "Finish setting up {name}",
+      "setUp": "Set up {name}"
+    },
+    "useGuide": "Prefer step by step? Use the guided setup",
+    "beforeStart": "Before you start",
+    "oauth": {
+      "selfRegistering": "After saving you sign in at {name} once. AnythingMCP registers itself with {name}'s MCP server, so there is no app to create and no key to copy.",
+      "ownApp": "You need an app of your own at {name}, then you sign in once. In the app's settings, add this callback URL (also called redirect URI) exactly as shown:"
+    },
+    "copy": "Copy",
+    "noInput": "Nothing to enter: it works without an account.",
+    "working": "Working…",
+    "saveDraft": "Save as draft",
+    "draftHint": "A draft is not offered to your AI client until it is complete.",
+    "stepByStep": "Step-by-step guide"
+  },
+  "setupGuide": {
+    "stuck": "Stuck? Ask us",
+    "intro": {
+      "title": "Connect {name} to your AI",
+      "steps": "{count, plural, one {# step} other {# steps}}",
+      "examples": "Then ask your AI things like",
+      "needs": "What you need",
+      "whyOwnApp": "Why do I need my own {name} app?",
+      "why": "Why this setup?",
+      "resume": "Continue at step {step}: {title}",
+      "startOver": "Start over",
+      "start": "Start",
+      "skipTo": "Done the rest already? Go to step {step}: {title}",
+      "doneBefore": "Done this before?",
+      "onePage": "Enter everything on one page"
+    },
+    "stepper": {
+      "useIt": "Use it",
+      "label": "Setup progress"
+    },
+    "value": {
+      "select": "Select <b>{value}</b>",
+      "copied": "Copied ✓",
+      "copy": "Copy"
+    },
+    "step": {
+      "position": "Step {step} of {total}",
+      "newTab": "(opens in a new tab)",
+      "fillPrevious": "{action}: fill in the previous step first.",
+      "screenshot": "Screenshot from {date}; the page may look slightly different now.",
+      "problems": "Common problems"
+    }
+  },
+  "setupSuccess": {
+    "copied": "Copied ✓",
+    "copy": "Copy",
+    "yourServer": "your MCP server",
+    "defaultPrompt": "What can you do with {name}?",
+    "serverUrl": "Your MCP server URL",
+    "tabs": {
+      "label": "AI client",
+      "other": "Other"
+    },
+    "claude": {
+      "step1": "Click <b>Add to Claude</b>: Claude opens its <b>Add custom connector</b> dialog.",
+      "step2": "Enter a name (e.g. AnythingMCP), paste the URL below and click <b>Add</b>.",
+      "step3": "Click <b>Connect</b> and approve access.",
+      "add": "Add to Claude",
+      "noDialog": "Dialog not showing? In Claude open <b>Customize → Connectors</b>, click <b>+</b>, then <b>Add custom connector</b>.",
+      "directory": "Or add AnythingMCP from the <link>Claude Directory</link> and pick this server when you sign in."
+    },
+    "chatgpt": {
+      "step1": "Open <b>Plugins</b> in ChatGPT, click <b>+</b>, then <b>Add custom MCP server</b>.",
+      "step2": "Enter a name, paste the URL below as the <b>Server URL</b> and keep <b>Authentication</b> on <b>OAuth</b>.",
+      "step3": "Select <b>I understand and want to continue</b>, then <b>Create as a plugin</b>, and sign in to AnythingMCP.",
+      "step4": "Install the plugin from your personal plugins, then type <b>@</b> in a chat to use it.",
+      "open": "Open ChatGPT Plugins",
+      "plan": "Custom MCP servers need a paid ChatGPT plan. On a Business workspace only admins and owners can add them."
+    },
+    "copilot": {
+      "body": "Click below: VS Code opens and offers to install the server for GitHub Copilot. Approve the sign-in to AnythingMCP when it asks, then pick the tools in Copilot Chat → <b>Tools</b>.",
+      "add": "Add to VS Code",
+      "other": "Visual Studio, JetBrains, Eclipse or Xcode: see <link>the server page</link>."
+    },
+    "other": {
+      "body": "Cursor, Claude Code, Claude Desktop, Gemini CLI, Meta Muse, Windsurf and others: the server page has the steps for each.",
+      "open": "Open {name}"
+    },
+    "title": "{name} is connected",
+    "verified": "AnythingMCP checked it with {name}: it works.",
+    "ready": "Your AI can use {name} now.",
+    "back": {
+      "button": "Back to {name}",
+      "closeTab": "You can close this tab and return to {name}."
+    },
+    "tryAsking": "Try asking",
+    "useIt": "Use it in your AI",
+    "loading": "Loading…",
+    "noServer": "Add the connector to an MCP server to reach it from an AI client: <link>open the connector</link>.",
+    "inUse": "{name} is on <b>{server}</b>, which your AI client already uses. Start a new chat and ask it something from the list above.",
+    "anotherClient": "Connect another AI client",
+    "apiKeysOnly": "This instance signs AI clients in with API keys (<code>MCP_AUTH_MODE={mode}</code>), so adding it by URL in Claude or ChatGPT will not work. Open <link>{server}</link> for the client configs with an API key.",
+    "localhost": "This URL points to localhost: Claude and ChatGPT on the web cannot reach it. Use a client on this machine (Claude Code, Cursor, VS Code), or give AnythingMCP a public https address.",
+    "sample": "What {name} answered to the check",
+    "openConnector": "Open the connector",
+    "addAnother": "Add another app"
+  },
+  "headersEditor": {
+    "label": "Custom headers",
+    "hint": "Sent on every request to this API. Useful for APIs that require extra headers (e.g. Autotask: Username, Secret, ApiIntegrationCode).",
+    "name": "Header name",
+    "valueOf": "Value of header {name}",
+    "valueOfNew": "Value of header new header",
+    "stored": "Set — leave empty to keep current",
+    "value": "value",
+    "remove": "Remove header",
+    "add": "+ Add header"
+  },
+  "mcpAssign": {
+    "nameRequired": "Enter a name for the new MCP server",
+    "selectRequired": "Select an MCP server or create a new one",
+    "assignFailed": "Failed to assign connector",
+    "close": "Close",
+    "title": "Add to MCP Server",
+    "description": "Choose which MCP server should expose <b>{name}</b> tools to AI agents.",
+    "loading": "Loading MCP servers...",
+    "search": "Search MCP servers...",
+    "connectorCount": "{count, plural, one {# connector} other {# connectors}}",
+    "createNew": "Create new MCP server",
+    "serverName": "Server name",
+    "serverNamePlaceholder": "e.g. My API Server",
+    "skip": "Skip for now",
+    "assigning": "Assigning...",
+    "assign": "Assign to MCP Server"
+  },
+  "connectorNew": {
+    "back": "Connectors",
+    "title": "New connector",
+    "chooseType": "Choose connector type",
+    "chooseTypeHint": "Start from a ready-made connector, or connect your own API.",
+    "marketplace": {
+      "title": "Marketplace",
+      "description": "Pick a ready-made connector for a popular service. Auth and tools are pre-configured, just add your credentials."
+    },
+    "types": {
+      "REST": {
+        "name": "REST API",
+        "description": "Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually."
+      },
+      "SOAP": {
+        "name": "SOAP Service",
+        "description": "Connect to SOAP web services via WSDL."
+      },
+      "GRAPHQL": {
+        "name": "GraphQL",
+        "description": "Connect to GraphQL APIs with schema introspection."
+      },
+      "ODATA": {
+        "name": "OData",
+        "description": "Connect to OData V2/V4 services, including SAP S/4HANA and SAP Gateway. Services, fields and labels are read from $metadata."
+      },
+      "MCP": {
+        "name": "MCP Server",
+        "description": "Bridge to another MCP server — aggregate multiple MCP servers into one."
+      },
+      "DATABASE": {
+        "name": "Database",
+        "description": "Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, or SQLite. Supports read-only or read-write mode."
+      }
+    },
+    "configure": "Configure {type}",
+    "test": {
+      "rejected": "Credentials rejected: ",
+      "rejectedStatus": "Credentials rejected ({status}): ",
+      "notFound": "Not found: ",
+      "unreachable": "Unreachable: ",
+      "error": "Error: ",
+      "checkCredentials": "Double-check the API key / token / OAuth credentials for this connector, then test again.",
+      "ssrf": "→ Add <code>{host}</code> to the SSRF allowlist"
+    },
+    "fields": {
+      "name": "Connector name",
+      "namePlaceholder": "e.g., My REST API",
+      "connectionString": "Connection String",
+      "baseUrl": "Base URL",
+      "username": "Username",
+      "password": "Password",
+      "optional": "optional"
+    },
+    "catalogMatch": {
+      "title": "{count, plural, one {There is a ready-made connector for this API} other {There are ready-made connectors for this API}}",
+      "description": "Its tools, descriptions and sign-in are already set up and tested, and it gets catalog updates.",
+      "tools": "{count, plural, one {# tool} other {# tools}}",
+      "setUp": "Set it up instead →"
+    },
+    "mcpUrlHint": "Paste the complete MCP endpoint URL including its path — e.g. a Snowflake managed server at <mono>{example}</mono>. A bare host with no path defaults to <mono>{fallback}</mono>.",
+    "odata": {
+      "sapHint": "The base URL is the SAP host; services are found through SAP's service catalog. Leave unticked for a single OData service, with its service root as the base URL.",
+      "sapClient": "SAP client",
+      "sapClientPlaceholder": "e.g. 100",
+      "sapLanguage": "SAP language",
+      "toolsHint": "The connector comes with tools to list services, read their fields and labels, query entity sets and read single entities. Specific tools per entity set can be imported from $metadata afterwards."
+    },
+    "database": {
+      "accessMode": "Access mode",
+      "readOnly": "Read-only",
+      "readWrite": "Read & Write",
+      "readOnlyHint": "Only SELECT queries will be allowed. Safe for analytics and reporting.",
+      "readWriteHint": "All SQL operations (SELECT, INSERT, UPDATE, DELETE) will be allowed. Use with caution."
+    },
+    "spec": {
+      "openapi": "OpenAPI Spec URL (optional)",
+      "graphql": "GraphQL Introspection URL (optional)",
+      "wsdl": "WSDL URL (optional)",
+      "hint": "Provide a spec URL to auto-generate MCP tools."
+    },
+    "auth": {
+      "label": "Authentication",
+      "none": "None",
+      "apiKey": "API Key",
+      "loginToken": "Login → Token (auto-refresh)"
+    },
+    "oauth": {
+      "passwordRequired": "Enter the username and password the password grant sends to the token URL.",
+      "mcpHint": "After creating the connector, you will be redirected to authorize with the remote MCP server via OAuth. Tools will be discovered automatically after authorization.",
+      "grant": "Grant type",
+      "grantCode": "Authorization code (sign in at the provider)",
+      "grantClient": "Client credentials",
+      "grantPassword": "Password (username and password)",
+      "passwordHint": "For APIs that issue tokens with no refresh token: a new one is requested with the username and password whenever it expires. Datto RMM: username = API key, password = API secret, client ID public-client, secret public, HTTP Basic.",
+      "authorizationUrl": "Authorization URL",
+      "scopesPlaceholder": "read write (space-separated, optional)",
+      "tokenAuth": "Token endpoint authentication",
+      "secretInBody": "Client secret in body",
+      "secretInBodyDefault": "Client secret in body (default)",
+      "basicHeader": "HTTP Basic header (client_secret_basic)",
+      "basicHeaderDefault": "HTTP Basic header (client_secret_basic) (default)",
+      "tokenAuthMachineHint": "How the client ID and secret reach the token URL.",
+      "tokenAuthHint": "Switch to HTTP Basic if the provider returns 401 when exchanging the code — DATEV requires it. Applies to token refreshes too.",
+      "machineHint": "No sign-in needed: the connector requests its access token from the token URL, and a new one whenever it expires.",
+      "redirectHint": "After creating the connector, you will be redirected to authorize via OAuth2. Tokens will be stored securely.",
+      "callback": "Set the <b>Redirect / Callback URI</b> in your OAuth provider to:"
+    },
+    "apiKey": {
+      "header": "Header name",
+      "headerInvalid": "The HTTP header the key is sent in, e.g. X-API-Key: letters, digits and - only, no spaces.",
+      "key": "API key"
+    },
+    "wsSecurity": {
+      "passwordType": "Password type",
+      "passwordTextDefault": "PasswordText (default)",
+      "hint": "Sent as a wsse:Security UsernameToken in the SOAP header. PasswordDigest sends a hash of the password with a nonce and timestamp instead of the password itself."
+    },
+    "loginToken": {
+      "invalidJson": "Login body must be valid JSON.",
+      "intro": "For APIs with short-lived tokens (e.g. HRworks): we POST your credentials to the login endpoint, read the token from the response, send it as a Bearer token, and refresh it automatically before it expires.",
+      "url": "Login URL",
+      "username": "Username / Access key",
+      "usernamePlaceholder": "access key",
+      "password": "Password / Secret",
+      "passwordPlaceholder": "secret",
+      "body": "Login request body (JSON)",
+      "bodyHint": "Body sent to the login URL. Use <code>{user}</code> / <code>{pass}</code> placeholders. HRworks uses <code>{example}</code>.",
+      "method": "Method",
+      "tokenPath": "Token JSON path",
+      "ttl": "Token TTL (s)",
+      "refreshOn401": "Re-login and retry automatically on a 401 response"
+    },
+    "creating": "Creating...",
+    "create": "Create connector",
+    "testConnection": "Test connection"
   }
 }

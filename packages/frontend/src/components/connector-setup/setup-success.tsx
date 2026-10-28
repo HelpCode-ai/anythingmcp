@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { connectors, mcpServers, productEvents, server as serverApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -15,11 +16,12 @@ import { cn } from '@/lib/utils';
 
 type ClientTab = 'claude' | 'chatgpt' | 'copilot' | 'other';
 
-const TABS: Array<{ id: ClientTab; label: string }> = [
+/** Product names stay as they are; "Other" is `setupSuccess.tabs.other`. */
+const TABS: Array<{ id: ClientTab; label?: string }> = [
   { id: 'claude', label: 'Claude' },
   { id: 'chatgpt', label: 'ChatGPT' },
   { id: 'copilot', label: 'Copilot' },
-  { id: 'other', label: 'Other' },
+  { id: 'other' },
 ];
 
 interface ServerInfo {
@@ -30,7 +32,8 @@ interface ServerInfo {
   inUse: boolean;
 }
 
-function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
+function CopyButton({ text, label }: { text: string; label?: string }) {
+  const t = useTranslations('setupSuccess');
   const [copied, setCopied] = useState(false);
   return (
     <Button
@@ -44,7 +47,7 @@ function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) 
         }
       }}
     >
-      {copied ? 'Copied ✓' : label}
+      {copied ? t('copied') : (label ?? t('copy'))}
     </Button>
   );
 }
@@ -73,6 +76,7 @@ export function SetupSuccess({
   back: ReturnAssistant | null;
 }) {
   const { token, deploymentMode } = useAuth();
+  const t = useTranslations('setupSuccess');
   const isCloud = deploymentMode === 'cloud';
   const [server, setServer] = useState<ServerInfo | null | undefined>(undefined);
   /** How this instance's MCP endpoint signs clients in (MCP_AUTH_MODE). */
@@ -100,7 +104,7 @@ export function SetupSuccess({
           mcpServers.activity(serverId, token).catch(() => null),
         ]);
         if (!cancelled) {
-          setServer({ id: serverId, name: s?.name ?? 'your MCP server', slug: s?.slug || 'anythingmcp', inUse: (activity?.calls30d ?? 0) > 0 });
+          setServer({ id: serverId, name: s?.name ?? t('yourServer'), slug: s?.slug || 'anythingmcp', inUse: (activity?.calls30d ?? 0) > 0 });
         }
       } catch {
         if (!cancelled) setServer(null);
@@ -109,10 +113,10 @@ export function SetupSuccess({
     return () => {
       cancelled = true;
     };
-  }, [token, connectorId]);
+  }, [token, connectorId, t]);
 
   const endpoint = server ? `${getApiOrigin()}/mcp/${server.id}` : '';
-  const prompts = examples.length > 0 ? examples : [`What can you do with ${name}?`];
+  const prompts = examples.length > 0 ? examples : [t('defaultPrompt', { name })];
   const openTab = (id: ClientTab) => {
     setTab(id);
     if (token) productEvents.track('client_tab_opened', token, { client: id, via: 'setup' });
@@ -120,7 +124,7 @@ export function SetupSuccess({
 
   const endpointRow = (
     <div>
-      <div className="mb-1 text-xs font-medium text-[var(--text-3)]">Your MCP server URL</div>
+      <div className="mb-1 text-xs font-medium text-[var(--text-3)]">{t('serverUrl')}</div>
       <div className="flex items-start gap-2">
         <code className="flex-1 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 font-mono text-[12.5px] text-[var(--text)] [overflow-wrap:anywhere]">
           {endpoint}
@@ -130,6 +134,9 @@ export function SetupSuccess({
     </div>
   );
 
+  /** Bold UI names (buttons and menus in the client) inside an instruction. */
+  const rich = { b: (chunks: ReactNode) => <strong>{chunks}</strong> };
+
   const external = (href: string, label: string) => (
     <a href={href} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants({ size: 'sm' }), 'gap-1.5')}>
       {label} <span aria-hidden>↗</span>
@@ -138,21 +145,21 @@ export function SetupSuccess({
 
   const clientSteps = server && (
     <div className="space-y-3">
-      <div role="tablist" aria-label="AI client" className="flex flex-wrap gap-1.5">
-        {TABS.map((t) => (
+      <div role="tablist" aria-label={t('tabs.label')} className="flex flex-wrap gap-1.5">
+        {TABS.map((c) => (
           <button
-            key={t.id}
+            key={c.id}
             role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => openTab(t.id)}
+            aria-selected={tab === c.id}
+            onClick={() => openTab(c.id)}
             className={cn(
               'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-              tab === t.id
+              tab === c.id
                 ? 'border-[var(--brand)] bg-[var(--brand)] text-[var(--primary-foreground)]'
                 : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)]',
             )}
           >
-            {t.label}
+            {c.label ?? t('tabs.other')}
           </button>
         ))}
       </div>
@@ -160,22 +167,25 @@ export function SetupSuccess({
         {tab === 'claude' && (
           <>
             <ol className="list-decimal space-y-1 pl-5">
-              <li>Click <strong>Add to Claude</strong>: Claude opens its <strong>Add custom connector</strong> dialog.</li>
-              <li>Enter a name (e.g. AnythingMCP), paste the URL below and click <strong>Add</strong>.</li>
-              <li>Click <strong>Connect</strong> and approve access.</li>
+              <li>{t.rich('claude.step1', rich)}</li>
+              <li>{t.rich('claude.step2', rich)}</li>
+              <li>{t.rich('claude.step3', rich)}</li>
             </ol>
             {endpointRow}
-            {external(CLAUDE_ADD_CONNECTOR_URL, 'Add to Claude')}
+            {external(CLAUDE_ADD_CONNECTOR_URL, t('claude.add'))}
             <p className="text-xs text-[var(--text-3)]">
-              Dialog not showing? In Claude open <strong>Customize → Connectors</strong>, click <strong>+</strong>, then{' '}
-              <strong>Add custom connector</strong>.
+              {t.rich('claude.noDialog', rich)}
               {isCloud && (
                 <>
-                  {' '}Or add AnythingMCP from the{' '}
-                  <a href={CLAUDE_DIRECTORY_URL} target="_blank" rel="noopener noreferrer" className="underline">
-                    Claude Directory
-                  </a>{' '}
-                  and pick this server when you sign in.
+                  {' '}
+                  {t.rich('claude.directory', {
+                    ...rich,
+                    link: (chunks) => (
+                      <a href={CLAUDE_DIRECTORY_URL} target="_blank" rel="noopener noreferrer" className="underline">
+                        {chunks}
+                      </a>
+                    ),
+                  })}
                 </>
               )}
             </p>
@@ -184,40 +194,39 @@ export function SetupSuccess({
         {tab === 'chatgpt' && (
           <>
             <ol className="list-decimal space-y-1 pl-5">
-              <li>Open <strong>Plugins</strong> in ChatGPT, click <strong>+</strong>, then <strong>Add custom MCP server</strong>.</li>
-              <li>Enter a name, paste the URL below as the <strong>Server URL</strong> and keep <strong>Authentication</strong> on <strong>OAuth</strong>.</li>
-              <li>Select <strong>I understand and want to continue</strong>, then <strong>Create as a plugin</strong>, and sign in to AnythingMCP.</li>
-              <li>Install the plugin from your personal plugins, then type <strong>@</strong> in a chat to use it.</li>
+              <li>{t.rich('chatgpt.step1', rich)}</li>
+              <li>{t.rich('chatgpt.step2', rich)}</li>
+              <li>{t.rich('chatgpt.step3', rich)}</li>
+              <li>{t.rich('chatgpt.step4', rich)}</li>
             </ol>
             {endpointRow}
-            {external('https://chatgpt.com/plugins', 'Open ChatGPT Plugins')}
-            <p className="text-xs text-[var(--text-3)]">Custom MCP servers need a paid ChatGPT plan. On a Business workspace only admins and owners can add them.</p>
+            {external('https://chatgpt.com/plugins', t('chatgpt.open'))}
+            <p className="text-xs text-[var(--text-3)]">{t('chatgpt.plan')}</p>
           </>
         )}
         {tab === 'copilot' && (
           <>
-            <p>
-              Click below: VS Code opens and offers to install the server for GitHub Copilot. Approve the sign-in to AnythingMCP when it
-              asks, then pick the tools in Copilot Chat → <strong>Tools</strong>.
-            </p>
+            <p>{t.rich('copilot.body', rich)}</p>
             <a href={vscodeDeepLink({ name: server.slug, url: endpoint })} className={cn(buttonVariants({ size: 'sm' }))}>
-              Add to VS Code
+              {t('copilot.add')}
             </a>
             <p className="text-xs text-[var(--text-3)]">
-              Visual Studio, JetBrains, Eclipse or Xcode: see{' '}
-              <Link href={`/mcp-server/${server.id}`} className="underline">
-                the server page
-              </Link>
-              .
+              {t.rich('copilot.other', {
+                link: (chunks) => (
+                  <Link href={`/mcp-server/${server.id}`} className="underline">
+                    {chunks}
+                  </Link>
+                ),
+              })}
             </p>
           </>
         )}
         {tab === 'other' && (
           <>
-            <p>Cursor, Claude Code, Claude Desktop, Gemini CLI, Meta Muse, Windsurf and others: the server page has the steps for each.</p>
+            <p>{t('other.body')}</p>
             {endpointRow}
             <Link href={`/mcp-server/${server.id}`} className={cn(buttonVariants({ size: 'sm', variant: 'secondary' }))}>
-              Open {server.name}
+              {t('other.open', { name: server.name })}
             </Link>
           </>
         )}
@@ -232,10 +241,10 @@ export function SetupSuccess({
         <div>
           <h1 className="text-lg font-semibold text-[var(--text)]">
             <span aria-hidden className="mr-1.5 text-[var(--t-success-fg)]">✓</span>
-            {name} is connected
+            {t('title', { name })}
           </h1>
           <p className="text-sm text-[var(--text-2)]">
-            {verified ? `AnythingMCP checked it with ${name}: it works.` : `Your AI can use ${name} now.`}
+            {verified ? t('verified', { name }) : t('ready', { name })}
           </p>
         </div>
       </div>
@@ -244,16 +253,16 @@ export function SetupSuccess({
         <div className="space-y-2">
           {back.href ? (
             <a href={back.href} className={cn(buttonVariants())}>
-              Back to {back.name}
+              {t('back.button', { name: back.name })}
             </a>
           ) : (
-            <p className="text-sm text-[var(--text-2)]">You can close this tab and return to {back.name}.</p>
+            <p className="text-sm text-[var(--text-2)]">{t('back.closeTab', { name: back.name })}</p>
           )}
         </div>
       )}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-[var(--text)]">Try asking</h2>
+        <h2 className="text-sm font-semibold text-[var(--text)]">{t('tryAsking')}</h2>
         <ul className="space-y-1.5">
           {prompts.map((p) => (
             <li key={p} className="flex items-center gap-2 rounded-[9px] bg-[var(--surface-2)] py-1.5 pl-3 pr-1.5 text-sm text-[var(--text)]">
@@ -266,25 +275,30 @@ export function SetupSuccess({
 
       {!back && (
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-[var(--text)]">Use it in your AI</h2>
-          {server === undefined && <p className="text-sm text-[var(--text-3)]">Loading…</p>}
+          <h2 className="text-sm font-semibold text-[var(--text)]">{t('useIt')}</h2>
+          {server === undefined && <p className="text-sm text-[var(--text-3)]">{t('loading')}</p>}
           {server === null && (
             <p className="text-sm text-[var(--text-2)]">
-              Add the connector to an MCP server to reach it from an AI client:{' '}
-              <Link href={`/connectors/${connectorId}`} className="underline">
-                open the connector
-              </Link>
-              .
+              {t.rich('noServer', {
+                link: (chunks) => (
+                  <Link href={`/connectors/${connectorId}`} className="underline">
+                    {chunks}
+                  </Link>
+                ),
+              })}
             </p>
           )}
           {server && server.inUse && !showClients && (
             <div className="space-y-1 rounded-[11px] border border-[var(--border)] p-3 text-sm text-[var(--text-2)]">
               <p>
-                {name} is on <strong className="text-[var(--text)]">{server.name}</strong>, which your AI client already uses. Start a new chat
-                and ask it something from the list above.
+                {t.rich('inUse', {
+                  name,
+                  server: server.name,
+                  b: (chunks) => <strong className="text-[var(--text)]">{chunks}</strong>,
+                })}
               </p>
               <button type="button" onClick={() => setShowClients(true)} className="text-xs underline hover:text-[var(--text)]">
-                Connect another AI client
+                {t('anotherClient')}
               </button>
             </div>
           )}
@@ -295,19 +309,22 @@ export function SetupSuccess({
             // the set-ups that do work there.
             authMode && authMode !== 'oauth2' && authMode !== 'both' ? (
               <p className="rounded-[9px] bg-[var(--t-warn-bg)] px-3 py-2 text-sm text-[var(--t-warn-fg)]" data-testid="setup-no-oauth">
-                This instance signs AI clients in with API keys (<code className="font-mono">MCP_AUTH_MODE={authMode}</code>), so
-                adding it by URL in Claude or ChatGPT will not work. Open{' '}
-                <Link href={`/mcp-server/${server.id}`} className="underline">
-                  {server.name}
-                </Link>{' '}
-                for the client configs with an API key.
+                {t.rich('apiKeysOnly', {
+                  mode: authMode,
+                  server: server.name,
+                  code: (chunks) => <code className="font-mono">{chunks}</code>,
+                  link: (chunks) => (
+                    <Link href={`/mcp-server/${server.id}`} className="underline">
+                      {chunks}
+                    </Link>
+                  ),
+                })}
               </p>
             ) : (
               <>
                 {isLocalOnlyUrl(endpoint) && (
                   <p className="rounded-[9px] bg-[var(--t-warn-bg)] px-3 py-2 text-sm text-[var(--t-warn-fg)]" data-testid="setup-localhost">
-                    This URL points to localhost: Claude and ChatGPT on the web cannot reach it. Use a client on this machine (Claude
-                    Code, Cursor, VS Code), or give AnythingMCP a public https address.
+                    {t('localhost')}
                   </p>
                 )}
                 {clientSteps}
@@ -319,17 +336,17 @@ export function SetupSuccess({
 
       {sample && (
         <details>
-          <summary className="cursor-pointer text-xs font-medium text-[var(--text-3)]">What {name} answered to the check</summary>
+          <summary className="cursor-pointer text-xs font-medium text-[var(--text-3)]">{t('sample', { name })}</summary>
           <pre className="mt-2 max-h-48 overflow-auto rounded-[9px] bg-[var(--surface-2)] p-3 text-xs text-[var(--text)]">{sample}</pre>
         </details>
       )}
 
       <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
         <Link href={`/connectors/${connectorId}`} className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
-          Open the connector
+          {t('openConnector')}
         </Link>
         <Link href="/connectors/store" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
-          Add another app
+          {t('addAnother')}
         </Link>
       </div>
     </div>

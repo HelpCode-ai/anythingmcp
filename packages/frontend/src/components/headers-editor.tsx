@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 
 export interface HeaderRow {
@@ -22,8 +23,8 @@ const labelClass = 'mb-1.5 block text-[12.5px] font-medium text-[var(--text)]';
 export function HeadersEditor({
   rows,
   onChange,
-  label = 'Custom headers',
-  hint = 'Sent on every request to this API. Useful for APIs that require extra headers (e.g. Autotask: Username, Secret, ApiIntegrationCode).',
+  label,
+  hint,
   maskedKeys,
 }: {
   rows: HeaderRow[];
@@ -34,6 +35,7 @@ export function HeadersEditor({
    *  empty value sent back keeps the stored one. */
   maskedKeys?: string[];
 }) {
+  const t = useTranslations('headersEditor');
   const masked = new Set(maskedKeys ?? []);
   const update = (i: number, patch: Partial<HeaderRow>) =>
     onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -42,7 +44,7 @@ export function HeadersEditor({
 
   return (
     <div>
-      <label className={labelClass}>{label}</label>
+      <label className={labelClass}>{label ?? t('label')}</label>
       {rows.length > 0 && (
         <div className="mb-2 flex flex-col gap-2">
           {rows.map((row, i) => (
@@ -51,7 +53,7 @@ export function HeadersEditor({
                 type="text"
                 value={row.key}
                 readOnly={masked.has(row.key)}
-                aria-label="Header name"
+                aria-label={t('name')}
                 onChange={(e) => update(i, { key: e.target.value })}
                 placeholder="Header-Name"
                 className={cn(inputClass, 'font-mono text-[13px]')}
@@ -60,15 +62,15 @@ export function HeadersEditor({
                 type={masked.has(row.key) ? 'password' : 'text'}
                 autoComplete={masked.has(row.key) ? 'new-password' : 'off'}
                 value={row.value}
-                aria-label={`Value of header ${row.key.trim() || 'new header'}`}
+                aria-label={row.key.trim() ? t('valueOf', { name: row.key.trim() }) : t('valueOfNew')}
                 onChange={(e) => update(i, { value: e.target.value })}
-                placeholder={masked.has(row.key) ? 'Set — leave empty to keep current' : 'value'}
+                placeholder={masked.has(row.key) ? t('stored') : t('value')}
                 className={cn(inputClass, 'font-mono text-[13px]')}
               />
               <button
                 type="button"
                 onClick={() => remove(i)}
-                aria-label="Remove header"
+                aria-label={t('remove')}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] border border-[var(--border)] text-[var(--text-3)] hover:border-[var(--danger)] hover:text-[var(--danger)]"
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -84,9 +86,9 @@ export function HeadersEditor({
         onClick={add}
         className="rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[12.5px] font-medium text-[var(--text-2)] hover:border-[var(--border-strong)]"
       >
-        + Add header
+        {t('add')}
       </button>
-      {hint && <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">{hint}</p>}
+      {hint !== '' && <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">{hint ?? t('hint')}</p>}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { adapterNeedsCredentials, cn } from '@/lib/utils';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
+import { useEffortLabel } from '@/lib/use-effort-label';
 import { searchCatalog } from '@/lib/catalog-search';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { useCatalogSearchReport } from '@/lib/use-catalog-search-report';
@@ -256,11 +257,7 @@ function AdapterStoreContent() {
   );
   const regionLabel = useCallback((code: string) => (code && t.has(`regions.${code}`) ? t(`regions.${code}`) : code), [t]);
   const effortFilterLabel = useCallback((effort: SetupEffortKind) => tEffort(`filters.${effort}`), [tEffort]);
-  /** "API key · 2 min": what a setup asks of the user, before they open it. */
-  const effortLabel = (e: SetupEffort) =>
-    e.effort === 'none' || e.effort === 'one_click'
-      ? tEffort(`names.${e.effort}`)
-      : tEffort('withMinutes', { name: tEffort(`names.${e.effort}`), minutes: e.minutes });
+  const effortLabel = useEffortLabel();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [list, setList] = useState<AdapterItem[]>([]);
