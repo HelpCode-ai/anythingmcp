@@ -21,13 +21,49 @@ already govern access per user: a remote MCP server such as mfr's, or Microsoft
    stay shared: there is no user to sign in.
 2. In the **Sign-in** card, the connector's owner or an admin clicks
    **Require each user to sign in (Enterprise)** and confirms.
-3. Every user opens the connector and clicks **Connect my account**, then signs
-   in at the provider with their own account.
+3. Every user connects their own account: on the connector page in the
+   dashboard (**Connect my account**), or on the connect page (below). Either
+   way they then sign in at the provider with their own account.
 
 Switching to per-user removes the authorization stored on the connector. The OAuth
 client stays: the client ID and secret, and on MCP servers the dynamically
 registered client. Switching back to a shared sign-in removes every user's own
 sign-in, and the connector then needs one authorization of its own again.
+
+## The connect page
+
+Every per-user connector also has a connect page at
+`<FRONTEND_URL>/auth/connect/<connector id>`. It is served by the backend next
+to the sign-in page MCP clients open, so it works wherever MCP sign-in works,
+also on a self-hosted server whose dashboard is not reachable from outside.
+Send your team this link, or let the model hand it over: the error of a call
+without a sign-in links to it.
+
+On the page a user:
+
+1. signs in to AnythingMCP, with the workspace's identity provider (Microsoft
+   Entra ID or another OIDC provider set up under **Settings → Identity
+   providers**), or with the dashboard session already open in that browser;
+2. clicks **Connect my account** and signs in at the provider;
+3. is back on the page, connected.
+
+Without an identity provider (and on AnythingMCP Cloud) the page sends users to
+the connector in the dashboard instead.
+
+What the page guards:
+
+- The sign-in there is valid for 15 minutes and for `/auth/connect` only. It
+  is not a dashboard session. **Sign out everywhere** ends it.
+- The tokens go to the user signed in on the page, and only in the browser that
+  started the connection. A provider link forwarded to someone else, or opened
+  in another browser, stores nothing.
+- Before signing in, the page names no connector, so a link reveals nothing to
+  someone outside the workspace.
+
+Behind a reverse proxy, `/auth/` and `/api/mcp-oauth/` must reach the backend,
+and so must the identity provider's redirect URI `<FRONTEND_URL>/auth/sso/callback`.
+These are the same routes MCP sign-in and the connector's OAuth callback
+already use.
 
 ## What each call does
 
@@ -36,8 +72,8 @@ sign-in, and the connector then needs one authorization of its own again.
   the dashboard. The connector's own token is never used, so a missing sign-in
   never falls back to someone else's.
 - **Not connected yet.** The call fails before anything is sent. The error names
-  the connector and links to its page, so the model can tell the user where to
-  connect.
+  the connector and links to its connect page, so the model can tell the user
+  where to connect.
 - **No signed-in user.** A call that does not come from a user fails the same
   way, for example a workspace API key or a job that runs on its own.
 - **Response cache.** For tools with a response cache, entries are kept per user.
@@ -49,8 +85,9 @@ Tokens refresh automatically for each user, under that user's own refresh lock.
 When the provider refuses a user's refresh token, for example after a password
 change, a revocation or a long period of inactivity, the sign-in is marked
 **Your sign-in expired** for that user only. That user gets one email, and their
-calls fail at once with what to do. Other users are not affected. **Sign in
-again** on the connector page clears it.
+calls fail at once with what to do. Other users are not affected. Connecting
+again, on the connect page that the email links to or on the connector page,
+clears it.
 
 When the OAuth client itself stops working, for example because a client secret
 expired, every user's sign-in fails. The connector's OAuth settings need
@@ -71,6 +108,7 @@ caller's own permissions.
 | `POST /api/connectors/:id/oauth/authorize` | any member (per-user connectors) | Start your own sign-in |
 | `GET /api/connectors/:id/my-credential` | any member | Whether you are connected; no token is returned |
 | `DELETE /api/connectors/:id/my-credential` | any member | Disconnect your own account |
+| `GET /auth/connect/:id` | anyone (HTML) | The connect page; signs the user in first |
 
 Tokens are stored encrypted with `ENCRYPTION_KEY`, one row per user and
 connector (`user_connector_credentials`). They are deleted with the user, the

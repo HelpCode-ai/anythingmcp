@@ -523,6 +523,73 @@ describe('SsoService', () => {
     });
   });
 
+  describe('the connect page surface', () => {
+    const idp = (organizationId = 'org-1', isActive = true) => ({
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'p1',
+        type: 'ENTRA',
+        issuer: provider.issuer,
+        clientId: 'c',
+        isActive,
+        organizationId,
+        config: provider.config,
+      }),
+    });
+    const bind = (recorded: string | null, presented?: string) =>
+      service.assertConnectBinding(
+        { oauthSessionId: recorded },
+        { id: 'p1', organizationId: 'org-1' },
+        'oid-1',
+        { connectBinding: presented },
+      );
+
+    it('accepts a return to the browser that started it', async () => {
+      await expect(bind('b-1', 'b-1')).resolves.toBeUndefined();
+    });
+
+    it('refuses a return to another browser, or one without the binding cookie', async () => {
+      // An attacker starts the sign-in and gets the victim to finish the
+      // identity-provider leg: the victim's identity must not reach the
+      // attacker's browser.
+      for (const [recorded, presented] of [['b-attacker', 'b-victim'], ['b-1', undefined], [null, undefined]] as const) {
+        await expect(bind(recorded, presented)).rejects.toThrow(
+          expect.objectContaining({ reason: 'connect_binding_mismatch' }),
+        );
+      }
+      expect(securityEvents.log.mock.calls[0][0].metadata).toMatchObject({
+        reason: 'connect_binding_mismatch',
+        surface: 'CONNECT',
+      });
+    });
+
+    it("refuses a provider of another workspace than the connector's", async () => {
+      prisma.identityProvider = idp('org-2');
+      await expect(service.startConnect('p1', 'org-1', 'conn-1', 'b-1')).rejects.toThrow(
+        expect.objectContaining({ reason: 'unknown_or_inactive_provider' }),
+      );
+      prisma.identityProvider = idp('org-1', false);
+      await expect(service.startConnect('p1', 'org-1', 'conn-1', 'b-1')).rejects.toThrow(
+        expect.objectContaining({ reason: 'unknown_or_inactive_provider' }),
+      );
+    });
+
+    it('refuses to start without a binding', async () => {
+      await expect(service.startConnect('p1', 'org-1', 'conn-1', '')).rejects.toThrow(
+        expect.objectContaining({ reason: 'connect_without_binding' }),
+      );
+    });
+
+    it('records the binding and returns to the connect page', async () => {
+      prisma.identityProvider = idp();
+      service.beginAuthorization = jest.fn(async () => ({ authorizationUrl: 'https://idp.example/authorize' }));
+      await service.startConnect('p1', 'org-1', 'conn-1', 'b-1');
+      expect(service.beginAuthorization).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'p1' }),
+        { surface: 'CONNECT', returnTo: '/auth/connect/conn-1', oauthSessionId: 'b-1' },
+      );
+    });
+  });
+
   describe('starting a link', () => {
     it('refuses a provider belonging to another workspace', async () => {
       // `identityProvider.id` is a cuid, not the opaque initiateId, so it is

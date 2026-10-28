@@ -23,6 +23,7 @@ import { CatalogResyncService } from './catalog-resync.service';
 import { CatalogReconciler } from './catalog-reconciler.service';
 import { LicenseModule } from '../license/license.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
+import { IdentityProvidersModule } from '../identity-providers/identity-providers.module';
 
 const ENGINES = [
   RestEngine,
@@ -43,7 +44,8 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
 // and one login mutex per connector, so a Test connection and tool calls do
 // not each log in.
 @Module({
-  imports: [McpServerModule, McpServersModule, LicenseModule],
+  // IdentityProvidersModule: SsoService, for signing in on the connect page.
+  imports: [McpServerModule, McpServersModule, LicenseModule, IdentityProvidersModule],
   controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, ToolsController],
   providers: [
     ConnectorsService,

@@ -86,7 +86,7 @@ describe('UserCredentialsService.resolveForCall', () => {
     const err = await svc.resolveForCall(call('u1')).catch((e) => e);
     process.env.FRONTEND_URL = before;
     expect(err.code).toBe('not_connected');
-    expect(err.message).toContain('https://app.example.com/connectors/c1');
+    expect(err.message).toContain('https://app.example.com/auth/connect/c1');
     expect(err.message).toContain('Connect my account');
   });
 });
