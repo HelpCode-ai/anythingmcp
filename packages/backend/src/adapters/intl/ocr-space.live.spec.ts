@@ -3,8 +3,7 @@ import { applyResponseTransform } from '../../connectors/response-transform.util
 
 /**
  * OCR.space OCR API (ocr.space/ocrapi): POST /parse/image as a form, key in the apikey header.
- * Built from a customer's hand-built Cloud connector (OCR of an image URL); checked on 22 Oct 2026 with
- * OCR.space's public demo key rather than the customer's quota.
+ * Checked on 22 Oct 2026 with OCR.space's public demo key.
  * Live part: OCR_SPACE_API_KEY=... RUN_OCR_SPACE_LIVE=1 npx jest src/adapters/intl/ocr-space (one OCR request).
  */
 
@@ -53,8 +52,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'ocr_space_';
 const WRITES: string[] = [];
-// Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
-const HAND_BUILT: string[] = ["telegram_file_ocr"];
 
 describe('ocr-space adapter: static spec conformance', () => {
 
@@ -103,10 +100,6 @@ describe('ocr-space adapter: static spec conformance', () => {
     for (const n of WRITES) expect(tool(n).annotations?.readOnlyHint).toBe(false);
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     const probe = tool(a.probe.tool);

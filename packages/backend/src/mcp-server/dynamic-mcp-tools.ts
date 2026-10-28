@@ -38,6 +38,7 @@ import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { connectorPageUrl } from '../common/url.util';
+import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { connectorErrorWhen } from '../connectors/error-when.util';
 import {
   isBinaryBody,
@@ -94,6 +95,7 @@ export class DynamicMcpTools {
     private readonly databaseEngine: DatabaseEngine,
     private readonly kgService: KgService,
     @Optional() private readonly odataEngine?: ODataEngine,
+    @Optional() private readonly userCredentials?: UserCredentialsService,
   ) {}
 
   /**
@@ -316,9 +318,14 @@ export class DynamicMcpTools {
     // editing a tool's response mapping takes effect immediately instead of
     // after up to cacheTtl seconds.
     const responseMapping = tool.responseMapping as ResponseMapping | undefined;
-    const cacheTtl = responseMapping?.cacheTtl;
+    // A connector with per-user credentials answers each user with what that
+    // user's account may see: one user's cached answer is never another's,
+    // and a call without a user is not answered from the cache at all.
+    const perUser = tool.connectorConfig.credentialScope === 'USER';
+    const cacheScope = perUser && context?.userId ? `user:${context.userId}` : undefined;
+    const cacheTtl = perUser && !cacheScope ? undefined : responseMapping?.cacheTtl;
     if (cacheTtl && cacheTtl > 0) {
-      const cacheKey = this.buildCacheKey(toolName, params);
+      const cacheKey = this.buildCacheKey(toolName, params, cacheScope);
       const cached = await this.redisService.get(cacheKey);
       if (cached) {
         try {
@@ -386,15 +393,39 @@ export class DynamicMcpTools {
       // connector first and filled its credentials afterwards therefore kept
       // sending the placeholder text forever. Interpolating here makes the two
       // paths agree.
+      let connectorAuthConfig: Record<string, unknown> | undefined = tool.connectorConfig.authConfig
+        ? interpolateDeep(
+            JSON.parse(tool.connectorConfig.authConfig),
+            interpolationVars,
+            { reservedPrefix: CALLER_CONTEXT_PREFIX },
+          )
+        : undefined;
+      // Per-user credentials: the caller's own sign-in, keyed on its own in
+      // the engines (token cache, refresh lock, refused memo). Throws, with
+      // nothing sent, when there is no caller, licence or sign-in.
+      let credentialKey: string | undefined;
+      if (perUser) {
+        if (!this.userCredentials) {
+          throw new Error('Per-user sign-in is not available on this server. No request was sent to the API.');
+        }
+        const resolved = await this.userCredentials.resolveForCall({
+          connectorId: tool.connectorId,
+          connectorName: tool.connectorName ?? tool.name,
+          organizationId: tool.organizationId,
+          userId: context?.userId,
+          connectorAuthConfig,
+        });
+        connectorAuthConfig = resolved.authConfig;
+        credentialKey = resolved.credentialKey;
+        // The user's tokens are masked like the connector's own secrets.
+        for (const field of ['accessToken', 'refreshToken'] as const) {
+          const value = resolved.authConfig[field];
+          if (typeof value === 'string' && value) secretValues.push(value);
+        }
+      }
       const authConfig = withTokenRenewal(
         tool.connectorConfig.authType,
-        tool.connectorConfig.authConfig
-          ? interpolateDeep(
-              JSON.parse(tool.connectorConfig.authConfig),
-              interpolationVars,
-              { reservedPrefix: CALLER_CONTEXT_PREFIX },
-            )
-          : undefined,
+        connectorAuthConfig,
         tool.connectorConfig.config,
         envVars,
       );
@@ -413,9 +444,8 @@ export class DynamicMcpTools {
         // answered invalid_grant a few minutes after each authorization.
         // Credentials that depend on the caller ({{amcp.*}}) differ per call,
         // so they stay unkeyed.
-        connectorId: usesCallerContext(tool.connectorConfig.authConfig)
-          ? undefined
-          : tool.connectorId,
+        connectorId: credentialKey ??
+          (usesCallerContext(tool.connectorConfig.authConfig) ? undefined : tool.connectorId),
         errorWhen: connectorErrorWhen(tool.connectorConfig.config),
         // Masked in the engines' log lines (a bot token in the URL path).
         logSecrets: secretValues,
@@ -605,7 +635,7 @@ export class DynamicMcpTools {
 
       // Cache the raw response if cacheTtl is set (shaping happens on read).
       if (cacheTtl && cacheTtl > 0) {
-        const cacheKey = this.buildCacheKey(toolName, params);
+        const cacheKey = this.buildCacheKey(toolName, params, cacheScope);
         // The audit log above got the bare body; the cache needs the headers
         // too, or a cached page would come back without its next cursor.
         const serialized = JSON.stringify(
@@ -825,6 +855,7 @@ export class DynamicMcpTools {
   private buildCacheKey(
     toolName: string,
     params: Record<string, unknown>,
+    scope?: string,
   ): string {
     const paramsHash = createHash('md5')
       .update(JSON.stringify(params, Object.keys(params).sort()))
@@ -833,7 +864,7 @@ export class DynamicMcpTools {
     // v2: entries hold the raw upstream response instead of the rendered text.
     // The prefix bump makes sure a v1 entry is never read back in the new
     // format — old keys simply expire.
-    return `tool_cache:v2:${toolName}:${paramsHash}`;
+    return `tool_cache:v2:${toolName}:${scope ? `${scope}:` : ''}${paramsHash}`;
   }
 
   /**

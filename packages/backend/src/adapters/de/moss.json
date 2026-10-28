@@ -1,0 +1,1596 @@
+{
+  "slug": "moss",
+  "name": "Moss",
+  "aliases": [
+    "getmoss",
+    "Moss spend management",
+    "Nufin"
+  ],
+  "description": "Moss spend management (Germany and Europe): expenses from cards, invoices and reimbursements with line items and receipts, wallet balances and bank transactions, suppliers, expense accounts, VAT rates, payment terms, cost centres and other dimensions, users and teams. Can create suppliers, dimensions and dimension items; it cannot pay or approve anything.",
+  "region": "de",
+  "category": "finance",
+  "icon": "moss",
+  "docsUrl": "https://developers.getmoss.com",
+  "instructions": "## Moss\nThis connector uses the **Moss Public API** (`https://public-api.getmoss.com/v1`) of Moss, the spend management platform for companies in Germany and Europe: expenses (card transactions, invoices, reimbursements) with their line items and attached receipts, bank accounts (wallets) with balances and bank transactions, suppliers, expense accounts, VAT rates, payment terms, accounting dimensions and their items, users, teams and departments. It can also create suppliers, dimensions and dimension items. It cannot pay, approve, export or delete anything: the API offers no such call.\n\n**Setup (about 5 minutes, Moss admin)**\n1. Sign in to Moss as an admin and open **Settings**, **Company Settings**, **API Keys** (also shown as Settings, Platform, API Keys).\n2. Click **Generate API Key** and confirm in the Moss mobile app.\n3. Copy the **Key ID** (starts with `kid_`) into `MOSS_KEY_ID` and the **Secret Key** (starts with `sk_`) into `MOSS_SECRET_KEY`. The secret is shown once.\n4. Install. The connector exchanges the key for a one-hour token at `/oauth2/token` (client credentials) and renews it by itself. It asks for the `write` scope, which includes `read`, because the create and update tools need it; switch those tools off if the AI should only read.\n\n**Workflow**\n- Expenses: `moss_list_expenses` with `expense_date_from` / `expense_date_to`, `types` (CARD_TRANSACTION, INVOICE, REIMBURSEMENT), `statuses` and `export_statuses`. Each expense carries its `lines` with net, VAT and gross amounts, `expenseAccountId` and `taxRateId`. Page with `page` while `meta.pagination.hasMore` is true (`page_size` up to 100).\n- Receipts: `moss_search_files` with expense ids lists the attached files, `moss_download_file` returns one file.\n- Look up ids: `moss_get_supplier` / `moss_list_suppliers`, `moss_get_expense_account` / `moss_list_expense_accounts`, `moss_get_tax_rate` / `moss_list_tax_rates`, `moss_get_payment_term` / `moss_list_payment_terms`, `moss_get_user` / `moss_list_users`, `moss_get_team` / `moss_list_teams`, `moss_get_department` / `moss_list_departments`.\n- Dimensions (cost centres, cost carriers, projects): `moss_list_dimensions`, `moss_get_dimension`, then `moss_list_dimension_items` and `moss_get_dimension_item`.\n- Money: `moss_list_bank_accounts`, `moss_get_bank_account_balance` (balance and availableBalance), `moss_search_bank_transactions` for a booking date range (required).\n\n**Writes**: `moss_create_supplier`, `moss_create_dimension`, `moss_update_dimension`, `moss_create_dimension_item` and `moss_update_dimension_item` change master data used for booking; show the user what will be created or changed and wait for a yes. Pass `external_user_id` (the person who asked) so Moss can trace the change. `moss_update_supplier` is installed switched off because it can replace the IBAN that Moss pays the supplier's invoices to. Items and suppliers can be set ACTIVE or DEACTIVATED here; deleting is not offered. Records managed by an active accounting integration answer 409.\n\n**Formats**: amounts are objects with a decimal string `amount` and a `currency`; `homeAmount` is in the company's home currency. Dates are YYYY-MM-DD, timestamps ISO 8601 in UTC. Ids are UUIDs.\n\n**Errors**: 401 means the key was revoked or the token could not be issued (check `MOSS_KEY_ID` and `MOSS_SECRET_KEY`). 402 means a Moss module is not booked (e.g. Multiple Dimensions). 403 means the token lacks the scope. 422 means a referenced id (expense account, VAT rate, payment term, team) does not exist or is inactive. 429: Moss allows 180 reads and 20 writes per minute per organisation; wait for `Retry-After`.",
+  "prerequisites": "A Moss account with admin rights to generate an API key (Key ID and Secret Key) under Settings, Company Settings, API Keys; confirming it needs the Moss mobile app.",
+  "requiredEnvVars": [
+    "MOSS_KEY_ID",
+    "MOSS_SECRET_KEY"
+  ],
+  "envVarMeta": {
+    "MOSS_KEY_ID": {
+      "label": "Key ID",
+      "kind": "credential",
+      "help": "Moss, Settings, Company Settings, API Keys: the Key ID, starting with kid_.",
+      "link": "https://developers.getmoss.com",
+      "example": "kid_AbCdEf123456",
+      "pattern": "^kid_\\S+$",
+      "patternMessage": "The Key ID starts with kid_."
+    },
+    "MOSS_SECRET_KEY": {
+      "label": "Secret key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the API key is generated, starting with sk_. Generate a new key if it is lost.",
+      "link": "https://developers.getmoss.com",
+      "pattern": "^sk_\\S+$",
+      "patternMessage": "The Secret Key starts with sk_."
+    }
+  },
+  "verifyHints": {
+    "401": "Moss did not accept the API key. Check MOSS_KEY_ID (kid_...) and MOSS_SECRET_KEY (sk_...), and that the key was not revoked under Settings, Company Settings, API Keys.",
+    "403": "The token works, but it may not do this. Writes need an API key that may request the write scope.",
+    "402": "This needs a Moss module your organisation has not booked, e.g. Multiple Dimensions.",
+    "429": "Moss allows 180 read and 20 write requests per minute per organisation. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "moss_list_expenses",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "connector": {
+    "name": "Moss Public API",
+    "type": "REST",
+    "baseUrl": "https://public-api.getmoss.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{MOSS_KEY_ID}}",
+      "clientSecret": "{{MOSS_SECRET_KEY}}",
+      "tokenUrl": "https://public-api.getmoss.com/oauth2/token",
+      "tokenAuthMethod": "client_secret_post",
+      "scope": "write"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v1/expenses?page_size=1"
+  },
+  "tools": [
+    {
+      "name": "moss_list_expenses",
+      "description": "List expenses (card transactions, invoices and reimbursements) with their line items, amounts in original and home currency, status, export status, supplier id, expense account and tax rate per line. Filter by type, status, export status, creation date, expense date or last update; sort by status, create_time, home_amount or expense_time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "array",
+            "description": "Expense types to include: CARD_TRANSACTION, INVOICE, REIMBURSEMENT.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CARD_TRANSACTION",
+                "INVOICE",
+                "REIMBURSEMENT"
+              ]
+            }
+          },
+          "statuses": {
+            "type": "array",
+            "description": "Expense statuses to include, e.g. SUBMITTED, APPROVED, FLAGGED, REJECTED, REVIEWED, VERIFIED, COMPLETED.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "SUBMITTED",
+                "APPROVED",
+                "FLAGGED",
+                "REJECTED",
+                "REVIEWED",
+                "APPROVAL_SKIPPED",
+                "VERIFIED",
+                "VERIFICATION_SKIPPED",
+                "COMPLETED",
+                "DELETED",
+                "INHERITED"
+              ]
+            }
+          },
+          "export_statuses": {
+            "type": "array",
+            "description": "Export statuses to include: NOT_EXPORTED, READY_FOR_EXPORT, EXPORT_PENDING, EXPORTED, EXPORT_FAILED.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "NOT_EXPORTED",
+                "READY_FOR_EXPORT",
+                "EXPORT_PENDING",
+                "EXPORTED",
+                "EXPORT_FAILED"
+              ]
+            }
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these expense ids (UUIDs, up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "expense_date_from": {
+            "type": "string",
+            "description": "Expense date (receipt, invoice or transaction date) on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "expense_date_to": {
+            "type": "string",
+            "description": "Expense date on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Last updated at or after this ISO 8601 timestamp, e.g. 2026-10-01T00:00:00Z.",
+            "format": "date-time"
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Last updated before this ISO 8601 timestamp.",
+            "format": "date-time"
+          },
+          "sort": {
+            "type": "string",
+            "description": "One sort field, + ascending (default) or - descending: status, create_time, home_amount, expense_time. Example: -expense_time."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/expenses",
+        "queryParams": {
+          "type": "$types",
+          "status": "$statuses",
+          "export_status": "$export_statuses",
+          "id": "$ids",
+          "create_date__gte": "$created_from",
+          "create_date__lte": "$created_to",
+          "expense_date__gte": "$expense_date_from",
+          "expense_date__lte": "$expense_date_to",
+          "update_time__gte": "$updated_from",
+          "update_time__lte": "$updated_to",
+          "sort": "$sort",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "moss_search_files",
+      "description": "List the files (receipts, invoice PDFs) attached directly to the given expenses: id, name, original name, size and upload time. Files of line items are only returned when the line ids are passed too. Use moss_download_file with the id to get the content. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expense_ids": {
+            "type": "array",
+            "description": "Expense or expense line ids (UUIDs, up to 100) from moss_list_expenses.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "expense_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/files/search-query",
+        "bodyMapping": {
+          "filters": {
+            "expenseIds": "$expense_ids"
+          },
+          "pagination": {
+            "page": "$page",
+            "pageSize": "$page_size"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moss_download_file",
+      "description": "Download one file attached to an expense (receipt or invoice, usually a PDF or image) by its id from moss_search_files. The file is handed over as an attachment, not as text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File id (UUID) from moss_search_files."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_id}/content"
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    },
+    {
+      "name": "moss_list_expense_accounts",
+      "description": "List expense accounts (the accounting sub-categories booked on expense lines): id, name, account number and status. Filter by status or account number range; sort by name, account_number or -create_time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only accounts with this status.",
+            "enum": [
+              "ACTIVE",
+              "DEACTIVATED",
+              "DELETED"
+            ]
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these expense account ids (UUIDs, up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "account_number_from": {
+            "type": "string",
+            "description": "Account number greater than or equal to this, e.g. 4000."
+          },
+          "account_number_to": {
+            "type": "string",
+            "description": "Account number less than or equal to this, e.g. 4999."
+          },
+          "sort": {
+            "type": "string",
+            "description": "name (ascending only), account_number or -account_number, or -create_time."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/expense-accounts",
+        "queryParams": {
+          "status": "$status",
+          "id": "$ids",
+          "account_number__gte": "$account_number_from",
+          "account_number__lte": "$account_number_to",
+          "sort": "$sort",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "moss_get_expense_account",
+      "description": "Get one expense account by id: name, account number and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expense_account_id": {
+            "type": "string",
+            "description": "Expense account id (UUID), e.g. expenseAccountId of an expense line."
+          }
+        },
+        "required": [
+          "expense_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/expense-accounts/{expense_account_id}"
+      }
+    },
+    {
+      "name": "moss_list_dimensions",
+      "description": "List the accounting dimensions of the organisation (e.g. cost centre, cost carrier, project; at most 50): id, name, ERP name and id, status. The id is what the dimension item tools take.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/dimensions"
+      }
+    },
+    {
+      "name": "moss_get_dimension",
+      "description": "Get one accounting dimension by id: name, ERP name, ERP id and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dimension_id": {
+            "type": "string",
+            "description": "Dimension id (UUID) from moss_list_dimensions."
+          }
+        },
+        "required": [
+          "dimension_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/dimensions/{dimension_id}"
+      }
+    },
+    {
+      "name": "moss_list_dimension_items",
+      "description": "List the items (values) of one dimension, e.g. the cost centres: id, name, code and status. Filter by status, ids, creation or update date; sort by name or -update_time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dimension_id": {
+            "type": "string",
+            "description": "Dimension id (UUID) from moss_list_dimensions."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only items with this status.",
+            "enum": [
+              "ACTIVE",
+              "DEACTIVATED",
+              "DELETED"
+            ]
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these dimension item ids (UUIDs, up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Updated on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Updated on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "sort": {
+            "type": "string",
+            "description": "name (ascending only) or -update_time."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "dimension_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/dimensions/{dimension_id}/items",
+        "queryParams": {
+          "status": "$status",
+          "id": "$ids",
+          "create_date__gte": "$created_from",
+          "create_date__lte": "$created_to",
+          "update_date__gte": "$updated_from",
+          "update_date__lte": "$updated_to",
+          "sort": "$sort",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "moss_get_dimension_item",
+      "description": "Get one dimension item (e.g. a cost centre) by id: name, code and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dimension_id": {
+            "type": "string",
+            "description": "Dimension id (UUID)."
+          },
+          "dimension_item_id": {
+            "type": "string",
+            "description": "Dimension item id (UUID) from moss_list_dimension_items."
+          }
+        },
+        "required": [
+          "dimension_id",
+          "dimension_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/dimensions/{dimension_id}/items/{dimension_item_id}"
+      }
+    },
+    {
+      "name": "moss_list_suppliers",
+      "description": "List suppliers: id, name, supplier number (code), status, currency, VAT id, bank details, default payment method, payment term and default expense account, VAT rate, cost centre and team. Filter by status, ids, creation date or last update; sort by name or supplier_number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only suppliers with this status.",
+            "enum": [
+              "ACTIVE",
+              "DEACTIVATED",
+              "DELETED"
+            ]
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these supplier ids (UUIDs, up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created on or after this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created on or before this date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Updated at or after this ISO 8601 timestamp.",
+            "format": "date-time"
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Updated before this ISO 8601 timestamp.",
+            "format": "date-time"
+          },
+          "sort": {
+            "type": "string",
+            "description": "name, -name, supplier_number or -supplier_number."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/suppliers",
+        "queryParams": {
+          "status": "$status",
+          "id": "$ids",
+          "create_date__gte": "$created_from",
+          "create_date__lte": "$created_to",
+          "update_time__gte": "$updated_from",
+          "update_time__lte": "$updated_to",
+          "sort": "$sort",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "moss_get_supplier",
+      "description": "Get one supplier by id (e.g. the supplierId of an expense) with bank details, VAT id and defaults.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supplier_id": {
+            "type": "string",
+            "description": "Supplier id (UUID)."
+          }
+        },
+        "required": [
+          "supplier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/suppliers/{supplier_id}"
+      }
+    },
+    {
+      "name": "moss_list_payment_terms",
+      "description": "List payment terms: id, number, description, status and the due date rules (days, discounts).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "description": "Only payment terms with these statuses.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "DEACTIVATED",
+                "DELETED"
+              ]
+            }
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these payment term ids (UUIDs, up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "sort": {
+            "type": "string",
+            "description": "number, description or create_time, prefixed with - for descending."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payment-terms",
+        "queryParams": {
+          "status": "$statuses",
+          "id": "$ids",
+          "sort": "$sort",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "moss_get_payment_term",
+      "description": "Get one payment term by id, e.g. the paymentTermId of a supplier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_term_id": {
+            "type": "string",
+            "description": "Payment term id (UUID)."
+          }
+        },
+        "required": [
+          "payment_term_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payment-terms/{payment_term_id}"
+      }
+    },
+    {
+      "name": "moss_list_tax_rates",
+      "description": "List VAT rates: id, name, code, rate and status. The id is the taxRateId of expense lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only tax rates with this status.",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE"
+            ]
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these tax rate ids (UUIDs, up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "sort": {
+            "type": "string",
+            "description": "name, rate, code, or -update_time."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/tax-rates",
+        "queryParams": {
+          "status": "$status",
+          "id": "$ids",
+          "sort": "$sort",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "moss_get_tax_rate",
+      "description": "Get one VAT rate by id (taxRateId of an expense line): name, code, rate and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tax_rate_id": {
+            "type": "string",
+            "description": "Tax rate id (UUID), e.g. taxRateId of an expense line."
+          }
+        },
+        "required": [
+          "tax_rate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/tax-rates/{tax_rate_id}"
+      }
+    },
+    {
+      "name": "moss_list_users",
+      "description": "List the users of the organisation: id, name, e-mail, team, manager, roles and status. createdBy of an expense is a user id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "description": "Only users with these statuses: INVITED, ACTIVE, DEACTIVATED, HIDDEN, STAGED_FOR_INVITE.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "INVITED",
+                "ACTIVE",
+                "DEACTIVATED",
+                "HIDDEN",
+                "STAGED_FOR_INVITE"
+              ]
+            }
+          },
+          "roles": {
+            "type": "array",
+            "description": "Only users with these roles.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "USER",
+                "SUPER_USER",
+                "APPLICANT",
+                "ACCOUNTANT",
+                "INTERNAL_ACCOUNTANT",
+                "EXTERNAL_ACCOUNTANT",
+                "TEAMLEAD",
+                "PAYER",
+                "PURCHASER"
+              ]
+            }
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these user ids (UUIDs, up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "sort": {
+            "type": "string",
+            "description": "name or -name."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users",
+        "queryParams": {
+          "status": "$statuses",
+          "role": "$roles",
+          "id": "$ids",
+          "sort": "$sort",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "moss_get_user",
+      "description": "Get one user by id: name, e-mail, team, manager, roles and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id (UUID)."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users/{user_id}"
+      }
+    },
+    {
+      "name": "moss_list_teams",
+      "description": "List teams: id, name, department and status. Filter by department or status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only teams with this status.",
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ]
+          },
+          "department_ids": {
+            "type": "array",
+            "description": "Only teams of these department ids (UUIDs).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these team ids (UUIDs, up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "sort": {
+            "type": "string",
+            "description": "name or -name."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams",
+        "queryParams": {
+          "status": "$status",
+          "department_id": "$department_ids",
+          "id": "$ids",
+          "sort": "$sort",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "moss_get_team",
+      "description": "Get one team by id (teamId of a user or default team of a supplier): name, department and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (UUID)."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams/{team_id}"
+      }
+    },
+    {
+      "name": "moss_list_departments",
+      "description": "List the departments of the organisation: id and name. Teams belong to departments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "description": "Only these department ids (UUIDs, up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "sort": {
+            "type": "string",
+            "description": "name or -name."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/departments",
+        "queryParams": {
+          "id": "$ids",
+          "sort": "$sort",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "moss_get_department",
+      "description": "Get one department by id (the department of a team) with its name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "department_id": {
+            "type": "string",
+            "description": "Department id (UUID)."
+          }
+        },
+        "required": [
+          "department_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/departments/{department_id}"
+      }
+    },
+    {
+      "name": "moss_list_bank_accounts",
+      "description": "List the Moss bank accounts (wallets) of the organisation: id, funding type (CREDIT or DEBIT), currency and status (ACTIVE or CLOSED). Use the id for the balance and to filter bank transactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/bank-accounts"
+      }
+    },
+    {
+      "name": "moss_get_bank_account_balance",
+      "description": "Get the current balance of one Moss bank account: balance (ledger) and availableBalance (what can still be spent, lower when transactions are pending). Amounts are decimal strings with a currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bank_account_id": {
+            "type": "string",
+            "description": "Bank account id (UUID) from moss_list_bank_accounts."
+          }
+        },
+        "required": [
+          "bank_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/bank-accounts/{bank_account_id}/balance"
+      }
+    },
+    {
+      "name": "moss_search_bank_transactions",
+      "description": "Search the money movements of Moss wallets by booking date: card purchases and refunds, payouts, withdrawals, top-ups and repayments, with amount, booking and value date, description, counterparty and fees. The date range is required; filter by bank accounts or transaction ids. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_date_from": {
+            "type": "string",
+            "description": "First booking date, YYYY-MM-DD (inclusive).",
+            "format": "date"
+          },
+          "booking_date_to": {
+            "type": "string",
+            "description": "Last booking date, YYYY-MM-DD (inclusive).",
+            "format": "date"
+          },
+          "account_ids": {
+            "type": "array",
+            "description": "Only these bank account ids (UUIDs) from moss_list_bank_accounts.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these bank transaction ids (UUIDs).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Booking date order: DESC (newest first, default) or ASC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). Check meta.pagination.hasMore and request the next page while it is true.",
+            "default": 1,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "booking_date_from",
+          "booking_date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/bank-transactions/search-query",
+        "bodyMapping": {
+          "filters": {
+            "bookingDateFrom": "$booking_date_from",
+            "bookingDateTo": "$booking_date_to",
+            "accountIds": "$account_ids",
+            "ids": "$ids"
+          },
+          "sort": {
+            "sortBy": "bookingDate",
+            "sortOrder": "$sort_order"
+          },
+          "pagination": {
+            "page": "$page",
+            "pageSize": "$page_size"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moss_create_supplier",
+      "description": "Create a supplier in Moss with name, supplier number, currency, VAT id, bank details, default payment method, payment term and default booking (expense account, VAT rate, cost centre, cost carrier, team). Needs the write scope. Returns the new supplier with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Supplier name in Moss."
+          },
+          "code": {
+            "type": "string",
+            "description": "Supplier (creditor) account number in the accounting system. Leave it out when your accounting integration numbers suppliers itself."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Default currency, ISO 4217, e.g. EUR."
+          },
+          "vat_id": {
+            "type": "string",
+            "description": "VAT identification number, e.g. DE123456789."
+          },
+          "iban": {
+            "type": "string",
+            "description": "IBAN of the supplier's bank account (for GBP use account_number)."
+          },
+          "bic": {
+            "type": "string",
+            "description": "BIC of the supplier's bank (for GBP use sort_code)."
+          },
+          "account_number": {
+            "type": "string",
+            "description": "UK bank account number, instead of an IBAN."
+          },
+          "sort_code": {
+            "type": "string",
+            "description": "UK sort code, instead of a BIC."
+          },
+          "default_payment_method": {
+            "type": "string",
+            "description": "How invoices of this supplier are paid: SEPA, DIRECT_DEBIT or NOT_APPLICABLE.",
+            "enum": [
+              "SEPA",
+              "DIRECT_DEBIT",
+              "NOT_APPLICABLE"
+            ]
+          },
+          "payment_term_id": {
+            "type": "string",
+            "description": "Default payment term id from moss_list_payment_terms."
+          },
+          "default_expense_account_id": {
+            "type": "string",
+            "description": "Default expense account id from moss_list_expense_accounts."
+          },
+          "default_vat_rate_id": {
+            "type": "string",
+            "description": "Default VAT rate id from moss_list_tax_rates."
+          },
+          "default_cost_center_id": {
+            "type": "string",
+            "description": "Default cost centre id (a dimension item id)."
+          },
+          "default_cost_carrier_id": {
+            "type": "string",
+            "description": "Default cost carrier id (a dimension item id)."
+          },
+          "default_team_id": {
+            "type": "string",
+            "description": "Default team id from moss_list_teams."
+          },
+          "address": {
+            "type": "object",
+            "description": "Supplier address.",
+            "properties": {
+              "streetAddress": {
+                "type": "string",
+                "description": "Street and number."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Second address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "postCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "country": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. DE."
+              }
+            }
+          },
+          "external_user_id": {
+            "type": "string",
+            "description": "Id or e-mail of the person in your system on whose behalf the change is made. Moss stores it for traceability."
+          },
+          "status": {
+            "type": "string",
+            "description": "Status of the new supplier (default ACTIVE).",
+            "enum": [
+              "ACTIVE",
+              "DEACTIVATED"
+            ],
+            "default": "ACTIVE"
+          }
+        },
+        "required": [
+          "name",
+          "default_payment_method"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/suppliers",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "currency": "$currency",
+          "vatId": "$vat_id",
+          "iban": "$iban",
+          "bic": "$bic",
+          "accountNumber": "$account_number",
+          "sortCode": "$sort_code",
+          "defaultPaymentMethod": "$default_payment_method",
+          "paymentTermId": "$payment_term_id",
+          "defaultExpenseAccountId": "$default_expense_account_id",
+          "defaultVatRateId": "$default_vat_rate_id",
+          "defaultCostCenterId": "$default_cost_center_id",
+          "defaultCostCarrierId": "$default_cost_carrier_id",
+          "defaultTeamId": "$default_team_id",
+          "address": "$address",
+          "externalUserId": "$external_user_id",
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "moss_update_supplier",
+      "description": "Change fields of an existing supplier; only the fields you send change. It can rewrite the bank details Moss pays this supplier's invoices to, so it is installed switched off. Show the user the old and new values before calling.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Supplier name in Moss."
+          },
+          "code": {
+            "type": "string",
+            "description": "Supplier (creditor) account number in the accounting system. Leave it out when your accounting integration numbers suppliers itself."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Default currency, ISO 4217, e.g. EUR."
+          },
+          "vat_id": {
+            "type": "string",
+            "description": "VAT identification number, e.g. DE123456789."
+          },
+          "iban": {
+            "type": "string",
+            "description": "IBAN of the supplier's bank account (for GBP use account_number)."
+          },
+          "bic": {
+            "type": "string",
+            "description": "BIC of the supplier's bank (for GBP use sort_code)."
+          },
+          "account_number": {
+            "type": "string",
+            "description": "UK bank account number, instead of an IBAN."
+          },
+          "sort_code": {
+            "type": "string",
+            "description": "UK sort code, instead of a BIC."
+          },
+          "default_payment_method": {
+            "type": "string",
+            "description": "How invoices of this supplier are paid: SEPA, DIRECT_DEBIT or NOT_APPLICABLE.",
+            "enum": [
+              "SEPA",
+              "DIRECT_DEBIT",
+              "NOT_APPLICABLE"
+            ]
+          },
+          "payment_term_id": {
+            "type": "string",
+            "description": "Default payment term id from moss_list_payment_terms."
+          },
+          "default_expense_account_id": {
+            "type": "string",
+            "description": "Default expense account id from moss_list_expense_accounts."
+          },
+          "default_vat_rate_id": {
+            "type": "string",
+            "description": "Default VAT rate id from moss_list_tax_rates."
+          },
+          "default_cost_center_id": {
+            "type": "string",
+            "description": "Default cost centre id (a dimension item id)."
+          },
+          "default_cost_carrier_id": {
+            "type": "string",
+            "description": "Default cost carrier id (a dimension item id)."
+          },
+          "default_team_id": {
+            "type": "string",
+            "description": "Default team id from moss_list_teams."
+          },
+          "external_user_id": {
+            "type": "string",
+            "description": "Id or e-mail of the person in your system on whose behalf the change is made. Moss stores it for traceability."
+          },
+          "supplier_id": {
+            "type": "string",
+            "description": "Supplier id (UUID) from moss_list_suppliers."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status: ACTIVE or DEACTIVATED.",
+            "enum": [
+              "ACTIVE",
+              "DEACTIVATED"
+            ]
+          },
+          "address": {
+            "type": "object",
+            "description": "Address fields to change; fields left out keep their value.",
+            "properties": {
+              "streetAddress": {
+                "type": "string",
+                "description": "Street and number."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Second address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "postCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "country": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. DE."
+              }
+            }
+          }
+        },
+        "required": [
+          "supplier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/suppliers/{supplier_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "currency": "$currency",
+          "vatId": "$vat_id",
+          "iban": "$iban",
+          "bic": "$bic",
+          "accountNumber": "$account_number",
+          "sortCode": "$sort_code",
+          "defaultPaymentMethod": "$default_payment_method",
+          "paymentTermId": "$payment_term_id",
+          "defaultExpenseAccountId": "$default_expense_account_id",
+          "defaultVatRateId": "$default_vat_rate_id",
+          "defaultCostCenterId": "$default_cost_center_id",
+          "defaultCostCarrierId": "$default_cost_carrier_id",
+          "defaultTeamId": "$default_team_id",
+          "address": "$address",
+          "externalUserId": "$external_user_id",
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "moss_create_dimension",
+      "description": "Create an accounting dimension (e.g. Project) with its Moss name and the name and id it has in the accounting system. Needs the write scope and, for more than the default dimensions, the Multiple Dimensions module (402 otherwise).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name shown in Moss."
+          },
+          "erp_name": {
+            "type": "string",
+            "description": "Name of the dimension in the accounting system."
+          },
+          "erp_id": {
+            "type": "string",
+            "description": "Id of the dimension in the accounting system."
+          },
+          "external_user_id": {
+            "type": "string",
+            "description": "Id or e-mail of the person in your system on whose behalf the change is made. Moss stores it for traceability."
+          }
+        },
+        "required": [
+          "name",
+          "erp_name",
+          "erp_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/dimensions",
+        "bodyMapping": {
+          "name": "$name",
+          "erpName": "$erp_name",
+          "erpId": "$erp_id",
+          "externalUserId": "$external_user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "moss_update_dimension",
+      "description": "Rename a dimension in Moss and set its name in the accounting system. Dimensions managed by an active accounting integration cannot be changed (409).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dimension_id": {
+            "type": "string",
+            "description": "Dimension id (UUID) from moss_list_dimensions."
+          },
+          "erp_name": {
+            "type": "string",
+            "description": "Name of the dimension in the accounting system."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name in Moss; leave out to keep it."
+          },
+          "external_user_id": {
+            "type": "string",
+            "description": "Id or e-mail of the person in your system on whose behalf the change is made. Moss stores it for traceability."
+          }
+        },
+        "required": [
+          "dimension_id",
+          "erp_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/dimensions/{dimension_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "erpName": "$erp_name",
+          "externalUserId": "$external_user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "moss_create_dimension_item",
+      "description": "Add an item to a dimension, e.g. a new cost centre or project with its name and code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dimension_id": {
+            "type": "string",
+            "description": "Dimension id (UUID) from moss_list_dimensions."
+          },
+          "name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Item code, e.g. the cost centre number."
+          },
+          "status": {
+            "type": "string",
+            "description": "ACTIVE (default) or DEACTIVATED.",
+            "enum": [
+              "ACTIVE",
+              "DEACTIVATED"
+            ],
+            "default": "ACTIVE"
+          },
+          "external_user_id": {
+            "type": "string",
+            "description": "Id or e-mail of the person in your system on whose behalf the change is made. Moss stores it for traceability."
+          }
+        },
+        "required": [
+          "dimension_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/dimensions/{dimension_id}/items",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "status": "$status",
+          "externalUserId": "$external_user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "moss_update_dimension_item",
+      "description": "Rename a dimension item, change its code, or activate or deactivate it. Moss wants name and status on every update: send the current values for what should stay.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dimension_id": {
+            "type": "string",
+            "description": "Dimension id (UUID)."
+          },
+          "dimension_item_id": {
+            "type": "string",
+            "description": "Dimension item id (UUID) from moss_list_dimension_items."
+          },
+          "name": {
+            "type": "string",
+            "description": "Item name (current one to keep it)."
+          },
+          "code": {
+            "type": "string",
+            "description": "Item code."
+          },
+          "status": {
+            "type": "string",
+            "description": "ACTIVE or DEACTIVATED.",
+            "enum": [
+              "ACTIVE",
+              "DEACTIVATED"
+            ]
+          },
+          "external_user_id": {
+            "type": "string",
+            "description": "Id or e-mail of the person in your system on whose behalf the change is made. Moss stores it for traceability."
+          }
+        },
+        "required": [
+          "dimension_id",
+          "dimension_item_id",
+          "name",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/dimensions/{dimension_id}/items/{dimension_item_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "status": "$status",
+          "externalUserId": "$external_user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    }
+  ]
+}

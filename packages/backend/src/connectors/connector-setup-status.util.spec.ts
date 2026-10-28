@@ -88,6 +88,23 @@ describe('computeSetupState', () => {
     ).toEqual({ status: 'needs_authorization', missing: [] });
   });
 
+  it('is ready with per-user credentials although the connector holds no token', () => {
+    expect(
+      computeSetupState({
+        authType: 'OAUTH2',
+        authConfig: etsyAuth,
+        envVars: { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' },
+        credentialScope: 'USER',
+      }),
+    ).toEqual({ status: 'ready', missing: [] });
+  });
+
+  it('still asks for the app keys with per-user credentials', () => {
+    expect(
+      computeSetupState({ authType: 'OAUTH2', authConfig: etsyAuth, credentialScope: 'USER' }).status,
+    ).toBe('needs_input');
+  });
+
   it('is ready after the authorization stored a refresh token', () => {
     expect(
       computeSetupState({

@@ -18,6 +18,7 @@ import { LoginTokenService } from '../connectors/engines/login-token.service';
 import { ConnectorAuthStatusService } from '../connectors/engines/connector-auth-status.service';
 import { BearerTokenRenewalService } from '../connectors/engines/bearer-token-renewal.service';
 import { ShopeeTokenService } from '../connectors/engines/shopee-token.service';
+import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { SettingsModule } from '../settings/settings.module';
 import { GraphqlSchemaService } from '../connectors/engines/graphql-schema.service';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
@@ -36,7 +37,7 @@ const ENGINES = [
 @Module({
   imports: [McpServersModule, LicenseModule, SettingsModule],
   controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
-  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, GraphqlSchemaService, ...ENGINES],
-  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService],
+  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, GraphqlSchemaService, ...ENGINES],
+  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService],
 })
 export class McpServerModule {}

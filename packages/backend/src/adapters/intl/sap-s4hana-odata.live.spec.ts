@@ -74,7 +74,7 @@ live('sap-s4hana-odata adapter (live)', () => {
     authType: 'BASIC_AUTH',
     authConfig: { username: process.env.SAP_ODATA_USER, password: process.env.SAP_ODATA_PASSWORD },
   };
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const { RestEngine } = require('../../connectors/engines/rest.engine');
   const engine = new ODataEngine(new RestEngine({} as any, {} as any));
   const settings = () => interpolateDeep(adapter.connector.config!.odata, env);
@@ -85,7 +85,7 @@ live('sap-s4hana-odata adapter (live)', () => {
 
   it('lists catalog services and describes one', async () => {
     const list: any = await engine.execute(config, { method: 'odata_list_services' }, { search: 'business partner' }, settings());
-    // eslint-disable-next-line no-console
+     
     console.log(list.total, list.services.slice(0, 3));
     expect(list.total).toBeGreaterThan(0);
     const svc: any = await engine.execute(config, { method: 'odata_describe_service' }, { service: list.services[0].service }, settings());

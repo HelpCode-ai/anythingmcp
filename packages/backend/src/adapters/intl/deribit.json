@@ -1,0 +1,552 @@
+{
+  "slug": "deribit",
+  "name": "Deribit",
+  "aliases": [
+    "Deribit options",
+    "DVOL"
+  ],
+  "description": "Let your AI read Deribit's public crypto derivatives data: options and futures with open interest, implied volatility and mark prices, the DVOL volatility index, historical volatility, tickers with greeks, order books, candles, recent trades, perpetual funding rates, index and delivery prices. Public data, no account or key needed. Read-only: it cannot trade or move funds.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "deribit",
+  "docsUrl": "https://docs.deribit.com/",
+  "instructions": "## Deribit\nThis connector reads the **public market data** of Deribit, the crypto options and futures exchange, through its JSON-RPC API over HTTP (`https://www.deribit.com/api/v2/public/...`). The public methods need no account and no key. Everything is read-only: the private methods (trading, positions, wallet) are not part of this connector.\n\n**Setup**: nothing. Install and run `deribit_get_index_price_names` to check the connection.\n\n**Names you need**\n- `currency`: `BTC`, `ETH`, `USDC`, `USDT`, `EURR`, or `any` where a tool says so. `deribit_get_currencies` lists them.\n- `instrument_name`: `BTC-PERPETUAL`, a future `BTC-27DEC26`, an option `BTC-27DEC26-100000-C` (currency, expiry, strike, C call / P put), a linear perpetual `SOL_USDC-PERPETUAL`. `deribit_get_instruments` lists the live ones.\n- `index_name`: `btc_usd`, `eth_usd`, `sol_usdc` and so on, from `deribit_get_index_price_names`.\n\n**Workflow**\n- Options positioning, skew and max pain before an expiry: `deribit_get_book_summary_by_currency` with `kind: option` gives every option of a currency with open interest, volume, mark price and mark implied volatility (`mark_iv`, in percent). Group by expiry and strike from the instrument name. One instrument: `deribit_get_book_summary_by_instrument`.\n- Implied volatility: `deribit_get_volatility_index_data` for the DVOL index as candles (`[timestamp, open, high, low, close]`). Realised volatility: `deribit_get_historical_volatility` (hourly points of about the last 16 days).\n- One instrument now: `deribit_get_ticker` (best bid and ask, mark price, open interest, funding for perpetuals, greeks and implied volatilities for options), `deribit_get_order_book` for depth.\n- History: `deribit_get_tradingview_chart_data` for OHLCV candles, `deribit_get_last_trades_by_instrument` or `deribit_get_last_trades_by_currency` for trades (block trades and liquidations are flagged), `deribit_get_funding_rate_history` for hourly perpetual funding, `deribit_get_funding_rate_value` for the funding accumulated over a period, `deribit_get_delivery_prices` for daily settlement prices of an index.\n- Index price now: `deribit_get_index_price`.\n- Instruments: `deribit_get_instruments` (expiries, strikes, tick and contract sizes); `deribit_get_currencies` for the supported currencies.\n\n**Units and times**\n- Every timestamp, in and out, is **Unix milliseconds** (UTC). For `start_timestamp` / `end_timestamp` compute the values from the current time (e.g. the last 7 days: now minus 604800000).\n- Option prices (`mark_price`, `bid_price`, `last`) of the inverse BTC and ETH options are quoted **in the base coin**, not in USD: multiply by `underlying_price` (or the index price) for dollars. Future and perpetual prices are in USD.\n- Open interest of inverse futures is in USD; of options, in contracts of the base coin.\n- `funding_8h` and `interest_8h` are fractions per 8 hours (0.0001 = 0.01%).\n\n**Limits**: public calls are rate-limited per IP with a credit system; a burst of calls can answer `too_many_requests` (code 10028). Avoid looping over hundreds of instruments: one `deribit_get_book_summary_by_currency` call covers all of them.\n\n**Errors** come back as a JSON-RPC `error` object, e.g. an unknown instrument name or a missing required parameter.",
+  "prerequisites": "Nothing: the connector reads Deribit's public market data without an account or API key.",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "deribit_get_index_price_names"
+  },
+  "connector": {
+    "name": "Deribit public market data",
+    "type": "REST",
+    "baseUrl": "https://www.deribit.com/api/v2",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/public/test"
+  },
+  "tools": [
+    {
+      "name": "deribit_get_book_summary_by_currency",
+      "description": "Summary of every instrument of one currency in one call: instrument name, open interest, 24 hour volume, bid, ask, mark and last price, 24 hour price change, and for options the mark implied volatility and underlying price; for futures and perpetuals also funding. Use it for options skew, open interest by strike and expiry, and max pain.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Currency, e.g. BTC, ETH, USDC, USDT."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["future", "option", "spot", "future_combo", "option_combo"],
+            "description": "Instrument kind. Leave empty for all kinds."
+          }
+        },
+        "required": ["currency"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_book_summary_by_currency",
+        "queryParams": {
+          "currency": "$currency",
+          "kind": "$kind"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "instruments": {
+              "$from": "$.result[*]",
+              "$select": {
+                "instrument_name": "instrument_name",
+                "open_interest": "open_interest",
+                "volume": "volume",
+                "volume_usd": "volume_usd",
+                "bid_price": "bid_price",
+                "ask_price": "ask_price",
+                "mid_price": "mid_price",
+                "mark_price": "mark_price",
+                "last": "last",
+                "high": "high",
+                "low": "low",
+                "price_change": "price_change",
+                "mark_iv": "mark_iv",
+                "underlying_price": "underlying_price",
+                "underlying_index": "underlying_index",
+                "estimated_delivery_price": "estimated_delivery_price",
+                "funding_8h": "funding_8h",
+                "current_funding": "current_funding",
+                "quote_currency": "quote_currency"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "deribit_get_book_summary_by_instrument",
+      "description": "Summary of one instrument: open interest, 24 hour volume, bid, ask, mark and last price, price change, and for options mark implied volatility and underlying price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "instrument_name": {
+            "type": "string",
+            "description": "Instrument name, e.g. BTC-PERPETUAL or BTC-27DEC26-100000-C."
+          }
+        },
+        "required": ["instrument_name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_book_summary_by_instrument",
+        "queryParams": {
+          "instrument_name": "$instrument_name"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_volatility_index_data",
+      "description": "History of the DVOL implied volatility index of a currency as candles: result.data is a list of [timestamp_ms, open, high, low, close]. If result.continuation is set, call again with end_timestamp = continuation for older data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Currency with a DVOL index, e.g. BTC or ETH."
+          },
+          "start_timestamp": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_timestamp": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          },
+          "resolution": {
+            "type": "string",
+            "enum": ["1", "60", "3600", "43200", "1D"],
+            "description": "Candle size in seconds (1, 60, 3600, 43200) or 1D for daily."
+          }
+        },
+        "required": ["currency", "start_timestamp", "end_timestamp", "resolution"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_volatility_index_data",
+        "queryParams": {
+          "currency": "$currency",
+          "start_timestamp": "$start_timestamp",
+          "end_timestamp": "$end_timestamp",
+          "resolution": "$resolution"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_historical_volatility",
+      "description": "Realised (historical) volatility of a currency: a list of [timestamp_ms, volatility_percent] points, hourly, covering about the last 16 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Currency, e.g. BTC or ETH."
+          }
+        },
+        "required": ["currency"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_historical_volatility",
+        "queryParams": {
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_instruments",
+      "description": "List the tradable instruments of a currency: name, kind, expiry (expiration_timestamp), strike and option type for options, contract size, tick size, minimum trade amount, settlement period and whether it is active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Currency, e.g. BTC, ETH, USDC, or any for all."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["future", "option", "spot", "future_combo", "option_combo", "combo", "any"],
+            "description": "Instrument kind. Leave empty for all kinds."
+          },
+          "expired": {
+            "type": "boolean",
+            "description": "true lists recently expired instruments instead of live ones. Default false."
+          }
+        },
+        "required": ["currency"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_instruments",
+        "queryParams": {
+          "currency": "$currency",
+          "kind": "$kind",
+          "expired": "$expired"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "instruments": {
+              "$from": "$.result[*]",
+              "$select": {
+                "instrument_name": "instrument_name",
+                "kind": "kind",
+                "state": "state",
+                "is_active": "is_active",
+                "base_currency": "base_currency",
+                "quote_currency": "quote_currency",
+                "settlement_currency": "settlement_currency",
+                "price_index": "price_index",
+                "expiration_timestamp": "expiration_timestamp",
+                "settlement_period": "settlement_period",
+                "strike": "strike",
+                "option_type": "option_type",
+                "contract_size": "contract_size",
+                "tick_size": "tick_size",
+                "min_trade_amount": "min_trade_amount",
+                "maker_commission": "maker_commission",
+                "taker_commission": "taker_commission"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "deribit_get_ticker",
+      "description": "Current ticker of one instrument: last, mark and index price, best bid and ask with amounts, 24 hour stats, open interest, settlement price; for perpetuals current and 8 hour funding; for options greeks (delta, gamma, vega, theta, rho), bid, ask and mark implied volatility and the underlying price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "instrument_name": {
+            "type": "string",
+            "description": "Instrument name, e.g. BTC-PERPETUAL or ETH-27DEC26-4000-P."
+          }
+        },
+        "required": ["instrument_name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/ticker",
+        "queryParams": {
+          "instrument_name": "$instrument_name"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_order_book",
+      "description": "Order book of one instrument: bids and asks as [price, amount], plus the ticker fields (mark price, open interest, funding or greeks).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "instrument_name": {
+            "type": "string",
+            "description": "Instrument name, e.g. BTC-PERPETUAL."
+          },
+          "depth": {
+            "type": "integer",
+            "enum": [1, 5, 10, 20, 50, 100, 1000, 10000],
+            "description": "Price levels per side. Keep it small (e.g. 20) unless the full book is needed."
+          }
+        },
+        "required": ["instrument_name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_order_book",
+        "queryParams": {
+          "instrument_name": "$instrument_name",
+          "depth": "$depth"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_tradingview_chart_data",
+      "description": "OHLCV candles of one instrument between two times: parallel arrays ticks (timestamps ms), open, high, low, close, volume and cost. status no_data means nothing in the range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "instrument_name": {
+            "type": "string",
+            "description": "Instrument name, e.g. BTC-PERPETUAL."
+          },
+          "start_timestamp": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_timestamp": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          },
+          "resolution": {
+            "type": "string",
+            "enum": ["1", "3", "5", "10", "15", "30", "60", "120", "180", "360", "720", "1D"],
+            "description": "Candle size in minutes, or 1D for daily."
+          }
+        },
+        "required": ["instrument_name", "start_timestamp", "end_timestamp", "resolution"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_tradingview_chart_data",
+        "queryParams": {
+          "instrument_name": "$instrument_name",
+          "start_timestamp": "$start_timestamp",
+          "end_timestamp": "$end_timestamp",
+          "resolution": "$resolution"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_last_trades_by_instrument",
+      "description": "Recent trades of one instrument: time, price, amount, direction, index and mark price, implied volatility for options, and flags for block trades and liquidations. has_more tells whether older trades exist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "instrument_name": {
+            "type": "string",
+            "description": "Instrument name, e.g. BTC-PERPETUAL."
+          },
+          "start_timestamp": {
+            "type": "integer",
+            "description": "Earliest trade time, Unix milliseconds."
+          },
+          "end_timestamp": {
+            "type": "integer",
+            "description": "Latest trade time, Unix milliseconds."
+          },
+          "start_seq": {
+            "type": "integer",
+            "description": "Trade sequence number to start from."
+          },
+          "end_seq": {
+            "type": "integer",
+            "description": "Trade sequence number to end at."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of trades, default 10, maximum 1000."
+          },
+          "sorting": {
+            "type": "string",
+            "enum": ["asc", "desc", "default"],
+            "description": "Sort direction by time."
+          }
+        },
+        "required": ["instrument_name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_last_trades_by_instrument",
+        "queryParams": {
+          "instrument_name": "$instrument_name",
+          "start_timestamp": "$start_timestamp",
+          "end_timestamp": "$end_timestamp",
+          "start_seq": "$start_seq",
+          "end_seq": "$end_seq",
+          "count": "$count",
+          "sorting": "$sorting"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_last_trades_by_currency",
+      "description": "Recent trades across all instruments of a currency, optionally of one kind (e.g. all BTC options): instrument, time, price, amount, direction, implied volatility, block trade and liquidation flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Currency, e.g. BTC or ETH."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["future", "option", "spot", "future_combo", "option_combo", "combo", "any"],
+            "description": "Instrument kind. Leave empty for all kinds."
+          },
+          "start_timestamp": {
+            "type": "integer",
+            "description": "Earliest trade time, Unix milliseconds."
+          },
+          "end_timestamp": {
+            "type": "integer",
+            "description": "Latest trade time, Unix milliseconds."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of trades, default 10, maximum 1000."
+          },
+          "sorting": {
+            "type": "string",
+            "enum": ["asc", "desc", "default"],
+            "description": "Sort direction by time."
+          }
+        },
+        "required": ["currency"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_last_trades_by_currency",
+        "queryParams": {
+          "currency": "$currency",
+          "kind": "$kind",
+          "start_timestamp": "$start_timestamp",
+          "end_timestamp": "$end_timestamp",
+          "count": "$count",
+          "sorting": "$sorting"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_funding_rate_history",
+      "description": "Hourly funding of a perpetual between two times: for each hour the index price, interest_1h and interest_8h (fractions, 0.0001 = 0.01%).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "instrument_name": {
+            "type": "string",
+            "description": "Perpetual instrument, e.g. BTC-PERPETUAL or ETH-PERPETUAL."
+          },
+          "start_timestamp": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_timestamp": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          }
+        },
+        "required": ["instrument_name", "start_timestamp", "end_timestamp"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_funding_rate_history",
+        "queryParams": {
+          "instrument_name": "$instrument_name",
+          "start_timestamp": "$start_timestamp",
+          "end_timestamp": "$end_timestamp"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_funding_rate_value",
+      "description": "Total funding rate of a perpetual accumulated over a period, as one fraction (0.001 = 0.1%).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "instrument_name": {
+            "type": "string",
+            "description": "Perpetual instrument, e.g. BTC-PERPETUAL."
+          },
+          "start_timestamp": {
+            "type": "integer",
+            "description": "Start of the period, Unix milliseconds."
+          },
+          "end_timestamp": {
+            "type": "integer",
+            "description": "End of the period, Unix milliseconds."
+          }
+        },
+        "required": ["instrument_name", "start_timestamp", "end_timestamp"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_funding_rate_value",
+        "queryParams": {
+          "instrument_name": "$instrument_name",
+          "start_timestamp": "$start_timestamp",
+          "end_timestamp": "$end_timestamp"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_index_price",
+      "description": "Current price of a Deribit index (e.g. btc_usd) and its estimated delivery price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, e.g. btc_usd, eth_usd, sol_usdc. deribit_get_index_price_names lists them."
+          }
+        },
+        "required": ["index_name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_index_price",
+        "queryParams": {
+          "index_name": "$index_name"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_index_price_names",
+      "description": "List the names of all Deribit price indexes (btc_usd, eth_usdc, ...), the values deribit_get_index_price and deribit_get_delivery_prices take.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_index_price_names"
+      }
+    },
+    {
+      "name": "deribit_get_delivery_prices",
+      "description": "Daily delivery (settlement) prices of an index, newest first: date and delivery_price, with records_total for paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "description": "Index name, e.g. btc_usd."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of days, default 10, maximum 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Days to skip for paging, default 0."
+          }
+        },
+        "required": ["index_name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_delivery_prices",
+        "queryParams": {
+          "index_name": "$index_name",
+          "count": "$count",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "deribit_get_currencies",
+      "description": "List the currencies Deribit supports, with their long name, decimals and withdrawal fee. The currency codes are what the other tools take as currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/get_currencies"
+      }
+    }
+  ]
+}

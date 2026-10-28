@@ -29,6 +29,7 @@ model Organization {
   users            User[]
   members          OrganizationMember[]
   connectors       Connector[]
+  connectorCredentials UserConnectorCredential[]
   mcpServers       McpServerConfig[]
   roles            Role[]
   mcpApiKeys       McpApiKey[]
@@ -176,6 +177,7 @@ model User {
 
   memberships              OrganizationMember[]
   connectors               Connector[]
+  connectorCredentials     UserConnectorCredential[]
   mcpServers               McpServerConfig[]
   toolInvocations          ToolInvocation[]
   passwordResetTokens      PasswordResetToken[]
@@ -400,6 +402,16 @@ enum AuthType {
   LOGIN_TOKEN
 }
 
+/// Whose credential a connector's calls carry.
+///   SHARED — the one stored on the connector, for every caller (the default).
+///   USER   — each caller's own, from `UserConnectorCredential` (Enterprise):
+///            every user signs in to the provider themselves, and the
+///            provider's own permissions decide what each one may see.
+enum CredentialScope {
+  SHARED
+  USER
+}
+
 model Connector {
   id             String        @id @default(cuid())
   userId         String        @map("user_id")
@@ -420,6 +432,9 @@ model Connector {
   // Authentication
   authType   AuthType @default(NONE) @map("auth_type")
   authConfig String?  @map("auth_config") // encrypted JSON
+  // USER: the tokens in authConfig are never sent; each caller's own are
+  // (UserConnectorCredential). authConfig keeps the client settings only.
+  credentialScope CredentialScope @default(SHARED) @map("credential_scope")
 
   // Specification (OpenAPI, WSDL, GraphQL schema)
   specUrl  String? @map("spec_url")
@@ -465,6 +480,7 @@ model Connector {
   prompts         McpPrompt[]
   mcpServers      McpServerConnector[]
   authCache       ConnectorAuthCache?
+  userCredentials UserConnectorCredential[]
   toolInvocations ToolInvocation[]
   kgNodes         KgNode[]
   kgState         KgConnectorState?
@@ -473,6 +489,44 @@ model Connector {
 
   @@index([organizationId])
   @@map("connectors")
+}
+
+// ── Per-User Connector Credentials ─────────────────────────────────────────
+
+/// One user's own sign-in to a connector whose `credentialScope` is USER:
+/// the tokens the provider issued to that user, encrypted like
+/// `Connector.authConfig`. The connector keeps the client (id, secret, token
+/// URL); this row only what is the user's. Credential health is tracked here
+/// rather than on the connector, so one user's revoked token blocks only
+/// that user.
+model UserConnectorCredential {
+  id             String       @id @default(cuid())
+  connectorId    String       @map("connector_id")
+  connector      Connector    @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  userId         String       @map("user_id")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// Encrypted JSON: accessToken, refreshToken, expiresAt, expiresIn,
+  /// authorizedAt, lastRefreshedAt.
+  authConfig String @map("auth_config") @db.Text
+
+  // Same meaning as the auth_status* columns of the connector.
+  authStatus        String?   @map("auth_status")
+  authStatusCode    String?   @map("auth_status_code")
+  authStatusMessage String?   @map("auth_status_message") @db.Text
+  authStatusAt      DateTime? @map("auth_status_at")
+  authStatusRef     String?   @map("auth_status_ref")
+  authNotifiedAt    DateTime? @map("auth_notified_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([connectorId, userId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("user_connector_credentials")
 }
 
 // ── Connector Auth Cache ────────────────────────────────────────────────────

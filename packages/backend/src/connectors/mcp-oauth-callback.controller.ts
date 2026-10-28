@@ -32,6 +32,7 @@ import { mcpPathOf } from './mcp-connector-config.util';
 import { catalogMcpToolsFor } from '../adapters/mcp-adapter.util';
 import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 import { connectorSecretValues } from './connector-secrets.util';
+import { UserCredentialsService } from './user-credentials.service';
 
 /**
  * Connector OAuth: where the provider sends the browser back, and where the
@@ -58,6 +59,7 @@ export class McpOAuthCallbackController {
     private readonly mcpServer: McpServerService,
     private readonly configService: ConfigService,
     @Optional() private readonly productEvents?: ProductEventService,
+    @Optional() private readonly userCredentials?: UserCredentialsService,
   ) {}
 
   private frontendUrl(): string {
@@ -245,6 +247,19 @@ export class McpOAuthCallbackController {
     // 2. Store tokens (encrypted) in the connector's authConfig. Merge, don't
     // replace — preserves static config (authorizationUrl, scopes) needed for
     // later re-authorization.
+    //
+    // Per-user credentials: the client is the connector's, the tokens are the
+    // user's own row. The connector's scope is read again here: switched while
+    // the user was at the provider, the tokens would land where they are not
+    // used (a user's sign-in on a shared connector), or worse, one account's
+    // tokens on a connector every user now calls with their own.
+    const current = await this.connectorsService.findByIdInternal(flow.connectorId);
+    if ((current.credentialScope === 'USER') !== !!flow.forUser) {
+      throw new GoneException(
+        'The connector switched between a shared sign-in and per-user sign-in while you were at the provider. ' +
+          'Nothing was stored; start the authorization again.',
+      );
+    }
     const clientSettings = flow.persistAuthConfig ?? {
       tokenUrl: flow.tokenUrl,
       clientId: flow.clientId,
@@ -253,14 +268,26 @@ export class McpOAuthCallbackController {
       // The refreshes send the same RFC 8707 resource indicator (MCP).
       ...(flow.resource ? { resource: flow.resource } : {}),
     };
-    await this.connectorsService.updateAuthConfigMerge(flow.connectorId, {
-      ...clientSettings,
+    const issued = {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
       expiresAt: Date.now() + (tokens.expiresIn || 3600) * 1000,
       authorizedAt: new Date().toISOString(),
-    });
+    };
+    if (flow.forUser) {
+      if (!this.userCredentials) {
+        throw new GoneException('Per-user sign-in is not available on this server.');
+      }
+      await this.connectorsService.updateAuthConfigMerge(flow.connectorId, clientSettings);
+      await this.userCredentials.store(current, flow.userId, issued);
+      this.logger.log(`Stored the user's own sign-in for connector ${flow.connectorId}`);
+    } else {
+      await this.connectorsService.updateAuthConfigMerge(flow.connectorId, {
+        ...clientSettings,
+        ...issued,
+      });
+    }
 
     // Reload the connector's tools into the in-memory MCP registry so the
     // freshly-stored access token takes effect immediately. The registry
