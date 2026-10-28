@@ -321,84 +321,110 @@ export class McpOAuthCallbackController {
     });
   }
 
-  @Post('auth/connect/:connectorId')
+  // One endpoint per action, each behind the page's CSRF token: what a
+  // request may do never hangs on a value in the form.
+
+  @Post('auth/connect/:connectorId/sso/:providerId')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiExcludeEndpoint()
-  async connectPageAction(
+  async connectPageSignIn(
     @Param('connectorId') connectorId: string,
-    @Body() body: { csrf?: unknown; action?: unknown } | undefined,
+    @Param('providerId') providerId: string,
+    @Body() body: { csrf?: unknown } | undefined,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    // Relative: back to the page on the origin the form was posted to.
-    const back = (params: Record<string, string> = {}) => {
-      const query = new URLSearchParams(params).toString();
-      return res.redirect(303, `${CONNECT_PAGE_PATH}/${encodeURIComponent(connectorId)}${query ? `?${query}` : ''}`);
-    };
-    const csrf = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.[CONNECT_CSRF_COOKIE];
-    if (!sameSecret(csrf, body?.csrf)) {
-      return back({ error: 'This page expired. Try again.' });
-    }
-    const action = typeof body?.action === 'string' ? body.action : '';
-
-    if (action === 'switch') {
-      res.clearCookie(CONNECT_USER_COOKIE, { path: CONNECT_PAGE_PATH });
-      return back();
-    }
-
+    if (!this.connectCsrfValid(req, body)) return this.backToConnectPage(res, connectorId, { error: 'This page expired. Try again.' });
     const context = await this.connectContext(req, connectorId);
-
-    if (action.startsWith('sso:')) {
-      if (context.view.kind !== 'sign-in' || !context.connector || !this.sso) return back();
-      const binding = randomBytes(32).toString('base64url');
-      try {
-        const { authorizationUrl } = await this.sso.startConnect(
-          action.slice('sso:'.length),
-          context.connector.organizationId,
-          context.connector.id,
-          binding,
-        );
-        const pending: ConnectSsoCookie = { b: binding, c: context.connector.id };
-        res.cookie(
-          CONNECT_SSO_COOKIE,
-          JSON.stringify(pending),
-          connectCookieOptions(req, '/auth', CONNECT_ROUND_TRIP_MS),
-        );
-        return res.redirect(303, authorizationUrl);
-      } catch (err: any) {
-        this.logger.warn(`Connect-page sign-in could not start: ${err?.reason ?? err?.message ?? err}`);
-        return back({ error: 'This sign-in option is not available.' });
-      }
+    if (context.view.kind !== 'sign-in' || !context.connector || !this.sso) {
+      return this.backToConnectPage(res, connectorId);
     }
-
-    if (action === 'connect') {
-      if (context.view.kind !== 'ready' || !context.connector || !context.user) return back();
-      try {
-        const started = await startConnectorAuthorization(
-          {
-            connectorsService: this.connectorsService,
-            mcpOAuthService: this.mcpOAuthService,
-            logger: this.logger,
-            encryptionKey: getRequiredSecret('ENCRYPTION_KEY', this.configService.get<string>('ENCRYPTION_KEY')),
-            callbackUrl: connectorOAuthCallbackUrl(this.configService),
-          },
-          context.connector,
-          { userId: context.user.id, forUser: true, completeOn: 'connect-page' },
-        );
-        if ('error' in started) return back({ error: started.error });
-        res.cookie(
-          CONNECT_FLOW_COOKIE,
-          started.state,
-          connectCookieOptions(req, CONNECT_PAGE_PATH, CONNECT_ROUND_TRIP_MS),
-        );
-        return res.redirect(303, started.authorizationUrl);
-      } catch (err: any) {
-        this.logger.error(`OAuth initiation failed for connector ${connectorId}: ${err?.message ?? err}`);
-        return back({ error: 'The provider could not be reached. Try again in a moment.' });
-      }
+    const binding = randomBytes(32).toString('base64url');
+    try {
+      const { authorizationUrl } = await this.sso.startConnect(
+        providerId,
+        context.connector.organizationId,
+        context.connector.id,
+        binding,
+      );
+      const pending: ConnectSsoCookie = { b: binding, c: context.connector.id };
+      res.cookie(
+        CONNECT_SSO_COOKIE,
+        JSON.stringify(pending),
+        connectCookieOptions(req, '/auth', CONNECT_ROUND_TRIP_MS),
+      );
+      return res.redirect(303, authorizationUrl);
+    } catch (err: any) {
+      this.logger.warn(`Connect-page sign-in could not start: ${err?.reason ?? err?.message ?? err}`);
+      return this.backToConnectPage(res, connectorId, { error: 'This sign-in option is not available.' });
     }
+  }
 
-    return back();
+  @Post('auth/connect/:connectorId/connect')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async connectPageConnect(
+    @Param('connectorId') connectorId: string,
+    @Body() body: { csrf?: unknown } | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.connectCsrfValid(req, body)) return this.backToConnectPage(res, connectorId, { error: 'This page expired. Try again.' });
+    const context = await this.connectContext(req, connectorId);
+    if (context.view.kind !== 'ready' || !context.connector || !context.user) {
+      return this.backToConnectPage(res, connectorId);
+    }
+    try {
+      const started = await startConnectorAuthorization(
+        {
+          connectorsService: this.connectorsService,
+          mcpOAuthService: this.mcpOAuthService,
+          logger: this.logger,
+          encryptionKey: getRequiredSecret('ENCRYPTION_KEY', this.configService.get<string>('ENCRYPTION_KEY')),
+          callbackUrl: connectorOAuthCallbackUrl(this.configService),
+        },
+        context.connector,
+        { userId: context.user.id, forUser: true, completeOn: 'connect-page' },
+      );
+      if ('error' in started) return this.backToConnectPage(res, connectorId, { error: started.error });
+      res.cookie(
+        CONNECT_FLOW_COOKIE,
+        started.state,
+        connectCookieOptions(req, CONNECT_PAGE_PATH, CONNECT_ROUND_TRIP_MS),
+      );
+      return res.redirect(303, started.authorizationUrl);
+    } catch (err: any) {
+      this.logger.error(`OAuth initiation failed for connector ${connectorId}: ${err?.message ?? err}`);
+      return this.backToConnectPage(res, connectorId, {
+        error: 'The provider could not be reached. Try again in a moment.',
+      });
+    }
+  }
+
+  @Post('auth/connect/:connectorId/switch')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async connectPageSwitch(
+    @Param('connectorId') connectorId: string,
+    @Body() body: { csrf?: unknown } | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (this.connectCsrfValid(req, body)) {
+      res.clearCookie(CONNECT_USER_COOKIE, { path: CONNECT_PAGE_PATH });
+    }
+    return this.backToConnectPage(res, connectorId);
+  }
+
+  private connectCsrfValid(req: Request, body: { csrf?: unknown } | undefined): boolean {
+    const cookie = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.[CONNECT_CSRF_COOKIE];
+    return sameSecret(cookie, body?.csrf);
+  }
+
+  /** Relative: back to the page on the origin the form was posted to. */
+  private backToConnectPage(res: Response, connectorId: string, params: Record<string, string> = {}) {
+    const query = new URLSearchParams(params).toString();
+    return res.redirect(303, `${CONNECT_PAGE_PATH}/${encodeURIComponent(connectorId)}${query ? `?${query}` : ''}`);
   }
 
   /**

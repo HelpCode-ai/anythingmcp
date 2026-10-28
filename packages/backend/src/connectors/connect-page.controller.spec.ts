@@ -158,7 +158,7 @@ describe('connect page', () => {
     await controller.connectPage('conn-1', undefined, undefined, makeReq(), res);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(html(res)).toContain('Continue with Microsoft Entra ID');
-    expect(html(res)).toContain('value="sso:idp-1"');
+    expect(html(res)).toContain('formaction="/auth/connect/conn-1/sso/idp-1"');
     expect(html(res)).not.toContain('MFR Servicetechniker');
     // A CSRF token for the forms, as a signed cookie.
     expect(res.cookie).toHaveBeenCalledWith('connect_csrf', expect.any(String), expect.objectContaining({ signed: true }));
@@ -209,7 +209,7 @@ describe('connect page', () => {
     const res = makeRes();
     await controller.connectPage('conn-1', undefined, undefined, makeReq({}, true), res);
     expect(html(res)).toContain('needs AnythingMCP Enterprise');
-    expect(html(res)).not.toContain('value="connect"');
+    expect(html(res)).not.toContain('/auth/connect/conn-1/connect');
   });
 });
 
@@ -219,16 +219,18 @@ describe('connect page actions', () => {
   it('refuses a form without the CSRF token', async () => {
     const { controller } = setup();
     const res = makeRes();
-    await controller.connectPageAction('conn-1', { action: 'connect', csrf: 'other' }, makeReq(csrf, true), res);
+    await controller.connectPageConnect('conn-1', { csrf: 'other' }, makeReq(csrf, true), res);
     expect(start).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith(303, expect.stringMatching(/^\/auth\/connect\/conn-1\?error=/));
+    const [status, url] = res.redirect.mock.calls[0];
+    expect(status).toBe(303);
+    expect(url.startsWith('/auth/connect/conn-1?error=')).toBe(true);
   });
 
   it("starts the signed-in user's own authorization and binds it to this browser", async () => {
     start.mockResolvedValue({ authorizationUrl: 'https://mcp.example.com/authorize?x', state: 'st-1' });
     const { controller } = setup();
     const res = makeRes();
-    await controller.connectPageAction('conn-1', { action: 'connect', csrf: 'tok-1' }, makeReq(csrf, true), res);
+    await controller.connectPageConnect('conn-1', { csrf: 'tok-1' }, makeReq(csrf, true), res);
     expect(start.mock.calls[0][2]).toEqual({ userId: 'u1', forUser: true, completeOn: 'connect-page' });
     expect(start.mock.calls[0][0].callbackUrl).toBe(`${FRONTEND}/api/mcp-oauth/callback`);
     expect(res.cookie).toHaveBeenCalledWith('connect_flow', 'st-1', expect.objectContaining({ path: '/auth/connect', signed: true }));
@@ -238,14 +240,14 @@ describe('connect page actions', () => {
   it('does not start an authorization for a stranger', async () => {
     const { controller } = setup();
     const res = makeRes();
-    await controller.connectPageAction('conn-1', { action: 'connect', csrf: 'tok-1' }, makeReq(csrf), res);
+    await controller.connectPageConnect('conn-1', { csrf: 'tok-1' }, makeReq(csrf), res);
     expect(start).not.toHaveBeenCalled();
   });
 
   it('starts the identity-provider sign-in with a binding kept in a signed cookie', async () => {
     const { controller, sso } = setup();
     const res = makeRes();
-    await controller.connectPageAction('conn-1', { action: 'sso:idp-1', csrf: 'tok-1' }, makeReq(csrf), res);
+    await controller.connectPageSignIn('conn-1', 'idp-1', { csrf: 'tok-1' }, makeReq(csrf), res);
     const [providerId, orgId, connectorId, binding] = sso.startConnect.mock.calls[0];
     expect([providerId, orgId, connectorId]).toEqual(['idp-1', 'org-1', 'conn-1']);
     const [name, value, options] = res.cookie.mock.calls[0];
@@ -253,6 +255,17 @@ describe('connect page actions', () => {
     expect(JSON.parse(value)).toEqual({ b: binding, c: 'conn-1' });
     expect(options).toMatchObject({ path: '/auth', httpOnly: true, signed: true });
     expect(res.redirect).toHaveBeenCalledWith(303, 'https://login.example.com/authorize');
+  });
+});
+
+describe('connect page sign-out', () => {
+  it('forgets the connect sign-in only with a valid CSRF token', async () => {
+    const { controller } = setup();
+    const res = makeRes();
+    await controller.connectPageSwitch('conn-1', { csrf: 'nope' }, makeReq({ connect_csrf: 'tok-1' }, true), res);
+    expect(res.clearCookie).not.toHaveBeenCalled();
+    await controller.connectPageSwitch('conn-1', { csrf: 'tok-1' }, makeReq({ connect_csrf: 'tok-1' }, true), res);
+    expect(res.clearCookie).toHaveBeenCalledWith('connect_user', { path: '/auth/connect' });
   });
 });
 
@@ -307,6 +320,6 @@ describe('provider redirect for a connect-page flow', () => {
     const { controller } = setup();
     const res = makeRes();
     await controller.oauthCallback(undefined, 'st-1', 'access_denied', undefined, res);
-    expect(res.redirect.mock.calls[0][0]).toMatch(new RegExp(`^${FRONTEND}/auth/connect/conn-1\\?error=`));
+    expect(res.redirect.mock.calls[0][0].startsWith(`${FRONTEND}/auth/connect/conn-1?error=`)).toBe(true);
   });
 });

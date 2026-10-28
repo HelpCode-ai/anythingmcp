@@ -70,9 +70,7 @@ export async function startConnectorAuthorization(
   let authorizationEndpoint: string;
   let tokenEndpoint: string;
   let scope: string | undefined;
-  let tokenAuthMethod: string | undefined = authConfig.tokenAuthMethod
-    ? String(authConfig.tokenAuthMethod)
-    : undefined;
+  let tokenAuthMethod: string | undefined;
   let clientAssertion: ClientAssertionSettings | undefined;
   // REST/GraphQL only: the auth config fields to write on success in place
   // of the historical "client settings as stored" (see PendingOAuthFlow).

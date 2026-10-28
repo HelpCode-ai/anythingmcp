@@ -60,6 +60,6 @@ describe('SsoController — connect page sign-in', () => {
     expect(res.cookie).not.toHaveBeenCalled();
     const [status, url] = res.redirect.mock.calls[0];
     expect(status).toBe(303);
-    expect(url).toMatch(new RegExp(`^${frontend}/auth/connect/conn-1\\?error=`));
+    expect(url.startsWith(`${frontend}/auth/connect/conn-1?error=`)).toBe(true);
   });
 });

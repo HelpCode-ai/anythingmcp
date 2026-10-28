@@ -37,7 +37,7 @@ export type ConnectPageView =
 export interface ConnectPageInput {
   view: ConnectPageView;
   csrfToken?: string;
-  /** Form action: /auth/connect/<connectorId>. */
+  /** The page's path, /auth/connect/<connectorId>; each action posts below it. */
   action?: string;
   error?: string;
   /** Shown after a successful connection. */
@@ -98,14 +98,14 @@ export function renderConnectPage(input: ConnectPageInput): string {
     const buttons = view.ssoProviders
       .map(
         (p) =>
-          `<button type="submit" name="action" value="sso:${escapeHtml(p.id)}" class="sso">` +
+          `<button type="submit" formaction="${action}/sso/${escapeHtml(encodeURIComponent(p.id))}" class="sso">` +
           `Continue with ${escapeHtml(p.name)}</button>`,
       )
       .join('');
     const dashboardUrl = view.dashboardUrl ? escapeHtml(view.dashboardUrl) : '';
     // Without an identity provider the dashboard is the only way to sign in.
     const signIn = buttons
-      ? `<form method="post" action="${action}">${csrf}${buttons}</form>` +
+      ? `<form method="post" action="${action}/sso/${escapeHtml(encodeURIComponent(view.ssoProviders[0].id))}">${csrf}${buttons}</form>` +
         (dashboardUrl ? `<p class="links">Or <a href="${dashboardUrl}">open the connector in the dashboard</a>.</p>` : '')
       : `<p class="sub">Sign in to the AnythingMCP dashboard and connect your account on the connector's page.</p>` +
         (dashboardUrl ? `<a class="button" href="${dashboardUrl}">Open the dashboard</a>` : '');
@@ -136,15 +136,15 @@ export function renderConnectPage(input: ConnectPageInput): string {
       : '';
     const label = view.connected || view.needsReauth ? 'Connect again' : 'Connect my account';
     const switchForm = view.canSwitch
-      ? `<form class="inline" method="post" action="${action}">${csrf}<button type="submit" name="action" value="switch">Not you?</button></form>`
+      ? `<form class="inline" method="post" action="${action}/switch">${csrf}<button type="submit">Not you?</button></form>`
       : '';
     card = `${pair(view.connectorName)}
     <h1>Connect your own account to ${name}</h1>
     <p class="sub">${name} then answers with what your own account may see and do, nothing more.</p>
     <div class="acct"><span>Signed in as <strong>${escapeHtml(view.email)}</strong></span>${switchForm}</div>
     ${done}${error}${status}
-    <form method="post" action="${action}">${csrf}
-      <button type="submit" name="action" value="connect"${view.connected && !view.needsReauth ? ' class="secondary"' : ''}>${label}</button>
+    <form method="post" action="${action}/connect">${csrf}
+      <button type="submit"${view.connected && !view.needsReauth ? ' class="secondary"' : ''}>${label}</button>
     </form>
     <p class="note">You sign in at ${name}. AnythingMCP stores the token encrypted and uses it only for your own calls.</p>`;
   }
