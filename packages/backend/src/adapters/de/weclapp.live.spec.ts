@@ -132,6 +132,17 @@ describe('weclapp adapter: responsible-user shortcuts and purchasing master data
       expect((m.queryParams as Record<string, string>).ignoreMissingProperties).toBe('true');
     }
   });
+  it('asks for exactly one of privateComment and publicComment, with no default that sends both false', () => {
+    const c = t('weclapp_add_comment') as unknown as {
+      description: string;
+      parameters: { properties: Record<string, { default?: unknown; description: string }> };
+    };
+    expect(c.description).toContain('exactly one of privateComment and publicComment');
+    for (const flag of ['privateComment', 'publicComment']) {
+      expect(c.parameters.properties[flag].default).toBeUndefined();
+      expect(c.parameters.properties[flag].description).toContain('not both');
+    }
+  });
   it('creates supply sources, manufacturers and item groups', () => {
     expect(t('weclapp_add_supply_source').endpointMapping).toMatchObject({ method: 'POST', path: '/articleSupplySource' });
     expect(t('weclapp_add_manufacturer').endpointMapping).toMatchObject({ method: 'POST', path: '/manufacturer' });

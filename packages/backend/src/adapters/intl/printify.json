@@ -268,11 +268,11 @@
     },
     {
       "name": "printify_list_uploads",
-      "description": "List the images in the account's media library with id, file name, size, dimensions and preview URL. Paged: up to 100 per page. Image ids are used in product print areas.",
+      "description": "List the images in the account's media library with id, file name, size, dimensions and preview URL. Paged: up to 50 per page. Image ids are used in product print areas.",
       "parameters": {
         "type": "object",
         "properties": {
-          "limit": { "type": "integer", "description": "Images per page, 1-100. Default 10." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Images per page, 1-50 (Printify rejects more). Default 10." },
           "page": { "type": "integer", "description": "Page number, starting at 1." }
         }
       },

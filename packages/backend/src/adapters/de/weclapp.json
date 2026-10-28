@@ -2011,7 +2011,7 @@
     },
     {
       "name": "weclapp_add_comment",
-      "description": "Add a comment to a weclapp record (sales order, quotation, sales invoice, party, task, ticket...). It appears in the record's comment stream, visible to colleagues; it is not sent to the customer unless publicComment is true. Returns the new comment. Confirm the text with the user before posting.",
+      "description": "Add a comment to a weclapp record (sales order, quotation, sales invoice, party, task, ticket...). weclapp requires exactly one of privateComment and publicComment to be true, so set one of them. It is not sent to the customer unless publicComment is true. Returns the new comment. Confirm the text with the user before posting.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -2033,13 +2033,11 @@
           },
           "privateComment": {
             "type": "boolean",
-            "default": false,
-            "description": "true makes it visible to you only."
+            "description": "true makes it visible to you only. Set this or publicComment to true, not both: weclapp rejects a comment that is neither."
           },
           "publicComment": {
             "type": "boolean",
-            "default": false,
-            "description": "true makes it visible outside the company, e.g. on a ticket in the customer portal."
+            "description": "true makes it visible outside the company, e.g. on a ticket in the customer portal. Set this or privateComment to true, not both."
           },
           "solution": {
             "type": "boolean",
