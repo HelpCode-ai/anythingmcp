@@ -334,6 +334,91 @@ describe('LicenseService — billing portal', () => {
   });
 });
 
+describe('LicenseService — cancellation carries the workspace\'s use', () => {
+  const axios = require('axios');
+  const cloudLicence = () => [mkLicense({ licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD', organizationId: 'org-1' })];
+  let post: jest.SpyInstance;
+  beforeEach(() => {
+    post = jest.spyOn(axios, 'post').mockResolvedValue({ data: { url: 'https://billing.stripe.com/p/session/c' } });
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  function withUsage(
+    made: ReturnType<typeof makeService>,
+    { stored, firstCall }: { stored?: string | null; firstCall?: Date | null },
+  ) {
+    const prisma = made.prisma as any;
+    prisma.orgSettings = {
+      findUnique: jest.fn(async () => (stored ? { value: stored } : null)),
+    };
+    prisma.toolInvocation = {
+      findFirst: jest.fn(async () => (firstCall ? { createdAt: firstCall } : null)),
+    };
+    return prisma;
+  }
+  const sentBody = () => post.mock.calls[0][1];
+
+  it('sends the recorded first successful call', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    const prisma = withUsage(made, { stored: '2026-10-01T10:00:00.000Z' });
+    await made.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(sentBody()).toEqual({
+      licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD',
+      flow: 'cancel',
+      usage: { firstSuccessfulCallAt: '2026-10-01T10:00:00.000Z' },
+    });
+    expect(prisma.orgSettings.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { organizationId_key: { organizationId: 'org-1', key: 'first_successful_call_at' } } }),
+    );
+    expect(prisma.toolInvocation.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the earliest successful invocation of the workspace', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    const prisma = withUsage(made, { firstCall: new Date('2026-09-20T08:00:00Z') });
+    await made.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(sentBody().usage).toEqual({ firstSuccessfulCallAt: '2026-09-20T08:00:00.000Z' });
+    expect(prisma.toolInvocation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { organizationId: 'org-1', status: 'SUCCESS' } }),
+    );
+  });
+
+  it('says so when the workspace never made a successful call', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    withUsage(made, {});
+    await made.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(sentBody().usage).toEqual({ firstSuccessfulCallAt: null });
+  });
+
+  it('still opens the cancellation when the lookup fails, without usage', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    const prisma = withUsage(made, {});
+    prisma.orgSettings.findUnique.mockRejectedValue(new Error('db down'));
+    await expect(made.svc.createBillingPortalSession('org-1', undefined, 'cancel')).resolves.toEqual({
+      url: 'https://billing.stripe.com/p/session/c',
+    });
+    expect(sentBody()).not.toHaveProperty('usage');
+  });
+
+  it('sends no usage for the other portal flows, nor on self-hosted', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    const prisma = withUsage(made, { stored: '2026-10-01T10:00:00.000Z' });
+    await made.svc.createBillingPortalSession('org-1', undefined, 'payment_method_update');
+    await made.svc.createBillingPortalSession('org-1');
+    expect(post.mock.calls.map((c) => c[1])).toEqual([
+      expect.not.objectContaining({ usage: expect.anything() }),
+      expect.not.objectContaining({ usage: expect.anything() }),
+    ]);
+    expect(prisma.orgSettings.findUnique).not.toHaveBeenCalled();
+
+    const selfHosted = makeService({ isCloud: false, licenses: cloudLicence() });
+    const shPrisma = withUsage(selfHosted, { stored: '2026-10-01T10:00:00.000Z' });
+    await selfHosted.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(post.mock.calls[2][1]).not.toHaveProperty('usage');
+    expect(shPrisma.orgSettings.findUnique).not.toHaveBeenCalled();
+  });
+});
+
 describe('LicenseService — paid licences are re-verified', () => {
   // A paid licence used to be verified once, at activation. A subscription
   // cancelled or left unpaid on Stripe then stayed `active` in the cloud for
