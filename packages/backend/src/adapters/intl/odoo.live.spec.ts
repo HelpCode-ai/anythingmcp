@@ -56,6 +56,16 @@ describe('odoo adapter — static spec conformance', () => {
     expect(JSON.stringify(partners?.endpointMapping)).not.toContain('"mobile"');
   });
 
+  it("tells call_method to pass required arguments by name and one id for singleton actions", () => {
+    const call = (a.tools as unknown as Array<{
+      name: string;
+      parameters: { properties: Record<string, { description: string }> };
+    }>).find((t) => t.name === 'odoo_call_method');
+    expect(call?.parameters.properties.kwargs.description).toContain('{\"vals\": {...}}');
+    expect(call?.parameters.properties.kwargs.description).toContain('vals_list');
+    expect(call?.parameters.properties.ids.description).toContain('Expected singleton');
+  });
+
   it("ships both a generic search_read and the common wrappers", () => {
     expect(toolNames).toEqual(expect.arrayContaining(['odoo_search_read', 'odoo_list_partners', 'odoo_list_sale_orders', 'odoo_list_invoices']));
   });
