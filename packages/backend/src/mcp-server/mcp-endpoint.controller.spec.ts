@@ -233,6 +233,34 @@ describe('McpEndpointController — tenant isolation', () => {
       controller.handlePost('srv-A', req, res, {}),
     ).resolves.toBeUndefined();
 
+    // Two distinct connectors: the second copy is listed under its own name,
+    // so nothing is skipped and nothing is logged.
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('Duplicate tool name "etsy_get_authenticated_user"'),
+    );
+  });
+
+  it('skips and logs the same connector assigned twice', async () => {
+    const tool = {
+      id: 'c1:etsy_get_authenticated_user',
+      connectorId: 'c1',
+      name: 'etsy_get_authenticated_user',
+      description: 'whoami',
+      parameters: { type: 'object', properties: {} },
+      connectorConfig: { envVars: {} },
+    };
+    mcpServersService.getConnectorIds.mockResolvedValue(['c1']);
+    toolRegistry.getAllTools.mockReturnValue([tool, { ...tool }]);
+    const warnSpy = jest
+      .spyOn((controller as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+    const req: any = {
+      user: { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' },
+      headers: {},
+    };
+    await expect(
+      controller.handlePost('srv-A', req, makeRes(), {}),
+    ).resolves.toBeUndefined();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('Duplicate tool name "etsy_get_authenticated_user"'),
     );
@@ -432,6 +460,114 @@ describe('McpEndpointController — keys created for a server', () => {
  * silently produced {} for every tool carrying a followUp workflow hint (the
  * appended text is not JSON). The executor now hands back the object directly.
  */
+/**
+ * Several connectors on one server can expose the same tool name: every
+ * DATABASE connector has execute_query, and two configs of one provider share
+ * all their names. Each copy must stay listed and reach its own connector.
+ */
+describe('McpEndpointController — same tool name in several connectors', () => {
+  const dbTool = (connectorId: string, connectorName: string) => ({
+    id: `${connectorId}:execute_query`,
+    connectorId,
+    connectorName,
+    name: 'execute_query',
+    description: 'Run a read-only SQL query',
+    parameters: { type: 'object', properties: { sql: { type: 'string' } } },
+    connectorType: 'DATABASE',
+    connectorConfig: { envVars: {} },
+  });
+
+  function plan(serverTools: any[]) {
+    const toolExecutor = {
+      executeTool: jest.fn().mockResolvedValue({ content: [{ type: 'text', text: '[]' }] }),
+    };
+    const controller = new McpEndpointController(
+      { findById: jest.fn() } as any,
+      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      toolExecutor as any,
+      { getAllowedToolIds: jest.fn() } as any,
+      { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
+      { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
+      { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
+    );
+    const entries = (controller as any).planToolSet({
+      serverTools,
+      allowedToolIds: null,
+      captureIntent: false,
+      invocationContext: {
+        organizationId: 'org-A',
+        mcpServerId: 'srv-A',
+        connectorIds: serverTools.map((t) => t.connectorId),
+      },
+    });
+    const registered = new Map<string, { config: any; handler: any }>();
+    const fakeMcpServer = {
+      registerTool: (name: string, config: any, handler: any) => {
+        registered.set(name, { config, handler });
+        return {};
+      },
+    };
+    for (const e of entries) e.register(fakeMcpServer);
+    return { entries, registered, toolExecutor };
+  }
+
+  it('lists every copy: the first under the bare name, the others prefixed', () => {
+    const { entries } = plan([
+      dbTool('c1', 'Shop MySQL'),
+      dbTool('c2', 'Sales DB'),
+      dbTool('c3', 'context-forge-pg'),
+    ]);
+    expect(entries.map((e: any) => e.name)).toEqual([
+      'execute_query',
+      'sales_db_execute_query',
+      'context_forge_pg_execute_query',
+    ]);
+  });
+
+  it('routes each copy to its own connector', async () => {
+    const { registered, toolExecutor } = plan([
+      dbTool('c1', 'Shop MySQL'),
+      dbTool('c2', 'Sales DB'),
+    ]);
+    await registered.get('sales_db_execute_query')!.handler({ sql: 'select 1' });
+    await registered.get('execute_query')!.handler({ sql: 'select 2' });
+    expect(toolExecutor.executeTool).toHaveBeenNthCalledWith(
+      1,
+      'execute_query',
+      { sql: 'select 1' },
+      expect.objectContaining({ connectorIds: ['c2'], mcpServerId: 'srv-A' }),
+    );
+    expect(toolExecutor.executeTool).toHaveBeenNthCalledWith(
+      2,
+      'execute_query',
+      { sql: 'select 2' },
+      expect.objectContaining({ connectorIds: ['c1'] }),
+    );
+  });
+
+  it('names the connector in the description only when the name is shared', () => {
+    const shared = plan([dbTool('c1', 'Shop MySQL'), dbTool('c2', 'Sales DB')]);
+    expect(shared.registered.get('execute_query')!.config.description).toMatch(/^\[Shop MySQL\] /);
+    expect(shared.registered.get('sales_db_execute_query')!.config.description).toMatch(/^\[Sales DB\] /);
+    const single = plan([dbTool('c1', 'Shop MySQL')]);
+    expect(single.registered.get('execute_query')!.config.description).toBe('Run a read-only SQL query');
+  });
+
+  it('keeps prefixed names unique when two connectors have the same name', () => {
+    const { entries } = plan([
+      dbTool('c1', 'DB'),
+      dbTool('c2', 'DB'),
+      dbTool('c3', 'DB'),
+    ]);
+    expect(entries.map((e: any) => e.name)).toEqual([
+      'execute_query',
+      'db_execute_query',
+      'db_execute_query_2',
+    ]);
+  });
+});
+
 describe('McpEndpointController — structuredContent', () => {
   const TOOL = {
     id: 't1',
