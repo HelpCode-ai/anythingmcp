@@ -114,6 +114,21 @@ export class McpOAuthCallbackController {
     return `${this.frontendUrl()}/connectors/oauth/complete?${new URLSearchParams(params).toString()}`;
   }
 
+  /**
+   * A POST to the redirect URI is never an authorization: providers send the
+   * browser back with a GET. Mercado Libre posts its notifications to the
+   * "notifications callback URL" of an app, which sellers often fill in with
+   * the redirect URI, and retries every one that is not answered 200. They
+   * are acknowledged here and dropped: nothing reads them, and nothing in the
+   * body is trusted or stored.
+   */
+  @Post('api/mcp-oauth/callback')
+  @HttpCode(200)
+  @ApiExcludeEndpoint()
+  acknowledgeNotification(): Record<string, never> {
+    return {};
+  }
+
   @Get('api/mcp-oauth/callback')
   @ApiOperation({
     summary: 'OAuth2 redirect target for connector authorization',

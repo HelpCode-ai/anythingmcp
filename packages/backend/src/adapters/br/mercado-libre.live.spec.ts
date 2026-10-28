@@ -133,10 +133,13 @@ describe('mercado-libre adapter: static spec conformance', () => {
     expect(a.instructions).toMatch(/all `type: warning` also means it would be accepted/);
   });
 
-  it('says the notifications URL is not the redirect URI', () => {
+  it('says what to put in the notifications URL', () => {
     // 1,238 notification POSTs a day reached /api/mcp-oauth/callback because
-    // an app had the redirect URI in its notifications field too.
+    // an app had the redirect URI in its notifications field too. The
+    // callback now answers them 200 and drops them, so a developer center that
+    // requires the field may get the redirect URI.
     expect(a.instructions).toMatch(/notifications callback URL empty/);
+    expect(a.instructions).toMatch(/answers Mercado Libre's notifications and ignores them/);
     expect((adapter as unknown as { prerequisites: string }).prerequisites).toMatch(/notifications callback URL empty/);
   });
 
