@@ -460,6 +460,7 @@ import * as sportmonks from './intl/sportmonks.json';
 import * as spotify from './intl/spotify.json';
 import * as square from './intl/square.json';
 import * as statsig from './intl/statsig.json';
+import * as strapi from './intl/strapi.json';
 import * as streak from './intl/streak.json';
 import * as stripe from './intl/stripe.json';
 import * as substack from './intl/substack.json';
@@ -1260,6 +1261,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   spotify as unknown as AdapterDefinition,
   square as unknown as AdapterDefinition,
   statsig as unknown as AdapterDefinition,
+  strapi as unknown as AdapterDefinition,
   streak as unknown as AdapterDefinition,
   stripe as unknown as AdapterDefinition,
   substack as unknown as AdapterDefinition,
