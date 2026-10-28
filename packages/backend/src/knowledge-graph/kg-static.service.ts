@@ -9,9 +9,12 @@ import { StaticGraph, ToolLike } from './static/types';
 // run tried to write the whole graph again (16,608 tools on Cloud, Oct 2026).
 const PERSIST_TRANSACTION = { maxWait: 10_000, timeout: 180_000 };
 
-// Connectors above this many tools get no static graph. Far above anything
-// seen so far (16,608 on Cloud, Oct 2026); it only bounds the worst case.
-const MAX_STATIC_TOOLS = 50_000;
+// Connectors above this many tools get no static graph. Writing the graph of
+// a 16,608-tool connector did not finish within the 180 s transaction on
+// Cloud (Oct 2026): every cron run held a transaction for 3 minutes, stalled
+// the event loop for up to 3 s and failed. The next largest connector has
+// 1,645 tools and syncs fine. The check runs before any tool is loaded.
+const MAX_STATIC_TOOLS = 5_000;
 
 // Part of the stored fingerprint: bump it when buildStaticGraph changes what
 // it derives from the same tools, so every connector is rebuilt once.
