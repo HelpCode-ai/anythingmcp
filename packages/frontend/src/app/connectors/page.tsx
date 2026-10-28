@@ -485,12 +485,13 @@ export default function ConnectorsPage() {
                     <Badge tone={tone} className="flex-shrink-0">{typeLabel(c.type)}</Badge>
                   </div>
                   <div className="relative z-0 mt-auto flex items-center justify-between border-t border-[var(--border)] pt-[13px] pointer-events-none">
-                    <div className="flex gap-4">
+                    {/* min-w-0 lets a long auth type truncate instead of pushing the pills off the card. */}
+                    <div className="flex min-w-0 gap-4">
                       <div>
                         <div className="text-[11px] text-[var(--text-3)]">Tools</div>
                         <div className="text-[14px] font-semibold text-[var(--text)]">{c.tools?.length || 0}</div>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="text-[11px] text-[var(--text-3)]">Auth</div>
                         <div className="truncate text-[14px] font-semibold text-[var(--text)]">{authTypeLabel(c.authType)}</div>
                       </div>
