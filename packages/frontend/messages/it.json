@@ -651,5 +651,258 @@
       "skillsHint": "Come le <link>Skill IA</link> di questo server raggiungono il client AI. Un elenco mantiene brevi le istruzioni; le procedure lunghe vengono sempre aperte su richiesta.",
       "save": "Salva"
     }
+  },
+  "connectors": {
+    "title": "Connettori",
+    "add": "Aggiungi connettore",
+    "cancel": "Annulla",
+    "dismiss": "Chiudi",
+    "deleted": "Connettore eliminato",
+    "importingSpec": "Importazione della specifica...",
+    "importFailed": "Importazione non riuscita: {error}",
+    "exported": "Configurazione esportata",
+    "exportedWithoutSecrets": "Configurazione esportata senza i valori segreti (solo gli admin possono esportarli)",
+    "exportFailed": "Esportazione non riuscita: {error}",
+    "healthCheckFailed": "Controllo di stato non riuscito: {error}",
+    "types": {
+      "database": "Database"
+    },
+    "menu": {
+      "healthCheck": "Controllo di stato",
+      "checking": "Controllo in corso…",
+      "exportAll": "Esporta tutto in JSON",
+      "importFromFile": "Importa da file",
+      "browseAdapters": "Sfoglia gli adapter"
+    },
+    "header": {
+      "healthCheckTitle": "Controlla lo stato di tutti i connettori",
+      "healthCheck": "Controllo di stato",
+      "checking": "Controllo in corso...",
+      "exportTitle": "Esporta tutti i connettori in JSON",
+      "export": "Esporta",
+      "importTitle": "Importa connettori da un export JSON o YAML",
+      "import": "Importa",
+      "adaptersTitle": "Sfoglia gli adapter pronti",
+      "adapters": "Adapter"
+    },
+    "importModal": {
+      "title": "Importa connettori",
+      "description": "Incolla un file JSON o YAML esportato in precedenza, oppure caricane uno. I connettori duplicati verranno saltati.",
+      "chooseFile": "Scegli file",
+      "contentsLabel": "Contenuto del file di export",
+      "importing": "Importazione...",
+      "import": "Importa"
+    },
+    "deleteModal": {
+      "title": "Elimina connettore",
+      "body": "Vuoi davvero eliminare <b>{name}</b> e tutti i suoi strumenti? L'operazione non può essere annullata.",
+      "deleting": "Eliminazione...",
+      "delete": "Elimina"
+    },
+    "health": {
+      "title": "Risultati del controllo di stato",
+      "healthy": "{count} funzionanti",
+      "unhealthy": "{count} con errori",
+      "total": "{count} attivi in totale"
+    },
+    "empty": {
+      "title": "Ancora nessun connettore",
+      "description": "Aggiungi il tuo primo connettore API per iniziare a generare strumenti MCP.",
+      "supports": "Supporta {types}",
+      "browse": "Sfoglia gli adapter",
+      "importBackup": "Importa da backup"
+    },
+    "filter": {
+      "placeholder": "Filtra connettori…",
+      "label": "Cerca connettori per nome o URL",
+      "allTypes": "Tutti i tipi",
+      "count": "{count, plural, one {# connettore} other {# connettori}}"
+    },
+    "card": {
+      "tools": "Strumenti",
+      "auth": "Auth",
+      "active": "Attivo",
+      "inactive": "Inattivo",
+      "importSpec": "Importa specifica",
+      "delete": "Elimina"
+    },
+    "addTile": {
+      "title": "Aggiungi un connettore",
+      "hint": "Importa una specifica o scegli un adapter"
+    }
+  },
+  "connectorStore": {
+    "back": "Connettori",
+    "title": "Marketplace",
+    "subtitle": "Connettori pronti per le app più diffuse. Ogni scheda indica cosa richiede la configurazione.",
+    "customConnector": "Connettore personalizzato",
+    "dismiss": "Chiudi",
+    "search": {
+      "placeholder": "Cerca adapter...",
+      "label": "Cerca adapter"
+    },
+    "setup": "Configurazione",
+    "all": "Tutti",
+    "more": "+{count} altre",
+    "showFewer": "Mostra meno",
+    "summary": {
+      "all": "{total} adapter",
+      "some": "{shown} di {total} adapter",
+      "fuzzy": "nessuna corrispondenza esatta, nomi simili",
+      "partial": "corrispondenza con alcune parole"
+    },
+    "empty": "Ancora nessun adapter disponibile.",
+    "noMatch": {
+      "text": "Nessun risultato{search}{category}{effort}.",
+      "search": " per “{search}”",
+      "category": " in {category}",
+      "effort": " con “{effort}”",
+      "hint": "Qualsiasi sistema REST, SOAP, GraphQL o SQL può comunque diventare un connettore: gli adapter sono solo una scorciatoia.",
+      "clear": "Azzera i filtri",
+      "custom": "Crea un connettore personalizzato"
+    },
+    "card": {
+      "popular": "Popolare",
+      "tools": "{count, plural, one {strumento} other {strumenti}}",
+      "effortTitle": "Cosa richiede la configurazione",
+      "docs": "Documentazione API",
+      "install": "Installa"
+    },
+    "categories": {
+      "monitoring": "Monitoraggio",
+      "time-tracking": "Rilevazione ore",
+      "dms": "Gestione documentale",
+      "transport": "Trasporti",
+      "itsm": "Gestione servizi IT",
+      "wholesale": "Commercio all'ingrosso",
+      "construction": "Edilizia",
+      "productivity": "Produttività",
+      "storage": "Archiviazione",
+      "data": "Dati",
+      "infrastructure": "Infrastruttura",
+      "healthcare": "Sanità",
+      "database": "Database",
+      "food": "Alimentari",
+      "gaming": "Gaming",
+      "logistics": "Logistica",
+      "finance": "Finanza",
+      "government": "Pubblica amministrazione",
+      "erp": "ERP",
+      "banking": "Banche",
+      "remote": "Accesso remoto",
+      "real-estate": "Immobiliare",
+      "field-service": "Assistenza sul campo",
+      "accounting": "Contabilità",
+      "hr": "Risorse umane",
+      "messaging": "Messaggistica",
+      "crm": "CRM",
+      "email": "Email",
+      "advertising": "Pubblicità",
+      "marketing-automation": "Marketing automation",
+      "project-management": "Gestione progetti",
+      "scheduling": "Pianificazione",
+      "forms": "Moduli",
+      "support": "Assistenza clienti",
+      "payments": "Pagamenti",
+      "e-commerce": "E-commerce",
+      "analytics": "Analisi",
+      "publishing": "Editoria",
+      "e-signature": "Firma elettronica",
+      "enrichment": "Arricchimento lead",
+      "knowledge": "Knowledge base",
+      "social": "Social",
+      "maps": "Mappe e geodati",
+      "travel": "Viaggi",
+      "cms": "CMS",
+      "sports": "Sport"
+    },
+    "regions": {
+      "de": "Germania",
+      "at": "Austria",
+      "ch": "Svizzera",
+      "it": "Italia",
+      "es": "Spagna",
+      "fr": "Francia",
+      "nl": "Paesi Bassi",
+      "be": "Belgio",
+      "se": "Svezia",
+      "dk": "Danimarca",
+      "gb": "Regno Unito",
+      "uk": "Regno Unito",
+      "in": "India",
+      "br": "Brasile",
+      "ng": "Nigeria",
+      "jp": "Giappone",
+      "eu": "Europa",
+      "us": "Stati Uniti",
+      "global": "Globale",
+      "intl": "Internazionale"
+    }
+  },
+  "setupEffort": {
+    "names": {
+      "none": "Nessuna configurazione",
+      "one_click": "Accesso in 1 clic",
+      "api_key": "Chiave API",
+      "own_app": "App propria",
+      "admin_needed": "Serve un admin"
+    },
+    "withMinutes": "{name} · {minutes} min",
+    "filters": {
+      "none": "Nessuna configurazione",
+      "one_click": "Solo accesso",
+      "api_key": "Chiave API",
+      "own_app": "App propria",
+      "admin_needed": "Serve un admin"
+    },
+    "inSentence": {
+      "none": "Nessuna configurazione",
+      "one_click": "Solo accesso",
+      "api_key": "Chiave API",
+      "own_app": "App propria",
+      "admin_needed": "Serve un admin"
+    }
+  },
+  "setupStatus": {
+    "needsInput": {
+      "pill": "Dati mancanti",
+      "banner": "Una credenziale o un'impostazione è ancora vuota, quindi il tuo client AI non vede ancora questo connettore."
+    },
+    "needsAuthorization": {
+      "pill": "Accesso richiesto",
+      "banner": "Il connettore va autorizzato presso il provider prima che il tuo client AI possa usarlo."
+    },
+    "stillEmpty": "Ancora vuoti: {names}",
+    "finishSetup": "Completa la configurazione"
+  },
+  "authStatus": {
+    "pill": {
+      "signInExpired": "Accesso scaduto",
+      "tokenRefused": "Token rifiutato",
+      "expiresSoon": "Il token scade presto"
+    },
+    "banner": {
+      "signInRefused": "Il provider ha rifiutato l'accesso, quindi le chiamate agli strumenti si fermano finché non autorizzi di nuovo.",
+      "tokenRefused": "Il provider ha rifiutato il token di accesso, quindi le chiamate agli strumenti si fermano finché non ne salvi uno nuovo.",
+      "expiresOn": "Il token di accesso smette di funzionare il {date}.",
+      "expiresSoon": "Il token di accesso smetterà presto di funzionare.",
+      "since": "Dal {date}"
+    }
+  },
+  "authTypes": {
+    "none": "Nessuna",
+    "NONE": "API pubblica",
+    "API_KEY": "Chiave API",
+    "QUERY_AUTH": "Auth tramite parametro query",
+    "BEARER_TOKEN": "Token Bearer",
+    "BASIC": "Basic Auth",
+    "BASIC_AUTH": "Basic Auth",
+    "OAUTH2": "OAuth 2.0",
+    "OAUTH1": "OAuth 1.0a",
+    "WS_SECURITY": "WS-Security",
+    "CERTIFICATE": "Certificato client",
+    "CONNECTION_STRING": "Connection string",
+    "HMAC": "Firma HMAC",
+    "LOGIN_TOKEN": "Token di login"
   }
 }

@@ -651,5 +651,258 @@
       "skillsHint": "How this server's <link>AI Skills</link> reach the AI client. A list keeps the instructions short; long procedures are always opened on demand.",
       "save": "Save"
     }
+  },
+  "connectors": {
+    "title": "Connectors",
+    "add": "Add Connector",
+    "cancel": "Cancel",
+    "dismiss": "dismiss",
+    "deleted": "Connector deleted",
+    "importingSpec": "Importing specification...",
+    "importFailed": "Import failed: {error}",
+    "exported": "Configuration exported",
+    "exportedWithoutSecrets": "Configuration exported without secret values (only admins can export them)",
+    "exportFailed": "Export failed: {error}",
+    "healthCheckFailed": "Health check failed: {error}",
+    "types": {
+      "database": "Database"
+    },
+    "menu": {
+      "healthCheck": "Health check",
+      "checking": "Checking…",
+      "exportAll": "Export all as JSON",
+      "importFromFile": "Import from file",
+      "browseAdapters": "Browse adapters"
+    },
+    "header": {
+      "healthCheckTitle": "Health check all connectors",
+      "healthCheck": "Health Check",
+      "checking": "Checking...",
+      "exportTitle": "Export all connectors as JSON",
+      "export": "Export",
+      "importTitle": "Import connectors from a JSON or YAML export",
+      "import": "Import",
+      "adaptersTitle": "Browse pre-built adapter recipes",
+      "adapters": "Adapters"
+    },
+    "importModal": {
+      "title": "Import Connectors",
+      "description": "Paste a previously exported JSON or YAML file, or upload one. Duplicate connectors will be skipped.",
+      "chooseFile": "Choose File",
+      "contentsLabel": "Export file contents",
+      "importing": "Importing...",
+      "import": "Import"
+    },
+    "deleteModal": {
+      "title": "Delete Connector",
+      "body": "Are you sure you want to delete <b>{name}</b> and all its tools? This action cannot be undone.",
+      "deleting": "Deleting...",
+      "delete": "Delete"
+    },
+    "health": {
+      "title": "Health Check Results",
+      "healthy": "{count} healthy",
+      "unhealthy": "{count} unhealthy",
+      "total": "{count} total active"
+    },
+    "empty": {
+      "title": "No connectors yet",
+      "description": "Add your first API connector to start generating MCP tools.",
+      "supports": "Supports {types}",
+      "browse": "Browse Adapters",
+      "importBackup": "Import from Backup"
+    },
+    "filter": {
+      "placeholder": "Filter connectors…",
+      "label": "Search connectors by name or URL",
+      "allTypes": "All types",
+      "count": "{count, plural, one {# connector} other {# connectors}}"
+    },
+    "card": {
+      "tools": "Tools",
+      "auth": "Auth",
+      "active": "Active",
+      "inactive": "Inactive",
+      "importSpec": "Import Spec",
+      "delete": "Delete"
+    },
+    "addTile": {
+      "title": "Add a connector",
+      "hint": "Import a spec or pick an adapter"
+    }
+  },
+  "connectorStore": {
+    "back": "Connectors",
+    "title": "Marketplace",
+    "subtitle": "Ready-made connectors for popular apps. Each card says what setting it up takes.",
+    "customConnector": "Custom Connector",
+    "dismiss": "dismiss",
+    "search": {
+      "placeholder": "Search adapters...",
+      "label": "Search adapters"
+    },
+    "setup": "Setup",
+    "all": "All",
+    "more": "+{count} more",
+    "showFewer": "Show fewer",
+    "summary": {
+      "all": "{total} adapters",
+      "some": "{shown} of {total} adapters",
+      "fuzzy": "no exact match, showing similar names",
+      "partial": "matching some of the words"
+    },
+    "empty": "No adapters available yet.",
+    "noMatch": {
+      "text": "Nothing matches{search}{category}{effort}.",
+      "search": " “{search}”",
+      "category": " in {category}",
+      "effort": " with {effort}",
+      "hint": "Any REST, SOAP, GraphQL or SQL system can still become a connector — the adapters are just a head start.",
+      "clear": "Clear filters",
+      "custom": "Build a custom connector"
+    },
+    "card": {
+      "popular": "Popular",
+      "tools": "{count, plural, one {tool} other {tools}}",
+      "effortTitle": "What setting it up takes",
+      "docs": "API documentation",
+      "install": "Install"
+    },
+    "categories": {
+      "monitoring": "Monitoring",
+      "time-tracking": "Time Tracking",
+      "dms": "Document Management",
+      "transport": "Transport",
+      "itsm": "IT Service Management",
+      "wholesale": "Wholesale",
+      "construction": "Construction",
+      "productivity": "Productivity",
+      "storage": "Storage",
+      "data": "Data",
+      "infrastructure": "Infrastructure",
+      "healthcare": "Healthcare",
+      "database": "Database",
+      "food": "Food",
+      "gaming": "Gaming",
+      "logistics": "Logistics",
+      "finance": "Finance",
+      "government": "Government",
+      "erp": "ERP",
+      "banking": "Banking",
+      "remote": "Remote Access",
+      "real-estate": "Real Estate",
+      "field-service": "Field Service",
+      "accounting": "Accounting",
+      "hr": "HR",
+      "messaging": "Messaging",
+      "crm": "CRM",
+      "email": "Email",
+      "advertising": "Advertising",
+      "marketing-automation": "Marketing Automation",
+      "project-management": "Project Management",
+      "scheduling": "Scheduling",
+      "forms": "Forms",
+      "support": "Customer Support",
+      "payments": "Payments",
+      "e-commerce": "E-commerce",
+      "analytics": "Analytics",
+      "publishing": "Publishing",
+      "e-signature": "E-signature",
+      "enrichment": "Lead Enrichment",
+      "knowledge": "Knowledge Base",
+      "social": "Social",
+      "maps": "Maps & Geo",
+      "travel": "Travel",
+      "cms": "CMS",
+      "sports": "Sports"
+    },
+    "regions": {
+      "de": "Germany",
+      "at": "Austria",
+      "ch": "Switzerland",
+      "it": "Italy",
+      "es": "Spain",
+      "fr": "France",
+      "nl": "Netherlands",
+      "be": "Belgium",
+      "se": "Sweden",
+      "dk": "Denmark",
+      "gb": "United Kingdom",
+      "uk": "United Kingdom",
+      "in": "India",
+      "br": "Brazil",
+      "ng": "Nigeria",
+      "jp": "Japan",
+      "eu": "Europe",
+      "us": "United States",
+      "global": "Global",
+      "intl": "International"
+    }
+  },
+  "setupEffort": {
+    "names": {
+      "none": "No setup",
+      "one_click": "1-click sign-in",
+      "api_key": "API key",
+      "own_app": "Own app",
+      "admin_needed": "Admin needed"
+    },
+    "withMinutes": "{name} · {minutes} min",
+    "filters": {
+      "none": "No setup",
+      "one_click": "Sign-in only",
+      "api_key": "API key",
+      "own_app": "Own app",
+      "admin_needed": "Admin needed"
+    },
+    "inSentence": {
+      "none": "no setup",
+      "one_click": "sign-in only",
+      "api_key": "api key",
+      "own_app": "own app",
+      "admin_needed": "admin needed"
+    }
+  },
+  "setupStatus": {
+    "needsInput": {
+      "pill": "Needs setup",
+      "banner": "A credential or setting is still empty, so your AI client does not see this connector yet."
+    },
+    "needsAuthorization": {
+      "pill": "Needs sign-in",
+      "banner": "It has to be authorized with the provider before your AI client can use it."
+    },
+    "stillEmpty": "Still empty: {names}",
+    "finishSetup": "Finish setup"
+  },
+  "authStatus": {
+    "pill": {
+      "signInExpired": "Sign-in expired",
+      "tokenRefused": "Token refused",
+      "expiresSoon": "Token expires soon"
+    },
+    "banner": {
+      "signInRefused": "The provider refused the sign-in, so tool calls stop here until you authorize again.",
+      "tokenRefused": "The provider refused the access token, so tool calls stop here until you save a new one.",
+      "expiresOn": "The access token stops working on {date}.",
+      "expiresSoon": "The access token stops working soon.",
+      "since": "Since {date}"
+    }
+  },
+  "authTypes": {
+    "none": "None",
+    "NONE": "Public API",
+    "API_KEY": "API Key",
+    "QUERY_AUTH": "Query Param Auth",
+    "BEARER_TOKEN": "Bearer Token",
+    "BASIC": "Basic Auth",
+    "BASIC_AUTH": "Basic Auth",
+    "OAUTH2": "OAuth 2.0",
+    "OAUTH1": "OAuth 1.0a",
+    "WS_SECURITY": "WS-Security",
+    "CERTIFICATE": "Client Certificate",
+    "CONNECTION_STRING": "Connection String",
+    "HMAC": "HMAC Signature",
+    "LOGIN_TOKEN": "Login Token"
   }
 }

@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { connectors, withSecretsNotice, withImportNotice } from '@/lib/api';
 import * as Dialog from '@radix-ui/react-dialog';
+import { useTranslations } from 'next-intl';
 import { AppSelect } from '@/components/ui/select';
 import { AppShell } from '@/components/app-shell';
 import { FirstSuccessOffer } from '@/components/first-success-offer';
@@ -14,7 +15,8 @@ import { SetupStatusPill } from '@/components/setup-status';
 import { AuthStatusPill } from '@/components/auth-status';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ActionMenu } from '@/components/ui/action-menu';
-import { authTypeLabel, cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 
 type HealthStatus = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -37,11 +39,6 @@ const TYPE_TONE: Record<string, Tone> = {
   MCP: 'purple',
   ODATA: 'success',
 };
-
-/** Human-readable label for a connector type Badge. */
-function typeLabel(type: string): string {
-  return TYPE_STYLES[type]?.text ?? type;
-}
 
 /** First-letters of a connector name, for the square icon fallback. */
 function initials(name: string): string {
@@ -93,6 +90,10 @@ const SUPPORTED_TYPES = [
 
 export default function ConnectorsPage() {
   const { token } = useAuth();
+  const t = useTranslations('connectors');
+  const authTypeLabel = useAuthTypeLabel();
+  // Only "Database" is a word; the other type names are the same everywhere.
+  const typeLabel = (type: string) => (type === 'DATABASE' ? t('types.database') : (TYPE_STYLES[type]?.text ?? type));
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -117,24 +118,24 @@ export default function ConnectorsPage() {
     try {
       await connectors.delete(deleteConfirm.id, token);
       setList((prev) => prev.filter((c) => c.id !== deleteConfirm.id));
-      setMsg('Connector deleted');
+      setMsg(t('deleted'));
       setTimeout(() => setMsg(''), 3000);
     } catch {} finally {
       setDeleting(false);
       setDeleteConfirm(null);
     }
-  }, [token, deleteConfirm]);
+  }, [token, deleteConfirm, t]);
 
   const handleImportSpec = async (id: string) => {
     if (!token) return;
-    setMsg('Importing specification...');
+    setMsg(t('importingSpec'));
     try {
       const result = await connectors.importSpec(id, token);
       setMsg(withImportNotice(result.message, result));
       const updated = await connectors.list(token);
       setList(updated);
     } catch (err: any) {
-      setMsg(`Import failed: ${err.message}`);
+      setMsg(t('importFailed', { error: err.message }));
     }
     setTimeout(() => setMsg(''), 5000);
   };
@@ -152,13 +153,11 @@ export default function ConnectorsPage() {
       // Revoke later: some browsers start the download after click() returns.
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       setMsg(
-        data.secretsIncluded === false
-          ? 'Configuration exported without secret values (only admins can export them)'
-          : 'Configuration exported',
+        data.secretsIncluded === false ? t('exportedWithoutSecrets') : t('exported'),
       );
       setTimeout(() => setMsg(''), data.secretsIncluded === false ? 6000 : 3000);
     } catch (err: any) {
-      setMsg(`Export failed: ${err.message}`);
+      setMsg(t('exportFailed', { error: err.message }));
     }
   };
 
@@ -182,7 +181,7 @@ export default function ConnectorsPage() {
       const updated = await connectors.list(token);
       setList(updated);
     } catch (err: any) {
-      setMsg(`Import failed: ${err.message}`);
+      setMsg(t('importFailed', { error: err.message }));
     } finally {
       setImportingAll(false);
     }
@@ -197,7 +196,7 @@ export default function ConnectorsPage() {
       const result = await connectors.healthCheck(token);
       setHealthStatus(result);
     } catch (err: any) {
-      setMsg(`Health check failed: ${err.message}`);
+      setMsg(t('healthCheckFailed', { error: err.message }));
     } finally {
       setCheckingHealth(false);
     }
@@ -223,10 +222,10 @@ export default function ConnectorsPage() {
   // header row; on a phone they would take two or three rows of their own, so
   // the four fold into an overflow menu where each still carries its label.
   const utilityActions = [
-    { label: checkingHealth ? 'Checking…' : 'Health check', icon: <HeartPulseIcon />, onSelect: handleHealthCheck, disabled: checkingHealth },
-    { label: 'Export all as JSON', icon: <DownloadIcon />, onSelect: handleExportAll },
-    { label: 'Import from file', icon: <UploadIcon />, onSelect: () => setShowImportModal(true) },
-    { label: 'Browse adapters', icon: <StoreIcon />, href: '/connectors/store' },
+    { label: checkingHealth ? t('menu.checking') : t('menu.healthCheck'), icon: <HeartPulseIcon />, onSelect: handleHealthCheck, disabled: checkingHealth },
+    { label: t('menu.exportAll'), icon: <DownloadIcon />, onSelect: handleExportAll },
+    { label: t('menu.importFromFile'), icon: <UploadIcon />, onSelect: () => setShowImportModal(true) },
+    { label: t('menu.browseAdapters'), icon: <StoreIcon />, href: '/connectors/store' },
   ];
 
   const headerActions = (
@@ -236,45 +235,45 @@ export default function ConnectorsPage() {
         size="md"
         onClick={handleHealthCheck}
         disabled={checkingHealth}
-        title="Health check all connectors"
+        title={t('header.healthCheckTitle')}
         className="max-md:hidden"
       >
         <HeartPulseIcon />
-        <span>{checkingHealth ? 'Checking...' : 'Health Check'}</span>
+        <span>{checkingHealth ? t('header.checking') : t('header.healthCheck')}</span>
       </Button>
-      <Button variant="secondary" size="md" onClick={handleExportAll} title="Export all connectors as JSON" className="max-md:hidden">
+      <Button variant="secondary" size="md" onClick={handleExportAll} title={t('header.exportTitle')} className="max-md:hidden">
         <DownloadIcon />
-        <span>Export</span>
+        <span>{t('header.export')}</span>
       </Button>
-      <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title="Import connectors from a JSON or YAML export" className="max-md:hidden">
+      <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title={t('header.importTitle')} className="max-md:hidden">
         <UploadIcon />
-        <span>Import</span>
+        <span>{t('header.import')}</span>
       </Button>
       <Link
         href="/connectors/store"
-        title="Browse pre-built adapter recipes"
+        title={t('header.adaptersTitle')}
         className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'max-md:hidden')}
       >
         <StoreIcon />
-        <span>Adapters</span>
+        <span>{t('header.adapters')}</span>
       </Link>
       <ActionMenu items={utilityActions} className="md:hidden" />
       <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
       <PlusIcon />
-      Add Connector
+      {t('add')}
       </Link>
     </div>
   );
 
   return (
-    <AppShell title="Connectors" actions={headerActions}>
+    <AppShell title={t('title')} actions={headerActions}>
       <div className="mb-4 empty:hidden">
         <FirstSuccessOffer via="connectors" />
       </div>
       {msg && (
         <div className="mb-4 flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
           <span>{msg}</span>
-          <button onClick={() => setMsg('')} className="ml-3 text-xs text-[var(--text-3)] underline hover:text-[var(--text)]">dismiss</button>
+          <button onClick={() => setMsg('')} className="ml-3 text-xs text-[var(--text-3)] underline hover:text-[var(--text)]">{t('dismiss')}</button>
         </div>
       )}
 
@@ -284,18 +283,18 @@ export default function ConnectorsPage() {
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <div className="mb-4 flex items-center justify-between">
-              <Dialog.Title className="text-lg font-semibold text-[var(--text)]">Import Connectors</Dialog.Title>
+              <Dialog.Title className="text-lg font-semibold text-[var(--text)]">{t('importModal.title')}</Dialog.Title>
               <Dialog.Close className="rounded-sm p-1 text-[var(--text-3)] hover:text-[var(--text)]">
                 <CloseIcon />
               </Dialog.Close>
             </div>
             <Dialog.Description className="mb-4 text-sm text-[var(--text-3)]">
-              Paste a previously exported JSON or YAML file, or upload one. Duplicate connectors will be skipped.
+              {t('importModal.description')}
             </Dialog.Description>
             <div className="mb-3">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]">
                 <UploadIcon size={14} />
-                Choose File
+                {t('importModal.chooseFile')}
                 <input type="file" accept=".json,.yaml,.yml,application/json,application/yaml,text/yaml" onChange={handleImportFile} className="hidden" />
               </label>
             </div>
@@ -303,16 +302,16 @@ export default function ConnectorsPage() {
               value={importJson}
               onChange={(e) => setImportJson(e.target.value)}
               rows={8}
-              aria-label="Export file contents"
+              aria-label={t('importModal.contentsLabel')}
               placeholder={'{"version":"1.0","connectors":[...]}  or  version: "1.0"\nconnectors: ...'}
               className="w-full rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-3 py-2 font-mono text-sm text-[var(--text)]"
             />
             <div className="mt-4 flex gap-2">
               <Button variant="primary" size="md" onClick={handleImportAll} disabled={importingAll || !importJson.trim()}>
-                {importingAll ? 'Importing...' : 'Import'}
+                {importingAll ? t('importModal.importing') : t('importModal.import')}
               </Button>
               <Dialog.Close className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}>
-                Cancel
+                {t('cancel')}
               </Dialog.Close>
             </div>
           </Dialog.Content>
@@ -324,16 +323,19 @@ export default function ConnectorsPage() {
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
-            <Dialog.Title className="mb-2 text-lg font-semibold text-[var(--text)]">Delete Connector</Dialog.Title>
+            <Dialog.Title className="mb-2 text-lg font-semibold text-[var(--text)]">{t('deleteModal.title')}</Dialog.Title>
             <Dialog.Description className="mb-5 text-sm text-[var(--text-3)]">
-              Are you sure you want to delete <strong className="text-[var(--text)]">{deleteConfirm?.name}</strong> and all its tools? This action cannot be undone.
+              {t.rich('deleteModal.body', {
+                name: deleteConfirm?.name ?? '',
+                b: (chunks) => <strong className="text-[var(--text)]">{chunks}</strong>,
+              })}
             </Dialog.Description>
             <div className="flex justify-end gap-2">
               <Dialog.Close className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}>
-                Cancel
+                {t('cancel')}
               </Dialog.Close>
               <Button variant="danger" size="md" onClick={handleDelete} disabled={deleting}>
-                {deleting ? 'Deleting...' : 'Delete'}
+                {deleting ? t('deleteModal.deleting') : t('deleteModal.delete')}
               </Button>
             </div>
           </Dialog.Content>
@@ -344,13 +346,13 @@ export default function ConnectorsPage() {
       {healthStatus && (
         <Card className="mb-6 p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-[var(--text)]">Health Check Results</h3>
-            <button onClick={() => setHealthStatus(null)} className="text-xs text-[var(--text-3)] hover:underline">dismiss</button>
+            <h3 className="text-lg font-semibold text-[var(--text)]">{t('health.title')}</h3>
+            <button onClick={() => setHealthStatus(null)} className="text-xs text-[var(--text-3)] hover:underline">{t('dismiss')}</button>
           </div>
           <div className="mb-4 flex gap-4 text-sm text-[var(--text-2)]">
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: 'var(--ok)' }}></span> {healthStatus.healthy} healthy</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: 'var(--danger)' }}></span> {healthStatus.unhealthy} unhealthy</span>
-            <span className="text-[var(--text-3)]">{healthStatus.total} total active</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: 'var(--ok)' }}></span> {t('health.healthy', { count: healthStatus.healthy })}</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: 'var(--danger)' }}></span> {t('health.unhealthy', { count: healthStatus.unhealthy })}</span>
+            <span className="text-[var(--text-3)]">{t('health.total', { count: healthStatus.total })}</span>
           </div>
           {healthStatus.connectors.length > 0 && (
             <div className="space-y-2">
@@ -409,25 +411,27 @@ export default function ConnectorsPage() {
               <path d="M7 5H3" />
             </svg>
           </div>
-          <h3 className="mb-2 text-lg font-semibold text-[var(--text)]">No connectors yet</h3>
+          <h3 className="mb-2 text-lg font-semibold text-[var(--text)]">{t('empty.title')}</h3>
           <p className="mb-2 text-sm text-[var(--text-3)]">
-            Add your first API connector to start generating MCP tools.
+            {t('empty.description')}
           </p>
           <p className="mb-6 text-xs text-[var(--text-3)]">
-            Supports {SUPPORTED_TYPES.map((t) => t.label).join(', ')}
+            {t('empty.supports', {
+              types: SUPPORTED_TYPES.map((s) => (s.type === 'DATABASE' ? typeLabel(s.type) : s.label)).join(', '),
+            })}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
               <PlusIcon />
-              Add Connector
+              {t('add')}
             </Link>
             <Link href="/connectors/store" className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}>
               <StoreIcon />
-              Browse Adapters
+              {t('empty.browse')}
             </Link>
             <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)}>
               <UploadIcon size={14} />
-              Import from Backup
+              {t('empty.importBackup')}
             </Button>
           </div>
         </div>
@@ -441,8 +445,8 @@ export default function ConnectorsPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Filter connectors…"
-                aria-label="Search connectors by name or URL"
+                placeholder={t('filter.placeholder')}
+                aria-label={t('filter.label')}
                 className="h-9 w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] pl-9 pr-3 text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)]"
               />
             </div>
@@ -451,17 +455,17 @@ export default function ConnectorsPage() {
               onValueChange={setTypeFilter}
               className="h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] text-[var(--text)]"
               options={[
-                { value: '', label: 'All types' },
+                { value: '', label: t('filter.allTypes') },
                 { value: 'REST', label: 'REST' },
                 { value: 'SOAP', label: 'SOAP' },
                 { value: 'GRAPHQL', label: 'GraphQL' },
                 { value: 'ODATA', label: 'OData' },
                 { value: 'MCP', label: 'MCP' },
-                { value: 'DATABASE', label: 'Database' },
+                { value: 'DATABASE', label: typeLabel('DATABASE') },
               ]}
             />
             <span className="text-[13px] text-[var(--text-3)]">
-              {filtered.length} connector{filtered.length !== 1 ? 's' : ''}
+              {t('filter.count', { count: filtered.length })}
             </span>
           </div>
 
@@ -487,11 +491,11 @@ export default function ConnectorsPage() {
                   <div className="relative z-0 mt-auto flex items-center justify-between border-t border-[var(--border)] pt-[13px] pointer-events-none">
                     <div className="flex gap-4">
                       <div>
-                        <div className="text-[11px] text-[var(--text-3)]">Tools</div>
+                        <div className="text-[11px] text-[var(--text-3)]">{t('card.tools')}</div>
                         <div className="text-[14px] font-semibold text-[var(--text)]">{c.tools?.length || 0}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] text-[var(--text-3)]">Auth</div>
+                        <div className="text-[11px] text-[var(--text-3)]">{t('card.auth')}</div>
                         <div className="truncate text-[14px] font-semibold text-[var(--text)]">{authTypeLabel(c.authType)}</div>
                       </div>
                     </div>
@@ -499,7 +503,7 @@ export default function ConnectorsPage() {
                       tone={c.isActive ? 'success' : 'neutral'}
                       dot={c.isActive ? 'var(--ok)' : 'var(--text-3)'}
                     >
-                      {c.isActive ? 'Active' : 'Inactive'}
+                      {c.isActive ? t('card.active') : t('card.inactive')}
                     </StatusPill>
                     <SetupStatusPill status={c.setupStatus} />
                     <AuthStatusPill connector={c} />
@@ -508,11 +512,11 @@ export default function ConnectorsPage() {
                   <div className="relative z-10 mt-[14px] flex gap-2 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                     {(c.type === 'REST' || c.type === 'GRAPHQL' || c.type === 'SOAP') && (
                       <Button variant="secondary" size="sm" onClick={() => handleImportSpec(c.id)}>
-                        Import Spec
+                        {t('card.importSpec')}
                       </Button>
                     )}
                     <Button variant="outlineDanger" size="sm" onClick={() => setDeleteConfirm({ id: c.id, name: c.name })}>
-                      Delete
+                      {t('card.delete')}
                     </Button>
                   </div>
                 </Card>
@@ -530,8 +534,8 @@ export default function ConnectorsPage() {
               <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-[var(--surface-2)]">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
               </span>
-              <span className="text-[13px] font-semibold">Add a connector</span>
-              <span className="text-[12px] text-[var(--text-3)]">Import a spec or pick an adapter</span>
+              <span className="text-[13px] font-semibold">{t('addTile.title')}</span>
+              <span className="text-[12px] text-[var(--text-3)]">{t('addTile.hint')}</span>
             </Link>
           </div>
         </>
