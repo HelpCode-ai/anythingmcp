@@ -596,6 +596,146 @@ test.describe('MCP server pages from Accept-Language', () => {
   });
 });
 
+async function connectorsSession(page: Page) {
+  await fakeSession(page);
+  const list = [
+    {
+      id: 'c1',
+      name: 'Orders DB',
+      type: 'DATABASE',
+      baseUrl: 'postgres://db.example.com/orders',
+      authType: 'CONNECTION_STRING',
+      isActive: true,
+      setupStatus: 'needs_input',
+      tools: [{ id: 't1' }, { id: 't2' }],
+    },
+    {
+      id: 'c2',
+      name: 'Calendar',
+      type: 'REST',
+      baseUrl: 'https://calendar.example.com',
+      authType: 'OAUTH2',
+      isActive: false,
+      authStatus: 'needs_reauth',
+      tools: [],
+    },
+  ];
+  const catalog = [
+    {
+      slug: 'lexware',
+      name: 'Lexware Office',
+      description: 'Invoices and contacts.',
+      region: 'de',
+      category: 'accounting',
+      icon: '',
+      docsUrl: 'https://example.com/docs',
+      requiredEnvVars: ['LEXWARE_API_KEY'],
+      toolCount: 1,
+      authType: 'API_KEY',
+      setupEffort: { effort: 'api_key', minutes: 2 },
+    },
+    {
+      slug: 'weather',
+      name: 'Weather',
+      description: 'Forecasts.',
+      region: 'global',
+      category: 'data',
+      icon: '',
+      docsUrl: '',
+      requiredEnvVars: [],
+      toolCount: 3,
+      authType: 'NONE',
+      setupEffort: { effort: 'none', minutes: 0 },
+    },
+  ];
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\/(connectors|adapters)/, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/connectors')) return route.fulfill({ json: list });
+    if (path.endsWith('/adapters/popular-connectors')) return route.fulfill({ json: { items: [{ slug: 'lexware' }] } });
+    if (path.endsWith('/adapters')) return route.fulfill({ json: catalog });
+    return route.fulfill({ json: {} });
+  });
+}
+
+test.describe('connector list and marketplace from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders /connectors in German, with the status pills', async ({ page }) => {
+      await connectorsSession(page);
+      await page.goto('/connectors');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('link', { name: 'Connector hinzufügen' }).first()).toBeVisible();
+      await expect(page.getByText('2 Connectors', { exact: true })).toBeVisible();
+      await expect(page.getByText('Datenbank', { exact: true })).toBeVisible();
+      await expect(page.getByText('Connection-String', { exact: true })).toBeVisible();
+      await expect(page.getByText('Einrichtung offen', { exact: true })).toBeVisible();
+      await expect(page.getByText('Anmeldung abgelaufen', { exact: true })).toBeVisible();
+      await expect(page.getByText('Inaktiv', { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Löschen' }).first().click();
+      await expect(page.getByRole('dialog')).toContainText('Möchten Sie Orders DB und alle zugehörigen Tools wirklich löschen?');
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders /connectors/store in Italian, with its filters', async ({ page }) => {
+      await connectorsSession(page);
+      await page.goto('/connectors/store');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(
+        page.getByText('Connettori pronti per le app più diffuse. Ogni scheda indica cosa richiede la configurazione.'),
+      ).toBeVisible();
+      await expect(page.getByText('2 adapter', { exact: true })).toBeVisible();
+      await expect(page.getByText('Contabilità', { exact: true })).toBeVisible();
+      await expect(page.getByText('Germania', { exact: true })).toBeVisible();
+      await expect(page.getByText('Chiave API · 2 min', { exact: true })).toBeVisible();
+      await expect(page.getByText('strumento', { exact: true })).toBeVisible();
+      await expect(page.getByText('Popolare', { exact: true })).toBeVisible();
+
+      // The translated names are searchable too.
+      await page.getByRole('textbox', { name: 'Cerca adapter' }).fill('Germania');
+      await expect(page.getByText('Lexware Office', { exact: true })).toBeVisible();
+      await expect(page.getByText('Weather', { exact: true })).toHaveCount(0);
+
+      await page.getByRole('textbox', { name: 'Cerca adapter' }).fill('');
+      await page.getByRole('button', { name: /^Contabilità/ }).click();
+      await page.getByRole('button', { name: /^Nessuna configurazione/ }).click();
+      await expect(page.getByText('Nessun risultato in Contabilità con “Nessuna configurazione”.', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps /connectors and /connectors/store in English', async ({ page }) => {
+      await connectorsSession(page);
+      await page.goto('/connectors');
+      await expect(page.getByText('2 connectors', { exact: true })).toBeVisible();
+      await expect(page.getByText('Database', { exact: true })).toBeVisible();
+      await expect(page.getByText('Connection String', { exact: true })).toBeVisible();
+      await expect(page.getByText('Needs setup', { exact: true })).toBeVisible();
+      await expect(page.getByText('Sign-in expired', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Delete' }).first().click();
+      await expect(page.getByRole('dialog')).toContainText(
+        'Are you sure you want to delete Orders DB and all its tools? This action cannot be undone.',
+      );
+
+      await page.goto('/connectors/store');
+      await expect(page.getByText('2 adapters', { exact: true })).toBeVisible();
+      await expect(page.getByText('Germany', { exact: true })).toBeVisible();
+      await expect(page.getByText('API key · 2 min', { exact: true })).toBeVisible();
+      await expect(page.getByText('tool', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: /^Accounting/ }).click();
+      await page.getByRole('button', { name: /^No setup/ }).click();
+      await expect(page.getByText('Nothing matches in Accounting with no setup.', { exact: true })).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;
