@@ -112,6 +112,14 @@ function makeRes() {
 const asUser = (sub: string) => ({ user: { sub } });
 
 describe('McpOAuthCallbackController — provider redirect', () => {
+  it('acknowledges a POST (Mercado Libre notifications) and touches nothing', async () => {
+    const { controller, mcpOAuthService, updateAuthConfigMerge } = makeController();
+    expect(controller.acknowledgeNotification()).toEqual({});
+    expect(mcpOAuthService.getPendingFlow).not.toHaveBeenCalled();
+    expect(mcpOAuthService.takePendingFlow).not.toHaveBeenCalled();
+    expect(updateAuthConfigMerge).not.toHaveBeenCalled();
+  });
+
   it('forwards code and state to the dashboard and exchanges nothing itself', async () => {
     const { controller, mcpOAuthService, updateAuthConfigMerge } = makeController();
     const res = makeRes();
