@@ -472,14 +472,14 @@
           },
           "ids": {
             "type": "array",
-            "description": "Record ids the method operates on. Use [] for model-level methods such as name_search or create.",
+            "description": "Record ids the method operates on. Use [] for model-level methods such as name_search or create. Many workflow actions handle one record at a time and fail with \"Expected singleton\" on several ids: then call the method once per id.",
             "items": {
               "type": "number"
             }
           },
           "kwargs": {
             "type": "object",
-            "description": "The method's keyword arguments, by name; they are sent as top-level keys of the request, which is how Odoo binds them. E.g. {\"summary\": \"Call back\", \"date_deadline\": \"2026-10-16\", \"activity_type_id\": 2} for activity_schedule on crm.lead. Omit for methods that take only the records, such as action_confirm."
+            "description": "The method's keyword arguments, by name; they are sent as top-level keys of the request, which is how Odoo binds them. E.g. {\"summary\": \"Call back\", \"date_deadline\": \"2026-10-16\", \"activity_type_id\": 2} for activity_schedule on crm.lead. Omit for methods that take only the records, such as action_confirm. Required arguments go here under their Odoo parameter name too, not as loose fields: write needs {\"vals\": {...}}, create needs {\"vals_list\": [{...}]}, search needs {\"domain\": [...]}; Odoo answers \"missing a required argument\" otherwise. For plain create and write, odoo_create and odoo_write are simpler."
           }
         },
         "required": [

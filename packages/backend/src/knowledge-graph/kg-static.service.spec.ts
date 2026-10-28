@@ -76,7 +76,7 @@ describe('KgStaticService.syncConnector', () => {
   });
 
   it('leaves out a connector above the tool limit', async () => {
-    const { prisma, svc } = setup({ tools: 60_000 });
+    const { prisma, svc } = setup({ tools: 16_608 });
 
     const result = await svc.syncConnector('c1');
 
