@@ -31,6 +31,7 @@ import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
+import { slugifyForPrefix } from '../connectors/graphql-builtins';
 import { SharedSetupRegistry } from './shared-setup';
 import {
   McpConnectionGrantService,
@@ -1737,16 +1738,34 @@ export class McpEndpointController {
     } = params;
     const entries: ToolEntry[] = [];
     const registeredNames = new Set<string>();
+    // The connector that holds each bare name.
+    const bareOwner = new Map<string, string>();
+    const listed = serverTools.filter(
+      (tool) =>
+        // A connector that is not set up yet would only produce errors.
+        isListable(tool) &&
+        // Skip tools not allowed by role
+        (allowedToolIds === null || allowedToolIds.includes(tool.id)),
+    );
+    // Names that more than one connector exposes (two DATABASE connectors,
+    // two configs of one provider).
+    const sharedNames = new Set<string>();
+    const firstConnector = new Map<string, string>();
+    for (const tool of listed) {
+      if (!firstConnector.has(tool.name)) firstConnector.set(tool.name, tool.connectorId);
+      else if (firstConnector.get(tool.name) !== tool.connectorId) sharedNames.add(tool.name);
+    }
 
-    for (const tool of serverTools) {
-      // A connector that is not set up yet would only produce errors.
-      if (!isListable(tool)) continue;
-      // Skip tools not allowed by role
-      if (allowedToolIds !== null && !allowedToolIds.includes(tool.id)) continue;
-      // Dedupe by tool name. Two connectors can expose the same name (same
-      // connector assigned twice, or two configs of one provider); the SDK
-      // throws on the second registration, which would 500 the whole request.
-      if (registeredNames.has(tool.name)) {
+    for (const tool of listed) {
+      // The SDK throws on a second registration of one name, which would 500
+      // the whole request. The same connector assigned twice is skipped; a
+      // second connector's copy is listed under a name prefixed with that
+      // connector's name, so it stays reachable. The first copy keeps the
+      // bare name, so existing clients keep working.
+      let exposedName = tool.name;
+      if (!bareOwner.has(tool.name)) {
+        bareOwner.set(tool.name, tool.connectorId);
+      } else if (bareOwner.get(tool.name) === tool.connectorId) {
         // Once an hour per server and name: the tool set is planned on every
         // request, and one polling client turned this into 1,880 lines in 16 h.
         if (this.shouldWarnDuplicate(`${invocationContext.mcpServerId}:${tool.name}`)) {
@@ -1755,8 +1774,11 @@ export class McpEndpointController {
           );
         }
         continue;
+      } else {
+        exposedName = connectorScopedToolName(tool, registeredNames);
       }
-      registeredNames.add(tool.name);
+      if (registeredNames.has(exposedName)) continue;
+      registeredNames.add(exposedName);
 
       const schema = this.stripEnvVarParams(
         tool.parameters,
@@ -1777,7 +1799,11 @@ export class McpEndpointController {
 
       // The skills covering this tool, for clients that never show the
       // server's instructions to the model.
+      // Same-named tools of several connectors: say which one this is.
       const description =
+        (sharedNames.has(tool.name) && tool.connectorName
+          ? `[${tool.connectorName}] `
+          : '') +
         (tool.description ?? '') +
         (params.skillHints?.length
           ? skillHintText(params.skillHints, tool.connectorId, {
@@ -1787,7 +1813,7 @@ export class McpEndpointController {
           : '');
 
       const sig = [
-        tool.name,
+        exposedName,
         description,
         Object.keys(zodShape).sort().join(','),
         outShape ? Object.keys(outShape).sort().join(',') : '',
@@ -1795,7 +1821,7 @@ export class McpEndpointController {
       ].join('');
 
       entries.push({
-        name: tool.name,
+        name: exposedName,
         sig,
         register: (mcpServer: McpServer) => {
           const withFooter = (r: any) => {
@@ -1824,10 +1850,13 @@ export class McpEndpointController {
               else if (_intent)
                 ctx = { ...invocationContext, intent: String(_intent).slice(0, 2000) };
             }
+            // Resolve the name in this tool's own connector: with the whole
+            // server's connectors, a same-named tool of another connector
+            // could answer instead.
             const result = await this.toolExecutor.executeTool(
               tool.name,
               toolArgs,
-              ctx,
+              { ...ctx, connectorIds: [tool.connectorId] },
             );
             // When an outputSchema is advertised, the SDK requires
             // structuredContent on success. Provide the result object
@@ -1860,7 +1889,7 @@ export class McpEndpointController {
           // registerTool for both branches: the legacy tool() overload has no
           // slot for annotations.
           return mcpServer.registerTool(
-            tool.name,
+            exposedName,
             {
               description,
               inputSchema: zodShape,
@@ -2609,6 +2638,23 @@ function uniquePromptName(title: string, used: Set<string>): string {
   let name = base;
   for (let n = 2; used.has(name); n++) name = `${base}-${n}`;
   used.add(name);
+  return name;
+}
+
+/**
+ * The name a second connector's copy of a tool is listed under: the
+ * connector's name as a prefix (`sales_db_execute_query`), kept within the
+ * 64 characters clients accept, and unique on the server.
+ */
+function connectorScopedToolName(tool: RegisteredTool, used: Set<string>): string {
+  const room = Math.max(1, 64 - tool.name.length - 1);
+  let prefix = (
+    slugifyForPrefix(tool.connectorName ?? '') || `c_${tool.connectorId.slice(-6)}`
+  ).slice(0, room);
+  while (prefix.endsWith('_')) prefix = prefix.slice(0, -1);
+  const base = `${prefix || 'c'}_${tool.name}`;
+  let name = base;
+  for (let n = 2; used.has(name); n++) name = `${base}_${n}`;
   return name;
 }
 

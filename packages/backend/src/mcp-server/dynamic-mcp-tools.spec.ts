@@ -228,7 +228,7 @@ describe('DynamicMcpTools — response cache', () => {
     await executor.executeTool('list_devices', {});
     expect(redis.set).toHaveBeenCalledTimes(1);
     const [key, value, ttl] = redis.set.mock.calls[0];
-    expect(key).toMatch(/^tool_cache:v2:list_devices:/);
+    expect(key).toMatch(/^tool_cache:v3:tool-1:/);
     expect(ttl).toBe(300);
     expect(JSON.parse(value)).toEqual(RAW);
   });
@@ -250,6 +250,27 @@ describe('DynamicMcpTools — response cache', () => {
     const res = await executor.executeTool('list_devices', {});
     expect(restEngine.execute).toHaveBeenCalled();
     expect(JSON.parse(res.content[0].text)).toEqual(RAW);
+  });
+
+  it('keys the cache by tool id, so same-named tools of two connectors never share an answer', async () => {
+    const a = build(makeTool({ cacheTtl: 300 }));
+    const b = build({ ...makeTool({ cacheTtl: 300 }), id: 'tool-2', connectorId: 'conn-2', organizationId: 'org-2' });
+    await a.executor.executeTool('list_devices', { q: 'x' });
+    await b.executor.executeTool('list_devices', { q: 'x' });
+    const keyA = a.redis.set.mock.calls[0][0];
+    const keyB = b.redis.set.mock.calls[0][0];
+    expect(keyA).not.toBe(keyB);
+    expect(b.redis.get).toHaveBeenCalledWith(keyB);
+  });
+
+  it('includes nested parameters in the key', async () => {
+    const { executor, redis } = build(makeTool({ cacheTtl: 300 }));
+    await executor.executeTool('list_devices', { filter: { status: 'open' } });
+    await executor.executeTool('list_devices', { filter: { status: 'closed' } });
+    await executor.executeTool('list_devices', { filter: { status: 'open' } });
+    const keys = redis.set.mock.calls.map((c: unknown[]) => c[0]);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[0]).toBe(keys[2]);
   });
 
   it('does not touch the cache when cacheTtl is absent', async () => {

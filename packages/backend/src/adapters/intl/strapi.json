@@ -1,0 +1,215 @@
+{
+  "slug": "strapi",
+  "name": "Strapi 5",
+  "description": "Connect to a Strapi 5 instance to check its availability, query documents from collection types, and retrieve individual documents through the read-only REST Content API.",
+  "region": "intl",
+  "category": "cms",
+  "icon": "strapi",
+  "docsUrl": "https://docs.strapi.io/cms/api/rest",
+  "instructions": "Set STRAPI_URL to the root URL of the Strapi instance, for example https://cms.example.com; do not append /api. Strapi Cloud and any other publicly reachable Strapi 5 instance can be used from AnythingMCP Cloud. A self-hosted instance on a private network, localhost, or a private IP address can only be reached from a self-hosted AnythingMCP deployment and must also be allowed through SSRF_ALLOWED_HOSTS, because the outbound guard blocks private address space by default. Set STRAPI_API_TOKEN to a Strapi Content API token with read-only access to the collection types that should be available. The token is sent only in the Authorization Bearer header and must never be placed in a query string, log, or tool argument. This adapter targets the Strapi 5 REST Content API; Strapi 4 response shapes and the Admin, Content Manager, and Content-Type Builder APIs are not supported. All three tools are read-only GET requests and cannot create, update, publish, unpublish, or delete content. strapi_health checks only whether the Strapi process is reachable; the /_health endpoint does not prove that the API token is valid or that it can read a collection. Collection types are addressed by their plural API ID, such as articles, not by the display name, and Strapi does not expose a general public endpoint for this adapter to discover them. Use strapi_list_documents with a known plural API ID before retrieving one document by its Strapi 5 documentId. The list tool preserves both data and meta so pagination information remains available. Use fields to limit scalar fields, filters for Strapi filter operators, sort for field:asc or field:desc expressions, pagination for page-based paging, populate for relations or media, locale for localized content, and status to choose published or draft documents. Relations, media, components, and dynamic zones are not populated unless populate is requested. Content type and document identifiers are percent-encoded before entering the request path, so values containing slashes, question marks, fragments, or spaces cannot change the target route.",
+  "requiredEnvVars": ["STRAPI_URL", "STRAPI_API_TOKEN"],
+  "envVarMeta": {
+    "STRAPI_URL": {
+      "label": "Strapi URL",
+      "kind": "address",
+      "help": "Root URL of the Strapi 5 instance, for example https://cms.example.com. Do not append /api.",
+      "example": "https://cms.example.com",
+      "pattern": "^https?://",
+      "patternMessage": "Use the full base URL including http:// or https://, without /api."
+    },
+    "STRAPI_API_TOKEN": {
+      "label": "Content API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Read-only Strapi Content API token from Admin > Settings > API Tokens. It is sent only in the Authorization Bearer header."
+    }
+  },
+  "verifyHints": {
+    "401": "Strapi rejected the token. Create a read-only Content API token in Admin > Settings > API Tokens and paste it into STRAPI_API_TOKEN.",
+    "403": "The token is valid but lacks permission for this content type. Grant it find and findOne access to that collection.",
+    "404": "Strapi has no route for this URL. Check that STRAPI_URL is the root URL without an /api suffix, that contentType is the plural API ID (for example articles), and that documentId is a Strapi 5 documentId returned by the list tool.",
+    "unreachable": "Nothing answered at this URL. Check STRAPI_URL, that Strapi is running, and that the address is reachable from this server."
+  },
+  "connector": {
+    "name": "Strapi 5 Content API",
+    "type": "REST",
+    "baseUrl": "{{STRAPI_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{STRAPI_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/_health"
+  },
+  "probe": {
+    "tool": "strapi_health"
+  },
+  "tools": [
+    {
+      "name": "strapi_health",
+      "description": "Check whether the configured Strapi 5 process is reachable. A successful response confirms availability only and does not validate the API token or collection permissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/_health"
+      }
+    },
+    {
+      "name": "strapi_list_documents",
+      "description": "List documents from one Strapi 5 collection type, with field selection, deep filters, sorting, page-based pagination, relation population, locale, and publication status while preserving pagination metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "description": "Plural API ID of the Strapi collection type, as configured in the Content-Type Builder. Example: articles. This is not the display name."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Scalar field names to return. Strapi includes system fields such as documentId automatically. Relations and media require populate instead."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Strapi filter object using Content API field names and operators. Example: {\"title\":{\"$containsi\":\"release\"}}.",
+            "additionalProperties": true
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sort expressions in priority order, each written as field:asc or field:desc. Example: [\"publishedAt:desc\",\"title:asc\"]."
+          },
+          "pagination": {
+            "type": "object",
+            "description": "Page-based Strapi pagination settings. page and pageSize start at 1; withCount controls whether total counts are calculated.",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "One-based page number to request. The first page is 1."
+              },
+              "pageSize": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Maximum number of documents to return on one page. Instance configuration may impose its own maximum."
+              },
+              "withCount": {
+                "type": "boolean",
+                "description": "Whether Strapi should calculate and return total document and page counts in meta.pagination."
+              }
+            },
+            "additionalProperties": false
+          },
+          "populate": {
+            "description": "Relations, media, components, or dynamic zones to populate. Use * for all first-level relations or a Strapi populate object for precise nested selection.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale code for a localized collection type, such as en or de. Omit it for the collection type's default locale."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["published", "draft"],
+            "description": "Publication status to query. Use published for published documents or draft for the latest draft versions when the token permits them."
+          }
+        },
+        "required": ["contentType"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/{contentType}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields",
+          "filters": "$filters",
+          "sort": "$sort",
+          "pagination": "$pagination",
+          "populate": "$populate",
+          "locale": "$locale",
+          "status": "$status"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{data: data, meta: meta}"
+        }
+      }
+    },
+    {
+      "name": "strapi_get_document",
+      "description": "Retrieve one document from a Strapi 5 collection type by its documentId, optionally selecting scalar fields, populating relations or media, and choosing a locale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "description": "Plural API ID of the Strapi collection type, as configured in the Content-Type Builder. Example: articles."
+          },
+          "documentId": {
+            "type": "string",
+            "description": "Stable Strapi 5 documentId returned by the Content API. This is the document identifier, not the legacy numeric database id."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Scalar field names to return for the document. Relations and media require populate instead."
+          },
+          "populate": {
+            "description": "Relations, media, components, or dynamic zones to populate. Use * for all first-level relations or a Strapi populate object for precise nested selection.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale code for a localized document, such as en or de. Omit it for the collection type's default locale."
+          }
+        },
+        "required": ["contentType", "documentId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/{contentType}/{documentId}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields",
+          "populate": "$populate",
+          "locale": "$locale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data"
+        }
+      }
+    }
+  ]
+}
