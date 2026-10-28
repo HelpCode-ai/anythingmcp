@@ -1,3 +1,7 @@
+// `openid-client` v6 is ESM-only and Jest cannot parse it; the controller
+// imports SsoService (the connect page's sign-in), whose network half these
+// tests do not exercise.
+jest.mock('openid-client', () => ({}));
 import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
 import { TokenExchangeError } from './mcp-oauth.service';

@@ -92,6 +92,12 @@ export interface PendingOAuthFlow {
    * UserConnectorCredential, never to the connector.
    */
   forUser?: boolean;
+  /**
+   * Started from the connect page (/auth/connect, connect-page.controller):
+   * the callback sends the browser back there, which completes the flow for
+   * the user signed in on that page. Unset, the dashboard completes it.
+   */
+  completeOn?: 'connect-page';
   createdAt: number;
 }
 

@@ -71,6 +71,10 @@ describe('ConnectorAuthStatusService with a user credential key', () => {
     await flush();
     expect(s.email.sendConnectorAuthEmail).toHaveBeenCalledTimes(1);
     expect((s.email.sendConnectorAuthEmail.mock.calls[0] as unknown[])[0]).toBe('tech@example.com');
+    // To the page where that user signs in again, not the dashboard.
+    expect((s.email.sendConnectorAuthEmail.mock.calls[0] as unknown[])[1]).toMatchObject({
+      connectorPath: expect.stringMatching(/^\/auth\/connect\//),
+    });
     expect(s.organizationMember.findFirst).not.toHaveBeenCalled();
   });
 

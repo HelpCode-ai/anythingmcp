@@ -48,6 +48,7 @@ import { HarParser } from './parsers/har.parser';
 import { describeSpecError, readRemoteSpec } from './parsers/spec-read-error';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { McpOAuthService } from './mcp-oauth.service';
+import { connectorOAuthCallbackUrl, startConnectorAuthorization } from './connector-authorization';
 import { CatalogResyncService } from './catalog-resync.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { DeploymentService } from '../common/deployment.service';
@@ -59,15 +60,8 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
-import { resolvePkce, resolveRestAuthorizeSettings } from './oauth-authorize-settings';
-import { tokenEndpointUserAgent } from './engines/oauth2-token.service';
+import { resolvePkce } from './oauth-authorize-settings';
 import { isMachineGrant } from './oauth-grant.util';
-import {
-  DYNAMIC_CLIENT_KEY,
-  planMcpAuthorization,
-  readMcpOAuthSettings,
-  type StoredDynamicClient,
-} from './mcp-oauth-settings';
 import { mcpPathOf } from './mcp-connector-config.util';
 import {
   EXPORT_FORMATS,
@@ -80,8 +74,6 @@ import {
 } from './connector-export.util';
 import { catalogMcpToolsFor } from '../adapters/mcp-adapter.util';
 import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
-import { resolveMcpEndpointUrl } from '../common/url.util';
-import type { ClientAssertionSettings } from './engines/client-assertion.util';
 import {
   connectorSecretValues,
   mergeMaskedEnvVars,
@@ -89,7 +81,6 @@ import {
   secretContext,
   toPublicConnector,
 } from './connector-secrets.util';
-import { urlForLog } from '../common/log-safe-url.util';
 import {
   describeMissing,
   rebuildCatalogCredentials,
@@ -1484,8 +1475,7 @@ export class ConnectorsController {
 
   /** Where providers send the browser back; must equal what the user registered. */
   private oauthCallbackUrl(): string {
-    const base = (this.configService.get<string>('SERVER_URL') || 'http://localhost:4000').replace(/\/+$/, '');
-    return `${base}/api/mcp-oauth/callback`;
+    return connectorOAuthCallbackUrl(this.configService);
   }
 
   @Post(':id/oauth/authorize')
@@ -1517,186 +1507,18 @@ export class ConnectorsController {
     }
 
     try {
-      const callbackUrl = this.oauthCallbackUrl();
-      const authConfig = connector.authConfig
-        ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
-        : {};
-
-      let clientId: string;
-      let clientSecret: string | undefined;
-      let authorizationEndpoint: string;
-      let tokenEndpoint: string;
-      let scope: string | undefined;
-      let tokenAuthMethod: string | undefined = authConfig.tokenAuthMethod
-        ? String(authConfig.tokenAuthMethod)
-        : undefined;
-      let clientAssertion: ClientAssertionSettings | undefined;
-      // REST/GraphQL only: the auth config fields to write on success in place
-      // of the historical "client settings as stored" (see PendingOAuthFlow).
-      let persistAuthConfig: Record<string, unknown> | undefined;
-      // MCP only: RFC 8707 resource indicator, and whether the client came
-      // from dynamic registration.
-      let resource: string | undefined;
-      let dynamicClient = false;
-      // PKCE (RFC 7636) is on unless a REST/GraphQL connector turned it off.
-      // MCP authorization always requires it.
-      let pkce = true;
-
-      if (connector.type === 'MCP') {
-        // MCP: discover OAuth metadata from the remote server, then pick the
-        // client (pre-registered, registered earlier, or register now), the
-        // scope and the resource indicator. See mcp-oauth-settings.ts.
-        const envVars = (connector.envVars as Record<string, string> | null) ?? {};
-        const rowConfig = connector.config as Record<string, unknown> | null;
-        const adapterSlug = (rowConfig as { adapterSlug?: string } | null)?.adapterSlug;
-        const settings = readMcpOAuthSettings(
-          rowConfig,
-          adapterSlug ? getAdapter(adapterSlug)?.connector.config : undefined,
-        );
-        const baseUrl = interpolateString(connector.baseUrl, envVars);
-        const metadata = await this.mcpOAuthService.discoverMetadata(baseUrl);
-        this.logger.log(
-          `OAuth metadata discovered from ${urlForLog(baseUrl, { secrets: connectorSecretValues(connector) })}: issuer=${metadata.issuer}`,
-        );
-
-        const plan = planMcpAuthorization({
-          metadata,
-          settings,
-          // {{VAR}} in a client typed into the OAuth settings resolves from
-          // the env vars at this point too, as it does for REST connectors.
-          authConfig: interpolateDeep(authConfig, envVars),
-          envVars,
-          callbackUrl,
-          mcpUrl: resolveMcpEndpointUrl(baseUrl, mcpPathOf(rowConfig)).toString(),
-        });
-        if (!plan.ok) return { error: plan.error };
-
-        authorizationEndpoint = metadata.authorization_endpoint;
-        tokenEndpoint = metadata.token_endpoint;
-        scope = plan.scope;
-        resource = plan.resource;
-
-        if (plan.client.source === 'register') {
-          const registration = await this.mcpOAuthService.registerClient(
-            plan.client.registrationEndpoint,
-            callbackUrl,
-            { tokenAuthMethod: plan.client.registerAuthMethod },
-          );
-          clientId = registration.clientId;
-          clientSecret = registration.clientSecret;
-          tokenAuthMethod = registration.tokenAuthMethod;
-          dynamicClient = true;
-          // Kept so the next "Authorize" reuses this client instead of
-          // registering another one at the provider on every click.
-          const stored: StoredDynamicClient = {
-            registrationEndpoint: plan.client.registrationEndpoint,
-            redirectUri: callbackUrl,
-            clientId: registration.clientId,
-            ...(registration.clientSecret ? { clientSecret: registration.clientSecret } : {}),
-            tokenAuthMethod: registration.tokenAuthMethod,
-            ...(registration.clientSecretExpiresAt
-              ? { clientSecretExpiresAt: registration.clientSecretExpiresAt }
-              : {}),
-            registeredAt: new Date().toISOString(),
-          };
-          await this.connectorsService.updateAuthConfigMerge(connector.id, {
-            [DYNAMIC_CLIENT_KEY]: stored,
-          });
-        } else {
-          clientId = plan.client.clientId;
-          clientSecret = plan.client.clientSecret;
-          tokenAuthMethod = plan.client.tokenAuthMethod;
-          dynamicClient = plan.client.source === 'stored';
-        }
-      } else {
-        // REST/GraphQL: the stored authConfig, with {{VAR}} resolved from the
-        // connector's env vars, and — for a catalog connector installed before
-        // its adapter could be authorized in the browser — the catalog's
-        // endpoints where the row has none.
-        const adapterSlug = (connector.config as { adapterSlug?: string } | null)
-          ?.adapterSlug;
-        const catalogAdapter = adapterSlug ? getAdapter(adapterSlug) : undefined;
-        const catalogAuth = catalogAdapter?.connector.authConfig;
-        const settings = resolveRestAuthorizeSettings(
-          authConfig,
-          connector.envVars as Record<string, string> | null,
-          catalogAuth,
-          catalogAdapter?.previousOAuthScopes,
-        );
-        if (settings.missingVars.length > 0) {
-          return {
-            error:
-              `Set ${settings.missingVars.join(' and ')} in this connector's ` +
-              'environment variables first: the provider needs the client ' +
-              'credentials of your app to authorize it.',
-          };
-        }
-        clientId = settings.clientId;
-        clientSecret = settings.clientSecret;
-        authorizationEndpoint = settings.authorizationUrl;
-        tokenEndpoint = settings.tokenUrl;
-        scope = settings.scope;
-        tokenAuthMethod = settings.tokenAuthMethod;
-        clientAssertion = settings.clientAssertion;
-        pkce = settings.pkce;
-        // The client id/secret stay as stored (placeholders included, so a
-        // later env var edit still reaches them); only what was taken from
-        // the catalog is added.
-        persistAuthConfig = settings.adopted;
-      }
-
-      if (!clientId) {
-        return { error: 'No clientId configured for this connector' };
-      }
-      if (!authorizationEndpoint) {
-        return { error: 'No authorization URL configured for this connector' };
-      }
-
-      // The code exchange identifies itself like the connector's API calls.
-      const flowVars = (connector.envVars as Record<string, string> | null) ?? {};
-      const userAgent = tokenEndpointUserAgent(
-        interpolateDeep(authConfig, flowVars),
-        interpolateDeep(connector.headers ?? undefined, flowVars),
+      const started = await startConnectorAuthorization(
+        {
+          connectorsService: this.connectorsService,
+          mcpOAuthService: this.mcpOAuthService,
+          logger: this.logger,
+          encryptionKey: this.encryptionKey,
+          callbackUrl: this.oauthCallbackUrl(),
+        },
+        connector,
+        { userId: req.user.sub, forUser, returnTo: body?.returnTo },
       );
-
-      // Generate the PKCE challenge, unless the connector turned PKCE off.
-      const codeVerifier = pkce ? this.mcpOAuthService.generateCodeVerifier() : undefined;
-      const codeChallenge = codeVerifier
-        ? this.mcpOAuthService.generateCodeChallenge(codeVerifier)
-        : undefined;
-      const state = this.mcpOAuthService.generateState();
-
-      // Store pending flow
-      await this.mcpOAuthService.storePendingFlow(state, {
-        ...(codeVerifier ? { codeVerifier } : {}),
-        connectorId: connector.id,
-        userId: req.user.sub,
-        redirectUri: callbackUrl,
-        clientId,
-        clientSecret,
-        tokenUrl: tokenEndpoint,
-        tokenAuthMethod,
-        clientAssertion,
-        persistAuthConfig,
-        ...(userAgent ? { userAgent } : {}),
-        ...(resource ? { resource } : {}),
-        ...(dynamicClient ? { dynamicClient } : {}),
-        ...(forUser ? { forUser } : {}),
-        createdAt: Date.now(),
-      }, { returnTo: body?.returnTo });
-
-      // Build authorization URL
-      const authorizationUrl = this.mcpOAuthService.buildAuthorizationUrl({
-        authorizationEndpoint,
-        clientId,
-        redirectUri: callbackUrl,
-        codeChallenge,
-        state,
-        scope,
-        resource,
-      });
-
-      return { authorizationUrl };
+      return 'error' in started ? started : { authorizationUrl: started.authorizationUrl };
     } catch (error: any) {
       this.logger.error(`OAuth initiation failed for connector ${id}: ${error.message}`);
       return { error: `OAuth initiation failed: ${error.message}` };

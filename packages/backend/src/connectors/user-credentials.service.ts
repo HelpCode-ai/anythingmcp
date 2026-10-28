@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { decrypt, encrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
-import { connectorPageUrl } from '../common/url.util';
+import { connectorConnectUrl } from '../common/url.util';
 import { userCredentialKey } from '../common/credential-key.util';
 import { EditionService } from '../ee/licensing/edition.service';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
@@ -66,7 +66,7 @@ export class UserCredentialsService {
     userId?: string;
     connectorAuthConfig?: Record<string, unknown>;
   }): Promise<{ authConfig: Record<string, unknown>; credentialKey: string }> {
-    const page = connectorPageUrl(input.connectorId);
+    const page = connectorConnectUrl(input.connectorId);
     const name = `"${input.connectorName.slice(0, 80)}"`;
     if (!input.userId) {
       throw new UserCredentialError(
@@ -88,7 +88,7 @@ export class UserCredentialsService {
     if (!tokens) {
       throw new UserCredentialError(
         `You have not connected your own account to the connector ${name} yet. No request was sent to ` +
-          `the API. Open the connector in AnythingMCP${page ? ` (${page})` : ''} and click ` +
+          `the API. ${page ? `Open ${page}` : 'Open the connector in AnythingMCP'} and click ` +
           '"Connect my account"; the provider then answers with what your own account may see.',
         'not_connected',
       );

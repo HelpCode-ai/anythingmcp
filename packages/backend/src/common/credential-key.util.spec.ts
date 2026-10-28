@@ -30,8 +30,8 @@ describe('credential keys', () => {
       process.env.FRONTEND_URL = before;
     });
 
-    it('links a user credential key to its connector page', () => {
-      expect(connectorPageUrl(userCredentialKey('c1', 'u1'))).toBe('https://app.example.com/connectors/c1');
+    it("links a user credential key to the page where that user connects, a connector to its page", () => {
+      expect(connectorPageUrl(userCredentialKey('c1', 'u1'))).toBe('https://app.example.com/auth/connect/c1');
       expect(connectorPageUrl('c1')).toBe('https://app.example.com/connectors/c1');
     });
   });

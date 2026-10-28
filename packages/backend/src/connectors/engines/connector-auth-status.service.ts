@@ -410,7 +410,9 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
         name: credential.user.name,
         connectorName: credential.connector.name,
         message: credential.authStatusMessage ?? '',
-        connectorPath: `/connectors/${encodeURIComponent(connectorId)}`,
+        // The page where that user signs in again, reachable also when the
+        // dashboard is not (see connectorConnectUrl).
+        connectorPath: `/auth/connect/${encodeURIComponent(connectorId)}`,
       },
       credential.organizationId,
     );

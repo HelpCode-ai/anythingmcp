@@ -151,10 +151,25 @@ function withPath(base: URL, pathname: string, search: string): URL {
  * in a chat client ("open the connector and set X"). FRONTEND_URL is where the
  * dashboard is served; undefined when it is not configured, so callers can
  * fall back to wording without a link. Takes a connector id or the key of a
- * user's own credential for it (credential-key.util): both name the same page.
+ * user's own credential for it (credential-key.util); the latter names the
+ * page where that user connects their own account (connectorConnectUrl).
  */
 export function connectorPageUrl(connectorId: string | undefined | null): string | undefined {
   const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
   if (!connectorId || !/^https?:\/\//i.test(base)) return undefined;
-  return `${base}/connectors/${encodeURIComponent(parseCredentialKey(connectorId).connectorId)}`;
+  const key = parseCredentialKey(connectorId);
+  if (key.userId) return connectorConnectUrl(key.connectorId);
+  return `${base}/connectors/${encodeURIComponent(key.connectorId)}`;
+}
+
+/**
+ * Where a user connects their own account to a connector with per-user
+ * credentials: a page the backend serves under /auth/, next to the sign-in
+ * page MCP clients open, so it is reachable wherever MCP sign-in is, also on a
+ * server whose dashboard is not public.
+ */
+export function connectorConnectUrl(connectorId: string | undefined | null): string | undefined {
+  const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
+  if (!connectorId || !/^https?:\/\//i.test(base)) return undefined;
+  return `${base}/auth/connect/${encodeURIComponent(parseCredentialKey(connectorId).connectorId)}`;
 }

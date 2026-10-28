@@ -14,13 +14,9 @@ import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { randomBytes, timingSafeEqual } from 'crypto';
-import {
-  AuthService,
-  DASHBOARD_TOKEN_USE,
-  isForeignIssuedToken,
-  isTokenRevoked,
-} from './auth.service';
+import { AuthService } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
+import { resolveDashboardSessionUser, type SessionUser } from './dashboard-session.util';
 import { DeploymentService } from '../common/deployment.service';
 import { findUserByEmail } from '../common/email.util';
 import type { User } from '../generated/prisma/client';
@@ -59,20 +55,6 @@ const PENDING_GRANT_COOKIE = 'pending_grant';
  * exactly which client and callback destination they are authorizing before
  * they submit their credentials.
  */
-/**
- * The dashboard session cookie. Set by the frontend on sign-in (see
- * `auth-context.tsx`) on the same origin that proxies /auth/* here, so it
- * arrives with the top-level navigation from /authorize.
- */
-const DASHBOARD_SESSION_COOKIE = 'amcp_token';
-
-/** A user identified from a still-valid dashboard session. */
-interface SessionUser {
-  id: string;
-  email: string;
-  name: string | null;
-}
-
 interface ConsentContext {
   /** The OAuth client a connection grant would be keyed on. */
   clientId: string;
@@ -796,57 +778,15 @@ export class LoginController {
     res.redirect(`${this.getBaseUrl(req)}/callback`);
   }
 
-  /**
-   * The user behind this browser's dashboard session, or null.
-   *
-   * Applies what `JwtStrategy` + `EmailVerifiedGuard` apply to the dashboard
-   * API — signature and expiry, a dashboard-issued token (not an MCP token
-   * signed with the same secret), not revoked, at least one active membership,
-   * and a verified email in cloud — because approving here is no more than
-   * the dashboard itself already lets this session do. Anything off falls
-   * back to the password form rather than erroring.
-   */
+  /** The user behind this browser's dashboard session, or null (see resolveDashboardSessionUser). */
   private async resolveDashboardSession(
     req: Request,
   ): Promise<SessionUser | null> {
-    const token = req.cookies?.[DASHBOARD_SESSION_COOKIE];
-    if (typeof token !== 'string' || !token) return null;
-
-    let payload: ReturnType<AuthService['verifyToken']>;
-    try {
-      payload = this.authService.verifyToken(token);
-    } catch {
-      return null;
-    }
-    if (
-      !payload?.sub ||
-      payload.tokenUse !== DASHBOARD_TOKEN_USE ||
-      isForeignIssuedToken(payload as unknown as Record<string, unknown>)
-    ) {
-      return null;
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        emailVerified: true,
-        sessionsValidFrom: true,
-        memberships: {
-          where: { deactivatedAt: null },
-          select: { organizationId: true },
-          take: 1,
-        },
-      },
+    return resolveDashboardSessionUser(req, {
+      authService: this.authService,
+      prisma: this.prisma,
+      deployment: this.deployment,
     });
-    if (!user) return null;
-    if (isTokenRevoked(payload, user.sessionsValidFrom)) return null;
-    if (user.memberships.length === 0) return null;
-    if (this.deployment.isCloud() && !user.emailVerified) return null;
-
-    return { id: user.id, email: user.email, name: user.name };
   }
 
   /**
