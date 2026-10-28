@@ -1,5 +1,4 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { createHash } from 'crypto';
 import { AxiosError } from 'axios';
 import { ToolRegistry } from './tool-registry';
 import { RestEngine } from '../connectors/engines/rest.engine';
@@ -38,6 +37,7 @@ import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { connectorPageUrl } from '../common/url.util';
+import { hashContent } from '../adapters/catalog-fingerprint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { connectorErrorWhen } from '../connectors/error-when.util';
 import {
@@ -325,7 +325,7 @@ export class DynamicMcpTools {
     const cacheScope = perUser && context?.userId ? `user:${context.userId}` : undefined;
     const cacheTtl = perUser && !cacheScope ? undefined : responseMapping?.cacheTtl;
     if (cacheTtl && cacheTtl > 0) {
-      const cacheKey = this.buildCacheKey(toolName, params, cacheScope);
+      const cacheKey = this.buildCacheKey(tool, params, cacheScope);
       const cached = await this.redisService.get(cacheKey);
       if (cached) {
         try {
@@ -635,7 +635,7 @@ export class DynamicMcpTools {
 
       // Cache the raw response if cacheTtl is set (shaping happens on read).
       if (cacheTtl && cacheTtl > 0) {
-        const cacheKey = this.buildCacheKey(toolName, params, cacheScope);
+        const cacheKey = this.buildCacheKey(tool, params, cacheScope);
         // The audit log above got the bare body; the cache needs the headers
         // too, or a cached page would come back without its next cursor.
         const serialized = JSON.stringify(
@@ -853,18 +853,16 @@ export class DynamicMcpTools {
   }
 
   private buildCacheKey(
-    toolName: string,
+    tool: RegisteredTool,
     params: Record<string, unknown>,
     scope?: string,
   ): string {
-    const paramsHash = createHash('md5')
-      .update(JSON.stringify(params, Object.keys(params).sort()))
-      .digest('hex')
-      .slice(0, 12);
-    // v2: entries hold the raw upstream response instead of the rendered text.
-    // The prefix bump makes sure a v1 entry is never read back in the new
-    // format — old keys simply expire.
-    return `tool_cache:v2:${toolName}:${scope ? `${scope}:` : ''}${paramsHash}`;
+    // Keys sorted at every depth: a nested filter is part of the request.
+    const paramsHash = hashContent(params);
+    // v3: keyed by the tool's id, not its name. Two connectors (in one org or
+    // in two) can expose a tool with the same name, and one connector's
+    // answer must never be served for the other. v2 keys simply expire.
+    return `tool_cache:v3:${tool.id}:${scope ? `${scope}:` : ''}${paramsHash}`;
   }
 
   /**
