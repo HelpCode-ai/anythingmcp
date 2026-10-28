@@ -61,7 +61,7 @@ describe('odoo adapter — static spec conformance', () => {
       name: string;
       parameters: { properties: Record<string, { description: string }> };
     }>).find((t) => t.name === 'odoo_call_method');
-    expect(call?.parameters.properties.kwargs.description).toContain('{\"vals\": {...}}');
+    expect(call?.parameters.properties.kwargs.description).toContain('{"vals": {...}}');
     expect(call?.parameters.properties.kwargs.description).toContain('vals_list');
     expect(call?.parameters.properties.ids.description).toContain('Expected singleton');
   });
