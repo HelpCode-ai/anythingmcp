@@ -651,5 +651,258 @@
       "skillsHint": "Wie die <link>KI-Skills</link> dieses Servers den KI-Client erreichen. Eine Liste hält die Anweisungen kurz; lange Abläufe werden immer bei Bedarf geöffnet.",
       "save": "Speichern"
     }
+  },
+  "connectors": {
+    "title": "Connectors",
+    "add": "Connector hinzufügen",
+    "cancel": "Abbrechen",
+    "dismiss": "Ausblenden",
+    "deleted": "Connector gelöscht",
+    "importingSpec": "Spezifikation wird importiert...",
+    "importFailed": "Import fehlgeschlagen: {error}",
+    "exported": "Konfiguration exportiert",
+    "exportedWithoutSecrets": "Konfiguration ohne geheime Werte exportiert (nur Admins können sie exportieren)",
+    "exportFailed": "Export fehlgeschlagen: {error}",
+    "healthCheckFailed": "Statusprüfung fehlgeschlagen: {error}",
+    "types": {
+      "database": "Datenbank"
+    },
+    "menu": {
+      "healthCheck": "Statusprüfung",
+      "checking": "Wird geprüft…",
+      "exportAll": "Alle als JSON exportieren",
+      "importFromFile": "Aus Datei importieren",
+      "browseAdapters": "Adapter durchsuchen"
+    },
+    "header": {
+      "healthCheckTitle": "Status aller Connectors prüfen",
+      "healthCheck": "Statusprüfung",
+      "checking": "Wird geprüft...",
+      "exportTitle": "Alle Connectors als JSON exportieren",
+      "export": "Export",
+      "importTitle": "Connectors aus einem JSON- oder YAML-Export importieren",
+      "import": "Import",
+      "adaptersTitle": "Vorgefertigte Adapter durchsuchen",
+      "adapters": "Adapter"
+    },
+    "importModal": {
+      "title": "Connectors importieren",
+      "description": "Fügen Sie eine zuvor exportierte JSON- oder YAML-Datei ein oder laden Sie eine hoch. Doppelte Connectors werden übersprungen.",
+      "chooseFile": "Datei auswählen",
+      "contentsLabel": "Inhalt der Exportdatei",
+      "importing": "Wird importiert...",
+      "import": "Importieren"
+    },
+    "deleteModal": {
+      "title": "Connector löschen",
+      "body": "Möchten Sie <b>{name}</b> und alle zugehörigen Tools wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
+      "deleting": "Wird gelöscht...",
+      "delete": "Löschen"
+    },
+    "health": {
+      "title": "Ergebnisse der Statusprüfung",
+      "healthy": "{count} in Ordnung",
+      "unhealthy": "{count} mit Fehlern",
+      "total": "{count} aktiv insgesamt"
+    },
+    "empty": {
+      "title": "Noch keine Connectors",
+      "description": "Fügen Sie Ihren ersten API-Connector hinzu, um MCP-Tools zu erzeugen.",
+      "supports": "Unterstützt {types}",
+      "browse": "Adapter durchsuchen",
+      "importBackup": "Aus Backup importieren"
+    },
+    "filter": {
+      "placeholder": "Connectors filtern…",
+      "label": "Connectors nach Name oder URL durchsuchen",
+      "allTypes": "Alle Typen",
+      "count": "{count, plural, one {# Connector} other {# Connectors}}"
+    },
+    "card": {
+      "tools": "Tools",
+      "auth": "Auth",
+      "active": "Aktiv",
+      "inactive": "Inaktiv",
+      "importSpec": "Spezifikation importieren",
+      "delete": "Löschen"
+    },
+    "addTile": {
+      "title": "Connector hinzufügen",
+      "hint": "Spezifikation importieren oder Adapter wählen"
+    }
+  },
+  "connectorStore": {
+    "back": "Connectors",
+    "title": "Marktplatz",
+    "subtitle": "Fertige Connectors für bekannte Apps. Jede Karte zeigt, was die Einrichtung erfordert.",
+    "customConnector": "Eigener Connector",
+    "dismiss": "Ausblenden",
+    "search": {
+      "placeholder": "Adapter suchen...",
+      "label": "Adapter suchen"
+    },
+    "setup": "Einrichtung",
+    "all": "Alle",
+    "more": "+{count} weitere",
+    "showFewer": "Weniger anzeigen",
+    "summary": {
+      "all": "{total} Adapter",
+      "some": "{shown} von {total} Adaptern",
+      "fuzzy": "kein exakter Treffer, ähnliche Namen",
+      "partial": "passend zu einigen Wörtern"
+    },
+    "empty": "Noch keine Adapter verfügbar.",
+    "noMatch": {
+      "text": "Keine Treffer{search}{category}{effort}.",
+      "search": " für „{search}“",
+      "category": " in {category}",
+      "effort": " mit „{effort}“",
+      "hint": "Jedes REST-, SOAP-, GraphQL- oder SQL-System kann trotzdem ein Connector werden – die Adapter sind nur ein schneller Einstieg.",
+      "clear": "Filter zurücksetzen",
+      "custom": "Eigenen Connector erstellen"
+    },
+    "card": {
+      "popular": "Beliebt",
+      "tools": "{count, plural, one {Tool} other {Tools}}",
+      "effortTitle": "Was die Einrichtung erfordert",
+      "docs": "API-Dokumentation",
+      "install": "Installieren"
+    },
+    "categories": {
+      "monitoring": "Monitoring",
+      "time-tracking": "Zeiterfassung",
+      "dms": "Dokumentenmanagement",
+      "transport": "Transport",
+      "itsm": "IT-Service-Management",
+      "wholesale": "Großhandel",
+      "construction": "Bauwesen",
+      "productivity": "Produktivität",
+      "storage": "Speicher",
+      "data": "Daten",
+      "infrastructure": "Infrastruktur",
+      "healthcare": "Gesundheitswesen",
+      "database": "Datenbank",
+      "food": "Lebensmittel",
+      "gaming": "Gaming",
+      "logistics": "Logistik",
+      "finance": "Finanzen",
+      "government": "Behörden",
+      "erp": "ERP",
+      "banking": "Banking",
+      "remote": "Fernzugriff",
+      "real-estate": "Immobilien",
+      "field-service": "Außendienst",
+      "accounting": "Buchhaltung",
+      "hr": "Personal",
+      "messaging": "Messaging",
+      "crm": "CRM",
+      "email": "E-Mail",
+      "advertising": "Werbung",
+      "marketing-automation": "Marketing-Automatisierung",
+      "project-management": "Projektmanagement",
+      "scheduling": "Terminplanung",
+      "forms": "Formulare",
+      "support": "Kundensupport",
+      "payments": "Zahlungen",
+      "e-commerce": "E-Commerce",
+      "analytics": "Analytics",
+      "publishing": "Publishing",
+      "e-signature": "E-Signatur",
+      "enrichment": "Lead-Anreicherung",
+      "knowledge": "Wissensdatenbank",
+      "social": "Social Media",
+      "maps": "Karten & Geodaten",
+      "travel": "Reisen",
+      "cms": "CMS",
+      "sports": "Sport"
+    },
+    "regions": {
+      "de": "Deutschland",
+      "at": "Österreich",
+      "ch": "Schweiz",
+      "it": "Italien",
+      "es": "Spanien",
+      "fr": "Frankreich",
+      "nl": "Niederlande",
+      "be": "Belgien",
+      "se": "Schweden",
+      "dk": "Dänemark",
+      "gb": "Vereinigtes Königreich",
+      "uk": "Vereinigtes Königreich",
+      "in": "Indien",
+      "br": "Brasilien",
+      "ng": "Nigeria",
+      "jp": "Japan",
+      "eu": "Europa",
+      "us": "Vereinigte Staaten",
+      "global": "Global",
+      "intl": "International"
+    }
+  },
+  "setupEffort": {
+    "names": {
+      "none": "Keine Einrichtung",
+      "one_click": "Anmeldung mit 1 Klick",
+      "api_key": "API-Schlüssel",
+      "own_app": "Eigene App",
+      "admin_needed": "Admin nötig"
+    },
+    "withMinutes": "{name} · {minutes} Min.",
+    "filters": {
+      "none": "Keine Einrichtung",
+      "one_click": "Nur Anmeldung",
+      "api_key": "API-Schlüssel",
+      "own_app": "Eigene App",
+      "admin_needed": "Admin nötig"
+    },
+    "inSentence": {
+      "none": "Keine Einrichtung",
+      "one_click": "Nur Anmeldung",
+      "api_key": "API-Schlüssel",
+      "own_app": "Eigene App",
+      "admin_needed": "Admin nötig"
+    }
+  },
+  "setupStatus": {
+    "needsInput": {
+      "pill": "Einrichtung offen",
+      "banner": "Zugangsdaten oder eine Einstellung fehlen noch, daher sieht Ihr KI-Client diesen Connector noch nicht."
+    },
+    "needsAuthorization": {
+      "pill": "Anmeldung nötig",
+      "banner": "Der Connector muss beim Anbieter autorisiert werden, bevor Ihr KI-Client ihn nutzen kann."
+    },
+    "stillEmpty": "Noch leer: {names}",
+    "finishSetup": "Einrichtung abschließen"
+  },
+  "authStatus": {
+    "pill": {
+      "signInExpired": "Anmeldung abgelaufen",
+      "tokenRefused": "Token abgelehnt",
+      "expiresSoon": "Token läuft bald ab"
+    },
+    "banner": {
+      "signInRefused": "Der Anbieter hat die Anmeldung abgelehnt. Tool-Aufrufe schlagen fehl, bis Sie erneut autorisieren.",
+      "tokenRefused": "Der Anbieter hat das Zugriffstoken abgelehnt. Tool-Aufrufe schlagen fehl, bis Sie ein neues speichern.",
+      "expiresOn": "Das Zugriffstoken läuft am {date} ab.",
+      "expiresSoon": "Das Zugriffstoken läuft bald ab.",
+      "since": "Seit {date}"
+    }
+  },
+  "authTypes": {
+    "none": "Keine",
+    "NONE": "Öffentliche API",
+    "API_KEY": "API-Schlüssel",
+    "QUERY_AUTH": "Query-Parameter-Auth",
+    "BEARER_TOKEN": "Bearer-Token",
+    "BASIC": "Basic Auth",
+    "BASIC_AUTH": "Basic Auth",
+    "OAUTH2": "OAuth 2.0",
+    "OAUTH1": "OAuth 1.0a",
+    "WS_SECURITY": "WS-Security",
+    "CERTIFICATE": "Client-Zertifikat",
+    "CONNECTION_STRING": "Connection-String",
+    "HMAC": "HMAC-Signatur",
+    "LOGIN_TOKEN": "Login-Token"
   }
 }
