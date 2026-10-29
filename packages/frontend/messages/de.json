@@ -2075,5 +2075,481 @@
       "revoke": "Widerrufen"
     },
     "footer": "Insgesamt {users, plural, one {# Benutzer} other {# Benutzer}}{invites, plural, =0 {} one {, # offene Einladung} other {, # offene Einladungen}}. Der erste registrierte Benutzer wird automatisch ADMIN."
+  },
+  "settingsRoles": {
+    "error": "Fehler: {message}",
+    "created": "Rolle erstellt",
+    "updated": "Rolle aktualisiert",
+    "confirmDelete": "Rolle „{name}“ löschen? Benutzern mit dieser Rolle wird sie entzogen.",
+    "deleted": "Rolle gelöscht",
+    "toolAccessUpdated": "Tool-Zugriff aktualisiert",
+    "assigned": "MCP-Rolle zugewiesen",
+    "accessDenied": {
+      "title": "Zugriff verweigert",
+      "body": "Nur Administratoren können diese Seite aufrufen.",
+      "back": "Zurück zu den Einstellungen"
+    },
+    "dismiss": "ausblenden",
+    "loading": "Wird geladen...",
+    "title": "Eigene Rollen",
+    "intro": "Legen Sie Rollen an, um festzulegen, auf welche MCP-Tools verschiedene Benutzer zugreifen können. Benutzer ohne Rolle haben vollen Zugriff. ADMIN hat immer vollen Zugriff.",
+    "cancel": "Abbrechen",
+    "createRole": "Rolle erstellen",
+    "form": {
+      "name": "Rollenname",
+      "namePlaceholder": "z. B. Nur Lesen, Support-Team",
+      "description": "Beschreibung",
+      "descriptionPlaceholder": "Wofür diese Rolle gedacht ist...",
+      "create": "Erstellen"
+    },
+    "empty": "Noch keine eigenen Rollen. Erstellen Sie eine, um den Tool-Zugriff einzuschränken.",
+    "save": "Speichern",
+    "system": "System",
+    "userCount": "{count, plural, one {# Benutzer} other {# Benutzer}}",
+    "toolCount": "{count, plural, one {# Tool zugewiesen} other {# Tools zugewiesen}}",
+    "manageTools": "Tools verwalten",
+    "edit": "Bearbeiten",
+    "delete": "Löschen",
+    "access": {
+      "title": "Tools auswählen, auf die diese Rolle zugreifen kann",
+      "body": "Nur die markierten Tools stehen Benutzern mit dieser Rolle zur Verfügung. Ist kein Tool ausgewählt, hat die Rolle keinen Zugriff auf MCP-Tools.",
+      "noTools": "Keine Tools verfügbar. Legen Sie zuerst Connectors und Tools an.",
+      "selectAll": "Alle auswählen ({count})",
+      "deselectAll": "Auswahl aufheben",
+      "selected": "{selected}/{total} ausgewählt",
+      "search": "Tools suchen...",
+      "all": "Alle",
+      "none": "Keine",
+      "saving": "Wird gespeichert...",
+      "save": "{count, plural, one {Speichern (# Tool)} other {Speichern (# Tools)}}"
+    },
+    "assign": {
+      "title": "MCP-Rollen der Benutzer",
+      "intro": "Weisen Sie Benutzern MCP-Rollen zu, um festzulegen, auf welche Tools sie über MCP zugreifen können. Benutzer ohne Rolle haben uneingeschränkten Zugriff. ADMIN-Benutzer haben immer vollen Zugriff.",
+      "user": "Benutzer",
+      "appRole": "App-Rolle",
+      "mcpRole": "MCP-Tool-Rolle",
+      "fullAccess": "Voller Zugriff (Admin)",
+      "noRestriction": "Keine Einschränkung (voller Zugriff)"
+    }
+  },
+  "settingsAdmin": {
+    "error": "Fehler: {message}",
+    "accessDenied": {
+      "title": "Zugriff verweigert",
+      "body": "Nur Administratoren können diese Seite aufrufen.",
+      "back": "Zurück zu den Einstellungen"
+    },
+    "remove": "Entfernen",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "smtp": {
+      "saved": "SMTP-Konfiguration gespeichert",
+      "testing": "Verbindung wird getestet...",
+      "confirmRemove": "SMTP-Konfiguration des Workspace entfernen? E-Mails werden dann über den Maildienst der Plattform versendet.",
+      "removed": "SMTP-Konfiguration entfernt. E-Mails laufen jetzt über den Maildienst der Plattform",
+      "title": "E-Mail / SMTP-Konfiguration",
+      "intro": "Konfigurieren Sie SMTP für E-Mails zum Zurücksetzen des Passworts und für Benachrichtigungen.",
+      "host": "SMTP-Host",
+      "port": "Port",
+      "user": "Benutzername",
+      "password": "Passwort",
+      "passwordKeep": "••••••••  (zum Ändern neu eingeben)",
+      "passwordPlaceholder": "SMTP-Passwort",
+      "from": "Absenderadresse (optional)",
+      "secure": "SSL/TLS verwenden (Port 465)",
+      "save": "SMTP-Konfiguration speichern",
+      "test": "Verbindung testen"
+    },
+    "alerts": {
+      "types": {
+        "json": "Allgemeiner JSON-Webhook",
+        "slack": "Slack Incoming Webhook"
+      },
+      "saved": "Alarm-Webhook gespeichert",
+      "sendingTest": "Testalarm wird gesendet...",
+      "testDelivered": "Testalarm zugestellt",
+      "deliveryFailed": "Zustellung fehlgeschlagen",
+      "confirmRemove": "Alarm-Webhook für Connector-Fehler entfernen? Für diese Organisation werden dann keine Alarme mehr ausgelöst.",
+      "removed": "Alarm-Webhook entfernt",
+      "title": "Alarme bei Connector-Fehlern",
+      "intro": "Erhalten Sie eine Webhook- oder Slack-Benachrichtigung, wenn ein Connector immer wieder fehlschlägt, statt es erst in den Logs zu bemerken.",
+      "url": "Webhook-URL",
+      "cloudHttps": "In AnythingMCP Cloud muss die URL https verwenden.",
+      "payloadType": "Payload-Typ",
+      "enabled": "Aktiviert",
+      "threshold": "Fehlerschwelle",
+      "window": "Zeitfenster (Minuten)",
+      "cooldown": "Pause (Minuten)",
+      "summary": "Alarmiert nach {threshold, plural, one {# Fehler} other {# Fehlern}} desselben Connectors innerhalb von {window, plural, one {# Minute} other {# Minuten}} und wartet dann {cooldown, plural, one {# Minute} other {# Minuten}}, bevor erneut alarmiert wird.",
+      "rotate": "Signatur-Secret beim Speichern neu erzeugen",
+      "secretOnce": "Signatur-Secret, wird nur einmal angezeigt. Kopieren Sie es jetzt:",
+      "secretHelp": "Damit prüfen Sie den Header <code>X-AnythingMCP-Signature</code> (<code>sha256=</code>-HMAC aus Zeitstempel und Body; Slack ignoriert ihn). Es wird nicht noch einmal angezeigt.",
+      "savedIt": "Ich habe es gespeichert",
+      "save": "Alarm-Webhook speichern",
+      "saveUrlFirst": "Speichern Sie zuerst die neue URL",
+      "sendTest": "Testalarm senden"
+    },
+    "footer": {
+      "saved": "Footer-Links gespeichert",
+      "title": "Footer-Links",
+      "intro": "Fügen Sie Links zu Impressum, Datenschutzerklärung, Nutzungsbedingungen usw. hinzu. Sie erscheinen im Footer jeder Seite.",
+      "labelPlaceholder": "Bezeichnung (z. B. Datenschutzerklärung)",
+      "add": "+ Link hinzufügen",
+      "save": "Footer-Links speichern"
+    },
+    "about": {
+      "title": "Über diese Instanz",
+      "unavailable": "Versionsinformationen nicht verfügbar.",
+      "version": "Version",
+      "commit": "Commit",
+      "built": "erstellt am {date}",
+      "copied": "In die Zwischenablage kopiert",
+      "copyFailed": "Kopieren fehlgeschlagen",
+      "copy": "Versionsinfo kopieren"
+    }
+  },
+  "settingsLicense": {
+    "errors": {
+      "activate": "Lizenz konnte nicht aktiviert werden",
+      "invalid": "Lizenz ist ungültig",
+      "verify": "Prüfung fehlgeschlagen",
+      "register": "Community-Lizenz konnte nicht registriert werden",
+      "portal": "Abrechnungsportal konnte nicht geöffnet werden",
+      "trial": "Testphase konnte nicht aktiviert werden"
+    },
+    "verified": "Lizenz erfolgreich geprüft",
+    "none": "Keiner",
+    "statuses": {
+      "active": "aktiv",
+      "expired": "abgelaufen",
+      "invalid": "ungültig",
+      "revoked": "widerrufen",
+      "pending": "ausstehend"
+    },
+    "adminOnly": "Nur Administratoren können die Lizenz verwalten.",
+    "title": "Lizenz & Tarif",
+    "intro": "Verwalten Sie Ihre Anything MCP-Lizenz",
+    "currentPlan": "Aktueller Tarif",
+    "licenseKey": "Lizenzschlüssel",
+    "noLicense": "Noch keine Lizenz registriert.",
+    "activating": "Wird aktiviert...",
+    "startTrial": "7 Tage kostenlos testen",
+    "communityHint": "Optional für Community: Mit einem kostenlosen Schlüssel per E-Mail erhalten Sie Sicherheits- und Release-Hinweise.",
+    "registering": "Wird registriert...",
+    "registerCommunity": "Kostenlose Community-Lizenz registrieren",
+    "fields": {
+      "plan": "Tarif",
+      "status": "Status",
+      "expires": "Läuft ab",
+      "lastVerified": "Zuletzt geprüft",
+      "trialDaysLeft": "Verbleibende Testtage",
+      "days": "{count, plural, one {# Tag} other {# Tage}}",
+      "instanceId": "Instanz-ID"
+    },
+    "verifying": "Wird geprüft...",
+    "verify": "Jetzt prüfen",
+    "billing": {
+      "opening": "Wird geöffnet…",
+      "updatePayment": "Zahlungsmethode aktualisieren",
+      "keepPlan": "Meinen Tarif behalten",
+      "manage": "Abonnement & Abrechnung verwalten",
+      "cancel": "Abonnement kündigen"
+    },
+    "features": {
+      "title": "Funktionen",
+      "yes": "Ja",
+      "no": "Nein",
+      "unlimited": "Unbegrenzt"
+    },
+    "key": {
+      "change": "Lizenzschlüssel ändern",
+      "activate": "Lizenzschlüssel aktivieren",
+      "changePlan": "Um zu einem anderen Tarif zu wechseln, <link>ändern Sie ihn im Abrechnungsportal</link>. Ihr bestehendes Abonnement wird umgestellt und anteilig abgerechnet, nicht doppelt angelegt.",
+      "purchase": "Eine Lizenz kaufen Sie auf <link>anythingmcp.com</link>",
+      "submit": "Aktivieren"
+    },
+    "upgrade": {
+      "title": "Tarif upgraden",
+      "payBody": "Wählen Sie einen Tarif, damit AnythingMCP Cloud nach Ihrer Testphase weiterläuft. Für diese Adresse gab es bereits ein Abonnement, daher beginnt der Tarif und wird abgerechnet, sobald Sie den Kauf abschließen.",
+      "cardBody": "Hinterlegen Sie eine Zahlungsmethode, damit AnythingMCP Cloud nach Ihrer Testphase weiterläuft. Vor dem {date} wird nichts belastet, und Sie können jederzeit kündigen.",
+      "cardBodyNoDate": "Hinterlegen Sie eine Zahlungsmethode, damit AnythingMCP Cloud nach Ihrer Testphase weiterläuft. Vor dem Ende Ihrer Testphase wird nichts belastet, und Sie können jederzeit kündigen.",
+      "choosePlan": "Tarif wählen",
+      "addPayment": "Zahlungsmethode hinzufügen",
+      "compare": "Tarife vergleichen",
+      "body": "Wechseln Sie zu einem kostenpflichtigen Tarif, um AnythingMCP Cloud nach Ende Ihrer Testphase weiter zu nutzen.",
+      "viewPlans": "Tarife ansehen"
+    },
+    "activate": {
+      "redirecting": "Weiterleitung zu den Einstellungen…",
+      "noKey": "In der URL wurde kein Lizenzschlüssel übergeben.",
+      "malformed": "Der Lizenzschlüssel in der URL hat ein ungültiges Format.",
+      "adminOnly": "Nur Administratoren können einen Lizenzschlüssel aktivieren. Bitten Sie Ihren Admin, sich anzumelden.",
+      "activated": "Lizenz erfolgreich aktiviert.",
+      "backToClient": "Zurück, um die Verbindung Ihres KI-Clients abzuschließen…",
+      "failed": "Lizenz konnte nicht aktiviert werden.",
+      "title": "Lizenzaktivierung",
+      "preparing": "Wird vorbereitet…",
+      "activating": "Ihre Lizenz wird aktiviert…",
+      "key": "Schlüssel:",
+      "goToSettings": "Zu den Lizenzeinstellungen"
+    }
+  },
+  "settingsSso": {
+    "types": {
+      "ENTRA": {
+        "label": "Microsoft Entra ID",
+        "fields": {
+          "tenantId": {
+            "label": "Verzeichnis-ID (Mandant)",
+            "help": "Die Mandanten-GUID aus der Übersicht Ihrer App-Registrierung. Ein Verzeichnisname wie contoso.onmicrosoft.com wird nicht akzeptiert."
+          }
+        }
+      },
+      "GOOGLE": {
+        "label": "Google Workspace",
+        "fields": {
+          "hostedDomain": {
+            "label": "Workspace-Domain",
+            "help": "Dringend empfohlen. Ohne sie ist Google für Adressen außerhalb von gmail.com nicht maßgeblich, sodass sich jedes Google-Konto anmelden könnte."
+          }
+        }
+      },
+      "OKTA": {
+        "label": "Okta",
+        "hint": "Verwenden Sie Ihre Okta-Domain, z. B. https://acme.okta.com. Eigene Domains werden noch nicht unterstützt.",
+        "fields": {
+          "authorizationServerId": {
+            "label": "Authorization-Server-ID (optional)"
+          }
+        }
+      },
+      "AUTH0": {
+        "label": "Auth0",
+        "hint": "Nur für selbst gehostete Installationen.",
+        "fields": {
+          "rolesClaimNamespace": {
+            "label": "Namespace des Rollen-Claims",
+            "help": "Auth0 verwirft eigene Claims ohne Namespace stillschweigend: Die Anmeldung gelingt, aber die Rollen fehlen einfach."
+          }
+        }
+      },
+      "GITHUB": {
+        "label": "GitHub",
+        "hint": "GitHub ist kein OpenID-Connect-Anbieter, daher gibt es kein Discovery-Dokument zum Testen.",
+        "fields": {
+          "organization": {
+            "label": "Auf Organisation beschränken (optional)"
+          }
+        }
+      },
+      "OIDC": {
+        "label": "Allgemeines OpenID Connect",
+        "hint": "Nur für selbst gehostete Installationen.",
+        "fields": {
+          "groupsClaimName": {
+            "label": "Name des Gruppen-Claims (optional)"
+          }
+        }
+      }
+    },
+    "toast": {
+      "loadFailed": "Anbieter konnten nicht geladen werden",
+      "enforced": "Single Sign-On ist jetzt Pflicht",
+      "passwordReenabled": "Anmeldung mit Passwort wieder aktiviert",
+      "enforceFailed": "Pflicht konnte nicht geändert werden",
+      "updated": "Anbieter aktualisiert",
+      "created": "Anbieter erstellt",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "deleted": "Anbieter gelöscht",
+      "deleteFailed": "Löschen fehlgeschlagen",
+      "copyFailed": "Kopieren fehlgeschlagen",
+      "testOk": "Verbindung OK",
+      "testFailed": "Verbindung fehlgeschlagen",
+      "testError": "Test fehlgeschlagen"
+    },
+    "confirmEnforce": "Single Sign-On für diesen Workspace verpflichtend machen?\n\nDie Anmeldung mit Passwort funktioniert dann für kein Mitglied mehr. Ist der Identitätsanbieter nicht erreichbar, kommen Sie nur noch mit Ihren Wiederherstellungscodes hinein.",
+    "confirmDelete": "„{name}“ löschen? Wer sich darüber anmeldet, verliert den Zugriff, und Mitglieder mit deaktivierter Passwort-Anmeldung werden ausgesperrt.",
+    "accessDenied": {
+      "title": "Zugriff verweigert",
+      "body": "Nur Administratoren können diese Seite aufrufen.",
+      "back": "Zurück zu den Einstellungen"
+    },
+    "cloud": {
+      "title": "In AnythingMCP Cloud nicht verfügbar",
+      "body": "Single Sign-On, SCIM-Provisionierung und Rollensynchronisierung gehören zur selbst gehosteten Edition, bei der die Instanz einem einzigen Unternehmen gehört. In der Cloud melden sich Mitglieder mit E-Mail und Passwort an."
+    },
+    "loading": "Wird geladen...",
+    "title": "Single Sign-On",
+    "intro": "Lassen Sie Mitglieder sich über den Identitätsanbieter Ihrer Organisation statt mit einem Passwort anmelden. Geben Sie ihnen den Anmeldelink unten weiter: Er ist der Einstieg in diesen Workspace.",
+    "cancel": "Abbrechen",
+    "add": "Anbieter hinzufügen",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "form": {
+      "provider": "Anbieter",
+      "typeLocked": "Der Anbietertyp lässt sich nach dem Anlegen nicht ändern, da die gespeicherten Einstellungen dafür geprüft wurden. Legen Sie stattdessen einen neuen Anbieter an.",
+      "name": "Anzeigename",
+      "namePlaceholder": "Mit Microsoft anmelden",
+      "nameHelp": "Wird auf der Anmeldeschaltfläche angezeigt.",
+      "issuer": "Issuer-URL",
+      "clientId": "Client ID",
+      "clientSecret": "Client Secret",
+      "keepBlank": "(leer lassen zum Beibehalten)",
+      "secretHidden": "Das Secret wird nie an den Browser zurückgesendet und kann daher hier nicht angezeigt werden.",
+      "secretExpires": "Secret läuft ab am (optional)",
+      "secretExpiresHelp": "Microsoft begrenzt Client Secrets auf 24 Monate. Wenn Sie das Datum hier eintragen, wird aus einem unbemerkten Ablauf eine Warnung.",
+      "jit": "Konten bei der ersten Anmeldung anlegen",
+      "jitHelp": "Standardmäßig aus. Ist es an, tritt jeder, der sich bei Ihrem Identitätsanbieter anmelden kann, diesem Workspace als Viewer bei, auch Gäste, die Sie dort aus anderen Gründen eingeladen haben.",
+      "roleSync": "Rollen bei jeder Anmeldung aus dem Verzeichnis synchronisieren",
+      "roleSyncHelp": "Berechtigungen werden dann dort gepflegt, wo Ein- und Austritte ohnehin verwaltet werden. Rollen, die ein Admin von Hand vergeben hat, entfernt eine Synchronisierung nie.",
+      "source": "Rollen lesen aus",
+      "sources": {
+        "GROUPS": "Sicherheits- / Microsoft 365-Gruppen",
+        "APP_ROLES": "Anwendungsrollen"
+      },
+      "sourceHelp": "Gruppen nutzen, was das Verzeichnis ohnehin pflegt, werden aber über Objekt-IDs statt lesbarer Namen zugeordnet. Anwendungsrollen sind besser lesbar, müssen aber zuerst im App-Manifest angelegt werden.",
+      "fallback": "Wenn nichts passt",
+      "fallbacks": {
+        "DENY_ALL": "Keine Tools gewähren",
+        "KEEP_EXISTING": "Bestehende Rollen unverändert lassen",
+        "DEFAULT_ROLE": "Eine Standardrolle gewähren"
+      },
+      "fallbackHelp": "„Keine Tools gewähren“ ist bewusst die Voreinstellung: Es vergibt eine ausdrückliche Rolle ohne Tools, sodass das Ergebnis nicht davon abhängt, ob dieser Workspace schon Tool-Whitelists eingerichtet hat.",
+      "defaultRoles": "Standard-MCP-Rollen",
+      "defaultRolesPlaceholder": "Mindestens eine Rolle wählen",
+      "noRoles": "Es gibt noch keine MCP-Rollen. Legen Sie unter Rollen eine an",
+      "defaultRolesHelp": "Wird allen gewährt, deren Gruppen zu keiner Zuordnung passen. Bleibt das Feld leer, verhält sich der Fallback genau wie „Keine Tools gewähren“.",
+      "active": "Aktiv",
+      "defaultRoleMissing": "„Eine Standardrolle gewähren“ braucht mindestens eine Standard-MCP-Rolle. Wählen Sie oben eine aus oder wählen Sie einen anderen Fallback.",
+      "saving": "Wird gespeichert...",
+      "saveChanges": "Änderungen speichern",
+      "create": "Anbieter erstellen"
+    },
+    "empty": "Keine Identitätsanbieter eingerichtet. Mitglieder melden sich mit einem Passwort an.",
+    "list": {
+      "inactive": "Inaktiv",
+      "ssoRequired": "SSO verpflichtend",
+      "secretExpiring": "Secret läuft ab",
+      "jit": "Legt Konten bei der ersten Anmeldung an",
+      "testing": "Wird getestet...",
+      "test": "Testen",
+      "edit": "Bearbeiten",
+      "delete": "Löschen",
+      "hideMappings": "Rollenzuordnungen ausblenden",
+      "mappings": "Rollenzuordnungen",
+      "hideScim": "Provisionierung ausblenden",
+      "scim": "Provisionierung (SCIM)",
+      "enforce": "Single Sign-On verpflichtend machen"
+    },
+    "recovery": {
+      "generateFailed": "Codes konnten nicht erzeugt werden",
+      "title": "Wiederherstellungscodes",
+      "intro": "Einmal-Codes, mit denen Sie sich anmelden, wenn der Identitätsanbieter nicht erreichbar ist: ein abgelaufenes Client Secret, eine Mandantenmigration, ein Claim, der nicht mehr ankommt. Single Sign-On lässt sich erst verpflichtend machen, wenn Sie welche besitzen.",
+      "saveNow": "Speichern Sie diese jetzt. Sie können nicht noch einmal angezeigt werden.",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "download": "Herunterladen",
+      "savedThem": "Ich habe sie gespeichert",
+      "generating": "Wird erzeugt...",
+      "generate": "Wiederherstellungscodes erzeugen",
+      "regenerate": "Neu erzeugen",
+      "noneYet": "Noch keine.",
+      "unused": "{unused} von {total} ungenutzt.",
+      "regenerateWarning": "Neu erzeugen macht den aktuellen Satz ungültig."
+    },
+    "mappings": {
+      "orgRoles": {
+        "unchanged": "Unverändert lassen",
+        "VIEWER": "Viewer",
+        "EDITOR": "Editor",
+        "ADMIN": "Admin"
+      },
+      "loadFailed": "Zuordnungen konnten nicht geladen werden",
+      "saved": "Zuordnungen gespeichert",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "loading": "Zuordnungen werden geladen...",
+      "groupsTitle": "Gruppenzuordnungen",
+      "appRolesTitle": "Zuordnungen von App-Rollen",
+      "groupsScimHelp": "Gruppen, die der Anwendung in Entra zugewiesen sind, erscheinen hier automatisch, sobald die Provisionierung gelaufen ist. Weisen Sie jeder Gruppe MCP-Rollen zu; eine Gruppe ohne Rollen gewährt nichts. Eine noch nicht übertragene Gruppe können Sie weiterhin über die Objekt-ID hinzufügen.",
+      "groupsHelp": "Geben Sie die <strong>Objekt-ID</strong> der Gruppe ein, nicht ihren Namen: Microsoft erzwingt keine eindeutigen Gruppennamen, daher könnte sich sonst jeder, der eine Gruppe anlegen darf, selbst eine Rolle geben. Sie finden sie in Entra unter Groups → die Gruppe → Overview → Object Id. Nur Gruppen, die <em>der Anwendung zugewiesen</em> sind, erscheinen im Token.",
+      "appRolesHelp": "Geben Sie den <strong>Wert</strong> der App-Rolle aus dem Anwendungsmanifest ein (zum Beispiel <code>amcp.einkauf</code>), nicht ihren Anzeigenamen.",
+      "scimAppRolesWarning": "Rollen werden bei der Anmeldung aus den Anwendungsrollen gelesen. Über SCIM übertragene Gruppenänderungen ändern zwischen zwei Anmeldungen niemandes Rollen. Stellen Sie dafür „Rollen lesen aus“ auf Gruppen um.",
+      "syncOff": "Die Rollensynchronisierung ist für diesen Anbieter ausgeschaltet. Diese Zuordnungen werden gespeichert, aber nie angewendet. Schalten Sie sie unter Bearbeiten ein.",
+      "groupId": "Objekt-ID der Gruppe",
+      "appRoleValue": "Wert der App-Rolle",
+      "fromScim": "aus SCIM",
+      "members": "{count, plural, one {# Mitglied} other {# Mitglieder}}",
+      "label": "Name (für Menschen)",
+      "workspaceRole": "Workspace-Rolle",
+      "mcpRoles": "MCP-Rollen",
+      "noRolesPlaceholder": "Keine Rollen: gewährt nichts",
+      "noRoles": "Es gibt noch keine MCP-Rollen. Legen Sie unter Rollen eine an",
+      "scimRemoveHint": "Heben Sie in Entra die Zuweisung der Gruppe zur Anwendung auf, um sie zu entfernen.",
+      "remove": "Entfernen",
+      "add": "Zuordnung hinzufügen",
+      "saving": "Wird gespeichert...",
+      "save": "Zuordnungen speichern",
+      "footer": "Ein Benutzer in mehreren zugeordneten Gruppen erhält die <strong>Vereinigung</strong> ihrer MCP-Rollen und die <strong>höchste</strong> Workspace-Rolle. Rollen, die ein Admin von Hand vergeben hat, entfernt eine Synchronisierung nie.",
+      "footerDenyAll": "Wer zu nichts passt, erhält die Rolle „No access (SSO)“, die keine Tools gewährt."
+    },
+    "scim": {
+      "toast": {
+        "loadFailed": "Provisionierungsstatus konnte nicht geladen werden",
+        "copyFailed": "Kopieren fehlgeschlagen",
+        "copyManually": "Markieren Sie den Wert und kopieren Sie ihn von Hand.",
+        "changeFailed": "Provisionierung konnte nicht geändert werden",
+        "enabled": "Provisionierung aktiviert",
+        "rotated": "Token erneuert",
+        "resyncFailed": "Neusynchronisierung fehlgeschlagen",
+        "disabled": "Provisionierung deaktiviert"
+      },
+      "confirmRotate": "SCIM-Token erneuern?\n\nDas aktuelle Token funktioniert sofort nicht mehr. Die Provisionierung in Entra schlägt fehl, bis Sie das neue Token in die Unternehmensanwendung einfügen.",
+      "confirmDisable": "SCIM-Provisionierung ausschalten?\n\nEntra kann hier dann keine Konten mehr anlegen, ändern oder deaktivieren. Bestehende Konten, Mitgliedschaften und Rollen bleiben, wie sie sind.",
+      "resync": {
+        "title": "{count, plural, one {# Mitglied neu synchronisiert} other {# Mitglieder neu synchronisiert}}",
+        "changed": "{count} geändert",
+        "unchanged": "{count} unverändert",
+        "failed": "{count} fehlgeschlagen",
+        "lastAdmin": "{count} als letzter Admin geschützt",
+        "button": "Rollen jetzt neu synchronisieren"
+      },
+      "title": "Provisionierung (SCIM)",
+      "intro": "Lassen Sie Entra Konten anlegen, aktualisieren und, worauf es ankommt, deaktivieren, sobald jemand im Verzeichnis deaktiviert oder entfernt wird, ganz ohne Anmeldung. Ohne das behält jemand, der ausscheidet, seinen MCP-Schlüssel, bis ein Administrator ihn von Hand deaktiviert.",
+      "entraOnly": "Die Provisionierung ist für Anbieter vom Typ Microsoft Entra ID verfügbar.",
+      "saveNow": "Speichern Sie das Token jetzt. Es kann nicht noch einmal angezeigt werden.",
+      "tenantUrl": "Tenant URL",
+      "secretToken": "Secret Token",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "hide": "Ausblenden",
+      "reveal": "Anzeigen",
+      "savedIt": "Ich habe es gespeichert",
+      "enabling": "Wird aktiviert...",
+      "enable": "Provisionierung aktivieren",
+      "unlinked": "{count, plural, one {# bestehendes Mitglied hat noch keine Microsoft-Identität. Entra meldet dafür einen Konflikt, bis es sich einmal mit Microsoft anmeldet.} other {# bestehende Mitglieder haben noch keine Microsoft-Identität. Entra meldet für sie einen Konflikt, bis sie sich einmal mit Microsoft anmelden.}}",
+      "issued": "Token ausgestellt {date}",
+      "lastRequest": "Letzte Anfrage von Entra {date}",
+      "never": "nie",
+      "stale": "veraltet",
+      "users": "Provisionierte Benutzer {count}",
+      "groups": "Synchronisierte Gruppen {count}",
+      "rotate": "Token erneuern",
+      "resyncNeedsSync": "Schalten Sie zuerst unter Bearbeiten die Rollensynchronisierung ein",
+      "resyncNeedsGroups": "Gilt nur, wenn Rollen aus Gruppen gelesen werden",
+      "disable": "Deaktivieren",
+      "steps": {
+        "show": "So richten Sie das in Entra ein",
+        "s1": "Entra Admin Center → <strong>Enterprise applications</strong> → <strong>New application</strong> →<strong> Create your own application</strong> → <em>Integrate any other application you don't find in the gallery</em>. Geben Sie ihr einen Namen wie <em>AnythingMCP provisioning</em>.",
+        "s1b": "Es muss eine <strong>zweite App außerhalb der Galerie</strong> sein: Die App, die Sie für die Anmeldung registriert haben, stammt aus<em> App registrations</em>, und dort lässt Entra <strong>Get started</strong> ausgegraut mit dem Hinweis „automatic provisioning … is not supported“.",
+        "s2": "<strong>Users and groups → Add user/group</strong>: Weisen Sie dieselben Gruppen zu wie der Anmelde-App. Zuweisungen werden nicht zwischen den beiden Apps übernommen, und nur zugewiesene Gruppen werden provisioniert.",
+        "s3": "<strong>Provisioning</strong> → Provisioning Mode: <strong>Automatic</strong>.",
+        "s4": "<strong>Connectivity</strong> (ältere Mandanten zeigen das direkt als <em>Admin Credentials</em>): Authentifizierungsmethode <strong>Bearer authentication</strong>, dann <strong>Tenant URL</strong> und <strong>Secret Token</strong> von oben einfügen → <strong>Test connection</strong>. Entra speichert erst, wenn der Test erfolgreich war.",
+        "s5": "<strong>Attribute mapping</strong>: Lassen Sie <code>userName</code> ← <code>userPrincipalName</code> und<code> active</code> unverändert, aber <strong>ändern Sie <code>externalId</code></strong>: Die Standardquelle ist <code>mailNickname</code>, es muss <code>objectId</code> sein. Sonst erhält dieselbe Person ein Konto über SCIM und ein weiteres über die Anmeldung.",
+        "s6": "Settings → Scope: <em>Sync only assigned users and groups</em>. Nur Gruppen, die unter <strong>Users and groups</strong> zugewiesen sind, werden provisioniert, wie beim Gruppen-Claim.",
+        "s7": "<strong>Save</strong>, dann <strong>Start provisioning</strong>. Der erste Durchlauf legt <em>jeden</em> zugewiesenen Benutzer an; spätere laufen etwa alle 40 Minuten.",
+        "s8": "Um einen Benutzer ohne Wartezeit zu testen: <strong>Provision on demand</strong>. Nutzen Sie es erneut, nachdem Sie den Benutzer in Entra deaktiviert haben."
+      }
+    }
   }
 }
