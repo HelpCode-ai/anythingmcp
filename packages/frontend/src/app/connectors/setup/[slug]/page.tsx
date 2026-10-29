@@ -39,6 +39,10 @@ import { SetupSuccess } from '@/components/connector-setup/setup-success';
  *   step=done       back from the provider's sign-in
  *   from=<client>   set up from a chat: at the end, the way back to that
  *                   assistant (see lib/return-assistant.ts for the list)
+ *   prefill.<NAME>=<value>
+ *                   start a field with this value, e.g. the Odoo address and
+ *                   database from the AnythingMCP module in Odoo. Addresses and
+ *                   settings only: a credential is never read from a link.
  *
  * An adapter with a `setupGuide` is set up one step at a time instead (an
  * intro, the steps, then the success screen); "Enter everything on one page"
@@ -63,6 +67,16 @@ function SetupContent() {
   const existingId = params.get('connector');
   const back = returnAssistant(params.get('from'));
   const backFromProvider = params.get('step') === 'done';
+  // Values handed over in the link (prefill.<NAME>), applied once the fields are known.
+  const handed = useMemo(
+    () =>
+      Object.fromEntries(
+        [...params.entries()]
+          .filter(([k, v]) => k.startsWith('prefill.') && v.trim())
+          .map(([k, v]) => [k.slice('prefill.'.length), v.trim()]),
+      ),
+    [params],
+  );
 
   const [info, setInfo] = useState<AdapterSetupInfo | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -115,6 +129,10 @@ function SetupContent() {
       .describe(slug, token)
       .then((d) => {
         setInfo(d);
+        // Addresses and settings only: a credential is never read from a link.
+        // Typed or stored values win.
+        const allowed = (d.envVars ?? []).filter((f) => f.kind !== 'credential' && !f.secret && handed[f.name]);
+        if (allowed.length > 0) setValues((v) => ({ ...Object.fromEntries(allowed.map((f) => [f.name, handed[f.name]])), ...v }));
         if (d.setupGuide) restoreProgress(d.setupGuide.steps);
         // Once per tab session: a reload or a return from the provider is the
         // same setup, and counting each visit inflated "started".
@@ -141,7 +159,7 @@ function SetupContent() {
         })
         .catch(() => {});
     }
-  }, [token, slug, existingId, progressKey, backFromProvider]);
+  }, [token, slug, existingId, progressKey, backFromProvider, handed]);
 
   useEffect(() => {
     if (!token || info?.setupKind !== 'oauth_browser') return;
