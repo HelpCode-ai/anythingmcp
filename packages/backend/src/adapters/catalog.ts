@@ -454,6 +454,7 @@ import * as snapchat from './intl/snapchat.json';
 import * as snov from './intl/snov.json';
 import * as snowflake from './intl/snowflake.json';
 import * as softr from './intl/softr.json';
+import * as sonarqube from './intl/sonarqube.json';
 import * as sorare from './intl/sorare.json';
 import * as splunk from './intl/splunk.json';
 import * as sportmonks from './intl/sportmonks.json';
@@ -1255,6 +1256,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   snov as unknown as AdapterDefinition,
   snowflake as unknown as AdapterDefinition,
   softr as unknown as AdapterDefinition,
+  sonarqube as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
   splunk as unknown as AdapterDefinition,
   sportmonks as unknown as AdapterDefinition,

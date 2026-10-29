@@ -644,6 +644,17 @@ describe('LoginController', () => {
       );
     });
 
+    it('offers to copy the example request, without its quotes', async () => {
+      arrange();
+      const page = (await login())._sent as string;
+
+      expect(page).toContain('<span id="example-request">Connect my Etsy shop to AnythingMCP.</span>');
+      expect(page).toContain('<button type="button" class="copy" id="copy-request">Copy</button>');
+      // The button sits inside the example, never in the form that continues the authorization.
+      expect(page).toContain("navigator.clipboard.writeText(request.textContent || '')");
+      expect(page.indexOf('id="copy-request"')).toBeLessThan(page.indexOf('Continue to Claude'));
+    });
+
     it('never keeps the login cookie past 30 minutes, nor under one', async () => {
       arrange({ sessionLeftMs: 2 * 60 * 60_000 });
       expect((await login())._cookies['login_user'].options.maxAge).toBe(30 * 60 * 1000);

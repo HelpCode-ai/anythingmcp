@@ -472,7 +472,7 @@
           },
           "ids": {
             "type": "array",
-            "description": "Record ids the method operates on. Use [] for model-level methods such as name_search or create. Many workflow actions handle one record at a time and fail with \"Expected singleton\" on several ids: then call the method once per id.",
+            "description": "Record ids the method operates on. Use [] for model-level methods such as name_search or create. Many workflow actions handle one record at a time and fail with \"Expected singleton\" on several ids, message_post (a chatter message or note) among them: call those once per id.",
             "items": {
               "type": "number"
             }

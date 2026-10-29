@@ -736,6 +736,218 @@ test.describe('connector list and marketplace from Accept-Language', () => {
   });
 });
 
+async function connectorSetupSession(page: Page) {
+  await fakeSession(page);
+  const shop = {
+    slug: 'shopx',
+    name: 'Shopx',
+    description: 'Your shop',
+    icon: 'shopx',
+    connector: { name: 'Shopx', type: 'REST', baseUrl: '{{SHOPX_URL}}/api', authType: 'API_KEY' },
+    setupKind: 'credentials',
+    envVars: [
+      { name: 'SHOPX_URL', required: true, label: 'Shop address', kind: 'address', secret: false },
+      { name: 'SHOPX_KEY', required: true, label: 'API key', kind: 'credential', secret: true },
+    ],
+    setupGuide: {
+      effort: 'api_key',
+      minutes: 3,
+      examples: ['Which orders came in today?'],
+      steps: [
+        { id: 'shop', title: 'Your shop', fields: ['SHOPX_URL'] },
+        { id: 'key', title: 'Your key', fields: ['SHOPX_KEY'] },
+      ],
+    },
+  };
+  await page.route(/\/health\/server-info/, (route) =>
+    route.fulfill({ json: { mcpAuthMode: 'oauth2', serverUrl: '', mcpEndpoint: '', deploymentMode: 'self-hosted' } }),
+  );
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\/(adapters|connectors|mcp-servers)/, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/adapters/shopx')) return route.fulfill({ json: shop });
+    if (path.endsWith('/adapters/shopx/verify')) return route.fulfill({ json: { ok: true, sample: '{"ok":true}' } });
+    if (path.endsWith('/adapters/shopx/import')) {
+      return route.fulfill({ json: { message: 'ok', connectorId: 'c9', attachedToServer: { id: 's1', name: 'Default' } } });
+    }
+    if (path.endsWith('/connectors/c9')) {
+      return route.fulfill({ json: { id: 'c9', setupStatus: 'ready', envVars: {}, maskedEnvVars: [], mcpServers: [{ mcpServerId: 's1' }] } });
+    }
+    if (path.endsWith('/mcp-servers/s1/activity')) return route.fulfill({ json: { calls30d: 0, lastCallAt: null } });
+    if (path.endsWith('/mcp-servers/s1')) return route.fulfill({ json: { id: 's1', name: 'Default', slug: 'default' } });
+    if (path.endsWith('/connectors/oauth/redirect-uri')) return route.fulfill({ json: { redirectUri: 'https://example.com/cb' } });
+    if (path.endsWith('/adapters/match-url')) return route.fulfill({ json: { matches: [] } });
+    if (path.endsWith('/connectors')) return route.fulfill({ json: [] });
+    return route.fulfill({ json: {} });
+  });
+}
+
+test.describe('connector setup and new connector from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the guided setup in German, through to the success screen', async ({ page }) => {
+      await connectorSetupSession(page);
+      await page.goto('/connectors/setup/shopx');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('heading', { name: 'Shopx mit Ihrer KI verbinden' })).toBeVisible();
+      await expect(page.getByText('API-Schlüssel · 3 Min.', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 Schritte', { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Starten', exact: true }).click();
+      await expect(page.getByText('Schritt 1 von 2', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Weiter', exact: true }).click();
+      await expect(page.getByText('Pflichtfeld', { exact: true })).toBeVisible();
+
+      await page.getByLabel('Shop address').fill('https://shop.example.com');
+      await page.getByRole('button', { name: 'Weiter', exact: true }).click();
+      await page.getByLabel('API key').fill('secret');
+      await page.getByRole('button', { name: 'Prüfen und verbinden', exact: true }).click();
+      await expect(page.getByRole('heading', { name: /Shopx ist verbunden/ })).toBeVisible();
+      await expect(page.getByText('AnythingMCP hat ihn mit Shopx geprüft: Er funktioniert.', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders /connectors/new in Italian', async ({ page }) => {
+      await connectorSetupSession(page);
+      await page.goto('/connectors/new');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByText('Scegli il tipo di connettore', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: /^API REST/ }).click();
+      await expect(page.getByText('Configura API REST', { exact: true })).toBeVisible();
+      await expect(page.getByText('Nome del connettore', { exact: true })).toBeVisible();
+      await expect(page.getByText('Header personalizzati', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Testa la connessione' })).toBeVisible();
+
+      await page.getByRole('button', { name: /^Database/ }).click();
+      await expect(page.getByRole('button', { name: 'Sola lettura', exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the guided setup and /connectors/new in English', async ({ page }) => {
+      await connectorSetupSession(page);
+      await page.goto('/connectors/setup/shopx');
+      await expect(page.getByRole('heading', { name: 'Connect Shopx to your AI' })).toBeVisible();
+      await expect(page.getByText('API key · 3 min', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 steps', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      await expect(page.getByText('Step 1 of 2', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Continue', exact: true }).click();
+      await expect(page.getByText('Required', { exact: true })).toBeVisible();
+
+      await page.goto('/connectors/new');
+      await expect(page.getByText('Choose connector type', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: /^REST API/ }).click();
+      await expect(page.getByText('Configure REST API', { exact: true })).toBeVisible();
+      await expect(page.getByText('Custom headers', { exact: true })).toBeVisible();
+    });
+  });
+});
+
+async function connectorDetailSession(page: Page) {
+  await fakeSession(page);
+  const connector = {
+    id: 'c1',
+    name: 'Orders API',
+    type: 'REST',
+    baseUrl: 'https://api.example.com/v1',
+    authType: 'API_KEY',
+    isActive: true,
+    createdAt: '2026-01-15T10:00:00Z',
+    envVars: { API_REGION: 'eu' },
+    maskedEnvVars: [],
+    headers: null,
+    config: {},
+    tools: [],
+    mcpServers: [{ mcpServerId: 's1' }],
+  };
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\/connectors/, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/connectors/c1')) return route.fulfill({ json: connector });
+    if (path.endsWith('/connectors/c1/catalog-diff')) return route.fulfill({ json: { catalogManaged: false } });
+    if (path.endsWith('/connectors/proxy-availability')) return route.fulfill({ json: { available: false } });
+    if (path.endsWith('/connectors/c1/tools')) return route.fulfill({ json: [] });
+    return route.fulfill({ json: {} });
+  });
+}
+
+test.describe('connector page from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders /connectors/[id] in German, in view and edit mode', async ({ page }) => {
+      await connectorDetailSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByText('Connector-Details', { exact: true })).toBeVisible();
+      await expect(page.getByText('API-Schlüssel', { exact: true })).toBeVisible();
+      await expect(page.getByText('Umgebungsvariablen', { exact: true })).toBeVisible();
+      await expect(page.getByText('Aktiv', { exact: true }).first()).toBeVisible();
+
+      await page.getByRole('button', { name: 'Bearbeiten (1)' }).click();
+      await expect(page.getByRole('button', { name: '+ Variable hinzufügen' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Variablen speichern' })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Bearbeiten', exact: true }).click();
+      await expect(page.getByText('Header-Name', { exact: true }).first()).toBeVisible();
+      await expect(page.getByPlaceholder('Leer lassen zum Beibehalten').first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Änderungen speichern' })).toBeVisible();
+
+      await expect(page.getByText('Connector löschen', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Löschen', exact: true }).last().click();
+      await expect(page.getByRole('dialog')).toContainText('Möchten Sie Orders API und alle zugehörigen Tools wirklich löschen?');
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders /connectors/[id] in Italian', async ({ page }) => {
+      await connectorDetailSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByText('Dettagli del connettore', { exact: true })).toBeVisible();
+      await expect(page.getByText('Chiave API', { exact: true })).toBeVisible();
+      await expect(page.getByText('Variabili d\'ambiente', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Modifica', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Salva modifiche' })).toBeVisible();
+      await expect(page.getByText('Elimina connettore', { exact: true }).first()).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps /connectors/[id] in English', async ({ page }) => {
+      await connectorDetailSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.getByText('Connector Details', { exact: true })).toBeVisible();
+      await expect(page.getByText('Auth Type', { exact: true })).toBeVisible();
+      await expect(page.getByText('API Key', { exact: true })).toBeVisible();
+      await expect(page.getByText('Environment Variables', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Edit (1)' }).click();
+      await expect(page.getByRole('button', { name: '+ Add Variable' })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Edit', exact: true }).click();
+      await expect(page.getByText('Header Name', { exact: true })).toBeVisible();
+      await expect(page.getByPlaceholder('Leave empty to keep current').first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Save Changes' })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Delete', exact: true }).last().click();
+      await expect(page.getByRole('dialog')).toContainText(
+        'Are you sure you want to delete Orders API and all its tools? This action cannot be undone.',
+      );
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;

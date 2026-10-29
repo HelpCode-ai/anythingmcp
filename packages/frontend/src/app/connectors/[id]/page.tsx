@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors, tools, withSecretsNotice, withImportNotice, isMachineGrant, type ToolTestResult, type CatalogDiff, type OAuthGrant } from '@/lib/api';
@@ -19,7 +19,9 @@ import { SetupStatusBanner, SetupStatusPill } from '@/components/setup-status';
 import { AuthStatusBanner, AuthStatusPill } from '@/components/auth-status';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { authTypeLabel, cn } from '@/lib/utils';
+import { useLocale, useTranslations } from 'next-intl';
+import { cn } from '@/lib/utils';
+import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
 
@@ -159,6 +161,9 @@ function slimHarForUpload(rawText: string, baseUrl?: string): { json: string; by
 
 export default function ConnectorDetailPage() {
   const { token, user } = useAuth();
+  const t = useTranslations('connectorDetail');
+  const locale = useLocale();
+  const authTypeLabel = useAuthTypeLabel();
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -399,14 +404,14 @@ export default function ConnectorDetailPage() {
       const toolsImported = searchParams.get('tools');
       setMsg(
         toolsImported && Number(toolsImported) > 0
-          ? `OAuth2 authorization successful! ${toolsImported} tools discovered and imported.`
-          : 'OAuth2 authorization successful! You can now discover tools.',
+          ? t('msg.oauthSuccessTools', { count: toolsImported })
+          : t('msg.oauthSuccess'),
       );
       // Clean URL
       window.history.replaceState({}, '', `/connectors/${id}`);
     } else if (oauthStatus === 'error') {
-      const message = searchParams.get('message') || 'Authorization failed';
-      setMsg(`OAuth2 error: ${message}`);
+      const message = searchParams.get('message') || t('msg.authFailedDefault');
+      setMsg(t('msg.oauthError', { message }));
       window.history.replaceState({}, '', `/connectors/${id}`);
     }
 
@@ -430,10 +435,10 @@ export default function ConnectorDetailPage() {
         // The header needs both, so a half-filled pair would break every call.
         if (!editAuthKey && !editAuthValue) {
           if (connector.authType === 'WS_SECURITY') return undefined;
-          throw new Error('Enter the username and password to switch to WS-Security.');
+          throw new Error(t('msg.wsSwitch'));
         }
         if (!editAuthKey || !editAuthValue) {
-          throw new Error('Enter both the username and the password to change the WS-Security credentials.');
+          throw new Error(t('msg.wsChange'));
         }
         return { username: editAuthKey, password: editAuthValue, passwordType: editWsPasswordType };
       }
@@ -446,7 +451,7 @@ export default function ConnectorDetailPage() {
         const consumerKey = editOauth1Key.trim();
         const consumerSecret = editOauth1Secret.trim();
         if (!consumerKey || !consumerSecret) {
-          throw new Error('Enter the consumer key and consumer secret to switch to OAuth 1.0a.');
+          throw new Error(t('msg.oauth1Switch'));
         }
         const token = editOauth1Token.trim();
         const tokenSecret = editOauth1TokenSecret.trim();
@@ -467,7 +472,7 @@ export default function ConnectorDetailPage() {
           try {
             loginBody = JSON.parse(raw);
           } catch {
-            throw new Error('Login body must be valid JSON.');
+            throw new Error(t('msg.loginJson'));
           }
         }
         return {
@@ -495,7 +500,7 @@ export default function ConnectorDetailPage() {
         !oauthHasPasswordCreds &&
         (!editOauthUsername.trim() || !editOauthPassword)
       ) {
-        throw new Error('Enter the username and password the password grant sends to the token URL.');
+        throw new Error(t('msg.passwordGrant'));
       }
       const data: Record<string, unknown> = {
         name: editName,
@@ -530,7 +535,7 @@ export default function ConnectorDetailPage() {
         const existing = (connector.config as any)?.odata ?? {};
         const services = editOdataServices
           .split(/[\s,]+/)
-          .map((t) => t.trim())
+          .map((v) => v.trim())
           .filter(Boolean);
         data.config = {
           odata: {
@@ -545,7 +550,7 @@ export default function ConnectorDetailPage() {
       if (connector.type === 'DATABASE') {
         const deniedTables = editDbDeniedTables
           .split(/[\s,]+/)
-          .map((t) => t.trim())
+          .map((v) => v.trim())
           .filter(Boolean);
         // The server merges config, so a cleared list must be sent as null.
         data.config = {
@@ -583,11 +588,11 @@ export default function ConnectorDetailPage() {
         await connectors.updateOAuthConfig(id, oauthPatch, token);
       }
 
-      setMsg(withSecretsNotice('Connector updated.', saved));
+      setMsg(withSecretsNotice(t('msg.updated'), saved));
       setEditing(false);
       fetchConnector();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('msg.error', { message: err.message }));
     }
   };
 
@@ -604,11 +609,11 @@ export default function ConnectorDetailPage() {
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       setMsg(
         file.secretsIncluded
-          ? `Exported as ${format.toUpperCase()}. The file contains secret values in plain text: store it safely. OAuth credentials are not exported.`
-          : `Exported as ${format.toUpperCase()} without secret values (only admins can export them). OAuth credentials are not exported.`,
+          ? t('msg.exportedSecrets', { format: format.toUpperCase() })
+          : t('msg.exportedNoSecrets', { format: format.toUpperCase() }),
       );
     } catch (err: any) {
-      setMsg(`Export failed: ${err.message}`);
+      setMsg(t('msg.exportFailed', { message: err.message }));
     }
   };
 
@@ -638,14 +643,14 @@ export default function ConnectorDetailPage() {
 
   const handleImportSpec = async () => {
     if (!token) return;
-    setMsg('Importing specification...');
+    setMsg(t('msg.importingSpec'));
     try {
       const result = await connectors.importSpec(id, token);
       setMsg(withImportNotice(result.message, result));
       fetchConnector();
       promptMcpAssignIfNeeded();
     } catch (err: any) {
-      setMsg(`Import failed: ${err.message}`);
+      setMsg(t('msg.importFailed', { message: err.message }));
     }
   };
 
@@ -722,13 +727,15 @@ export default function ConnectorDetailPage() {
       const res = await connectors.resyncCatalog(id, token, { applyBaseUrl });
       setMsg(
         res.applied
-          ? `Updated from the catalog${applyBaseUrl && catalogDiff?.baseUrl ? `, base URL now ${catalogDiff.baseUrl.to}` : ''}.`
-          : 'Nothing to update.',
+          ? applyBaseUrl && catalogDiff?.baseUrl
+            ? t('msg.catalogUpdatedBaseUrl', { url: catalogDiff.baseUrl.to })
+            : t('msg.catalogUpdated')
+          : t('msg.nothingToUpdate'),
       );
       setApplyBaseUrl(false);
       await fetchConnector();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('msg.error', { message: err.message }));
     } finally {
       setApplyingCatalog(false);
     }
@@ -754,7 +761,7 @@ export default function ConnectorDetailPage() {
       setToolList((prev) => prev.filter((t) => t.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('msg.error', { message: err.message }));
       setDeleteTarget(null);
     } finally {
       setDeleting(false);
@@ -889,12 +896,12 @@ export default function ConnectorDetailPage() {
       const warnings = result?.warnings ?? [];
       setMsg(
         warnings.length
-          ? `Environment variables saved. ${warnings.join(' ')}`
-          : 'Environment variables saved',
+          ? t('msg.envSavedWarnings', { warnings: warnings.join(' ') })
+          : t('msg.envSaved'),
       );
       fetchConnector();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('msg.error', { message: err.message }));
     } finally {
       setSavingEnvVars(false);
     }
@@ -947,7 +954,7 @@ export default function ConnectorDetailPage() {
         fetchConnector();
       }
     } catch (err: any) {
-      setMsg(`Discovery failed: ${err.message}`);
+      setMsg(t('msg.discoveryFailed', { message: err.message }));
     } finally {
       setDiscovering(false);
     }
@@ -956,11 +963,11 @@ export default function ConnectorDetailPage() {
 
   if (loading) {
     return (
-      <AppShell backTo={{ label: 'Connectors', href: '/connectors' }} title="Connector">
+      <AppShell backTo={{ label: t('back'), href: '/connectors' }} title={t('loadingTitle')}>
         <div className="flex items-center justify-center py-24">
           <div className="text-center">
             <div className="inline-block w-6 h-6 border-2 border-[var(--brand)] border-t-transparent rounded-full animate-spin mb-3"></div>
-            <p className="text-[var(--text-3)]">Loading...</p>
+            <p className="text-[var(--text-3)]">{t('loading')}</p>
           </div>
         </div>
       </AppShell>
@@ -985,6 +992,8 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  const strong = (chunks: ReactNode) => <strong className="text-[var(--text)]">{chunks}</strong>;
+
   const connectorInitials = (connector.name || '?')
     .split(/\s+/)
     .map((w: string) => w[0])
@@ -995,22 +1004,22 @@ export default function ConnectorDetailPage() {
 
   return (
     <AppShell
-      backTo={{ label: 'Connectors', href: '/connectors' }}
+      backTo={{ label: t('back'), href: '/connectors' }}
       title={connector.name}
       maxWidth={880}
       actions={
         <div className="flex gap-2 flex-wrap">
           <Button variant="secondary" size="md" onClick={handleTest}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
-            Test
+            {t('actions.test')}
           </Button>
           <Button variant="secondary" size="md" onClick={() => setEditing(!editing)}>
-            {editing ? 'Cancel' : 'Edit'}
+            {editing ? t('actions.cancel') : t('actions.edit')}
           </Button>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
-              <Button variant="secondary" size="md" title="Export this connector as a file">
-                Export
+              <Button variant="secondary" size="md" title={t('actions.exportTitle')}>
+                {t('actions.export')}
               </Button>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
@@ -1026,14 +1035,14 @@ export default function ConnectorDetailPage() {
                     onSelect={() => handleExport(format)}
                     className="flex cursor-pointer select-none items-center rounded-[7px] px-2.5 py-2 text-[13px] text-[var(--text-2)] outline-none data-[highlighted]:bg-[var(--surface-2)] data-[highlighted]:text-[var(--text)]"
                   >
-                    Export as {format.toUpperCase()}
+                    {t('actions.exportAs', { format: format.toUpperCase() })}
                   </DropdownMenu.Item>
                 ))}
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
           <Button variant="outlineDanger" size="md" onClick={handleDelete}>
-            Delete
+            {t('actions.delete')}
           </Button>
         </div>
       }
@@ -1043,29 +1052,21 @@ export default function ConnectorDetailPage() {
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <Dialog.Title className="mb-2 text-lg font-semibold text-[var(--text)]">
-              {deleteTarget?.kind === 'tool' ? 'Delete Tool' : 'Delete Connector'}
+              {deleteTarget?.kind === 'tool' ? t('deleteDialog.titleTool') : t('deleteDialog.titleConnector')}
             </Dialog.Title>
             <Dialog.Description className="mb-5 text-sm text-[var(--text-3)]">
               {deleteTarget?.kind === 'tool' ? (
-                <>
-                  Are you sure you want to delete{' '}
-                  <strong className="text-[var(--text)]">{deleteTarget.name}</strong>? AI clients
-                  will stop seeing this tool. This action cannot be undone.
-                </>
+                t.rich('deleteDialog.bodyTool', { name: deleteTarget.name, b: strong })
               ) : (
-                <>
-                  Are you sure you want to delete{' '}
-                  <strong className="text-[var(--text)]">{connector.name}</strong> and all its
-                  tools? This action cannot be undone.
-                </>
+                t.rich('deleteDialog.bodyConnector', { name: connector.name, b: strong })
               )}
             </Dialog.Description>
             <div className="flex justify-end gap-2">
               <Dialog.Close className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))} disabled={deleting}>
-                Cancel
+                {t('deleteDialog.cancel')}
               </Dialog.Close>
               <Button variant="danger" size="md" onClick={confirmDelete} disabled={deleting}>
-                {deleting ? 'Deleting…' : 'Delete'}
+                {deleting ? t('deleteDialog.deleting') : t('deleteDialog.delete')}
               </Button>
             </div>
           </Dialog.Content>
@@ -1086,7 +1087,7 @@ export default function ConnectorDetailPage() {
                 tone={connector.isActive ? 'success' : 'neutral'}
                 dot={connector.isActive ? 'var(--ok)' : 'var(--text-3)'}
               >
-                {connector.isActive ? 'Active' : 'Inactive'}
+                {connector.isActive ? t('active') : t('inactive')}
               </StatusPill>
               <SetupStatusPill status={connector.setupStatus} />
               <AuthStatusPill connector={connector} />
@@ -1104,7 +1105,7 @@ export default function ConnectorDetailPage() {
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
             {msg}
             <button onClick={() => setMsg('')} className="ml-2 underline">
-              dismiss
+              {t('dismiss')}
             </button>
           </div>
         )}
@@ -1121,10 +1122,10 @@ export default function ConnectorDetailPage() {
           >
             {testResult.kind && testResult.kind !== 'ok' && (
               <span className="font-semibold mr-1">
-                {testResult.kind === 'auth_failed' && 'Auth rejected: '}
-                {testResult.kind === 'not_found' && 'Not found: '}
-                {testResult.kind === 'unreachable' && 'Unreachable: '}
-                {testResult.kind === 'error' && 'Error: '}
+                {testResult.kind === 'auth_failed' && t('test.authRejected')}
+                {testResult.kind === 'not_found' && t('test.notFound')}
+                {testResult.kind === 'unreachable' && t('test.unreachable')}
+                {testResult.kind === 'error' && t('test.error')}
               </span>
             )}
             {testResult.message}
@@ -1135,8 +1136,7 @@ export default function ConnectorDetailPage() {
                     href={testResult.suggestedFix.url || '/admin/settings#ssrf'}
                     className="underline text-sm font-medium hover:no-underline"
                   >
-                    → Add <code>{testResult.suggestedFix.hostname}</code> to
-                    the SSRF allowlist
+                    {t.rich('test.ssrf', { host: testResult.suggestedFix.hostname, code: (chunks) => <code>{chunks}</code> })}
                   </a>
                 </div>
               )}
@@ -1153,10 +1153,9 @@ export default function ConnectorDetailPage() {
           <Card className="p-[22px]">
             <div className="flex items-start justify-between gap-4 mb-3">
               <div>
-                <h3 className="text-sm font-semibold">Catalog update available</h3>
+                <h3 className="text-sm font-semibold">{t('catalog.title')}</h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  This connector was installed from{' '}
-                  <code>{catalogDiff.slug}</code>, which has changed since.
+                  {t.rich('catalog.installedFrom', { slug: catalogDiff.slug ?? '', code: (chunks) => <code>{chunks}</code> })}
                 </p>
               </div>
               <Badge tone="neutral">{catalogDiff.catalogVersion?.slice(0, 7)}</Badge>
@@ -1167,9 +1166,9 @@ export default function ConnectorDetailPage() {
             <ul className="text-sm space-y-2 mb-4">
               {!!catalogDiff.updated?.length && (
                 <li>
-                  <span className="font-medium">Updated</span>
+                  <span className="font-medium">{t('catalog.updated')}</span>
                   {catalogDiff.updated.some((u) => u.kind === 'structural') && (
-                    <span className="text-muted-foreground"> (endpoint changes marked ●)</span>
+                    <span className="text-muted-foreground">{t('catalog.structural')}</span>
                   )}
                   :{' '}
                   <span className="text-muted-foreground break-words">
@@ -1181,20 +1180,21 @@ export default function ConnectorDetailPage() {
               )}
               {!!catalogDiff.added?.length && (
                 <li>
-                  <span className="font-medium">New</span>:{' '}
+                  <span className="font-medium">{t('catalog.added')}</span>:{' '}
                   <span className="text-muted-foreground break-words">{catalogDiff.added.join(', ')}</span>
                 </li>
               )}
               {!!catalogDiff.removed?.length && (
                 <li>
-                  <span className="font-medium">Switched off</span> (no longer in the catalog):{' '}
+                  <span className="font-medium">{t('catalog.removed')}</span>
+                  {t('catalog.removedNote')}:{' '}
                   <span className="text-muted-foreground break-words">{catalogDiff.removed.join(', ')}</span>
                 </li>
               )}
-              {catalogDiff.instructionsRefreshable && <li>Instructions refreshed</li>}
+              {catalogDiff.instructionsRefreshable && <li>{t('catalog.instructions')}</li>}
               {!!catalogDiff.custom?.length && (
                 <li className="rounded-md bg-[var(--surface-2)] px-2 py-1.5">
-                  <span className="font-medium">Yours, kept as they are</span>:{' '}
+                  <span className="font-medium">{t('catalog.custom')}</span>:{' '}
                   <span className="text-muted-foreground break-words">{catalogDiff.custom.join(', ')}</span>
                 </li>
               )}
@@ -1210,16 +1210,16 @@ export default function ConnectorDetailPage() {
                     onChange={(e) => setApplyBaseUrl(e.target.checked)}
                   />
                   <span className="text-sm">
-                    <span className="font-medium">Also change the base URL</span>
+                    <span className="font-medium">{t('catalog.baseUrl')}</span>
                     <span className="block text-xs text-muted-foreground mt-1 font-mono break-all">
                       {catalogDiff.baseUrl.from} → {catalogDiff.baseUrl.to}
                     </span>
                     <span className="block text-xs text-muted-foreground mt-2">
                       {catalogDiff.baseUrl.provenance === 'user-edited'
-                        ? 'This address was changed here, not by the catalog — a region, a sandbox or a self-hosted instance. Applying this will undo that.'
+                        ? t('catalog.provenanceUser')
                         : catalogDiff.baseUrl.provenance === 'catalog-moved'
-                          ? 'This connector still has the address the catalog gave it at install, and the catalog has since corrected it.'
-                          : 'Installed before we started recording the original address, so we cannot tell whether this was customised here. Check it before applying.'}
+                          ? t('catalog.provenanceMoved')
+                          : t('catalog.provenanceUnknown')}
                     </span>
                   </span>
                 </label>
@@ -1228,11 +1228,10 @@ export default function ConnectorDetailPage() {
 
             <div className="flex items-center gap-3">
               <Button onClick={handleApplyCatalog} disabled={applyingCatalog}>
-                {applyingCatalog ? 'Applying…' : 'Apply update'}
+                {applyingCatalog ? t('catalog.applying') : t('catalog.apply')}
               </Button>
               <span className="text-xs text-muted-foreground">
-                Credentials, response mappings, role access and manual
-                enable/disable are preserved.
+                {t('catalog.preserved')}
               </span>
             </div>
           </Card>
@@ -1240,11 +1239,11 @@ export default function ConnectorDetailPage() {
 
         {/* Connector Details */}
         <Card className="p-[22px]">
-          <h3 className="text-sm font-semibold mb-4">Connector Details</h3>
+          <h3 className="text-sm font-semibold mb-4">{t('details.title')}</h3>
           {editing ? (
             <div className="space-y-4 max-w-md">
               <div>
-                <label className="block text-sm font-medium mb-1">Name</label>
+                <label className="block text-sm font-medium mb-1">{t('details.name')}</label>
                 <input
                   type="text"
                   value={editName}
@@ -1253,7 +1252,7 @@ export default function ConnectorDetailPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Base URL</label>
+                <label className="block text-sm font-medium mb-1">{t('details.baseUrl')}</label>
                 <input
                   type="text"
                   value={editBaseUrl}
@@ -1264,9 +1263,9 @@ export default function ConnectorDetailPage() {
               {connector.type === 'REST' && (
                 <div>
                   <label className="block text-sm font-medium mb-1">
-                    Healthcheck path
+                    {t('details.healthcheck')}
                     <span className="ml-2 text-xs text-[var(--text-3)] font-normal">
-                      optional — defaults to /
+                      {t('details.healthcheckOptional')}
                     </span>
                   </label>
                   <input
@@ -1277,9 +1276,7 @@ export default function ConnectorDetailPage() {
                     className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
                   />
                   <p className="text-xs text-[var(--text-3)] mt-1">
-                    Path used by "Test connection". Set to an endpoint that
-                    returns 2xx without auth (e.g. <code>/health</code>) if the
-                    API has no root handler.
+                    {t.rich('details.healthcheckHint', { code: (chunks) => <code>{chunks}</code> })}
                   </p>
                 </div>
               )}
@@ -1290,11 +1287,11 @@ export default function ConnectorDetailPage() {
                   checked={editActive}
                   onChange={(e) => setEditActive(e.target.checked)}
                 />
-                <label htmlFor="isActive" className="text-sm">Active</label>
+                <label htmlFor="isActive" className="text-sm">{t('active')}</label>
               </div>
               {connector.type === 'DATABASE' && (
                 <div>
-                  <label className="block text-sm font-medium mb-2">Access Mode</label>
+                  <label className="block text-sm font-medium mb-2">{t('details.accessMode')}</label>
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
@@ -1305,7 +1302,7 @@ export default function ConnectorDetailPage() {
                           : 'border-[var(--border)] hover:bg-[var(--surface-2)]'
                       }`}
                     >
-                      Read-only
+                      {t('details.readOnly')}
                     </button>
                     <button
                       type="button"
@@ -1316,29 +1313,27 @@ export default function ConnectorDetailPage() {
                           : 'border-[var(--border)] hover:bg-[var(--surface-2)]'
                       }`}
                     >
-                      Read &amp; Write
+                      {t('details.readWrite')}
                     </button>
                   </div>
                   <p className="text-xs text-[var(--text-3)] mt-1.5">
                     {editDbReadOnly
-                      ? 'Only SELECT queries are allowed. Safe for analytics and reporting.'
-                      : 'All SQL operations (SELECT, INSERT, UPDATE, DELETE) are allowed. Use with caution.'}
+                      ? t('details.readOnlyHint')
+                      : t('details.readWriteHint')}
                   </p>
                   <label htmlFor="deniedTables" className="block text-sm font-medium mt-4 mb-1">
-                    Denied tables
+                    {t('details.deniedTables')}
                   </label>
                   <input
                     id="deniedTables"
                     type="text"
                     value={editDbDeniedTables}
                     onChange={(e) => setEditDbDeniedTables(e.target.value)}
-                    placeholder="e.g. salaries, audit_*, PA####"
+                    placeholder={t('details.deniedPlaceholder')}
                     className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                   />
                   <p className="text-xs text-[var(--text-3)] mt-1.5">
-                    Queries that name one of these tables are refused. Comma-separated;{' '}
-                    <code>*</code> matches any text, <code>?</code> one character, <code>#</code> one digit.
-                    The database user&apos;s own permissions remain the real boundary.
+                    {t.rich('details.deniedHint', { code: (chunks) => <code>{chunks}</code> })}
                   </p>
                 </div>
               )}
@@ -1354,14 +1349,14 @@ export default function ConnectorDetailPage() {
                     <span>
                       SAP Gateway
                       <span className="block text-xs text-[var(--text-3)]">
-                        Services come from SAP&apos;s service catalog; sap-client and sap-language are sent with every request.
+                        {t('details.sapHint')}
                       </span>
                     </span>
                   </label>
                   {editOdataSap && (
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-sm font-medium mb-1">SAP client</label>
+                        <label className="block text-sm font-medium mb-1">{t('details.sapClient')}</label>
                         <input
                           type="text"
                           value={editOdataSapClient}
@@ -1372,7 +1367,7 @@ export default function ConnectorDetailPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-1">SAP language</label>
+                        <label className="block text-sm font-medium mb-1">{t('details.sapLanguage')}</label>
                         <input
                           type="text"
                           value={editOdataSapLanguage}
@@ -1386,7 +1381,7 @@ export default function ConnectorDetailPage() {
                   )}
                   <div>
                     <label htmlFor="odataServices" className="block text-sm font-medium mb-1">
-                      Allowed services
+                      {t('details.allowedServices')}
                     </label>
                     <textarea
                       id="odataServices"
@@ -1397,20 +1392,20 @@ export default function ConnectorDetailPage() {
                       className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                     />
                     <p className="text-xs text-[var(--text-3)] mt-1.5">
-                      One service path per line, <code>*</code> as wildcard. Empty allows every service the technical user can call.
+                      {t.rich('details.servicesHint', { code: (chunks) => <code>{chunks}</code> })}
                     </p>
                   </div>
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium mb-1">Authentication</label>
+                <label className="block text-sm font-medium mb-1">{t('details.auth')}</label>
                 <AppSelect
                   value={editAuthType}
                   onValueChange={(v) => { setEditAuthType(v); setEditAuthKey(''); setEditAuthValue(''); setEditWsPasswordType('PasswordText'); setEditLtPassword(''); resetOauth1Fields(); }}
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                   options={[
-                    { value: 'NONE', label: 'None' },
-                    { value: 'API_KEY', label: 'API Key' },
+                    { value: 'NONE', label: t('details.authNone') },
+                    { value: 'API_KEY', label: t('details.apiKey') },
                     { value: 'BEARER_TOKEN', label: 'Bearer Token' },
                     { value: 'BASIC_AUTH', label: 'Basic Auth' },
                     // A SOAP header: implemented by the SOAP engine only.
@@ -1422,42 +1417,42 @@ export default function ConnectorDetailPage() {
                     ...(connector.type === 'REST' || connector.type === 'ODATA' || connector.authType === 'OAUTH1'
                       ? [{ value: 'OAUTH1', label: 'OAuth 1.0a' }]
                       : []),
-                    { value: 'LOGIN_TOKEN', label: 'Login → Token (auto-refresh)' },
+                    { value: 'LOGIN_TOKEN', label: t('details.authLoginToken') },
                   ]}
                 />
               </div>
               {editAuthType === 'API_KEY' && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Header Name</label>
+                    <label className="block text-sm font-medium mb-1">{t('details.headerName')}</label>
                     <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     {editAuthKey && !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(editAuthKey) && (
                       <p className="mt-1 text-[12px]" style={{ color: 'var(--danger)' }}>
-                        The HTTP header the key is sent in, e.g. X-API-Key: letters, digits and - only, no spaces.
+                        {t('details.headerInvalid')}
                       </p>
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">API Key</label>
-                    <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    <label className="block text-sm font-medium mb-1">{t('details.apiKey')}</label>
+                    <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                 </div>
               )}
               {editAuthType === 'BEARER_TOKEN' && (
                 <div>
                   <label className="block text-sm font-medium mb-1">Bearer Token</label>
-                  <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                  <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                 </div>
               )}
               {editAuthType === 'BASIC_AUTH' && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Username</label>
-                    <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    <label className="block text-sm font-medium mb-1">{t('details.username')}</label>
+                    <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Password</label>
-                    <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    <label className="block text-sm font-medium mb-1">{t('details.password')}</label>
+                    <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                 </div>
               )}
@@ -1465,28 +1460,27 @@ export default function ConnectorDetailPage() {
                 <div className="flex flex-col gap-4">
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                      <label className="block text-sm font-medium mb-1">Username</label>
-                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <label className="block text-sm font-medium mb-1">{t('details.username')}</label>
+                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Password</label>
-                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <label className="block text-sm font-medium mb-1">{t('details.password')}</label>
+                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Password type</label>
+                    <label className="block text-sm font-medium mb-1">{t('details.wsPasswordType')}</label>
                     <AppSelect
                       value={editWsPasswordType}
                       onValueChange={setEditWsPasswordType}
                       className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                       options={[
-                        { value: 'PasswordText', label: 'PasswordText (default)' },
+                        { value: 'PasswordText', label: t('details.wsPasswordTextDefault') },
                         { value: 'PasswordDigest', label: 'PasswordDigest' },
                       ]}
                     />
                     <p className="mt-1 text-xs text-[var(--text-3)]">
-                      Sent as a wsse:Security UsernameToken in the SOAP header. The password type is saved
-                      with the username and password: re-enter both to change it.
+                      {t('details.wsHint')}
                     </p>
                   </div>
                 </div>
@@ -1494,50 +1488,50 @@ export default function ConnectorDetailPage() {
               {editAuthType === 'OAUTH2' && connector.type !== 'MCP' && (
                 <div className="space-y-3">
                   <div>
-                    <label htmlFor="edit-oauth-grant" className="block text-sm font-medium mb-1">Grant type</label>
+                    <label htmlFor="edit-oauth-grant" className="block text-sm font-medium mb-1">{t('oauth.grant')}</label>
                     <select
                       id="edit-oauth-grant"
                       value={editOauthGrant}
                       onChange={(e) => setEditOauthGrant(e.target.value as OAuthGrant)}
                       className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                     >
-                      <option value="authorization_code">Authorization code (sign in at the provider)</option>
-                      <option value="client_credentials">Client credentials</option>
-                      <option value="password">Password (username and password)</option>
+                      <option value="authorization_code">{t('oauth.grantCode')}</option>
+                      <option value="client_credentials">{t('oauth.grantClient')}</option>
+                      <option value="password">{t('oauth.grantPassword')}</option>
                     </select>
                     <p className="mt-1 text-xs text-[var(--text-3)]">
                       {editOauthGrant === 'authorization_code'
-                        ? 'Authorize with Provider once; the refresh token renews the access token.'
+                        ? t('oauth.grantCodeHint')
                         : editOauthGrant === 'password'
-                          ? 'For APIs that issue tokens with no refresh token: a new one is requested with the username and password whenever it expires. Datto RMM: username = API key, password = API secret, client public-client / public with HTTP Basic.'
-                          : 'The client ID and secret alone get the token, and a new one whenever it expires. No sign-in at the provider.'}
+                          ? t('oauth.grantPasswordHint')
+                          : t('oauth.grantClientHint')}
                     </p>
                   </div>
                   {editOauthGrant === 'password' && (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div>
-                        <label htmlFor="edit-oauth-username" className="block text-sm font-medium mb-1">Username</label>
-                        <input id="edit-oauth-username" type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editOauthUsername} onChange={(e) => setEditOauthUsername(e.target.value)} placeholder={oauthHasPasswordCreds ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                        <label htmlFor="edit-oauth-username" className="block text-sm font-medium mb-1">{t('details.username')}</label>
+                        <input id="edit-oauth-username" type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editOauthUsername} onChange={(e) => setEditOauthUsername(e.target.value)} placeholder={oauthHasPasswordCreds ? t('details.keepCurrent') : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                       </div>
                       <div>
-                        <label htmlFor="edit-oauth-password" className="block text-sm font-medium mb-1">Password</label>
-                        <input id="edit-oauth-password" type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editOauthPassword} onChange={(e) => setEditOauthPassword(e.target.value)} placeholder={oauthHasPasswordCreds ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                        <label htmlFor="edit-oauth-password" className="block text-sm font-medium mb-1">{t('details.password')}</label>
+                        <input id="edit-oauth-password" type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editOauthPassword} onChange={(e) => setEditOauthPassword(e.target.value)} placeholder={oauthHasPasswordCreds ? t('details.keepCurrent') : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                       </div>
                     </div>
                   )}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">Client ID</label>
-                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">Client Secret</label>
-                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
                   {!isMachineGrant(editOauthGrant) && (
                   <div>
-                    <label className="block text-sm font-medium mb-1">Authorization URL</label>
+                    <label className="block text-sm font-medium mb-1">{t('oauth.authorizationUrl')}</label>
                     <input type="text" value={editOauthAuthUrl} onChange={(e) => setEditOauthAuthUrl(e.target.value)} placeholder="https://provider.com/oauth/authorize" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)] font-mono text-[13px]" />
                   </div>
                   )}
@@ -1547,44 +1541,42 @@ export default function ConnectorDetailPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Scopes</label>
-                    <input type="text" value={editOauthScopes} onChange={(e) => setEditOauthScopes(e.target.value)} placeholder="read write (space-separated, optional)" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)] font-mono text-[13px]" />
+                    <input type="text" value={editOauthScopes} onChange={(e) => setEditOauthScopes(e.target.value)} placeholder={t('oauth.scopesPlaceholder')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)] font-mono text-[13px]" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Token endpoint authentication</label>
+                    <label className="block text-sm font-medium mb-1">{t('oauth.tokenAuth')}</label>
                     <select
                       value={editTokenAuthMethod}
                       onChange={(e) => setEditTokenAuthMethod(e.target.value)}
                       className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                     >
-                      <option value="client_secret_post">Client secret in body (default)</option>
-                      <option value="client_secret_basic">HTTP Basic header (client_secret_basic)</option>
+                      <option value="client_secret_post">{t('oauth.secretInBodyDefault')}</option>
+                      <option value="client_secret_basic">{t('oauth.basicHeader')}</option>
                       {editTokenAuthMethod === 'private_key_jwt' && (
-                        <option value="private_key_jwt">Signed JWT with your private key (private_key_jwt)</option>
+                        <option value="private_key_jwt">{t('oauth.privateKeyJwt')}</option>
                       )}
                     </select>
                     <p className="mt-1 text-xs text-[var(--text-3)]">
                       {editTokenAuthMethod === 'private_key_jwt'
-                        ? 'Set by the connector: a short-lived JWT signed with the private key from the environment variables replaces the client secret.'
+                        ? t('oauth.privateKeyJwtHint')
                         : isMachineGrant(editOauthGrant)
-                          ? 'How the client ID and secret reach the token URL. HTTP Basic is the default for this grant.'
-                          : 'Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM and DATEV require it. Applies to refreshes too. Re-authorize after changing it.'}
+                          ? t('oauth.machineHint')
+                          : t('oauth.basicHint')}
                     </p>
                   </div>
                   {!isMachineGrant(editOauthGrant) && (
                   <div>
                     <label className="flex items-center gap-2 text-sm font-medium">
                       <input type="checkbox" checked={editPkce} onChange={(e) => setEditPkce(e.target.checked)} />
-                      Use PKCE when authorizing
+                      {t('oauth.pkce')}
                     </label>
                     <p className="mt-1 text-xs text-[var(--text-3)]">
-                      On by default. Turn it off only if the provider refuses PKCE: LinkedIn&apos;s standard web flow answers 401 invalid_client to it. Re-authorize after changing it.
+                      {t('oauth.pkceHint')}
                     </p>
                   </div>
                   )}
                   <p className="text-xs text-[var(--text-3)]">
-                    Leave Client ID / Client Secret empty to keep the stored values. Endpoints
-                    are shown as configured and can be corrected here — useful when a connector
-                    was switched to OAuth2 after creation and has none yet.
+                    {t('oauth.keepNote')}
                   </p>
                 </div>
               )}
@@ -1592,62 +1584,63 @@ export default function ConnectorDetailPage() {
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                      <label htmlFor="edit-oauth1-consumer-key" className="block text-sm font-medium mb-1">Consumer Key</label>
-                      <input id="edit-oauth1-consumer-key" type="text" autoComplete="off" value={editOauth1Key} onChange={(e) => setEditOauth1Key(e.target.value)} placeholder={connector.authType === 'OAUTH1' ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <label htmlFor="edit-oauth1-consumer-key" className="block text-sm font-medium mb-1">{t('oauth1.consumerKey')}</label>
+                      <input id="edit-oauth1-consumer-key" type="text" autoComplete="off" value={editOauth1Key} onChange={(e) => setEditOauth1Key(e.target.value)} placeholder={connector.authType === 'OAUTH1' ? t('details.keepCurrent') : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
-                      <label htmlFor="edit-oauth1-consumer-secret" className="block text-sm font-medium mb-1">Consumer Secret</label>
-                      <input id="edit-oauth1-consumer-secret" type="password" autoComplete="new-password" value={editOauth1Secret} onChange={(e) => setEditOauth1Secret(e.target.value)} placeholder={connector.authType === 'OAUTH1' ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <label htmlFor="edit-oauth1-consumer-secret" className="block text-sm font-medium mb-1">{t('oauth1.consumerSecret')}</label>
+                      <input id="edit-oauth1-consumer-secret" type="password" autoComplete="new-password" value={editOauth1Secret} onChange={(e) => setEditOauth1Secret(e.target.value)} placeholder={connector.authType === 'OAUTH1' ? t('details.keepCurrent') : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                      <label htmlFor="edit-oauth1-token" className="block text-sm font-medium mb-1">Access Token (optional)</label>
-                      <input id="edit-oauth1-token" type="password" autoComplete="new-password" value={editOauth1Token} onChange={(e) => setEditOauth1Token(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <label htmlFor="edit-oauth1-token" className="block text-sm font-medium mb-1">{t('oauth1.accessToken')}</label>
+                      <input id="edit-oauth1-token" type="password" autoComplete="new-password" value={editOauth1Token} onChange={(e) => setEditOauth1Token(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
-                      <label htmlFor="edit-oauth1-token-secret" className="block text-sm font-medium mb-1">Token Secret (optional)</label>
-                      <input id="edit-oauth1-token-secret" type="password" autoComplete="new-password" value={editOauth1TokenSecret} onChange={(e) => setEditOauth1TokenSecret(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <label htmlFor="edit-oauth1-token-secret" className="block text-sm font-medium mb-1">{t('oauth1.tokenSecret')}</label>
+                      <input id="edit-oauth1-token-secret" type="password" autoComplete="new-password" value={editOauth1TokenSecret} onChange={(e) => setEditOauth1TokenSecret(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
                   <p className="text-xs text-[var(--text-3)]">
-                    The consumer key and secret belong to the application registered with the
-                    provider — not your login e-mail or password. {connector.authType === 'OAUTH1'
-                      ? 'Leave a field empty to keep the stored value; stored values are never shown.'
-                      : 'Both are required to switch to OAuth 1.0a.'} The access token is only for
-                    APIs that act on behalf of a user (three-legged).
+                    {connector.authType === 'OAUTH1' ? t('oauth1.noteStored') : t('oauth1.noteNew')}
                   </p>
                 </div>
               )}
               {editAuthType === 'LOGIN_TOKEN' && (
                 <div className="space-y-3">
                   <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-xs text-[var(--t-info-fg)]">
-                    For APIs with short-lived tokens (e.g. HRworks): we POST your credentials to the login endpoint, read the token from the response, send it as a Bearer token, and refresh it automatically before it expires. Re-enter the password/secret to change this configuration; leave it empty to keep the current one.
+                    {t('loginToken.intro')}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Login URL</label>
+                    <label className="block text-sm font-medium mb-1">{t('loginToken.url')}</label>
                     <input type="text" value={editLtLoginUrl} onChange={(e) => setEditLtLoginUrl(e.target.value)} placeholder="https://api.hrworks.de/v2/authentication" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                      <label className="block text-sm font-medium mb-1">Username / Access key</label>
-                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editLtUsername} onChange={(e) => setEditLtUsername(e.target.value)} placeholder="access key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <label className="block text-sm font-medium mb-1">{t('loginToken.username')}</label>
+                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editLtUsername} onChange={(e) => setEditLtUsername(e.target.value)} placeholder={t('loginToken.usernamePlaceholder')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Password / Secret</label>
-                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editLtPassword} onChange={(e) => setEditLtPassword(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <label className="block text-sm font-medium mb-1">{t('loginToken.password')}</label>
+                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editLtPassword} onChange={(e) => setEditLtPassword(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Login request body (JSON)</label>
+                    <label className="block text-sm font-medium mb-1">{t('loginToken.body')}</label>
                     <textarea value={editLtLoginBody} onChange={(e) => setEditLtLoginBody(e.target.value)} rows={4} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] resize-y focus:outline-none focus:border-[var(--border-strong)]" />
                     <p className="text-xs text-[var(--text-3)] mt-1">
-                      Use <code>{'${username}'}</code> / <code>{'${password}'}</code> placeholders. HRworks uses <code>{'{ "accessKey": "${username}", "secretAccessKey": "${password}" }'}</code>.
+                      {t.rich('loginToken.bodyHint', {
+                        user: '${username}',
+                        pass: '${password}',
+                        example: '{ "accessKey": "${username}", "secretAccessKey": "${password}" }',
+                        code: (chunks) => <code>{chunks}</code>,
+                      })}
                     </p>
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <div>
-                      <label className="block text-sm font-medium mb-1">Method</label>
+                      <label className="block text-sm font-medium mb-1">{t('loginToken.method')}</label>
                       <AppSelect
                         value={editLtMethod}
                         onValueChange={setEditLtMethod}
@@ -1656,43 +1649,43 @@ export default function ConnectorDetailPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Token JSON path</label>
+                      <label className="block text-sm font-medium mb-1">{t('loginToken.tokenPath')}</label>
                       <input type="text" value={editLtTokenPath} onChange={(e) => setEditLtTokenPath(e.target.value)} placeholder="token" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Token TTL (s)</label>
+                      <label className="block text-sm font-medium mb-1">{t('loginToken.ttl')}</label>
                       <input type="number" value={editLtTtl} onChange={(e) => setEditLtTtl(e.target.value)} placeholder="900" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
                   <label className="flex items-center gap-2 text-sm text-[var(--text-2)]">
                     <input type="checkbox" checked={editLtRefreshOn401} onChange={(e) => setEditLtRefreshOn401(e.target.checked)} />
-                    Re-login and retry automatically on a 401 response
+                    {t('loginToken.refreshOn401')}
                   </label>
                 </div>
               )}
               {editAuthType !== 'NONE' && editAuthType !== 'OAUTH2' && editAuthType !== 'OAUTH1' && editAuthType !== 'LOGIN_TOKEN' && (
                 <p className="text-xs text-[var(--text-3)]">
-                  Leave credential fields empty to keep the current values.
+                  {t('details.keepCredentials')}
                 </p>
               )}
               {connector.type !== 'DATABASE' && connector.type !== 'MCP' && (
                 <HeadersEditor rows={editHeaderRows} onChange={setEditHeaderRows} maskedKeys={connector.maskedHeaders} />
               )}
               <div>
-                <label className="block text-sm font-medium mb-1">Instructions</label>
+                <label className="block text-sm font-medium mb-1">{t('details.instructions')}</label>
                 <textarea
                   value={editInstructions}
                   onChange={(e) => setEditInstructions(e.target.value)}
-                  placeholder="Instructions sent to AI clients when using this connector's tools (e.g. date formats, field values, API conventions)."
+                  placeholder={t('details.instructionsPlaceholder')}
                   rows={4}
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] resize-y focus:outline-none focus:border-[var(--border-strong)]"
                 />
                 <p className="text-xs text-[var(--text-3)] mt-1">
-                  Sent via MCP protocol to help AI understand how to use this connector.
+                  {t('details.instructionsHint')}
                 </p>
               </div>
               <Button variant="primary" size="lg" onClick={handleSave}>
-                Save Changes
+                {t('details.save')}
               </Button>
             </div>
           ) : (
@@ -1701,40 +1694,40 @@ export default function ConnectorDetailPage() {
                   identity block above states all four. This card carries only
                   what that block does not. */}
               <div>
-                <p className="text-[var(--text-3)]">Auth Type</p>
+                <p className="text-[var(--text-3)]">{t('details.authType')}</p>
                 <p className="font-medium">{authTypeLabel(connector.authType)}</p>
               </div>
               {connector.type === 'DATABASE' && (
                 <div>
-                  <p className="text-[var(--text-3)]">Access Mode</p>
+                  <p className="text-[var(--text-3)]">{t('details.accessMode')}</p>
                   <p className="font-medium">
                     {(connector.config as any)?.readOnly === false ? (
                       <span className="inline-flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                        Read &amp; Write
+                        {t('details.readWrite')}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                        Read-only
+                        {t('details.readOnly')}
                       </span>
                     )}
                   </p>
                 </div>
               )}
               <div>
-                <p className="text-[var(--text-3)]">Created</p>
-                <p className="font-medium">{new Date(connector.createdAt).toLocaleDateString()}</p>
+                <p className="text-[var(--text-3)]">{t('details.created')}</p>
+                <p className="font-medium">{new Date(connector.createdAt).toLocaleDateString(locale)}</p>
               </div>
               {connector.specUrl && (
                 <div className="col-span-2">
-                  <p className="text-[var(--text-3)]">Spec URL</p>
+                  <p className="text-[var(--text-3)]">{t('details.specUrl')}</p>
                   <p className="font-medium font-mono text-xs break-all">{connector.specUrl}</p>
                 </div>
               )}
               {connector.instructions && (
                 <div className="col-span-2 min-w-0">
-                  <p className="text-[var(--text-3)]">Instructions</p>
+                  <p className="text-[var(--text-3)]">{t('details.instructions')}</p>
                   {/* Adapters author this as Markdown — tables of codes,
                       headings, fenced examples — and it was printed raw,
                       pipes and all. Same renderer the marketplace uses. */}
@@ -1765,23 +1758,27 @@ export default function ConnectorDetailPage() {
         {/* OAuth2 Authorization (shared sign-in; per-user sign-in lives in the card above) */}
         {connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant)) && (
           <Card className="p-[22px]">
-            <h3 className="text-sm font-semibold mb-2">OAuth2 Authorization</h3>
+            <h3 className="text-sm font-semibold mb-2">{t('oauthCard.title')}</h3>
             <p className="text-sm text-[var(--text-3)] mb-4">
               {connector.credentialScope === 'USER'
-                ? 'Each user connects their own account above. Re-discovering tools lists them with your own sign-in.'
+                ? t('oauthCard.perUser')
                 : connector.type === 'MCP'
-                ? 'Authorize this connector to access the remote MCP server. After authorization, tools will be automatically discovered.'
-                : 'Authorize this connector with the OAuth2 provider. After authorization, tokens will be stored securely for API calls.'}
+                ? t('oauthCard.mcp')
+                : t('oauthCard.provider')}
             </p>
             <div className="flex gap-3 flex-wrap">
               {connector.credentialScope !== 'USER' && (
                 <Button variant="primary" size="lg" onClick={handleOAuthAuthorize} disabled={authorizing}>
-                  {authorizing ? 'Redirecting...' : connector.type === 'MCP' ? 'Authorize with Remote Server' : 'Authorize with Provider'}
+                  {authorizing
+                    ? t('oauthCard.redirecting')
+                    : connector.type === 'MCP'
+                      ? t('oauthCard.authorizeRemote')
+                      : t('oauthCard.authorizeProvider')}
                 </Button>
               )}
               {connector.type === 'MCP' && (
                 <Button variant="secondary" size="lg" onClick={handleDiscoverTools} disabled={discovering}>
-                  {discovering ? 'Discovering...' : 'Re-discover Tools'}
+                  {discovering ? t('oauthCard.discovering') : t('oauthCard.rediscover')}
                 </Button>
               )}
             </div>
@@ -1791,13 +1788,12 @@ export default function ConnectorDetailPage() {
         {/* Shopee shop authorization (HMAC-signed, Shopee's own flow) */}
         {connector.authType === 'HMAC' && (connector.config as any)?.adapterSlug === 'shopee' && (
           <Card className="p-[22px]">
-            <h3 className="text-sm font-semibold mb-2">Shopee shop authorization</h3>
+            <h3 className="text-sm font-semibold mb-2">{t('shopee.title')}</h3>
             <p className="text-sm text-[var(--text-3)] mb-4">
-              Sign in with the shop account and approve this app. The tokens are stored encrypted and renewed
-              automatically. Authorize again when the authorization expires or the connector asks for it.
+              {t('shopee.body')}
             </p>
             <Button variant="primary" size="lg" onClick={handleShopeeAuthorize} disabled={authorizing}>
-              {authorizing ? 'Redirecting...' : 'Authorize with Provider'}
+              {authorizing ? t('oauthCard.redirecting') : t('oauthCard.authorizeProvider')}
             </Button>
           </Card>
         )}
@@ -1806,14 +1802,18 @@ export default function ConnectorDetailPage() {
         <Card className="p-[22px]">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-semibold">Environment Variables</h3>
+              <h3 className="text-sm font-semibold">{t('env.title')}</h3>
               <p className="text-xs text-[var(--text-3)] mt-1">
-                Use {'{{VAR_NAME}}'} in URLs, paths, headers, and body fields. Variables are interpolated at runtime.
-                <strong className="block mt-1">Parameter override:</strong> If a variable name matches a tool parameter (e.g. <code className="bg-[var(--surface-2)] px-1 rounded">sContextTokenP</code>), the value is injected automatically and the parameter is hidden from the AI.
+                {t('env.hint', { variable: '{{VAR_NAME}}' })}
+                <strong className="block mt-1">{t('env.overrideTitle')}</strong>{' '}
+                {t.rich('env.overrideBody', {
+                  example: 'sContextTokenP',
+                  code: (chunks) => <code className="bg-[var(--surface-2)] px-1 rounded">{chunks}</code>,
+                })}
               </p>
             </div>
             <Button variant="secondary" size="md" onClick={() => setShowEnvVars(!showEnvVars)}>
-              {showEnvVars ? 'Hide' : `Edit (${envVarEntries.length})`}
+              {showEnvVars ? t('env.hide') : t('env.edit', { count: envVarEntries.length })}
             </Button>
           </div>
 
@@ -1827,7 +1827,7 @@ export default function ConnectorDetailPage() {
                     // Renaming a stored secret would save the new name empty and
                     // drop the old one; remove it and add a new one instead.
                     readOnly={entry.masked}
-                    aria-label="Variable name"
+                    aria-label={t('env.name')}
                     onChange={(e) => {
                       const updated = [...envVarEntries];
                       updated[i] = { ...entry, key: e.target.value };
@@ -1843,20 +1843,20 @@ export default function ConnectorDetailPage() {
                     type={entry.masked ? 'password' : 'text'}
                     autoComplete={entry.masked ? 'new-password' : 'off'}
                     value={entry.value}
-                    aria-label={`Value of ${entry.key.trim() || 'new variable'}`}
+                    aria-label={entry.key.trim() ? t('env.valueOf', { name: entry.key.trim() }) : t('env.valueOfNew')}
                     onChange={(e) => {
                       const updated = [...envVarEntries];
                       updated[i] = { ...entry, value: e.target.value };
                       setEnvVarEntries(updated);
                     }}
-                    placeholder={entry.masked ? 'Set — leave empty to keep current' : 'value'}
+                    placeholder={entry.masked ? t('env.stored') : t('env.value')}
                     className="flex-1 border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
                   />
                   <button
                     onClick={() => setEnvVarEntries(envVarEntries.filter((_, j) => j !== i))}
                     className="text-[var(--danger)] px-2 py-1 text-sm hover:underline"
                   >
-                    Remove
+                    {t('env.remove')}
                   </button>
                 </div>
               ))}
@@ -1866,10 +1866,10 @@ export default function ConnectorDetailPage() {
                   size="md"
                   onClick={() => setEnvVarEntries([...envVarEntries, { key: '', value: '' }])}
                 >
-                  + Add Variable
+                  {t('env.add')}
                 </Button>
                 <Button variant="primary" size="md" onClick={handleSaveEnvVars} disabled={savingEnvVars}>
-                  {savingEnvVars ? 'Saving...' : 'Save Variables'}
+                  {savingEnvVars ? t('env.saving') : t('env.save')}
                 </Button>
               </div>
             </div>
@@ -2342,16 +2342,16 @@ export default function ConnectorDetailPage() {
           style={{ borderColor: 'var(--t-danger-bg)', background: 'color-mix(in srgb, var(--danger) 5%, transparent)' }}
         >
           <div>
-            <div className="text-[13.5px] font-semibold text-[var(--danger)]">Delete connector</div>
+            <div className="text-[13.5px] font-semibold text-[var(--danger)]">{t('danger.title')}</div>
             <div className="text-[12.5px] text-[var(--text-3)]">
-              Removes this connector and unassigns it from all MCP servers.
+              {t('danger.body')}
             </div>
           </div>
           <button
             onClick={handleDelete}
             className="inline-flex h-9 items-center rounded-[9px] border border-[var(--danger)] bg-transparent px-3.5 text-[13px] font-semibold text-[var(--danger)] transition-colors hover:bg-[var(--t-danger-bg)]"
           >
-            Delete
+            {t('danger.delete')}
           </button>
         </div>
       </div>

@@ -6,6 +6,7 @@ import { normalizeEmail } from '../common/email.util';
 import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
+import { FIRST_SUCCESS_KEY } from './card-trial-offer';
 import { Prisma } from '../generated/prisma/client';
 
 // Production always talks to anythingmcp.com. The licence site decides
@@ -274,9 +275,13 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       // token: a licence key alone is not a billing credential. What makes it
       // safe to hand back a URL here is that the key is the one bound to the
       // signed-in admin's own workspace.
+      // Cancelling: whether the workspace ever made a successful tool call,
+      // so the licence site can pick the retention offer (a discount means
+      // little to a card trial that never got a call through).
+      const usage = flow === 'cancel' ? await this.cancellationUsage(organizationId) : null;
       const { data } = await axios.post(
         `${this.apiBase}/api/billing/portal`,
-        { licenseKey: license.licenseKey, returnUrl, ...(flow && { flow }) },
+        { licenseKey: license.licenseKey, returnUrl, ...(flow && { flow }), ...(usage && { usage }) },
         { timeout: 15000, headers: this.serviceHeaders() },
       );
       if (!data?.url) throw new Error('No portal URL returned.');
@@ -304,6 +309,37 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
    * is harmless (it simply expires unused). Every failure comes out as a
    * CheckoutUnavailableError; the upstream detail stays in our log.
    */
+  /**
+   * Cloud: when the workspace made its first successful tool call (null if
+   * never), read from OrgSettings or, for a workspace whose first success was
+   * not recorded there, from tool_invocations. Null as a whole on self-hosted
+   * or when the lookup fails, so the licence site treats the use as unknown
+   * and cancelling never waits on it.
+   */
+  private async cancellationUsage(
+    organizationId: string,
+  ): Promise<{ firstSuccessfulCallAt: string | null } | null> {
+    if (!this.deployment.isCloud()) return null;
+    try {
+      const stored = await this.prisma.orgSettings.findUnique({
+        where: { organizationId_key: { organizationId, key: FIRST_SUCCESS_KEY } },
+        select: { value: true },
+      });
+      if (stored?.value && Number.isFinite(Date.parse(stored.value))) {
+        return { firstSuccessfulCallAt: new Date(stored.value).toISOString() };
+      }
+      const first = await this.prisma.toolInvocation.findFirst({
+        where: { organizationId, status: 'SUCCESS' },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      });
+      return { firstSuccessfulCallAt: first?.createdAt.toISOString() ?? null };
+    } catch (err: any) {
+      this.logger.warn(`Usage lookup for the cancellation of org ${organizationId} failed: ${err?.message ?? err}`);
+      return null;
+    }
+  }
+
   async createCheckoutIntent(payload: CheckoutIntentPayload): Promise<{ url: string; trial: boolean }> {
     const headers = this.serviceHeaders();
     if (!headers['x-amcp-service-token']) {

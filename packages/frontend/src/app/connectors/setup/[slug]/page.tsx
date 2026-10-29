@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import {
   adapters,
@@ -49,17 +50,15 @@ import { SetupSuccess } from '@/components/connector-setup/setup-success';
 
 type Phase = 'form' | 'working' | 'done';
 
-const GROUPS: Array<{ kind: EnvVarDescriptor['kind']; title: string }> = [
-  { kind: 'address', title: 'Where it is' },
-  { kind: 'credential', title: 'Credentials' },
-  { kind: 'setting', title: 'Settings' },
-];
+/** Field groups, in order; titles are `connectorSetup.groups.<kind>`. */
+const GROUPS: Array<EnvVarDescriptor['kind']> = ['address', 'credential', 'setting'];
 
 function SetupContent() {
   const { slug } = useParams<{ slug: string }>();
   const params = useSearchParams();
   const router = useRouter();
   const { token } = useAuth();
+  const t = useTranslations('connectorSetup');
   const existingId = params.get('connector');
   const back = returnAssistant(params.get('from'));
   const backFromProvider = params.get('step') === 'done';
@@ -129,7 +128,7 @@ function SetupContent() {
           productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind });
         }
       })
-      .catch((e: Error) => setLoadError(e.message || 'This connector is not available.'));
+      .catch((e: Error) => setLoadError(e.message || t('notAvailable')));
     if (existingId) {
       // Pre-fill what is stored and not secret (secrets come back empty).
       connectors
@@ -141,7 +140,7 @@ function SetupContent() {
         })
         .catch(() => {});
     }
-  }, [token, slug, existingId, progressKey, backFromProvider]);
+  }, [token, slug, existingId, progressKey, backFromProvider, t]);
 
   useEffect(() => {
     if (!token || info?.setupKind !== 'oauth_browser') return;
@@ -170,7 +169,7 @@ function SetupContent() {
           setPhase('done');
           productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser', verified: test?.ok === true });
         } else {
-          setError('The authorization did not complete. Try again.');
+          setError(t('authIncomplete'));
           setPhase('form');
         }
       })
@@ -178,7 +177,7 @@ function SetupContent() {
         setError(e.message);
         setPhase('form');
       });
-  }, [backFromProvider, existingId, token, slug]);
+  }, [backFromProvider, existingId, token, slug, t]);
 
   const fields = useMemo(() => info?.envVars ?? [], [info]);
   const visibleFields = fields.filter((f) => !f.advanced);
@@ -234,10 +233,12 @@ function SetupContent() {
     const errs: Record<string, string> = {};
     for (const f of only ? fields.filter((x) => only.includes(x.name)) : fields) {
       const v = (values[f.name] ?? '').trim();
-      if (f.required && !f.advanced && !v && !storedSecrets.includes(f.name)) errs[f.name] = 'Required';
+      if (f.required && !f.advanced && !v && !storedSecrets.includes(f.name)) errs[f.name] = t('field.required');
       else if (v && f.pattern) {
         try {
-          if (!new RegExp(f.pattern).test(v)) errs[f.name] = f.patternMessage ?? (f.example ? `Looks wrong. Example: ${f.example}` : 'Looks wrong');
+          if (!new RegExp(f.pattern).test(v)) {
+            errs[f.name] = f.patternMessage ?? (f.example ? t('field.looksWrongExample', { example: f.example }) : t('field.looksWrong'));
+          }
         } catch {
           /* a broken pattern never blocks the form */
         }
@@ -261,7 +262,7 @@ function SetupContent() {
 
   const fail = (e: any) => {
     setPhase('form');
-    setError(e?.message || 'Something went wrong.');
+    setError(e?.message || t('genericError'));
   };
 
   const verifyAndSave = async () => {
@@ -279,7 +280,7 @@ function SetupContent() {
       if (check && check.ok === false) {
         // setup_verify_failed is recorded by the server, with the provider's message.
         if (check.missing?.length) {
-          setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, 'Required'])));
+          setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, t('field.required')])));
           showStepOf(check.missing);
         }
         setVerifyFailed(check);
@@ -292,7 +293,7 @@ function SetupContent() {
         const id = await save();
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.shopeeAuthorize(id, token, returnTo);
-        if (!auth.authorizationUrl) throw new Error(auth.error || 'Could not start the authorization.');
+        if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
         productEvents.track('oauth_started', token, { adapterSlug: slug });
         window.location.href = auth.authorizationUrl;
         return;
@@ -301,7 +302,7 @@ function SetupContent() {
         const id = await save();
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.oauthAuthorize(id, token, returnTo);
-        if (!auth.authorizationUrl) throw new Error(auth.error || 'Could not start the authorization.');
+        if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
         productEvents.track('oauth_started', token, { adapterSlug: slug });
         window.location.href = auth.authorizationUrl;
         return;
@@ -334,12 +335,12 @@ function SetupContent() {
       <Card className="p-6">
         <p role="alert" className="text-sm text-[var(--text-2)]">{loadError}</p>
         <Link href="/connectors/store" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'mt-4')}>
-          Back to the marketplace
+          {t('backToMarketplace')}
         </Link>
       </Card>
     );
   }
-  if (!info) return <p className="text-sm text-[var(--text-2)]">Loading…</p>;
+  if (!info) return <p className="text-sm text-[var(--text-2)]">{t('loading')}</p>;
 
   if (phase === 'done' && result) {
     return (
@@ -370,12 +371,12 @@ function SetupContent() {
   const selfRegisteringBridge = info.connector.type === 'MCP' && info.envVars.every((v) => !v.required);
   const primaryLabel =
     info.setupKind === 'none'
-      ? `Install ${info.name}`
+      ? t('actions.install', { name: info.name })
       : isOAuth
-        ? `Save and sign in to ${info.name.split(' ')[0]}`
+        ? t('actions.saveAndSignIn', { name: info.name.split(' ')[0] })
         : existingId
-          ? 'Check and save'
-          : 'Check and install';
+          ? t('actions.checkAndSave')
+          : t('actions.checkAndInstall');
 
   /** What the check or the save said, under the fields. */
   const checkOutcome = (
@@ -384,10 +385,10 @@ function SetupContent() {
         <div role="alert" className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">
           <p className="font-medium">
             {verifyFailed.kind === 'auth_failed'
-              ? `${info.name} did not accept these credentials.`
+              ? t('verify.authFailed', { name: info.name })
               : verifyFailed.kind === 'invalid_input'
-                ? 'Some values are missing or not valid.'
-                : `${info.name} answered with an error.`}
+                ? t('verify.invalidInput')
+                : t('verify.providerError', { name: info.name })}
           </p>
           <p className="mt-1 break-words text-xs">{verifyFailed.message}</p>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -396,12 +397,14 @@ function SetupContent() {
                 href={`/connectors/setup/${encodeURIComponent(verifyFailed.suggest)}`}
                 className="text-xs font-medium underline"
               >
-                Set up {verifyFailed.suggestName ?? 'the other connector'} instead
+                {verifyFailed.suggestName
+                  ? t('verify.suggest', { name: verifyFailed.suggestName })
+                  : t('verify.suggestOther')}
               </Link>
             )}
             {verifyFailed.kind !== 'invalid_input' && (
               <button type="button" onClick={() => saveAnyway(false)} className="text-xs underline">
-                Save anyway
+                {t('verify.saveAnyway')}
               </button>
             )}
           </div>
@@ -424,7 +427,7 @@ function SetupContent() {
       <div key={f.name}>
         <label htmlFor={id} className="mb-1 block text-sm font-medium text-[var(--text)]">
           {f.label}
-          {!f.required && <span className="ml-1 font-normal text-[var(--text-3)]">(optional)</span>}
+          {!f.required && <span className="ml-1 font-normal text-[var(--text-3)]">{t('field.optional')}</span>}
         </label>
         <div className="relative">
           <input
@@ -441,7 +444,7 @@ function SetupContent() {
             data-form-type="other"
             spellCheck={false}
             value={values[f.name] ?? ''}
-            placeholder={storedSecrets.includes(f.name) ? 'Stored. Leave empty to keep it' : (f.example ?? '')}
+            placeholder={storedSecrets.includes(f.name) ? t('field.stored') : (f.example ?? '')}
             onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
             aria-invalid={!!fieldErrors[f.name]}
             className={cn(
@@ -456,7 +459,7 @@ function SetupContent() {
               onClick={() => setRevealed((r) => ({ ...r, [f.name]: !show }))}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-3)] hover:text-[var(--text)]"
             >
-              {show ? 'Hide' : 'Show'}
+              {show ? t('field.hide') : t('field.show')}
             </button>
           )}
         </div>
@@ -468,7 +471,7 @@ function SetupContent() {
               <>
                 {' '}
                 <a href={f.link} target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--text)]">
-                  Open
+                  {t('field.open')}
                 </a>
               </>
             )}
@@ -543,12 +546,12 @@ function SetupContent() {
     const short = info.name.split(' ')[0];
     const finishLabel =
       info.setupKind === 'none'
-        ? `Install ${info.name}`
+        ? t('actions.install', { name: info.name })
         : isOAuth
-          ? `Check and sign in to ${short}`
+          ? t('actions.checkAndSignIn', { name: short })
           : existingId
-            ? 'Check and save'
-            : 'Check and connect';
+            ? t('actions.checkAndSave')
+            : t('actions.checkAndConnect');
 
     return (
       <Card className="space-y-6 p-6">
@@ -567,13 +570,13 @@ function SetupContent() {
           )}
           {extraAdvanced.length > 0 && (
             <details className="rounded-[9px] border border-[var(--border)] p-3">
-              <summary className="cursor-pointer text-sm text-[var(--text-2)]">Advanced</summary>
+              <summary className="cursor-pointer text-sm text-[var(--text-2)]">{t('advanced')}</summary>
               <div className="mt-3 space-y-3">{extraAdvanced.map(renderField)}</div>
             </details>
           )}
           {isLast && isOAuth && (
             <p className="text-xs text-[var(--text-3)]">
-              Next, {short} asks you to approve access. You come back here on your own.
+              {t('guide.oauthNext', { name: short })}
             </p>
           )}
           {checkOutcome}
@@ -582,16 +585,16 @@ function SetupContent() {
         <div className="space-y-2 border-t border-[var(--border)] pt-4">
           <div className="flex flex-wrap items-center gap-3">
             <Button variant="secondary" onClick={() => goTo(at - 1)} disabled={working}>
-              Back
+              {t('guide.back')}
             </Button>
             <Button onClick={next} disabled={working || needsTick}>
-              {working ? 'Checking…' : isLast ? finishLabel : 'Continue'}
+              {working ? t('guide.checking') : isLast ? finishLabel : t('guide.continue')}
             </Button>
             <span className="ml-auto">
               <StuckLink name={info.name} />
             </span>
           </div>
-          {needsTick && <p className="text-xs text-[var(--text-3)]">Tick the box above once it is done.</p>}
+          {needsTick && <p className="text-xs text-[var(--text-3)]">{t('guide.tickHint')}</p>}
         </div>
       </Card>
     );
@@ -604,12 +607,12 @@ function SetupContent() {
           <ConnectorLogo icon={info.icon} name={info.name} />
           <div>
             <h1 className="text-lg font-semibold text-[var(--text)]">
-              {existingId ? `Finish setting up ${info.name}` : `Set up ${info.name}`}
+              {existingId ? t('title.finish', { name: info.name }) : t('title.setUp', { name: info.name })}
             </h1>
             <p className="text-sm text-[var(--text-2)]">{info.description}</p>
             {info.setupGuide && (
               <button type="button" onClick={() => setMode('guide')} className="mt-1 text-xs text-[var(--text-3)] underline hover:text-[var(--text)]">
-                Prefer step by step? Use the guided setup
+                {t('useGuide')}
               </button>
             )}
           </div>
@@ -617,7 +620,7 @@ function SetupContent() {
 
         {info.prerequisites && (
           <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
-            <p className="mb-1 font-medium text-[var(--text)]">Before you start</p>
+            <p className="mb-1 font-medium text-[var(--text)]">{t('beforeStart')}</p>
             <div className="prose prose-sm max-w-none text-[13px] leading-relaxed dark:prose-invert [&_p]:my-1">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{info.prerequisites}</ReactMarkdown>
             </div>
@@ -626,24 +629,18 @@ function SetupContent() {
 
         {isOAuth && selfRegisteringBridge && (
           <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
-            <p>
-              After saving you sign in at {info.name.split(' ')[0]} once. AnythingMCP registers itself with {info.name.split(' ')[0]}&apos;s
-              MCP server, so there is no app to create and no key to copy.
-            </p>
+            <p>{t('oauth.selfRegistering', { name: info.name.split(' ')[0] })}</p>
           </div>
         )}
 
         {isOAuth && !selfRegisteringBridge && (
           <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
-            <p>
-              You need an app of your own at {info.name.split(' ')[0]}, then you sign in once. In the app&apos;s settings, add this
-              callback URL (also called redirect URI) exactly as shown:
-            </p>
+            <p>{t('oauth.ownApp', { name: info.name.split(' ')[0] })}</p>
             <div className="mt-2 flex items-center gap-2">
               <code className="flex-1 overflow-x-auto rounded bg-[var(--surface)] px-2 py-1 font-mono text-xs text-[var(--text)]">{redirectUri ?? '…'}</code>
               {redirectUri && (
                 <Button size="sm" variant="secondary" onClick={() => void copyText(redirectUri)}>
-                  Copy
+                  {t('copy')}
                 </Button>
               )}
             </div>
@@ -651,15 +648,15 @@ function SetupContent() {
         )}
 
         {info.setupKind === 'none' && (
-          <p className="text-sm text-[var(--text-2)]">Nothing to enter: it works without an account.</p>
+          <p className="text-sm text-[var(--text-2)]">{t('noInput')}</p>
         )}
 
-        {GROUPS.map(({ kind, title }) => {
+        {GROUPS.map((kind) => {
           const group = visibleFields.filter((f) => f.kind === kind);
           if (group.length === 0) return null;
           return (
             <fieldset key={kind} className="space-y-3">
-              <legend className="mb-1 text-xs font-semibold uppercase tracking-[0.06em] text-[var(--text-3)]">{title}</legend>
+              <legend className="mb-1 text-xs font-semibold uppercase tracking-[0.06em] text-[var(--text-3)]">{t(`groups.${kind}`)}</legend>
               {group.map(renderField)}
             </fieldset>
           );
@@ -667,7 +664,7 @@ function SetupContent() {
 
         {advancedFields.length > 0 && (
           <details className="rounded-[9px] border border-[var(--border)] p-3">
-            <summary className="cursor-pointer text-sm text-[var(--text-2)]">Advanced</summary>
+            <summary className="cursor-pointer text-sm text-[var(--text-2)]">{t('advanced')}</summary>
             <div className="mt-3 space-y-3">{advancedFields.map(renderField)}</div>
           </details>
         )}
@@ -676,17 +673,17 @@ function SetupContent() {
 
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={verifyAndSave} disabled={working}>
-            {working ? 'Working…' : primaryLabel}
+            {working ? t('working') : primaryLabel}
           </Button>
           {info.setupKind !== 'none' && !existingId && (
             <button type="button" onClick={() => saveAnyway(true)} disabled={working} className="text-sm text-[var(--text-3)] underline hover:text-[var(--text)]">
-              Save as draft
+              {t('saveDraft')}
             </button>
           )}
         </div>
         {info.setupKind !== 'none' && !existingId && (
           <p className="text-xs text-[var(--text-3)]">
-            A draft is not offered to your AI client until it is complete.
+            {t('draftHint')}
           </p>
         )}
       </Card>
@@ -694,7 +691,7 @@ function SetupContent() {
       {info.instructions && (
         <Card className="p-6">
           <details>
-            <summary className="cursor-pointer text-sm font-medium text-[var(--text)]">Step-by-step guide</summary>
+            <summary className="cursor-pointer text-sm font-medium text-[var(--text)]">{t('stepByStep')}</summary>
             <div className="prose prose-sm mt-3 max-w-none text-[13px] leading-relaxed dark:prose-invert [&_pre]:whitespace-pre-wrap [&_pre]:break-words">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{info.instructions}</ReactMarkdown>
             </div>
@@ -706,10 +703,11 @@ function SetupContent() {
 }
 
 export default function ConnectorSetupPage() {
+  const t = useTranslations('connectorSetup');
   return (
     <AppShell>
       <div className="mx-auto w-full max-w-2xl p-4 sm:p-6">
-        <Suspense fallback={<p className="text-sm text-[var(--text-2)]">Loading…</p>}>
+        <Suspense fallback={<p className="text-sm text-[var(--text-2)]">{t('loading')}</p>}>
           <SetupContent />
         </Suspense>
       </div>

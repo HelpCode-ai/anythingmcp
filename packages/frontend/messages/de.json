@@ -904,5 +904,543 @@
     "CONNECTION_STRING": "Connection-String",
     "HMAC": "HMAC-Signatur",
     "LOGIN_TOKEN": "Login-Token"
+  },
+  "connectorSetup": {
+    "notAvailable": "Dieser Connector ist nicht verfügbar.",
+    "authIncomplete": "Die Autorisierung wurde nicht abgeschlossen. Bitte versuchen Sie es erneut.",
+    "authStartFailed": "Die Autorisierung konnte nicht gestartet werden.",
+    "genericError": "Etwas ist schiefgelaufen.",
+    "backToMarketplace": "Zurück zum Marktplatz",
+    "loading": "Wird geladen…",
+    "groups": {
+      "address": "Adresse",
+      "credential": "Zugangsdaten",
+      "setting": "Einstellungen"
+    },
+    "actions": {
+      "install": "{name} installieren",
+      "saveAndSignIn": "Speichern und bei {name} anmelden",
+      "checkAndSave": "Prüfen und speichern",
+      "checkAndInstall": "Prüfen und installieren",
+      "checkAndSignIn": "Prüfen und bei {name} anmelden",
+      "checkAndConnect": "Prüfen und verbinden"
+    },
+    "verify": {
+      "authFailed": "{name} hat diese Zugangsdaten nicht akzeptiert.",
+      "invalidInput": "Einige Werte fehlen oder sind ungültig.",
+      "providerError": "{name} hat mit einem Fehler geantwortet.",
+      "suggest": "Stattdessen {name} einrichten",
+      "suggestOther": "Stattdessen den anderen Connector einrichten",
+      "saveAnyway": "Trotzdem speichern"
+    },
+    "field": {
+      "required": "Pflichtfeld",
+      "looksWrongExample": "Sieht falsch aus. Beispiel: {example}",
+      "looksWrong": "Sieht falsch aus",
+      "optional": "(optional)",
+      "stored": "Gespeichert. Leer lassen, um den Wert zu behalten",
+      "hide": "Verbergen",
+      "show": "Anzeigen",
+      "open": "Öffnen"
+    },
+    "advanced": "Erweitert",
+    "guide": {
+      "oauthNext": "Als Nächstes bittet {name} Sie, den Zugriff zu genehmigen. Danach kommen Sie automatisch hierher zurück.",
+      "back": "Zurück",
+      "checking": "Wird geprüft…",
+      "continue": "Weiter",
+      "tickHint": "Setzen Sie oben das Häkchen, sobald das erledigt ist."
+    },
+    "title": {
+      "finish": "Einrichtung von {name} abschließen",
+      "setUp": "{name} einrichten"
+    },
+    "useGuide": "Lieber Schritt für Schritt? Geführte Einrichtung verwenden",
+    "beforeStart": "Bevor Sie beginnen",
+    "oauth": {
+      "selfRegistering": "Nach dem Speichern melden Sie sich einmal bei {name} an. AnythingMCP registriert sich selbst beim MCP-Server von {name}, Sie müssen also keine App anlegen und keinen Schlüssel kopieren.",
+      "ownApp": "Sie benötigen eine eigene App bei {name} und melden sich dann einmal an. Tragen Sie in den Einstellungen der App diese Callback-URL (auch Redirect-URI genannt) genau so ein:"
+    },
+    "copy": "Kopieren",
+    "noInput": "Keine Eingabe nötig: Er funktioniert ohne Konto.",
+    "working": "Wird ausgeführt…",
+    "saveDraft": "Als Entwurf speichern",
+    "draftHint": "Ein Entwurf wird Ihrem KI-Client erst angeboten, wenn er vollständig ist.",
+    "stepByStep": "Schritt-für-Schritt-Anleitung"
+  },
+  "setupGuide": {
+    "stuck": "Nicht weitergekommen? Fragen Sie uns",
+    "intro": {
+      "title": "{name} mit Ihrer KI verbinden",
+      "steps": "{count, plural, one {# Schritt} other {# Schritte}}",
+      "examples": "Danach können Sie Ihre KI zum Beispiel fragen",
+      "needs": "Was Sie brauchen",
+      "whyOwnApp": "Warum brauche ich eine eigene App bei {name}?",
+      "why": "Warum diese Einrichtung?",
+      "resume": "Weiter bei Schritt {step}: {title}",
+      "startOver": "Von vorn beginnen",
+      "start": "Starten",
+      "skipTo": "Den Rest schon erledigt? Zu Schritt {step}: {title}",
+      "doneBefore": "Schon einmal gemacht?",
+      "onePage": "Alles auf einer Seite eingeben"
+    },
+    "stepper": {
+      "useIt": "Nutzen",
+      "label": "Fortschritt der Einrichtung"
+    },
+    "value": {
+      "select": "<b>{value}</b> auswählen",
+      "copied": "Kopiert ✓",
+      "copy": "Kopieren"
+    },
+    "step": {
+      "position": "Schritt {step} von {total}",
+      "newTab": "(öffnet sich in einem neuen Tab)",
+      "fillPrevious": "{action}: Füllen Sie zuerst den vorherigen Schritt aus.",
+      "screenshot": "Screenshot vom {date}; die Seite kann inzwischen etwas anders aussehen.",
+      "problems": "Häufige Probleme"
+    }
+  },
+  "setupSuccess": {
+    "copied": "Kopiert ✓",
+    "copy": "Kopieren",
+    "yourServer": "Ihr MCP-Server",
+    "defaultPrompt": "Was kannst du mit {name} tun?",
+    "serverUrl": "URL Ihres MCP-Servers",
+    "tabs": {
+      "label": "KI-Client",
+      "other": "Andere"
+    },
+    "claude": {
+      "step1": "Klicken Sie auf <b>Zu Claude hinzufügen</b>: Claude öffnet den Dialog <b>Add custom connector</b>.",
+      "step2": "Geben Sie einen Namen ein (z. B. AnythingMCP), fügen Sie die URL unten ein und klicken Sie auf <b>Add</b>.",
+      "step3": "Klicken Sie auf <b>Connect</b> und genehmigen Sie den Zugriff.",
+      "add": "Zu Claude hinzufügen",
+      "noDialog": "Kein Dialog? Öffnen Sie in Claude <b>Customize → Connectors</b>, klicken Sie auf <b>+</b> und dann auf <b>Add custom connector</b>.",
+      "directory": "Oder fügen Sie AnythingMCP aus dem <link>Claude Directory</link> hinzu und wählen Sie diesen Server bei der Anmeldung."
+    },
+    "chatgpt": {
+      "step1": "Öffnen Sie in ChatGPT <b>Plugins</b>, klicken Sie auf <b>+</b> und dann auf <b>Add custom MCP server</b>.",
+      "step2": "Geben Sie einen Namen ein, fügen Sie die URL unten als <b>Server URL</b> ein und lassen Sie <b>Authentication</b> auf <b>OAuth</b>.",
+      "step3": "Wählen Sie <b>I understand and want to continue</b>, dann <b>Create as a plugin</b>, und melden Sie sich bei AnythingMCP an.",
+      "step4": "Installieren Sie das Plugin aus Ihren persönlichen Plugins und tippen Sie dann im Chat <b>@</b>, um es zu nutzen.",
+      "open": "ChatGPT-Plugins öffnen",
+      "plan": "Eigene MCP-Server erfordern einen kostenpflichtigen ChatGPT-Plan. In einem Business-Workspace können nur Admins und Owner sie hinzufügen."
+    },
+    "copilot": {
+      "body": "Klicken Sie unten: VS Code öffnet sich und bietet an, den Server für GitHub Copilot zu installieren. Genehmigen Sie die Anmeldung bei AnythingMCP, wenn danach gefragt wird, und wählen Sie dann die Tools in Copilot Chat → <b>Tools</b>.",
+      "add": "Zu VS Code hinzufügen",
+      "other": "Visual Studio, JetBrains, Eclipse oder Xcode: siehe <link>Serverseite</link>."
+    },
+    "other": {
+      "body": "Cursor, Claude Code, Claude Desktop, Gemini CLI, Meta Muse, Windsurf und andere: Die Serverseite enthält die Schritte für jeden davon.",
+      "open": "{name} öffnen"
+    },
+    "title": "{name} ist verbunden",
+    "verified": "AnythingMCP hat ihn mit {name} geprüft: Er funktioniert.",
+    "ready": "Ihre KI kann {name} jetzt nutzen.",
+    "back": {
+      "button": "Zurück zu {name}",
+      "closeTab": "Sie können diesen Tab schließen und zu {name} zurückkehren."
+    },
+    "tryAsking": "Fragen Sie zum Beispiel",
+    "useIt": "In Ihrer KI nutzen",
+    "loading": "Wird geladen…",
+    "noServer": "Fügen Sie den Connector einem MCP-Server hinzu, um ihn aus einem KI-Client zu erreichen: <link>Connector öffnen</link>.",
+    "inUse": "{name} ist auf <b>{server}</b>, den Ihr KI-Client bereits nutzt. Starten Sie einen neuen Chat und fragen Sie etwas aus der Liste oben.",
+    "anotherClient": "Weiteren KI-Client verbinden",
+    "apiKeysOnly": "Diese Instanz meldet KI-Clients mit API-Schlüsseln an (<code>MCP_AUTH_MODE={mode}</code>), daher funktioniert das Hinzufügen per URL in Claude oder ChatGPT nicht. Öffnen Sie <link>{server}</link> für die Client-Konfigurationen mit API-Schlüssel.",
+    "localhost": "Diese URL zeigt auf localhost: Claude und ChatGPT im Web können sie nicht erreichen. Nutzen Sie einen Client auf diesem Rechner (Claude Code, Cursor, VS Code) oder geben Sie AnythingMCP eine öffentliche https-Adresse.",
+    "sample": "Was {name} auf die Prüfung geantwortet hat",
+    "openConnector": "Connector öffnen",
+    "addAnother": "Weitere App hinzufügen"
+  },
+  "headersEditor": {
+    "label": "Eigene Header",
+    "hint": "Wird bei jeder Anfrage an diese API mitgesendet. Nützlich für APIs, die zusätzliche Header verlangen (z. B. Autotask: Username, Secret, ApiIntegrationCode).",
+    "name": "Header-Name",
+    "valueOf": "Wert des Headers {name}",
+    "valueOfNew": "Wert des neuen Headers",
+    "stored": "Gesetzt – leer lassen, um den aktuellen Wert zu behalten",
+    "value": "Wert",
+    "remove": "Header entfernen",
+    "add": "+ Header hinzufügen"
+  },
+  "mcpAssign": {
+    "nameRequired": "Geben Sie einen Namen für den neuen MCP-Server ein",
+    "selectRequired": "Wählen Sie einen MCP-Server aus oder legen Sie einen neuen an",
+    "assignFailed": "Connector konnte nicht zugewiesen werden",
+    "close": "Schließen",
+    "title": "Zu MCP-Server hinzufügen",
+    "description": "Wählen Sie, welcher MCP-Server die Tools von <b>{name}</b> für KI-Agenten bereitstellen soll.",
+    "loading": "MCP-Server werden geladen...",
+    "search": "MCP-Server suchen...",
+    "connectorCount": "{count, plural, one {# Connector} other {# Connectors}}",
+    "createNew": "Neuen MCP-Server anlegen",
+    "serverName": "Servername",
+    "serverNamePlaceholder": "z. B. Mein API-Server",
+    "skip": "Vorerst überspringen",
+    "assigning": "Wird zugewiesen...",
+    "assign": "MCP-Server zuweisen"
+  },
+  "connectorNew": {
+    "back": "Connectors",
+    "title": "Neuer Connector",
+    "chooseType": "Connector-Typ wählen",
+    "chooseTypeHint": "Beginnen Sie mit einem fertigen Connector oder verbinden Sie Ihre eigene API.",
+    "marketplace": {
+      "title": "Marktplatz",
+      "description": "Wählen Sie einen fertigen Connector für einen bekannten Dienst. Authentifizierung und Tools sind vorkonfiguriert, Sie ergänzen nur Ihre Zugangsdaten."
+    },
+    "types": {
+      "REST": {
+        "name": "REST-API",
+        "description": "Verbindung zu jeder REST-API. Import aus einer OpenAPI/Swagger-Spezifikation oder manuelle Konfiguration."
+      },
+      "SOAP": {
+        "name": "SOAP-Dienst",
+        "description": "Verbindung zu SOAP-Webservices per WSDL."
+      },
+      "GRAPHQL": {
+        "name": "GraphQL",
+        "description": "Verbindung zu GraphQL-APIs mit Schema-Introspection."
+      },
+      "ODATA": {
+        "name": "OData",
+        "description": "Verbindung zu OData-V2/V4-Diensten, einschließlich SAP S/4HANA und SAP Gateway. Dienste, Felder und Bezeichnungen werden aus $metadata gelesen."
+      },
+      "MCP": {
+        "name": "MCP-Server",
+        "description": "Brücke zu einem anderen MCP-Server – mehrere MCP-Server zu einem zusammenfassen."
+      },
+      "DATABASE": {
+        "name": "Datenbank",
+        "description": "Verbindung zu PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB oder SQLite. Unterstützt Nur-Lese- und Lese-/Schreibmodus."
+      }
+    },
+    "configure": "{type} konfigurieren",
+    "test": {
+      "rejected": "Zugangsdaten abgelehnt: ",
+      "rejectedStatus": "Zugangsdaten abgelehnt ({status}): ",
+      "notFound": "Nicht gefunden: ",
+      "unreachable": "Nicht erreichbar: ",
+      "error": "Fehler: ",
+      "checkCredentials": "Prüfen Sie API-Schlüssel, Token oder OAuth-Zugangsdaten dieses Connectors und testen Sie erneut.",
+      "ssrf": "→ <code>{host}</code> zur SSRF-Allowlist hinzufügen"
+    },
+    "fields": {
+      "name": "Name des Connectors",
+      "namePlaceholder": "z. B. Meine REST-API",
+      "connectionString": "Connection-String",
+      "baseUrl": "Basis-URL",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "optional": "optional"
+    },
+    "catalogMatch": {
+      "title": "{count, plural, one {Für diese API gibt es einen fertigen Connector} other {Für diese API gibt es fertige Connectors}}",
+      "description": "Tools, Beschreibungen und Anmeldung sind bereits eingerichtet und getestet, und er erhält Katalog-Updates.",
+      "tools": "{count, plural, one {# Tool} other {# Tools}}",
+      "setUp": "Stattdessen einrichten →"
+    },
+    "mcpUrlHint": "Fügen Sie die vollständige URL des MCP-Endpunkts samt Pfad ein – z. B. einen von Snowflake verwalteten Server unter <mono>{example}</mono>. Ein Host ohne Pfad verwendet standardmäßig <mono>{fallback}</mono>.",
+    "odata": {
+      "sapHint": "Die Basis-URL ist der SAP-Host; Dienste werden über den Servicekatalog von SAP gefunden. Für einen einzelnen OData-Dienst nicht ankreuzen und dessen Service-Root als Basis-URL verwenden.",
+      "sapClient": "SAP-Mandant",
+      "sapClientPlaceholder": "z. B. 100",
+      "sapLanguage": "SAP-Sprache",
+      "toolsHint": "Der Connector bringt Tools mit, um Dienste aufzulisten, ihre Felder und Bezeichnungen zu lesen, Entity-Sets abzufragen und einzelne Entitäten zu lesen. Eigene Tools pro Entity-Set lassen sich danach aus $metadata importieren."
+    },
+    "database": {
+      "accessMode": "Zugriffsmodus",
+      "readOnly": "Nur lesen",
+      "readWrite": "Lesen & Schreiben",
+      "readOnlyHint": "Nur SELECT-Abfragen sind erlaubt. Sicher für Analysen und Berichte.",
+      "readWriteHint": "Alle SQL-Operationen (SELECT, INSERT, UPDATE, DELETE) sind erlaubt. Mit Vorsicht verwenden."
+    },
+    "spec": {
+      "openapi": "OpenAPI-Spezifikations-URL (optional)",
+      "graphql": "GraphQL-Introspection-URL (optional)",
+      "wsdl": "WSDL-URL (optional)",
+      "hint": "Geben Sie eine Spezifikations-URL an, um MCP-Tools automatisch zu erzeugen."
+    },
+    "auth": {
+      "label": "Authentifizierung",
+      "none": "Keine",
+      "apiKey": "API-Schlüssel",
+      "loginToken": "Login → Token (automatisch erneuert)"
+    },
+    "oauth": {
+      "passwordRequired": "Geben Sie Benutzername und Passwort ein, die der Password-Grant an die Token-URL sendet.",
+      "mcpHint": "Nach dem Anlegen des Connectors werden Sie zur Autorisierung beim entfernten MCP-Server per OAuth weitergeleitet. Die Tools werden danach automatisch erkannt.",
+      "grant": "Grant-Typ",
+      "grantCode": "Authorization Code (Anmeldung beim Anbieter)",
+      "grantClient": "Client Credentials",
+      "grantPassword": "Password (Benutzername und Passwort)",
+      "passwordHint": "Für APIs, die Tokens ohne Refresh-Token ausgeben: Läuft eines ab, wird mit Benutzername und Passwort ein neues angefordert. Datto RMM: Benutzername = API-Schlüssel, Passwort = API-Secret, Client-ID public-client, Secret public, HTTP Basic.",
+      "authorizationUrl": "Autorisierungs-URL",
+      "scopesPlaceholder": "read write (durch Leerzeichen getrennt, optional)",
+      "tokenAuth": "Authentifizierung am Token-Endpunkt",
+      "secretInBody": "Client-Secret im Body",
+      "secretInBodyDefault": "Client-Secret im Body (Standard)",
+      "basicHeader": "HTTP-Basic-Header (client_secret_basic)",
+      "basicHeaderDefault": "HTTP-Basic-Header (client_secret_basic) (Standard)",
+      "tokenAuthMachineHint": "Wie Client-ID und Secret an die Token-URL übermittelt werden.",
+      "tokenAuthHint": "Wechseln Sie zu HTTP Basic, wenn der Anbieter beim Austausch des Codes 401 zurückgibt – DATEV verlangt das. Gilt auch für Token-Erneuerungen.",
+      "machineHint": "Keine Anmeldung nötig: Der Connector holt sein Zugriffstoken von der Token-URL und ein neues, sobald es abläuft.",
+      "redirectHint": "Nach dem Anlegen des Connectors werden Sie zur Autorisierung per OAuth2 weitergeleitet. Die Tokens werden sicher gespeichert.",
+      "callback": "Tragen Sie bei Ihrem OAuth-Anbieter als <b>Redirect-/Callback-URI</b> ein:"
+    },
+    "apiKey": {
+      "header": "Header-Name",
+      "headerInvalid": "Der HTTP-Header, in dem der Schlüssel gesendet wird, z. B. X-API-Key: nur Buchstaben, Ziffern und -, keine Leerzeichen.",
+      "key": "API-Schlüssel"
+    },
+    "wsSecurity": {
+      "passwordType": "Passworttyp",
+      "passwordTextDefault": "PasswordText (Standard)",
+      "hint": "Wird als wsse:Security-UsernameToken im SOAP-Header gesendet. PasswordDigest sendet statt des Passworts einen Hash davon mit Nonce und Zeitstempel."
+    },
+    "loginToken": {
+      "invalidJson": "Der Login-Body muss gültiges JSON sein.",
+      "intro": "Für APIs mit kurzlebigen Tokens (z. B. HRworks): Wir senden Ihre Zugangsdaten per POST an den Login-Endpunkt, lesen das Token aus der Antwort, senden es als Bearer-Token und erneuern es automatisch, bevor es abläuft.",
+      "url": "Login-URL",
+      "username": "Benutzername / Access-Key",
+      "usernamePlaceholder": "Access-Key",
+      "password": "Passwort / Secret",
+      "passwordPlaceholder": "Secret",
+      "body": "Body der Login-Anfrage (JSON)",
+      "bodyHint": "Body, der an die Login-URL gesendet wird. Verwenden Sie die Platzhalter <code>{user}</code> / <code>{pass}</code>. HRworks verwendet <code>{example}</code>.",
+      "method": "Methode",
+      "tokenPath": "JSON-Pfad des Tokens",
+      "ttl": "Token-TTL (s)",
+      "refreshOn401": "Bei einer 401-Antwort automatisch neu anmelden und erneut versuchen"
+    },
+    "creating": "Wird angelegt...",
+    "create": "Connector anlegen",
+    "testConnection": "Verbindung testen"
+  },
+  "connectorDetail": {
+    "back": "Connectors",
+    "loadingTitle": "Connector",
+    "loading": "Wird geladen...",
+    "active": "Aktiv",
+    "inactive": "Inaktiv",
+    "dismiss": "Ausblenden",
+    "actions": {
+      "test": "Testen",
+      "edit": "Bearbeiten",
+      "cancel": "Abbrechen",
+      "export": "Exportieren",
+      "exportTitle": "Diesen Connector als Datei exportieren",
+      "exportAs": "Als {format} exportieren",
+      "delete": "Löschen"
+    },
+    "deleteDialog": {
+      "titleTool": "Tool löschen",
+      "titleConnector": "Connector löschen",
+      "bodyTool": "Möchten Sie <b>{name}</b> wirklich löschen? KI-Clients sehen dieses Tool dann nicht mehr. Dies kann nicht rückgängig gemacht werden.",
+      "bodyConnector": "Möchten Sie <b>{name}</b> und alle zugehörigen Tools wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
+      "cancel": "Abbrechen",
+      "deleting": "Wird gelöscht…",
+      "delete": "Löschen"
+    },
+    "test": {
+      "authRejected": "Authentifizierung abgelehnt: ",
+      "notFound": "Nicht gefunden: ",
+      "unreachable": "Nicht erreichbar: ",
+      "error": "Fehler: ",
+      "ssrf": "→ <code>{host}</code> zur SSRF-Allowlist hinzufügen"
+    },
+    "catalog": {
+      "title": "Katalog-Update verfügbar",
+      "installedFrom": "Dieser Connector wurde aus <code>{slug}</code> installiert, das sich seitdem geändert hat.",
+      "updated": "Aktualisiert",
+      "structural": " (Endpunkt-Änderungen mit ● markiert)",
+      "added": "Neu",
+      "removed": "Deaktiviert",
+      "removedNote": " (nicht mehr im Katalog)",
+      "instructions": "Anweisungen aktualisiert",
+      "custom": "Ihre eigenen, bleiben unverändert",
+      "baseUrl": "Auch die Basis-URL ändern",
+      "provenanceUser": "Diese Adresse wurde hier geändert, nicht vom Katalog – eine Region, eine Sandbox oder eine selbst gehostete Instanz. Das Update macht diese Änderung rückgängig.",
+      "provenanceMoved": "Dieser Connector hat noch die Adresse, die der Katalog bei der Installation vorgegeben hat, und der Katalog hat sie inzwischen korrigiert.",
+      "provenanceUnknown": "Installiert, bevor wir die ursprüngliche Adresse gespeichert haben, daher können wir nicht erkennen, ob sie hier angepasst wurde. Prüfen Sie sie vor dem Anwenden.",
+      "applying": "Wird angewendet…",
+      "apply": "Update anwenden",
+      "preserved": "Zugangsdaten, Response-Mappings, Rollenzugriffe und manuelles Aktivieren/Deaktivieren bleiben erhalten."
+    },
+    "details": {
+      "title": "Connector-Details",
+      "name": "Name",
+      "baseUrl": "Basis-URL",
+      "healthcheck": "Healthcheck-Pfad",
+      "healthcheckOptional": "optional – Standard ist /",
+      "healthcheckHint": "Pfad für „Testen“. Geben Sie einen Endpunkt an, der ohne Authentifizierung 2xx zurückgibt (z. B. <code>/health</code>), wenn die API keinen Root-Handler hat.",
+      "accessMode": "Zugriffsmodus",
+      "readOnly": "Nur lesen",
+      "readWrite": "Lesen & Schreiben",
+      "readOnlyHint": "Nur SELECT-Abfragen sind erlaubt. Sicher für Analysen und Berichte.",
+      "readWriteHint": "Alle SQL-Operationen (SELECT, INSERT, UPDATE, DELETE) sind erlaubt. Mit Vorsicht verwenden.",
+      "deniedTables": "Gesperrte Tabellen",
+      "deniedPlaceholder": "z. B. salaries, audit_*, PA####",
+      "deniedHint": "Abfragen, die eine dieser Tabellen nennen, werden abgelehnt. Kommagetrennt; <code>*</code> steht für beliebigen Text, <code>?</code> für ein Zeichen, <code>#</code> für eine Ziffer. Die eigentliche Grenze bleiben die Rechte des Datenbankbenutzers.",
+      "sapHint": "Dienste kommen aus dem Servicekatalog von SAP; sap-client und sap-language werden bei jeder Anfrage mitgesendet.",
+      "sapClient": "SAP-Mandant",
+      "sapLanguage": "SAP-Sprache",
+      "allowedServices": "Erlaubte Dienste",
+      "servicesHint": "Ein Servicepfad pro Zeile, <code>*</code> als Platzhalter. Leer erlaubt jeden Dienst, den der technische Benutzer aufrufen darf.",
+      "auth": "Authentifizierung",
+      "authNone": "Keine",
+      "authLoginToken": "Login → Token (automatisch erneuert)",
+      "headerName": "Header-Name",
+      "headerInvalid": "Der HTTP-Header, in dem der Schlüssel gesendet wird, z. B. X-API-Key: nur Buchstaben, Ziffern und -, keine Leerzeichen.",
+      "apiKey": "API-Schlüssel",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "keepCurrent": "Leer lassen zum Beibehalten",
+      "wsPasswordType": "Passworttyp",
+      "wsPasswordTextDefault": "PasswordText (Standard)",
+      "wsHint": "Wird als wsse:Security-UsernameToken im SOAP-Header gesendet. Der Passworttyp wird zusammen mit Benutzername und Passwort gespeichert: Geben Sie beide erneut ein, um ihn zu ändern.",
+      "keepCredentials": "Lassen Sie die Felder für Zugangsdaten leer, um die aktuellen Werte zu behalten.",
+      "instructions": "Anweisungen",
+      "instructionsPlaceholder": "Anweisungen an KI-Clients für die Tools dieses Connectors (z. B. Datumsformate, Feldwerte, API-Konventionen).",
+      "instructionsHint": "Wird über das MCP-Protokoll gesendet, damit die KI versteht, wie dieser Connector zu nutzen ist.",
+      "save": "Änderungen speichern",
+      "authType": "Authentifizierung",
+      "created": "Erstellt",
+      "specUrl": "Spezifikations-URL"
+    },
+    "oauth": {
+      "grant": "Grant-Typ",
+      "grantCode": "Authorization Code (Anmeldung beim Anbieter)",
+      "grantClient": "Client Credentials",
+      "grantPassword": "Password (Benutzername und Passwort)",
+      "grantCodeHint": "Einmal beim Anbieter autorisieren; das Refresh-Token erneuert das Zugriffstoken.",
+      "grantPasswordHint": "Für APIs, die Tokens ohne Refresh-Token ausgeben: Läuft eines ab, wird mit Benutzername und Passwort ein neues angefordert. Datto RMM: Benutzername = API-Schlüssel, Passwort = API-Secret, Client public-client / public mit HTTP Basic.",
+      "grantClientHint": "Client-ID und Secret allein holen das Token, und ein neues, sobald es abläuft. Keine Anmeldung beim Anbieter.",
+      "authorizationUrl": "Autorisierungs-URL",
+      "scopesPlaceholder": "read write (durch Leerzeichen getrennt, optional)",
+      "tokenAuth": "Authentifizierung am Token-Endpunkt",
+      "secretInBodyDefault": "Client-Secret im Body (Standard)",
+      "basicHeader": "HTTP-Basic-Header (client_secret_basic)",
+      "privateKeyJwt": "Mit Ihrem privaten Schlüssel signiertes JWT (private_key_jwt)",
+      "privateKeyJwtHint": "Vom Connector festgelegt: Ein kurzlebiges JWT, signiert mit dem privaten Schlüssel aus den Umgebungsvariablen, ersetzt das Client-Secret.",
+      "machineHint": "Wie Client-ID und Secret an die Token-URL übermittelt werden. HTTP Basic ist der Standard für diesen Grant.",
+      "basicHint": "Wechseln Sie zu HTTP Basic, wenn der Token-Austausch mit 401 fehlschlägt – Datto RMM und DATEV verlangen das. Gilt auch für Erneuerungen. Autorisieren Sie nach der Änderung erneut.",
+      "pkce": "PKCE bei der Autorisierung verwenden",
+      "pkceHint": "Standardmäßig an. Schalten Sie es nur aus, wenn der Anbieter PKCE ablehnt: Der Standard-Web-Flow von LinkedIn antwortet darauf mit 401 invalid_client. Autorisieren Sie nach der Änderung erneut.",
+      "keepNote": "Lassen Sie Client-ID / Client-Secret leer, um die gespeicherten Werte zu behalten. Die Endpunkte werden wie konfiguriert angezeigt und lassen sich hier korrigieren – nützlich, wenn ein Connector nach dem Anlegen auf OAuth2 umgestellt wurde und noch keine hat."
+    },
+    "oauth1": {
+      "consumerKey": "Consumer Key",
+      "consumerSecret": "Consumer Secret",
+      "accessToken": "Access-Token (optional)",
+      "tokenSecret": "Token-Secret (optional)",
+      "noteStored": "Consumer Key und Secret gehören zur beim Anbieter registrierten Anwendung – nicht zu Ihrer Login-E-Mail oder Ihrem Passwort. Lassen Sie ein Feld leer, um den gespeicherten Wert zu behalten; gespeicherte Werte werden nie angezeigt. Das Access-Token ist nur für APIs, die im Namen eines Benutzers handeln (three-legged).",
+      "noteNew": "Consumer Key und Secret gehören zur beim Anbieter registrierten Anwendung – nicht zu Ihrer Login-E-Mail oder Ihrem Passwort. Beide sind nötig, um auf OAuth 1.0a umzustellen. Das Access-Token ist nur für APIs, die im Namen eines Benutzers handeln (three-legged)."
+    },
+    "loginToken": {
+      "intro": "Für APIs mit kurzlebigen Tokens (z. B. HRworks): Wir senden Ihre Zugangsdaten per POST an den Login-Endpunkt, lesen das Token aus der Antwort, senden es als Bearer-Token und erneuern es automatisch, bevor es abläuft. Geben Sie Passwort/Secret erneut ein, um diese Konfiguration zu ändern; leer lassen, um die aktuelle zu behalten.",
+      "url": "Login-URL",
+      "username": "Benutzername / Access-Key",
+      "usernamePlaceholder": "Access-Key",
+      "password": "Passwort / Secret",
+      "body": "Body der Login-Anfrage (JSON)",
+      "bodyHint": "Verwenden Sie die Platzhalter <code>{user}</code> / <code>{pass}</code>. HRworks verwendet <code>{example}</code>.",
+      "method": "Methode",
+      "tokenPath": "JSON-Pfad des Tokens",
+      "ttl": "Token-TTL (s)",
+      "refreshOn401": "Bei einer 401-Antwort automatisch neu anmelden und erneut versuchen"
+    },
+    "oauthCard": {
+      "title": "OAuth2-Autorisierung",
+      "perUser": "Jeder Benutzer verbindet oben sein eigenes Konto. Beim erneuten Erkennen der Tools wird Ihre eigene Anmeldung verwendet.",
+      "mcp": "Autorisieren Sie diesen Connector für den Zugriff auf den entfernten MCP-Server. Danach werden die Tools automatisch erkannt.",
+      "provider": "Autorisieren Sie diesen Connector beim OAuth2-Anbieter. Danach werden die Tokens für API-Aufrufe sicher gespeichert.",
+      "redirecting": "Weiterleitung...",
+      "authorizeRemote": "Beim Remote-Server autorisieren",
+      "authorizeProvider": "Beim Anbieter autorisieren",
+      "discovering": "Wird erkannt...",
+      "rediscover": "Tools erneut erkennen"
+    },
+    "shopee": {
+      "title": "Shopee-Shop-Autorisierung",
+      "body": "Melden Sie sich mit dem Shop-Konto an und genehmigen Sie diese App. Die Tokens werden verschlüsselt gespeichert und automatisch erneuert. Autorisieren Sie erneut, wenn die Autorisierung abläuft oder der Connector danach fragt."
+    },
+    "env": {
+      "title": "Umgebungsvariablen",
+      "hint": "Verwenden Sie {variable} in URLs, Pfaden, Headern und Body-Feldern. Variablen werden zur Laufzeit eingesetzt.",
+      "overrideTitle": "Parameter überschreiben:",
+      "overrideBody": "Entspricht ein Variablenname einem Tool-Parameter (z. B. <code>{example}</code>), wird der Wert automatisch eingesetzt und der Parameter vor der KI verborgen.",
+      "hide": "Verbergen",
+      "edit": "Bearbeiten ({count})",
+      "name": "Variablenname",
+      "valueOf": "Wert von {name}",
+      "valueOfNew": "Wert der neuen Variable",
+      "stored": "Gesetzt – leer lassen, um den aktuellen Wert zu behalten",
+      "value": "Wert",
+      "remove": "Entfernen",
+      "add": "+ Variable hinzufügen",
+      "saving": "Wird gespeichert...",
+      "save": "Variablen speichern"
+    },
+    "danger": {
+      "title": "Connector löschen",
+      "body": "Entfernt diesen Connector und hebt seine Zuweisung zu allen MCP-Servern auf.",
+      "delete": "Löschen"
+    },
+    "msg": {
+      "oauthSuccessTools": "OAuth2-Autorisierung erfolgreich! Erkannte und importierte Tools: {count}.",
+      "oauthSuccess": "OAuth2-Autorisierung erfolgreich! Sie können jetzt Tools erkennen lassen.",
+      "authFailedDefault": "Autorisierung fehlgeschlagen",
+      "oauthError": "OAuth2-Fehler: {message}",
+      "wsSwitch": "Geben Sie Benutzername und Passwort ein, um auf WS-Security umzustellen.",
+      "wsChange": "Geben Sie Benutzername und Passwort ein, um die WS-Security-Zugangsdaten zu ändern.",
+      "oauth1Switch": "Geben Sie Consumer Key und Consumer Secret ein, um auf OAuth 1.0a umzustellen.",
+      "loginJson": "Der Login-Body muss gültiges JSON sein.",
+      "passwordGrant": "Geben Sie Benutzername und Passwort ein, die der Password-Grant an die Token-URL sendet.",
+      "updated": "Connector aktualisiert.",
+      "error": "Fehler: {message}",
+      "exportedSecrets": "Als {format} exportiert. Die Datei enthält geheime Werte im Klartext: Bewahren Sie sie sicher auf. OAuth-Zugangsdaten werden nicht exportiert.",
+      "exportedNoSecrets": "Als {format} ohne geheime Werte exportiert (nur Admins können sie exportieren). OAuth-Zugangsdaten werden nicht exportiert.",
+      "exportFailed": "Export fehlgeschlagen: {message}",
+      "importingSpec": "Spezifikation wird importiert...",
+      "importFailed": "Import fehlgeschlagen: {message}",
+      "catalogUpdated": "Aus dem Katalog aktualisiert.",
+      "catalogUpdatedBaseUrl": "Aus dem Katalog aktualisiert, Basis-URL jetzt {url}.",
+      "nothingToUpdate": "Nichts zu aktualisieren.",
+      "envSaved": "Umgebungsvariablen gespeichert",
+      "envSavedWarnings": "Umgebungsvariablen gespeichert. {warnings}",
+      "discoveryFailed": "Erkennung fehlgeschlagen: {message}"
+    }
+  },
+  "userCredentials": {
+    "scopeError": "Der Anmeldemodus konnte nicht geändert werden.",
+    "connectError": "Die Anmeldung konnte nicht gestartet werden.",
+    "disconnectError": "Die Verbindung konnte nicht getrennt werden.",
+    "title": "Anmeldung",
+    "perUser": "Pro Benutzer",
+    "shared": "Gemeinsam",
+    "perUserBody": "{target, select, mcp {Jeder Benutzer verbindet sein eigenes Konto. Aufrufe verwenden die Anmeldung des jeweiligen Benutzers, daher zeigt der Remote-Server jedem nur, was sein Konto sehen darf.} other {Jeder Benutzer verbindet sein eigenes Konto. Aufrufe verwenden die Anmeldung des jeweiligen Benutzers, daher zeigt der Anbieter jedem nur, was sein Konto sehen darf.}}",
+    "sharedBody": "Eine Autorisierung gilt für alle Benutzer dieses Workspaces: Alle sehen, was dieses Konto sehen kann.",
+    "switchToShared": "Eine gemeinsame Anmeldung verwenden",
+    "switchToUser": "Anmeldung pro Benutzer verlangen (Enterprise)",
+    "expired": "Ihre Anmeldung ist abgelaufen",
+    "connected": "Ihr Konto ist verbunden",
+    "connectedSince": "Ihr Konto ist seit {date} verbunden",
+    "redirecting": "Weiterleitung...",
+    "signInAgain": "Erneut anmelden",
+    "disconnect": "Mein Konto trennen",
+    "connect": "Mein Konto verbinden",
+    "dialog": {
+      "titleUser": "Anmeldung pro Benutzer verlangen",
+      "titleShared": "Eine gemeinsame Anmeldung verwenden",
+      "bodyUser": "Die auf diesem Connector gespeicherte Autorisierung wird entfernt. Danach verbindet jeder Benutzer sein eigenes Konto, bevor seine Aufrufe funktionieren.",
+      "bodyShared": "Die eigenen Anmeldungen aller Benutzer werden entfernt, und der Connector braucht wieder eine eigene Autorisierung. Danach sehen alle, was dieses eine Konto sehen kann.",
+      "cancel": "Abbrechen",
+      "saving": "Wird gespeichert…",
+      "switch": "Umstellen"
+    }
   }
 }
