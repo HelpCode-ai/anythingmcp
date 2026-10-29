@@ -1704,5 +1704,376 @@
     "saving": "Wird gespeichert…",
     "save": "Hinweise speichern",
     "reset": "Auf abgeleitete Werte zurücksetzen"
+  },
+  "settingsNav": {
+    "sections": {
+      "organization": "Organisation"
+    },
+    "items": {
+      "profile": {
+        "label": "Profil",
+        "description": "Name, E-Mail, Passwort"
+      },
+      "connections": {
+        "label": "Verbindungen",
+        "description": "Worauf jeder KI-Client zugreifen kann"
+      },
+      "organization": {
+        "label": "Allgemein",
+        "description": "Workspace und neue Organisationen"
+      },
+      "users": {
+        "label": "Benutzer",
+        "description": "Mitglieder und Einladungen"
+      },
+      "roles": {
+        "label": "Rollen",
+        "description": "Zugriffskontrolle für MCP-Tools"
+      },
+      "identityProviders": {
+        "label": "Single Sign-On",
+        "description": "Microsoft, Google, Okta"
+      },
+      "license": {
+        "label": "Lizenz",
+        "description": "Tarif, Abrechnung, Abonnement"
+      },
+      "admin": {
+        "label": "Verwaltung",
+        "description": "SMTP, Benachrichtigungen, Footer-Links"
+      }
+    }
+  },
+  "settingsProfile": {
+    "authModes": {
+      "none": "Keine (nicht empfohlen)",
+      "legacy": "Legacy (Bearer-Token / API-Schlüssel)",
+      "oauth2": "OAuth 2.0 (Authorization Code + Client Credentials)",
+      "both": "Beides (OAuth 2.0 + Legacy)"
+    },
+    "toast": {
+      "requestsErased": "{count, plural, one {# erfasste Anfrage gelöscht} other {# erfasste Anfragen gelöscht}}",
+      "learningOptedOut": "Ihre Anfragen werden nicht mehr für das Skill-Lernen verwendet",
+      "learningReset": "Ihre Auswahl wurde entfernt; es gilt die Einstellung Ihres Admins",
+      "couldNotSave": "Speichern nicht möglich",
+      "tipsOn": "Tipps und Angebote aktiviert",
+      "tipsOff": "Tipps und Angebote abbestellt",
+      "couldNotConnect": "Verbindung nicht möglich",
+      "accountConnected": "Konto verbunden",
+      "accountDisconnected": "Konto getrennt",
+      "couldNotDisconnect": "Trennen nicht möglich",
+      "profileUpdated": "Profil aktualisiert",
+      "profileUpdateFailed": "Profil konnte nicht aktualisiert werden",
+      "passwordsDoNotMatch": "Die Passwörter stimmen nicht überein",
+      "passwordChangeFailed": "Passwort konnte nicht geändert werden",
+      "passwordChanged": "Passwort geändert"
+    },
+    "confirmUnlink": "„{name}“ trennen? Danach benötigen Sie Ihr Passwort, um sich anzumelden.",
+    "confirmSocialUnlink": "{name} trennen? Sie können sich dann nicht mehr damit anmelden.",
+    "error": "Fehler: {message}",
+    "couldNotUpdateProfile": "Profil konnte nicht aktualisiert werden",
+    "couldNotChangePassword": "Passwort konnte nicht geändert werden",
+    "incorrectPassword": "Falsches Passwort.",
+    "deleteFailed": "Konto konnte nicht gelöscht werden.",
+    "onlyAdmin": "Sie sind der einzige Admin dieser Organisationen.",
+    "couldNotStartSignIn": "Die Anmeldung konnte nicht gestartet werden.",
+    "profile": {
+      "title": "Profil",
+      "email": "E-Mail",
+      "name": "Name",
+      "role": "Rolle",
+      "save": "Profil speichern"
+    },
+    "emailPrefs": {
+      "title": "E-Mail-Einstellungen",
+      "label": "Tipps und Angebote per E-Mail",
+      "body": "Tipps zur Einrichtung, solange Ihr Workspace neu ist, und Angebote nach einer Testphase. E-Mails zu Ihrem Konto, etwa Anmeldecodes und Hinweise zum Tarif, werden immer gesendet."
+    },
+    "learning": {
+      "title": "Skill-Lernen",
+      "effective": "Ihre Anfragen an KI-Clients, die mit diesem Workspace verbunden sind, werden zusammen mit den daraus folgenden Tool-Aufrufen gespeichert, damit Admins wiederkehrende Anforderungen in Workspace-Skills umwandeln können.",
+      "optedOut": "Sie haben widersprochen: Ihre Anfragen werden in diesem Workspace nicht für das Skill-Lernen gespeichert.",
+      "adminOff": "Ihr Admin hat das Skill-Lernen für Sie in diesem Workspace deaktiviert.",
+      "label": "Meine Anfragen für das Skill-Lernen verwenden",
+      "body": "Das Abwählen gilt immer. Wenn Sie es wieder auswählen, wird nur Ihr Widerspruch entfernt: Ob Ihre Anfragen verwendet werden, entscheidet dann Ihr Admin.",
+      "erase": "Meine erfassten Anfragen löschen"
+    },
+    "password": {
+      "title": "Passwort ändern",
+      "current": "Aktuelles Passwort",
+      "new": "Neues Passwort",
+      "newPlaceholder": "Mind. 8 Zeichen",
+      "confirm": "Neues Passwort bestätigen",
+      "confirmPlaceholder": "Neues Passwort wiederholen",
+      "submit": "Passwort ändern"
+    },
+    "linked": {
+      "title": "Verbundene Konten",
+      "body": "Verbinden Sie Ihr Verzeichniskonto, um sich ohne Passwort anzumelden. Ihr Administrator kann das nicht für Sie tun: Die Verbindung ist nur vertrauenswürdig, weil Sie sie im angemeldeten Zustand hergestellt haben.",
+      "connectedLastUsed": "Verbunden · zuletzt verwendet am {date}",
+      "connected": "Verbunden",
+      "notConnected": "Nicht verbunden",
+      "working": "Wird ausgeführt...",
+      "disconnect": "Trennen",
+      "connect": "Verbinden"
+    },
+    "social": {
+      "title": "Anmeldemethoden",
+      "body": "Melden Sie sich bei AnythingMCP mit einem dieser Konten statt mit Ihrem Passwort an.",
+      "noPassword": "Ihr Konto hat noch kein Passwort. <link>Legen Sie ein Passwort fest</link>, um sich auch mit Ihrer E-Mail-Adresse anzumelden.",
+      "lastUsed": "zuletzt verwendet am {date}"
+    },
+    "mcpAuth": {
+      "title": "Authentifizierung des MCP-Servers",
+      "body": "Legen Sie fest, wie sich MCP-Clients (Claude, ChatGPT, Cursor) bei Ihrem Server authentifizieren.",
+      "method": "Authentifizierungsmethode",
+      "loading": "Wird geladen...",
+      "active": "Aktiv",
+      "oauthTitle": "OAuth-2.0-Endpunkte",
+      "oauthNote": "Unterstützt die Grant-Typen Authorization Code (mit PKCE) und Client Credentials. MCP-Clients wie Claude Desktop erkennen diese Endpunkte automatisch.",
+      "legacyTitle": "Legacy-Authentifizierung",
+      "legacyBody": "Setzen Sie <code>MCP_BEARER_TOKEN</code> oder <code>MCP_API_KEY</code> in Ihren Umgebungsvariablen.",
+      "modeNote": "Der Authentifizierungsmodus wird über die Umgebungsvariable <code>MCP_AUTH_MODE</code> festgelegt. Setzen Sie sie auf <code>oauth2</code>, <code>legacy</code>, <code>both</code> oder <code>none</code>."
+    },
+    "apiKeys": {
+      "title": "MCP-API-Schlüssel",
+      "body": "API-Schlüssel werden jetzt pro MCP-Server verwaltet. Unter <link>MCP-Server</link> erstellen und verwalten Sie die Schlüssel für jeden Server."
+    },
+    "danger": {
+      "title": "Gefahrenzone",
+      "body": "Löscht Ihr Konto endgültig. Dabei werden Ihr Profil, Tokens zum Zurücksetzen des Passworts, Tokens zur E-Mail-Bestätigung, MCP-API-Schlüssel, Connectors und MCP-Server-Konfigurationen entfernt. Audit-Logs bleiben ohne Ihre identifizierenden Daten erhalten.",
+      "button": "Mein Konto löschen"
+    },
+    "deleteDialog": {
+      "title": "Konto löschen",
+      "descPassword": "Diese Aktion kann nicht rückgängig gemacht werden. Geben Sie Ihr Passwort ein und tippen Sie zur Bestätigung <strong>DELETE</strong>.",
+      "descNoPassword": "Diese Aktion kann nicht rückgängig gemacht werden. Tippen Sie zur Bestätigung <strong>DELETE</strong>. Wenn Ihre Anmeldung mehr als 10 Minuten zurückliegt, werden Sie zuerst gebeten, sich erneut anzumelden.",
+      "blockingTitle": "Löschen nicht möglich: Sie sind der einzige Admin von:",
+      "blockingHint": "Ernennen Sie zuerst einen weiteren Admin oder löschen Sie diese Organisationen.",
+      "password": "Passwort",
+      "typeConfirm": "Tippen Sie zur Bestätigung <code>DELETE</code>",
+      "reauth": "Erneut mit {provider} anmelden",
+      "cancel": "Abbrechen",
+      "deleting": "Wird gelöscht…",
+      "submit": "Mein Konto löschen"
+    }
+  },
+  "settingsConnections": {
+    "loadFailed": "Verbindungen konnten nicht geladen werden",
+    "emptySelection": "Wählen Sie mindestens einen MCP-Server oder den ganzen Workspace.",
+    "notAvailable": "Diese Auswahl steht Ihnen nicht zur Verfügung.",
+    "updated": "Aktualisiert. Die Änderung gilt ab der nächsten Anfrage dieser Verbindung.",
+    "revokedMsg": "{client} kann auf nichts mehr zugreifen.",
+    "loading": "Wird geladen…",
+    "title": "Verbundene KI-Clients",
+    "intro": "Worauf jeder Client über Ihren gemeinsamen MCP-Endpunkt zugreifen kann. Änderungen gelten ab seiner nächsten Anfrage, ohne erneutes Verbinden.",
+    "empty": "Noch ist nichts verbunden. Fügen Sie Ihren MCP-Endpunkt in Claude, ChatGPT, Meta Muse oder Cursor hinzu. Sobald Sie ihn autorisieren, erscheint er hier.",
+    "revoked": "Widerrufen",
+    "reachesNothing": "Kein Zugriff. Wählen Sie unten aus, um ihn wieder zu erlauben.",
+    "everythingIn": "Alles in {workspace}",
+    "nothingSelected": "Nichts ausgewählt",
+    "change": "Ändern",
+    "revoke": "Widerrufen",
+    "connectorCount": "{count, plural, one {# Connector} other {# Connectors}}",
+    "wholeWorkspace": "Alles in diesem Workspace",
+    "wholeWorkspaceHint": "einschließlich Connectors ohne Server",
+    "save": "Speichern",
+    "cancel": "Abbrechen"
+  },
+  "settingsOrg": {
+    "updated": "Organisation erfolgreich aktualisiert",
+    "updateFailed": "Organisation konnte nicht aktualisiert werden",
+    "deleteFailed": "Organisation konnte nicht gelöscht werden",
+    "membersSignedOut": "{count, plural, one {# Mitglied wurde überall abgemeldet.} other {# Mitglieder wurden überall abgemeldet.}}",
+    "crossOrg": "{count, plural, one {# davon gehört auch zu anderen Workspaces und wurde dort ebenfalls abgemeldet.} other {# davon gehören auch zu anderen Workspaces und wurden dort ebenfalls abgemeldet.}}",
+    "keysDeactivated": "{count, plural, one {# MCP-API-Schlüssel deaktiviert.} other {# MCP-API-Schlüssel deaktiviert.}}",
+    "revokeFailed": "Sitzungen konnten nicht widerrufen werden",
+    "created": "Organisation erstellt! Wird gewechselt...",
+    "createFailed": "Organisation konnte nicht erstellt werden",
+    "title": "Organisation",
+    "introAdmin": "Verwalten Sie die Einstellungen Ihres Workspace. Alle Mitglieder dieser Organisation teilen sich Connectors, MCP-Server und Tools.",
+    "introMember": "Sehen Sie Ihre aktuelle Organisation ein und erstellen Sie neue Workspaces.",
+    "name": "Name der Organisation",
+    "namePlaceholder": "Mein Workspace",
+    "id": "Organisations-ID",
+    "yourRole": "Ihre Rolle",
+    "createdAt": "Erstellt",
+    "saving": "Wird gespeichert...",
+    "save": "Änderungen speichern",
+    "features": {
+      "title": "Funktionen",
+      "onlyAdmins": "Nur Admins können das ändern",
+      "kg": {
+        "label": "Knowledge Graph",
+        "description": "Erkennt automatisch Beziehungen zwischen den Entitäten Ihrer Connectors (aus Tool-Definitionen und echter Nutzung) und stellt sie Agenten zur Verfügung. Wenn Sie ihn deaktivieren, wird der Graph nicht mehr aufgebaut, die Seite ausgeblendet und das MCP-Hilfstool entfernt."
+      },
+      "llm": {
+        "label": "KI-Anreicherung",
+        "description": "Lassen Sie ein LLM zusätzliche Beziehungen vorschlagen, die die Heuristiken übersehen (z. B. dass eine Person im CRM, ein Kunde in der Abrechnung und ein Benutzer im Support dieselbe Person sind). Gesendet werden nur Entitäts- und Feldnamen, nie Ihre Daten. Vorschläge warten auf Ihre Bestätigung. Es können Modellkosten anfallen."
+      },
+      "edgeAutoApply": {
+        "label": "Sichere Verbindungen automatisch übernehmen",
+        "description": "Wenn die KI-Anreicherung eine Verbindung mit hoher Sicherheit (≥ 0,90) vorschlägt, wird sie automatisch in den Graph übernommen, statt auf manuelle Prüfung zu warten. Weniger sichere Verbindungen warten weiterhin auf Ihre Bestätigung. Keine zusätzlichen Modellkosten: Es ändert nur, wie bestehende Vorschläge behandelt werden."
+      },
+      "captureIntent": {
+        "label": "Absicht der Benutzer erfassen",
+        "description": "Fügt jedem MCP-Tool einen optionalen Parameter hinzu, der den Agenten nach der ursprünglichen Anfrage des Benutzers fragt. So wird der Kontext jedes Aufrufs erfasst, damit der Graph optimiert und mit der Zeit Skills vorgeschlagen werden können. Dies ist die Voreinstellung für alle Benutzer: Unter Einstellungen → Benutzer (Skill-Lernen) können Sie sie pro Benutzer überschreiben, und jeder Benutzer kann in den eigenen Einstellungen widersprechen."
+      },
+      "autoExtend": {
+        "label": "Geplante KI-Erweiterung",
+        "description": "Lassen Sie die KI regelmäßig (etwa täglich) den Graph erweitern und aus den erfassten Absichten der Benutzer Skills erstellen, damit sich Ihr Netz und Ihre Skills von selbst verbessern. Kostenbewusst: Sie läuft nur ab und zu, wird übersprungen, wenn sich nichts geändert hat, und bleibt aus, bis Sie sie aktivieren. Erfordert KI-Anreicherung + Absicht der Benutzer erfassen."
+      },
+      "skillAutoApply": {
+        "label": "Sichere Skills automatisch übernehmen",
+        "description": "Wenn die KI einen Skill mit hoher Sicherheit (≥ 0,90) erstellt, wird er automatisch übernommen, statt als Vorschlag zur Prüfung zu warten. Weniger sichere Skills warten weiterhin auf manuelle Freigabe."
+      }
+    },
+    "security": {
+      "title": "Sicherheit",
+      "body": "Meldet jedes Mitglied vom Dashboard und von jedem verbundenen KI-Client ab, auch von Clients mit einem Refresh-Token. Niemand verliert Rolle oder Zugriff; alle müssen sich nur erneut anmelden. Verwenden Sie dies nach einem vermuteten Leck von Zugangsdaten oder einer Änderung bei Ihrem Identity Provider. MCP-API-Schlüssel sind keine Sitzungen und bleiben unverändert, sofern Sie nichts anderes angeben.",
+      "button": "Alle abmelden"
+    },
+    "revokeDialog": {
+      "title": "Alle abmelden",
+      "description": "Alle Mitglieder von <strong>{name}</strong> müssen sich erneut anmelden, im Dashboard und in jedem KI-Client. Mitglieder, die auch zu anderen Workspaces gehören, werden dort ebenfalls abgemeldet. Geben Sie zur Bestätigung unten den Namen der Organisation ein.",
+      "typeConfirm": "Geben Sie zur Bestätigung <code>{name}</code> ein",
+      "alsoMe": "Mich ebenfalls abmelden",
+      "alsoMeHint": "Lassen Sie dies aktiviert, wenn die kompromittierte Sitzung Ihre sein könnte. Sie werden sofort zur Anmeldeseite weitergeleitet.",
+      "alsoKeys": "Außerdem jeden MCP-API-Schlüssel in diesem Workspace deaktivieren",
+      "alsoKeysHint": "API-Schlüssel sind keine Sitzungen: Ohne diese Option funktioniert jeder <code>mcp_…</code>-Schlüssel weiter. Deaktivierte Schlüssel lassen sich nicht wiederherstellen.",
+      "cancel": "Abbrechen",
+      "signingOut": "Wird abgemeldet…",
+      "submit": "Alle abmelden"
+    },
+    "danger": {
+      "title": "Gefahrenzone",
+      "body": "Löscht diese Organisation endgültig, einschließlich aller Mitglieder, Connectors, MCP-Server, API-Schlüssel, benutzerdefinierten Rollen, offenen Einladungen und Einstellungen. Andere Mitglieder werden in ihren nächstältesten Workspace verschoben, falls sie einen haben. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "button": "Diese Organisation löschen"
+    },
+    "deleteDialog": {
+      "title": "Organisation löschen",
+      "description": "Dadurch werden <strong>{name}</strong> und alle Inhalte gelöscht. Geben Sie zur Bestätigung unten den Namen der Organisation ein.",
+      "typeConfirm": "Geben Sie zur Bestätigung <code>{name}</code> ein",
+      "cancel": "Abbrechen",
+      "deleting": "Wird gelöscht…",
+      "submit": "Organisation löschen"
+    },
+    "myOrgs": {
+      "title": "Meine Organisationen",
+      "joined": "{role} · Beigetreten am {date}",
+      "active": "Aktiv",
+      "switch": "Wechseln",
+      "createTitle": "Neue Organisation erstellen",
+      "createPlaceholder": "Name der neuen Organisation",
+      "creating": "Wird erstellt...",
+      "create": "Organisation erstellen"
+    }
+  },
+  "settingsUsers": {
+    "memoryLevels": {
+      "none": "Kein Zugriff",
+      "read": "Firmengedächtnis lesen",
+      "personal": "Persönlich",
+      "contribute": "Beitragen"
+    },
+    "memoryDefault": "Standard ({level, select, none {kein Zugriff} read {lesen} personal {persönlich} other {beitragen}})",
+    "learningDefaultOn": "Standard (an)",
+    "learningDefaultOff": "Standard (aus)",
+    "on": "An",
+    "off": "Aus",
+    "error": "Fehler: {message}",
+    "roleUpdated": "Rolle auf {role} geändert",
+    "learningUpdated": "{count, plural, one {Skill-Lernen für # Benutzer aktualisiert.} other {Skill-Lernen für # Benutzer aktualisiert.}}",
+    "requestsErased": "{count, plural, one {# erfasste Anfrage gelöscht.} other {# erfasste Anfragen gelöscht.}}",
+    "memoryUpdated": "{count, plural, one {Gedächtniszugriff für # Benutzer aktualisiert.} other {Gedächtniszugriff für # Benutzer aktualisiert.}}",
+    "confirmEraseMemory": "{count, plural, one {Das persönliche Gedächtnis von # Benutzer in diesem Workspace löschen?} other {Das persönliche Gedächtnis von # Benutzern in diesem Workspace löschen?}}\n\nEs wird gelöscht, ohne Ihnen angezeigt zu werden. Dies kann nicht rückgängig gemacht werden.",
+    "memoryErased": "{count, plural, one {# persönlicher Gedächtniseintrag gelöscht.} other {# persönliche Gedächtniseinträge gelöscht.}}",
+    "confirmDeactivate": "{email} deaktivieren?\n\nDie Sitzungen enden sofort, die MCP-Schlüssel funktionieren nicht mehr und der Zugriff auf diesen Workspace entfällt. Sie können das Konto später wieder aktivieren.",
+    "deactivated": "Benutzer deaktiviert",
+    "reactivated": "Benutzer wieder aktiviert. Widerrufene MCP-Schlüssel bleiben widerrufen; ein neuer kann erstellt werden.",
+    "signedOut": "{email} wurde überall abgemeldet und muss sich erneut anmelden.",
+    "keysDeactivated": "{count, plural, one {# MCP-API-Schlüssel deaktiviert.} other {# MCP-API-Schlüssel deaktiviert.}}",
+    "otherWorkspaces": "{count, plural, one {Außerdem wurde die Person aus # weiteren Workspace abgemeldet.} other {Außerdem wurde die Person aus # weiteren Workspaces abgemeldet.}}",
+    "revokeFailed": "Sitzungen konnten nicht widerrufen werden",
+    "confirmDelete": "{email} aus diesem Workspace entfernen? Ist dies der einzige Workspace, wird das Konto gelöscht. Dies kann nicht rückgängig gemacht werden.",
+    "deleted": "Benutzer gelöscht",
+    "confirmRevokeInvite": "Einladung für {email} widerrufen?",
+    "inviteRevoked": "Einladung widerrufen",
+    "accessDenied": {
+      "title": "Zugriff verweigert",
+      "body": "Nur Administratoren können diese Seite aufrufen.",
+      "back": "Zurück zu den Einstellungen"
+    },
+    "revokeDialog": {
+      "title": "Überall abmelden",
+      "description": "<strong>{email}</strong> wird vom Dashboard und von jedem verbundenen KI-Client (Claude, ChatGPT, Cursor, …) abgemeldet, auch von Clients mit einem Refresh-Token. Rolle und Zugriff bleiben erhalten; es ist nur eine erneute Anmeldung nötig. Gehört die Person zu weiteren Workspaces, wird sie auch dort abgemeldet.",
+      "alsoKeys": "Außerdem die MCP-API-Schlüssel dieser Person in diesem Workspace deaktivieren",
+      "alsoKeysHint": "API-Schlüssel sind keine Sitzungen: Ohne diese Option funktioniert jeder von der Person erstellte <code>mcp_…</code>-Schlüssel weiter. Deaktivierte Schlüssel lassen sich nicht wiederherstellen.",
+      "cancel": "Abbrechen",
+      "signingOut": "Wird abgemeldet…",
+      "submit": "Überall abmelden"
+    },
+    "title": "Benutzerverwaltung",
+    "intro": "Verwalten Sie Benutzer und versenden Sie Einladungen.",
+    "seats": "{used} von {limit} Benutzern auf dieser Instanz.",
+    "seatsOver": "{used} Benutzer auf dieser Instanz, {limit} inklusive.",
+    "cancel": "Abbrechen",
+    "inviteUser": "Benutzer einladen",
+    "dismiss": "ausblenden",
+    "licenseSeats": "Ihre Lizenz umfasst {limit} Benutzer. Um weitere Personen einzuladen, ändern Sie Ihren Tarif unter <link>Einstellungen → Lizenz</link>.",
+    "invite": {
+      "title": "Neuen Benutzer einladen",
+      "body": "Versenden Sie eine Einladungs-E-Mail. Die Person erhält einen Link, um ihr Konto mit der angegebenen Rolle zu erstellen.",
+      "email": "E-Mail",
+      "appRole": "App-Rolle",
+      "mcpRole": "MCP-Tool-Rolle",
+      "noRestriction": "Keine Einschränkung (voller Zugriff)",
+      "emailFailed": "E-Mail konnte nicht gesendet werden:",
+      "link": "Einladungslink (manuell weitergeben):",
+      "sending": "Wird gesendet...",
+      "send": "Einladung senden"
+    },
+    "bulk": {
+      "selected": "{count} ausgewählt · Skill-Lernen:",
+      "eraseWhenOff": "Beim Ausschalten auch die bereits erfassten Anfragen dieser Personen löschen",
+      "clear": "Auswahl aufheben",
+      "memory": "Gedächtnis:",
+      "eraseMemory": "Persönliches Gedächtnis löschen"
+    },
+    "loading": "Wird geladen...",
+    "table": {
+      "selectAll": "Alle Benutzer auswählen",
+      "select": "{email} auswählen",
+      "email": "E-Mail",
+      "name": "Name",
+      "status": "Status",
+      "role": "Rolle",
+      "mcpRole": "MCP-Rolle",
+      "learning": "Skill-Lernen",
+      "learningHint": "Ob die Anfragen dieses Benutzers an KI-Clients verwendet werden dürfen, um Workspace-Skills vorzuschlagen. Die Voreinstellung folgt Einstellungen → Organisation → Absicht der Benutzer erfassen.",
+      "memory": "Gedächtnis",
+      "memoryHint": "Was die KI-Clients dieses Benutzers mit dem Workspace-Gedächtnis tun dürfen. Die Voreinstellung folgt den Einstellungen auf der Seite Gedächtnis.",
+      "date": "Datum",
+      "actions": "Aktionen",
+      "you": "Sie",
+      "deactivated": "Deaktiviert",
+      "active": "Aktiv",
+      "fullAccess": "Voller Zugriff",
+      "noRole": "Keine Rolle",
+      "noRoleHint": "Keine MCP-Rolle zugewiesen. Uneingeschränkt nur, solange dieser Workspace keine Tool-Whitelist hat; sobald eine Rolle Tools einschränkt, erhält ein Mitglied ohne Rolle keine.",
+      "optedOut": "widersprochen",
+      "optedOutHint": "Dieser Benutzer hat selbst widersprochen. Seine Anfragen werden nicht verwendet, egal was hier eingestellt ist.",
+      "reactivate": "Wieder aktivieren",
+      "signOutHint": "Dieses Mitglied zwingen, sich auf jedem Client erneut anzumelden",
+      "signOut": "Überall abmelden",
+      "deactivate": "Deaktivieren",
+      "delete": "Löschen",
+      "pending": "Ausstehend",
+      "expired": "Abgelaufen",
+      "default": "Standard",
+      "expires": "Läuft ab: {date}",
+      "revoke": "Widerrufen"
+    },
+    "footer": "Insgesamt {users, plural, one {# Benutzer} other {# Benutzer}}{invites, plural, =0 {} one {, # offene Einladung} other {, # offene Einladungen}}. Der erste registrierte Benutzer wird automatisch ADMIN."
   }
 }

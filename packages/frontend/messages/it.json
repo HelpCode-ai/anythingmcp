@@ -1704,5 +1704,376 @@
     "saving": "Salvataggio…",
     "save": "Salva hint",
     "reset": "Ripristina i valori dedotti"
+  },
+  "settingsNav": {
+    "sections": {
+      "organization": "Organizzazione"
+    },
+    "items": {
+      "profile": {
+        "label": "Profilo",
+        "description": "Nome, email, password"
+      },
+      "connections": {
+        "label": "Connessioni",
+        "description": "A cosa può accedere ogni client AI"
+      },
+      "organization": {
+        "label": "Generale",
+        "description": "Workspace e nuove organizzazioni"
+      },
+      "users": {
+        "label": "Utenti",
+        "description": "Membri e inviti"
+      },
+      "roles": {
+        "label": "Ruoli",
+        "description": "Controllo degli accessi agli strumenti MCP"
+      },
+      "identityProviders": {
+        "label": "Single sign-on",
+        "description": "Microsoft, Google, Okta"
+      },
+      "license": {
+        "label": "Licenza",
+        "description": "Piano, fatturazione, abbonamento"
+      },
+      "admin": {
+        "label": "Amministrazione",
+        "description": "SMTP, avvisi, link nel footer"
+      }
+    }
+  },
+  "settingsProfile": {
+    "authModes": {
+      "none": "Nessuna (sconsigliato)",
+      "legacy": "Legacy (Bearer Token / chiave API)",
+      "oauth2": "OAuth 2.0 (Authorization Code + Client Credentials)",
+      "both": "Entrambe (OAuth 2.0 + Legacy)"
+    },
+    "toast": {
+      "requestsErased": "{count, plural, one {# richiesta acquisita cancellata} other {# richieste acquisite cancellate}}",
+      "learningOptedOut": "Le tue richieste non vengono più usate per l'apprendimento delle skill",
+      "learningReset": "La tua scelta è stata rimossa; vale l'impostazione del tuo admin",
+      "couldNotSave": "Impossibile salvare",
+      "tipsOn": "Consigli e offerte attivati",
+      "tipsOff": "Disiscrizione da consigli e offerte completata",
+      "couldNotConnect": "Impossibile collegare",
+      "accountConnected": "Account collegato",
+      "accountDisconnected": "Account scollegato",
+      "couldNotDisconnect": "Impossibile scollegare",
+      "profileUpdated": "Profilo aggiornato",
+      "profileUpdateFailed": "Aggiornamento del profilo non riuscito",
+      "passwordsDoNotMatch": "Le password non corrispondono",
+      "passwordChangeFailed": "Modifica della password non riuscita",
+      "passwordChanged": "Password modificata"
+    },
+    "confirmUnlink": "Scollegare \"{name}\"? Dopo ti servirà la password per accedere.",
+    "confirmSocialUnlink": "Scollegare {name}? Non potrai più usarlo per accedere.",
+    "error": "Errore: {message}",
+    "couldNotUpdateProfile": "Impossibile aggiornare il profilo",
+    "couldNotChangePassword": "Impossibile modificare la password",
+    "incorrectPassword": "Password errata.",
+    "deleteFailed": "Impossibile eliminare l'account.",
+    "onlyAdmin": "Sei l'unico admin di queste organizzazioni.",
+    "couldNotStartSignIn": "Impossibile avviare l'accesso.",
+    "profile": {
+      "title": "Profilo",
+      "email": "Email",
+      "name": "Nome",
+      "role": "Ruolo",
+      "save": "Salva profilo"
+    },
+    "emailPrefs": {
+      "title": "Preferenze email",
+      "label": "Consigli e offerte via email",
+      "body": "Consigli per la configurazione finché il tuo workspace è nuovo, e offerte dopo una prova. Le email sul tuo account, come i codici di accesso e gli avvisi sul piano, vengono sempre inviate."
+    },
+    "learning": {
+      "title": "Apprendimento delle skill",
+      "effective": "Le tue richieste ai client AI collegati a questo workspace vengono registrate insieme alle chiamate agli strumenti che ne derivano, così gli admin possono trasformare le esigenze ricorrenti in skill del workspace.",
+      "optedOut": "Hai scelto di non partecipare: le tue richieste non vengono registrate per l'apprendimento delle skill in questo workspace.",
+      "adminOff": "Il tuo admin ha disattivato per te l'apprendimento delle skill in questo workspace.",
+      "label": "Usa le mie richieste per l'apprendimento delle skill",
+      "body": "Togliere la spunta vale sempre. Rimetterla rimuove solo la tua rinuncia: se le tue richieste vengono usate lo decide poi il tuo admin.",
+      "erase": "Cancella le mie richieste acquisite"
+    },
+    "password": {
+      "title": "Cambia password",
+      "current": "Password attuale",
+      "new": "Nuova password",
+      "newPlaceholder": "Min. 8 caratteri",
+      "confirm": "Conferma la nuova password",
+      "confirmPlaceholder": "Ripeti la nuova password",
+      "submit": "Cambia password"
+    },
+    "linked": {
+      "title": "Account collegati",
+      "body": "Collega il tuo account di directory per accedere senza password. Il tuo amministratore non può farlo al posto tuo: il collegamento è affidabile solo perché l'hai creato tu mentre avevi effettuato l'accesso.",
+      "connectedLastUsed": "Collegato · ultimo uso {date}",
+      "connected": "Collegato",
+      "notConnected": "Non collegato",
+      "working": "In corso...",
+      "disconnect": "Scollega",
+      "connect": "Collega"
+    },
+    "social": {
+      "title": "Metodi di accesso",
+      "body": "Accedi ad AnythingMCP con uno di questi account invece che con la password.",
+      "noPassword": "Il tuo account non ha ancora una password. <link>Imposta una password</link> per accedere anche con il tuo indirizzo email.",
+      "lastUsed": "ultimo uso {date}"
+    },
+    "mcpAuth": {
+      "title": "Autenticazione del server MCP",
+      "body": "Configura come i client MCP (Claude, ChatGPT, Cursor) si autenticano sul tuo server.",
+      "method": "Metodo di autenticazione",
+      "loading": "Caricamento...",
+      "active": "Attivo",
+      "oauthTitle": "Endpoint OAuth 2.0",
+      "oauthNote": "Supporta i grant type Authorization Code (con PKCE) e Client Credentials. I client MCP come Claude Desktop rilevano questi endpoint automaticamente.",
+      "legacyTitle": "Autenticazione legacy",
+      "legacyBody": "Imposta <code>MCP_BEARER_TOKEN</code> o <code>MCP_API_KEY</code> nelle tue variabili d'ambiente.",
+      "modeNote": "La modalità di autenticazione si configura con la variabile d'ambiente <code>MCP_AUTH_MODE</code>. Impostala su <code>oauth2</code>, <code>legacy</code>, <code>both</code> o <code>none</code>."
+    },
+    "apiKeys": {
+      "title": "Chiavi API MCP",
+      "body": "Le chiavi API ora si gestiscono per ogni server MCP. Vai su <link>Server MCP</link> per generare e gestire le chiavi di ogni server."
+    },
+    "danger": {
+      "title": "Zona pericolosa",
+      "body": "Elimina definitivamente il tuo account. Verranno rimossi il profilo, i token di reimpostazione della password, i token di verifica dell'email, le chiavi API MCP, i connettori e le configurazioni dei server MCP. I log di audit vengono conservati senza i tuoi dati identificativi.",
+      "button": "Elimina il mio account"
+    },
+    "deleteDialog": {
+      "title": "Elimina account",
+      "descPassword": "Questa azione non può essere annullata. Inserisci la password e digita <strong>DELETE</strong> per confermare.",
+      "descNoPassword": "Questa azione non può essere annullata. Digita <strong>DELETE</strong> per confermare. Se hai effettuato l'accesso più di 10 minuti fa, ti verrà chiesto prima di accedere di nuovo.",
+      "blockingTitle": "Impossibile eliminare: sei l'unico admin di:",
+      "blockingHint": "Nomina prima un altro admin o elimina quelle organizzazioni.",
+      "password": "Password",
+      "typeConfirm": "Digita <code>DELETE</code> per confermare",
+      "reauth": "Accedi di nuovo con {provider}",
+      "cancel": "Annulla",
+      "deleting": "Eliminazione…",
+      "submit": "Elimina il mio account"
+    }
+  },
+  "settingsConnections": {
+    "loadFailed": "Impossibile caricare le connessioni",
+    "emptySelection": "Scegli almeno un server MCP, oppure l'intero workspace.",
+    "notAvailable": "Questa selezione non è disponibile per te.",
+    "updated": "Aggiornato. Vale dalla prossima richiesta di questa connessione.",
+    "revokedMsg": "{client} non può più accedere a nulla.",
+    "loading": "Caricamento…",
+    "title": "Client AI collegati",
+    "intro": "A cosa può accedere ogni client tramite il tuo endpoint MCP condiviso. Le modifiche valgono dalla sua prossima richiesta, senza bisogno di ricollegarlo.",
+    "empty": "Non c'è ancora niente di collegato. Aggiungi il tuo endpoint MCP in Claude, ChatGPT, Meta Muse o Cursor: comparirà qui appena lo autorizzi.",
+    "revoked": "Revocato",
+    "reachesNothing": "Nessun accesso. Scegli qui sotto per consentirlo di nuovo.",
+    "everythingIn": "Tutto in {workspace}",
+    "nothingSelected": "Nessuna selezione",
+    "change": "Modifica",
+    "revoke": "Revoca",
+    "connectorCount": "{count, plural, one {# connettore} other {# connettori}}",
+    "wholeWorkspace": "Tutto in questo workspace",
+    "wholeWorkspaceHint": "compresi i connettori non assegnati a un server",
+    "save": "Salva",
+    "cancel": "Annulla"
+  },
+  "settingsOrg": {
+    "updated": "Organizzazione aggiornata",
+    "updateFailed": "Impossibile aggiornare l'organizzazione",
+    "deleteFailed": "Impossibile eliminare l'organizzazione",
+    "membersSignedOut": "{count, plural, one {# membro disconnesso ovunque.} other {# membri disconnessi ovunque.}}",
+    "crossOrg": "{count, plural, one {# di loro appartiene anche ad altri workspace ed è stato disconnesso anche lì.} other {# di loro appartengono anche ad altri workspace e sono stati disconnessi anche lì.}}",
+    "keysDeactivated": "{count, plural, one {# chiave API MCP disattivata.} other {# chiavi API MCP disattivate.}}",
+    "revokeFailed": "Impossibile revocare le sessioni",
+    "created": "Organizzazione creata! Cambio in corso...",
+    "createFailed": "Impossibile creare l'organizzazione",
+    "title": "Organizzazione",
+    "introAdmin": "Gestisci le impostazioni del tuo workspace. Tutti i membri di questa organizzazione condividono connettori, server MCP e strumenti.",
+    "introMember": "Visualizza la tua organizzazione attuale e crea nuovi workspace.",
+    "name": "Nome dell'organizzazione",
+    "namePlaceholder": "Il mio workspace",
+    "id": "ID dell'organizzazione",
+    "yourRole": "Il tuo ruolo",
+    "createdAt": "Creata il",
+    "saving": "Salvataggio...",
+    "save": "Salva modifiche",
+    "features": {
+      "title": "Funzionalità",
+      "onlyAdmins": "Solo gli admin possono modificarlo",
+      "kg": {
+        "label": "Knowledge Graph",
+        "description": "Rileva automaticamente le relazioni tra le entità dei tuoi connettori (dalle definizioni degli strumenti e dall'uso reale) e le espone agli agenti. Disattivandolo, il grafo non viene più costruito, la pagina viene nascosta e lo strumento MCP di supporto viene rimosso."
+      },
+      "llm": {
+        "label": "Arricchimento con AI",
+        "description": "Lascia che un LLM suggerisca relazioni in più che le euristiche non trovano (ad es. che una persona nel CRM, un cliente nella fatturazione e un utente del supporto sono la stessa persona). Vengono inviati solo i nomi delle entità e dei campi, mai i tuoi dati. I suggerimenti attendono la tua conferma. Possono esserci costi del modello."
+      },
+      "edgeAutoApply": {
+        "label": "Applica in automatico le connessioni più sicure",
+        "description": "Quando l'arricchimento con AI suggerisce una connessione con alta confidenza (≥ 0,90), la aggiunge al grafo in automatico invece di lasciarla alla revisione manuale. I collegamenti con confidenza più bassa attendono comunque la tua conferma. Nessun costo aggiuntivo del modello: cambia solo come vengono gestiti i suggerimenti esistenti."
+      },
+      "captureIntent": {
+        "label": "Acquisisci l'intento dell'utente",
+        "description": "Aggiunge a ogni strumento MCP un parametro facoltativo che chiede all'agente la richiesta originale dell'utente. Acquisisce il contesto di ogni chiamata, così il grafo può essere ottimizzato e nel tempo possono essere suggerite delle skill. È l'impostazione predefinita per ogni utente: puoi cambiarla per singolo utente in Impostazioni → Utenti (Apprendimento delle skill), e ogni utente può rinunciare nelle proprie impostazioni."
+      },
+      "autoExtend": {
+        "label": "Estensione AI programmata",
+        "description": "A intervalli regolari (circa una volta al giorno), lascia che l'AI estenda il grafo e generi skill dagli intenti degli utenti acquisiti, così la tua rete e le tue skill continuano a migliorare da sole. Attenta ai costi: gira solo ogni tanto, si salta quando non è cambiato nulla e resta disattivata finché non la attivi. Richiede Arricchimento con AI + Acquisisci l'intento dell'utente."
+      },
+      "skillAutoApply": {
+        "label": "Applica in automatico le skill più sicure",
+        "description": "Quando l'AI genera una skill con alta confidenza (≥ 0,90), la applica in automatico invece di lasciarla come suggerimento da rivedere. Le skill con confidenza più bassa attendono comunque l'approvazione manuale."
+      }
+    },
+    "security": {
+      "title": "Sicurezza",
+      "body": "Disconnetti ogni membro dalla dashboard e da ogni client AI collegato, compresi i client che hanno un refresh token. Nessuno perde ruolo o accessi; tutti devono solo accedere di nuovo. Usalo dopo una sospetta fuga di credenziali o un cambio del tuo identity provider. Le chiavi API MCP non sono sessioni e restano invariate, a meno che tu non scelga diversamente.",
+      "button": "Disconnetti tutti"
+    },
+    "revokeDialog": {
+      "title": "Disconnetti tutti",
+      "description": "Ogni membro di <strong>{name}</strong> dovrà accedere di nuovo, sulla dashboard e in ogni client AI. I membri che appartengono anche ad altri workspace vengono disconnessi anche lì. Per confermare, digita qui sotto il nome dell'organizzazione.",
+      "typeConfirm": "Digita <code>{name}</code> per confermare",
+      "alsoMe": "Disconnetti anche me",
+      "alsoMeHint": "Lascialo attivo se la sessione compromessa potrebbe essere la tua. Verrai portato subito alla pagina di accesso.",
+      "alsoKeys": "Disattiva anche tutte le chiavi API MCP di questo workspace",
+      "alsoKeysHint": "Le chiavi API non sono sessioni: senza questa opzione, ogni chiave <code>mcp_…</code> continua a funzionare. Le chiavi disattivate non possono essere ripristinate.",
+      "cancel": "Annulla",
+      "signingOut": "Disconnessione…",
+      "submit": "Disconnetti tutti"
+    },
+    "danger": {
+      "title": "Zona pericolosa",
+      "body": "Elimina definitivamente questa organizzazione, con tutti i membri, i connettori, i server MCP, le chiavi API, i ruoli personalizzati, gli inviti in sospeso e le impostazioni. Gli altri membri vengono spostati nel loro workspace successivo più vecchio, se ne hanno uno. Questa azione non può essere annullata.",
+      "button": "Elimina questa organizzazione"
+    },
+    "deleteDialog": {
+      "title": "Elimina organizzazione",
+      "description": "Verranno eliminati <strong>{name}</strong> e tutto ciò che contiene. Per confermare, digita qui sotto il nome dell'organizzazione.",
+      "typeConfirm": "Digita <code>{name}</code> per confermare",
+      "cancel": "Annulla",
+      "deleting": "Eliminazione…",
+      "submit": "Elimina organizzazione"
+    },
+    "myOrgs": {
+      "title": "Le mie organizzazioni",
+      "joined": "{role} · Entrato il {date}",
+      "active": "Attiva",
+      "switch": "Passa a questa",
+      "createTitle": "Crea una nuova organizzazione",
+      "createPlaceholder": "Nome della nuova organizzazione",
+      "creating": "Creazione...",
+      "create": "Crea organizzazione"
+    }
+  },
+  "settingsUsers": {
+    "memoryLevels": {
+      "none": "Nessun accesso",
+      "read": "Lettura della memoria aziendale",
+      "personal": "Personale",
+      "contribute": "Contributo"
+    },
+    "memoryDefault": "Predefinito ({level, select, none {nessun accesso} read {lettura} personal {personale} other {contributo}})",
+    "learningDefaultOn": "Predefinito (attivo)",
+    "learningDefaultOff": "Predefinito (disattivo)",
+    "on": "Attivo",
+    "off": "Disattivo",
+    "error": "Errore: {message}",
+    "roleUpdated": "Ruolo cambiato in {role}",
+    "learningUpdated": "{count, plural, one {Apprendimento delle skill aggiornato per # utente.} other {Apprendimento delle skill aggiornato per # utenti.}}",
+    "requestsErased": "{count, plural, one {# richiesta acquisita cancellata.} other {# richieste acquisite cancellate.}}",
+    "memoryUpdated": "{count, plural, one {Accesso alla memoria aggiornato per # utente.} other {Accesso alla memoria aggiornato per # utenti.}}",
+    "confirmEraseMemory": "{count, plural, one {Cancellare la memoria personale di # utente in questo workspace?} other {Cancellare la memoria personale di # utenti in questo workspace?}}\n\nViene eliminata senza mostrartela. Questa azione non può essere annullata.",
+    "memoryErased": "{count, plural, one {# elemento di memoria personale cancellato.} other {# elementi di memoria personale cancellati.}}",
+    "confirmDeactivate": "Disattivare {email}?\n\nLe sessioni terminano subito, le chiavi MCP smettono di funzionare e l'accesso a questo workspace viene tolto. Potrai riattivare l'account in seguito.",
+    "deactivated": "Utente disattivato",
+    "reactivated": "Utente riattivato. Le chiavi MCP revocate restano revocate; se ne può creare una nuova.",
+    "signedOut": "{email} è stato disconnesso ovunque e deve accedere di nuovo.",
+    "keysDeactivated": "{count, plural, one {# chiave API MCP disattivata.} other {# chiavi API MCP disattivate.}}",
+    "otherWorkspaces": "{count, plural, one {È stato disconnesso anche da # altro workspace.} other {È stato disconnesso anche da # altri workspace.}}",
+    "revokeFailed": "Impossibile revocare le sessioni",
+    "confirmDelete": "Rimuovere {email} da questo workspace? Se è il suo unico workspace, l'account viene eliminato. Questa azione non può essere annullata.",
+    "deleted": "Utente eliminato",
+    "confirmRevokeInvite": "Revocare l'invito per {email}?",
+    "inviteRevoked": "Invito revocato",
+    "accessDenied": {
+      "title": "Accesso negato",
+      "body": "Solo gli amministratori possono accedere a questa pagina.",
+      "back": "Torna alle impostazioni"
+    },
+    "revokeDialog": {
+      "title": "Disconnetti ovunque",
+      "description": "<strong>{email}</strong> verrà disconnesso dalla dashboard e da ogni client AI collegato (Claude, ChatGPT, Cursor, …), compresi i client che hanno un refresh token. Ruolo e accessi restano invariati: basta accedere di nuovo. Se appartiene ad altri workspace, viene disconnesso anche lì.",
+      "alsoKeys": "Disattiva anche le sue chiavi API MCP in questo workspace",
+      "alsoKeysHint": "Le chiavi API non sono sessioni: senza questa opzione, ogni chiave <code>mcp_…</code> che ha creato continua a funzionare. Le chiavi disattivate non possono essere ripristinate.",
+      "cancel": "Annulla",
+      "signingOut": "Disconnessione…",
+      "submit": "Disconnetti ovunque"
+    },
+    "title": "Gestione utenti",
+    "intro": "Gestisci gli utenti e invia inviti.",
+    "seats": "{used} utenti su {limit} in questa istanza.",
+    "seatsOver": "{used} utenti in questa istanza, {limit} inclusi.",
+    "cancel": "Annulla",
+    "inviteUser": "Invita utente",
+    "dismiss": "chiudi",
+    "licenseSeats": "La tua licenza include {limit} utenti. Per invitare altre persone, cambia piano in <link>Impostazioni → Licenza</link>.",
+    "invite": {
+      "title": "Invita un nuovo utente",
+      "body": "Invia un'email di invito. La persona riceverà un link per creare il proprio account con il ruolo indicato.",
+      "email": "Email",
+      "appRole": "Ruolo nell'app",
+      "mcpRole": "Ruolo per gli strumenti MCP",
+      "noRestriction": "Nessuna restrizione (accesso completo)",
+      "emailFailed": "Invio dell'email non riuscito:",
+      "link": "Link di invito (da condividere manualmente):",
+      "sending": "Invio...",
+      "send": "Invia invito"
+    },
+    "bulk": {
+      "selected": "{count} selezionati · Apprendimento delle skill:",
+      "eraseWhenOff": "Quando lo disattivi, cancella anche le richieste già acquisite da queste persone",
+      "clear": "Annulla selezione",
+      "memory": "Memoria:",
+      "eraseMemory": "Cancella la memoria personale"
+    },
+    "loading": "Caricamento...",
+    "table": {
+      "selectAll": "Seleziona tutti gli utenti",
+      "select": "Seleziona {email}",
+      "email": "Email",
+      "name": "Nome",
+      "status": "Stato",
+      "role": "Ruolo",
+      "mcpRole": "Ruolo MCP",
+      "learning": "Apprendimento delle skill",
+      "learningHint": "Se le richieste di questo utente ai client AI possono essere usate per suggerire skill del workspace. Il valore predefinito segue Impostazioni → Organizzazione → Acquisisci l'intento dell'utente.",
+      "memory": "Memoria",
+      "memoryHint": "Cosa possono fare i client AI di questo utente con la memoria del workspace. Il valore predefinito segue le impostazioni della pagina Memoria.",
+      "date": "Data",
+      "actions": "Azioni",
+      "you": "tu",
+      "deactivated": "Disattivato",
+      "active": "Attivo",
+      "fullAccess": "Accesso completo",
+      "noRole": "Nessun ruolo",
+      "noRoleHint": "Nessun ruolo MCP assegnato. Senza restrizioni solo finché questo workspace non ha una whitelist di strumenti; appena un ruolo limita gli strumenti, un membro senza ruolo non ne ha nessuno.",
+      "optedOut": "ha rinunciato",
+      "optedOutHint": "Questo utente ha rinunciato di sua scelta. Le sue richieste non vengono usate, qualunque cosa sia impostata qui.",
+      "reactivate": "Riattiva",
+      "signOutHint": "Obbliga questo membro ad accedere di nuovo su ogni client",
+      "signOut": "Disconnetti ovunque",
+      "deactivate": "Disattiva",
+      "delete": "Elimina",
+      "pending": "In sospeso",
+      "expired": "Scaduto",
+      "default": "Predefinito",
+      "expires": "Scade: {date}",
+      "revoke": "Revoca"
+    },
+    "footer": "{users, plural, one {# utente} other {# utenti}}{invites, plural, =0 {} one {, # invito in sospeso} other {, # inviti in sospeso}} in totale. Il primo utente registrato diventa automaticamente ADMIN."
   }
 }

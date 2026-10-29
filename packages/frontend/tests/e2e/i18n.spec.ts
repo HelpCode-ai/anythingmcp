@@ -1068,6 +1068,164 @@ test.describe('connector tools and tool editor from Accept-Language', () => {
   });
 });
 
+async function settingsSession(page: Page) {
+  await fakeSession(page);
+  // Not under /api, so fakeSession's catch-all does not answer it.
+  await page.route(/\/health\/server-info/, (route) =>
+    route.fulfill({
+      json: {
+        mcpAuthMode: 'both',
+        serverUrl: 'http://localhost:4000',
+        mcpEndpoint: 'http://localhost:4000/mcp',
+        deploymentMode: 'self-hosted',
+        hasUsers: true,
+        registrationEnabled: false,
+        ssoProviders: [],
+        oauthEndpoints: {
+          wellKnown: '/.well-known/oauth-authorization-server',
+          authorize: '/oauth/authorize',
+          token: '/oauth/token',
+          register: '/oauth/register',
+        },
+      },
+    }),
+  );
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\//, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (path === '/api/users') {
+      return json([
+        { id: 'u1', email: 'test@example.com', name: 'Test User', role: 'ADMIN', createdAt: '2026-01-02T10:00:00Z', learningMode: null },
+        { id: 'u2', email: 'ada@example.com', name: 'Ada', role: 'EDITOR', createdAt: '2026-02-03T10:00:00Z', learningMode: null, learningOptOut: true, mcpRole: null },
+      ]);
+    }
+    if (path === '/api/users/invitations') {
+      return json([{ id: 'i1', email: 'new@example.com', role: 'VIEWER', createdAt: '2026-03-01T10:00:00Z', expiresAt: '2099-01-01T00:00:00Z' }]);
+    }
+    if (path === '/api/roles') return json([]);
+    if (path === '/api/knowledge-graph/settings') {
+      return json({ enabled: true, llmEnabled: false, llmAvailable: false, captureIntent: true, autoExtend: false, skillAutoApply: false, edgeAutoApply: false });
+    }
+    if (path === '/api/memory/status') {
+      return json({ licensed: true, access: 'contribute', settings: { defaultAccess: 'personal', writeMode: 'approval' }, isCurator: true });
+    }
+    if (path === '/api/license/edition') {
+      return json({
+        edition: 'business', business: true, source: 'license', plan: 'business', seatLimit: 10, seatsUsed: 2,
+        communitySeatLimit: 3, trialEndsAt: null, trialAvailable: false, trialDays: 0, transitionUntil: null,
+      });
+    }
+    if (path === '/api/mcp-connections') {
+      return json([
+        { clientId: 'cl1', clientName: 'Claude', revoked: false, servers: [{ id: 's1', name: 'Sales' }], wholeWorkspace: null, connectedAt: '2026-01-01', updatedAt: '2026-01-01' },
+      ]);
+    }
+    if (path === '/api/mcp-connections/targets') {
+      return json([
+        { organizationId: 'o1', organizationName: 'Acme', servers: [{ id: 's1', name: 'Sales', connectorCount: 2 }, { id: 's2', name: 'Support', connectorCount: 1 }] },
+      ]);
+    }
+    return route.fallback();
+  });
+}
+
+test.describe('settings pages from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the profile and users pages in German', async ({ page }) => {
+      await settingsSession(page);
+      await page.goto('/settings');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      const nav = page.locator('main nav');
+      await expect(nav.getByRole('link', { name: /^Profil/ })).toBeVisible();
+      await expect(nav.getByText('Workspace und neue Organisationen', { exact: true })).toBeVisible();
+      await expect(nav.getByText('Organisation', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Passwort ändern' })).toBeVisible();
+      await expect(page.getByPlaceholder('Neues Passwort wiederholen')).toBeVisible();
+      await expect(page.getByText('Beides (OAuth 2.0 + Legacy)', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^Der Authentifizierungsmodus wird über die Umgebungsvariable MCP_AUTH_MODE/)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Mein Konto löschen' })).toBeVisible();
+
+      await page.goto('/settings/users');
+      await expect(page.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
+      await expect(page.getByText('Verwalten Sie Benutzer und versenden Sie Einladungen. 2 von 10 Benutzern auf dieser Instanz.')).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'Skill-Lernen' })).toBeVisible();
+      await expect(page.getByText('widersprochen', { exact: true })).toBeVisible();
+      await expect(page.getByText('Ausstehend', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Insgesamt 2 Benutzer, 1 offene Einladung. Der erste registrierte Benutzer wird automatisch ADMIN.'),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Benutzer einladen' }).click();
+      await expect(page.getByRole('heading', { name: 'Neuen Benutzer einladen' })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the organization and connections pages in Italian', async ({ page }) => {
+      await settingsSession(page);
+      await page.goto('/settings/organization');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('heading', { name: 'Organizzazione', exact: true })).toBeVisible();
+      await expect(page.getByText("Nome dell'organizzazione", { exact: true })).toBeVisible();
+      await expect(page.getByText("Acquisisci l'intento dell'utente", { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Le mie organizzazioni' })).toBeVisible();
+      await expect(page.getByText(/^ADMIN · Entrato il /)).toBeVisible();
+      await page.getByRole('button', { name: 'Disconnetti tutti' }).click();
+      await expect(page.getByRole('dialog').getByText('Digita Acme per confermare')).toBeVisible();
+      await page.getByRole('button', { name: 'Annulla' }).click();
+
+      await page.goto('/settings/connections');
+      await expect(page.getByRole('heading', { name: 'Client AI collegati' })).toBeVisible();
+      await page.getByRole('button', { name: 'Modifica', exact: true }).click();
+      await expect(page.getByText('2 connettori', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 connettore', { exact: true })).toBeVisible();
+      await expect(page.getByText('Tutto in questo workspace', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the settings pages in English', async ({ page }) => {
+      await settingsSession(page);
+      await page.goto('/settings');
+      const nav = page.locator('main nav');
+      await expect(nav.getByText('Workspace and new orgs', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible();
+      await expect(page.getByText('Both (OAuth 2.0 + Legacy)', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Auth mode is configured via the MCP_AUTH_MODE environment variable. Set it to oauth2, legacy, both, or none.'),
+      ).toBeVisible();
+      await expect(
+        page.getByText('API keys are now managed per MCP server. Go to MCP Servers to generate and manage keys for each server.'),
+      ).toBeVisible();
+
+      await page.goto('/settings/users');
+      await expect(page.getByText('Manage users and send invitations. 2 of 10 users on this instance.')).toBeVisible();
+      await expect(page.getByText('opted out', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('2 users, 1 pending invitation total. The first registered user automatically becomes ADMIN.'),
+      ).toBeVisible();
+      await expect(page.getByText('Default (personal)', { exact: true }).first()).toBeVisible();
+
+      await page.goto('/settings/organization');
+      await expect(page.getByText('Organization Name', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^ADMIN · Joined /)).toBeVisible();
+
+      await page.goto('/settings/connections');
+      await expect(page.getByRole('heading', { name: 'Connected AI clients' })).toBeVisible();
+      await page.getByRole('button', { name: 'Change', exact: true }).click();
+      await expect(page.getByText('2 connectors', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 connector', { exact: true })).toBeVisible();
+      await expect(page.getByText('including connectors not on a server', { exact: true })).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;

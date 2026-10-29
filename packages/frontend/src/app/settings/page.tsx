@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { users, server, sso, social, knowledgeGraph, ApiError, type LinkableProvider, type MemberLearning, type SocialConnection } from '@/lib/api';
 import { ProviderMark } from '@/components/provider-mark';
@@ -12,24 +13,25 @@ import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/badge';
 import { LanguageSwitcher } from '@/components/language-switcher';
 
-const AUTH_MODE_LABELS: Record<string, string> = {
-  none: 'None (not recommended)',
-  legacy: 'Legacy (Bearer Token / API Key)',
-  oauth2: 'OAuth 2.0 (Authorization Code + Client Credentials)',
-  both: 'Both (OAuth 2.0 + Legacy)',
-};
+const AUTH_MODES = ['none', 'legacy', 'oauth2', 'both'] as const;
 
 export default function SettingsPage() {
   const toast = useToast();
+  const t = useTranslations('settingsProfile');
+  const locale = useLocale();
 
   const { token, user, updateUser, logout } = useAuth();
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileMsg, setProfileMsg] = useState('');
+  // Both messages below are only ever errors; the flags keep their colour
+  // from depending on the English "Error" prefix.
+  const [profileMsgIsError, setProfileMsgIsError] = useState(false);
   // Change password
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [passwordMsg, setPasswordMsg] = useState('');
+  const [passwordMsgIsError, setPasswordMsgIsError] = useState(false);
   const [mcpAuthMode, setMcpAuthMode] = useState('');
   const [oauthEndpoints, setOauthEndpoints] = useState<Record<string, string> | null>(null);
   const [serverUrl, setServerUrl] = useState('');
@@ -92,13 +94,13 @@ export default function SettingsPage() {
       toast.show({
         tone: 'success',
         title: clearIntents
-          ? `${res.intentsCleared} captured request(s) erased`
+          ? t('toast.requestsErased', { count: res.intentsCleared })
           : optOut
-            ? 'Your requests are no longer used for skill learning'
-            : 'Your choice was removed; your admin\'s setting applies',
+            ? t('toast.learningOptedOut')
+            : t('toast.learningReset'),
       });
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not save', description: err?.message });
+      toast.show({ tone: 'error', title: t('toast.couldNotSave'), description: err?.message });
     } finally {
       setLearningSaving(false);
     }
@@ -110,9 +112,9 @@ export default function SettingsPage() {
     try {
       const st = await users.updateOnboardingState({ emailMarketingOptOut: !wantsEmails }, token);
       setMarketingOptOut(st.emailMarketingOptOut);
-      toast.show({ tone: 'success', title: wantsEmails ? 'Tips and offers turned on' : 'Unsubscribed from tips and offers' });
+      toast.show({ tone: 'success', title: wantsEmails ? t('toast.tipsOn') : t('toast.tipsOff') });
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not save', description: err?.message });
+      toast.show({ tone: 'error', title: t('toast.couldNotSave'), description: err?.message });
     } finally {
       setMarketingSaving(false);
     }
@@ -155,9 +157,9 @@ export default function SettingsPage() {
     if (!linked && !linkError) return;
 
     if (linkError) {
-      toast.show({ tone: 'error', title: 'Could not connect', description: linkError });
+      toast.show({ tone: 'error', title: t('toast.couldNotConnect'), description: linkError });
     } else {
-      toast.show({ tone: 'success', title: 'Account connected' });
+      toast.show({ tone: 'success', title: t('toast.accountConnected') });
       loadLinkable();
       loadSocial();
     }
@@ -174,7 +176,7 @@ export default function SettingsPage() {
       // sign-in page to the user.
       window.location.assign(authorizationUrl);
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not connect', description: err.message });
+      toast.show({ tone: 'error', title: t('toast.couldNotConnect'), description: err.message });
       setLinkBusy(null);
     }
   };
@@ -183,17 +185,17 @@ export default function SettingsPage() {
     if (!token) return;
     if (
       !confirm(
-        `Disconnect "${p.name}"? You will need your password to sign in afterwards.`,
+        t('confirmUnlink', { name: p.name }),
       )
     )
       return;
     setLinkBusy(p.id);
     try {
       await sso.unlink(p.id, token);
-      toast.show({ tone: 'success', title: 'Account disconnected' });
+      toast.show({ tone: 'success', title: t('toast.accountDisconnected') });
       loadLinkable();
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not disconnect', description: err.message });
+      toast.show({ tone: 'error', title: t('toast.couldNotDisconnect'), description: err.message });
     } finally {
       setLinkBusy(null);
     }
@@ -206,21 +208,21 @@ export default function SettingsPage() {
       const { authorizationUrl } = await social.startLink(p.id, '/settings', token);
       window.location.assign(authorizationUrl);
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not connect', description: err.message });
+      toast.show({ tone: 'error', title: t('toast.couldNotConnect'), description: err.message });
       setLinkBusy(null);
     }
   };
 
   const handleSocialUnlink = async (p: SocialConnection) => {
     if (!token) return;
-    if (!confirm(`Disconnect ${p.name}? You will no longer be able to sign in with it.`)) return;
+    if (!confirm(t('confirmSocialUnlink', { name: p.name }))) return;
     setLinkBusy(`social:${p.id}`);
     try {
       await social.unlink(p.id, token);
-      toast.show({ tone: 'success', title: 'Account disconnected' });
+      toast.show({ tone: 'success', title: t('toast.accountDisconnected') });
       loadSocial();
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not disconnect', description: err.message });
+      toast.show({ tone: 'error', title: t('toast.couldNotDisconnect'), description: err.message });
     } finally {
       setLinkBusy(null);
     }
@@ -232,11 +234,12 @@ export default function SettingsPage() {
       await users.updateProfile({ name: profileName }, token);
       updateUser({ name: profileName });
       setProfileMsg('');
-      toast.show({ tone: 'success', title: 'Profile updated' });
+      toast.show({ tone: 'success', title: t('toast.profileUpdated') });
     } catch (err: any) {
-      const message = err?.message || 'Could not update profile';
-      setProfileMsg(`Error: ${message}`);
-      toast.show({ tone: 'error', title: 'Profile update failed', description: message });
+      const message = err?.message || t('couldNotUpdateProfile');
+      setProfileMsgIsError(true);
+      setProfileMsg(t('error', { message }));
+      toast.show({ tone: 'error', title: t('toast.profileUpdateFailed'), description: message });
     }
   };
 
@@ -258,15 +261,15 @@ export default function SettingsPage() {
           setDeleteNeedsReauth(true);
           setDeleteError(err.message);
         } else if (err.status === 401) {
-          setDeleteError(hasPassword ? 'Incorrect password.' : err.message || 'Failed to delete account.');
+          setDeleteError(hasPassword ? t('incorrectPassword') : err.message || t('deleteFailed'));
         } else if (err.status === 409 && Array.isArray(err.body?.blockingOrganizations)) {
           setBlockingOrgs(err.body.blockingOrganizations);
-          setDeleteError(err.body?.error || 'You are the only admin of these organizations.');
+          setDeleteError(err.body?.error || t('onlyAdmin'));
         } else {
-          setDeleteError(err.message || 'Failed to delete account.');
+          setDeleteError(err.message || t('deleteFailed'));
         }
       } else {
-        setDeleteError(err?.message || 'Failed to delete account.');
+        setDeleteError(err?.message || t('deleteFailed'));
       }
       setDeleting(false);
     }
@@ -280,7 +283,7 @@ export default function SettingsPage() {
       const { authorizationUrl } = await social.start(provider.id, '/settings?delete=1');
       window.location.assign(authorizationUrl);
     } catch (err: any) {
-      setDeleteError(err?.message || 'Could not start the sign-in.');
+      setDeleteError(err?.message || t('couldNotStartSignIn'));
     }
   };
 
@@ -305,26 +308,29 @@ export default function SettingsPage() {
   const handleChangePassword = async () => {
     if (!token) return;
     if (newPassword !== confirmNewPassword) {
-      setPasswordMsg('Error: Passwords do not match');
-      toast.show({ tone: 'error', title: 'Passwords do not match' });
+      setPasswordMsgIsError(true);
+      setPasswordMsg(t('error', { message: t('toast.passwordsDoNotMatch') }));
+      toast.show({ tone: 'error', title: t('toast.passwordsDoNotMatch') });
       return;
     }
     try {
       const result = await users.changePassword({ currentPassword, newPassword }, token);
       if (result.error) {
-        setPasswordMsg(`Error: ${result.error}`);
-        toast.show({ tone: 'error', title: 'Password change failed', description: result.error });
+        setPasswordMsgIsError(true);
+        setPasswordMsg(t('error', { message: result.error }));
+        toast.show({ tone: 'error', title: t('toast.passwordChangeFailed'), description: result.error });
       } else {
         setPasswordMsg('');
         setCurrentPassword('');
         setNewPassword('');
         setConfirmNewPassword('');
-        toast.show({ tone: 'success', title: 'Password changed' });
+        toast.show({ tone: 'success', title: t('toast.passwordChanged') });
       }
     } catch (err: any) {
-      const message = err?.message || 'Could not change password';
-      setPasswordMsg(`Error: ${message}`);
-      toast.show({ tone: 'error', title: 'Password change failed', description: message });
+      const message = err?.message || t('couldNotChangePassword');
+      setPasswordMsgIsError(true);
+      setPasswordMsg(t('error', { message }));
+      toast.show({ tone: 'error', title: t('toast.passwordChangeFailed'), description: message });
     }
   };
 
@@ -333,39 +339,42 @@ export default function SettingsPage() {
   const inputDisabledClass =
     'w-full h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] px-3 text-sm text-[var(--text-3)]';
   const labelClass = 'block text-[12.5px] font-medium text-[var(--text-2)] mb-1';
+  const codeTag = (chunks: React.ReactNode) => (
+    <code className="bg-[var(--surface-3)] px-1 rounded font-mono">{chunks}</code>
+  );
 
   return (
     <div className="space-y-6">
       {/* Profile */}
       <Card className="p-[22px]">
-        <h3 className="text-sm font-semibold text-[var(--text)] mb-4">Profile</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-4">{t('profile.title')}</h3>
         <div className="space-y-4 max-w-md">
           <div>
-            <label htmlFor="settings-profile-email" className={labelClass}>Email</label>
+            <label htmlFor="settings-profile-email" className={labelClass}>{t('profile.email')}</label>
             <input id="settings-profile-email" name="email" autoComplete="email" type="text" value={user?.email || ''} disabled className={inputDisabledClass} />
           </div>
           <div>
-            <label htmlFor="settings-profile-name" className={labelClass}>Name</label>
+            <label htmlFor="settings-profile-name" className={labelClass}>{t('profile.name')}</label>
             <input id="settings-profile-name" name="name" autoComplete="name" type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} className={inputClass} />
           </div>
           <div>
-            <label htmlFor="settings-profile-role" className={labelClass}>Role</label>
+            <label htmlFor="settings-profile-role" className={labelClass}>{t('profile.role')}</label>
             <input id="settings-profile-role" type="text" value={user?.role || ''} disabled className={inputDisabledClass} />
           </div>
           <LanguageSwitcher />
           {profileMsg && (
-            <p className={`text-sm ${profileMsg.startsWith('Error') ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
+            <p className={`text-sm ${profileMsgIsError ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
               {profileMsg}
             </p>
           )}
-          <Button onClick={handleSaveProfile}>Save Profile</Button>
+          <Button onClick={handleSaveProfile}>{t('profile.save')}</Button>
         </div>
       </Card>
 
       {/* Email preferences (Cloud). The unsubscribe link in tips emails also leads here. */}
       {isCloud && marketingOptOut !== null && (
         <Card id="email-preferences" className="p-[22px] scroll-mt-6">
-          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Email preferences</h3>
+          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">{t('emailPrefs.title')}</h3>
           <label className="flex items-start gap-2.5 cursor-pointer max-w-md">
             <input
               type="checkbox"
@@ -375,9 +384,9 @@ export default function SettingsPage() {
               className="mt-0.5 accent-[var(--brand)]"
             />
             <span className="text-sm text-[var(--text-2)]">
-              <span className="font-medium text-[var(--text)]">Tips and offers by email</span>
+              <span className="font-medium text-[var(--text)]">{t('emailPrefs.label')}</span>
               <br />
-              Setup tips while your workspace is new, and offers after a trial. Emails about your account, such as sign-in codes and plan notices, are always sent.
+              {t('emailPrefs.body')}
             </span>
           </label>
         </Card>
@@ -387,13 +396,13 @@ export default function SettingsPage() {
           on, an admin turned it on for them, or they already opted out). */}
       {learning && (learning.workspaceDefault || learning.mode === 'on' || learning.optOut) && (
         <Card className="p-[22px]">
-          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Skill learning</h3>
+          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">{t('learning.title')}</h3>
           <p className="text-sm text-[var(--text-2)] mb-3 max-w-xl">
             {learning.effective
-              ? 'Your requests to AI clients connected to this workspace are recorded with the tool calls they lead to, so admins can turn recurring needs into workspace skills.'
+              ? t('learning.effective')
               : learning.optOut
-                ? 'You opted out: your requests are not recorded for skill learning in this workspace.'
-                : 'Your admin has turned skill learning off for you in this workspace.'}
+                ? t('learning.optedOut')
+                : t('learning.adminOff')}
           </p>
           <label className="flex items-start gap-2.5 cursor-pointer max-w-md">
             <input
@@ -404,10 +413,9 @@ export default function SettingsPage() {
               className="mt-0.5 accent-[var(--brand)]"
             />
             <span className="text-sm text-[var(--text-2)]">
-              <span className="font-medium text-[var(--text)]">Use my requests for skill learning</span>
+              <span className="font-medium text-[var(--text)]">{t('learning.label')}</span>
               <br />
-              Unchecking it always wins. Checking it again only removes your opt-out: whether your
-              requests are used is then up to your admin.
+              {t('learning.body')}
             </span>
           </label>
           {learning.optOut && (
@@ -418,7 +426,7 @@ export default function SettingsPage() {
               disabled={learningSaving}
               onClick={() => handleLearningOptOut(true, true)}
             >
-              Erase my captured requests
+              {t('learning.erase')}
             </Button>
           )}
         </Card>
@@ -426,10 +434,10 @@ export default function SettingsPage() {
 
       {/* Change Password */}
       <Card className="p-[22px]">
-        <h3 className="text-sm font-semibold text-[var(--text)] mb-4">Change Password</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-4">{t('password.title')}</h3>
         <div className="space-y-4 max-w-md">
           <div>
-            <label htmlFor="settings-current-password" className={labelClass}>Current Password</label>
+            <label htmlFor="settings-current-password" className={labelClass}>{t('password.current')}</label>
             <input
               id="settings-current-password"
               name="current-password"
@@ -441,7 +449,7 @@ export default function SettingsPage() {
             />
           </div>
           <div>
-            <label htmlFor="settings-new-password" className={labelClass}>New Password</label>
+            <label htmlFor="settings-new-password" className={labelClass}>{t('password.new')}</label>
             <input
               id="settings-new-password"
               name="new-password"
@@ -449,13 +457,13 @@ export default function SettingsPage() {
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Min. 8 characters"
+              placeholder={t('password.newPlaceholder')}
               minLength={8}
               className={inputClass}
             />
           </div>
           <div>
-            <label htmlFor="settings-confirm-new-password" className={labelClass}>Confirm New Password</label>
+            <label htmlFor="settings-confirm-new-password" className={labelClass}>{t('password.confirm')}</label>
             <input
               id="settings-confirm-new-password"
               name="confirm-new-password"
@@ -463,13 +471,13 @@ export default function SettingsPage() {
               type="password"
               value={confirmNewPassword}
               onChange={(e) => setConfirmNewPassword(e.target.value)}
-              placeholder="Repeat new password"
+              placeholder={t('password.confirmPlaceholder')}
               minLength={8}
               className={inputClass}
             />
           </div>
           {passwordMsg && (
-            <p className={`text-sm ${passwordMsg.startsWith('Error') ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
+            <p className={`text-sm ${passwordMsgIsError ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
               {passwordMsg}
             </p>
           )}
@@ -477,7 +485,7 @@ export default function SettingsPage() {
             onClick={handleChangePassword}
             disabled={!currentPassword || !newPassword || newPassword.length < 8}
           >
-            Change Password
+            {t('password.submit')}
           </Button>
         </div>
       </Card>
@@ -485,11 +493,9 @@ export default function SettingsPage() {
       {/* Connected accounts */}
       {linkable.length > 0 && (
         <Card className="p-[22px]">
-          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Connected accounts</h3>
+          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">{t('linked.title')}</h3>
           <p className="text-sm text-[var(--text-2)] mb-4">
-            Connect your directory account to sign in without a password. Your
-            administrator cannot do this for you — the connection is only
-            trusted because you made it while signed in.
+            {t('linked.body')}
           </p>
           <div className="space-y-2 max-w-md">
             {linkable.map((p) => (
@@ -502,9 +508,9 @@ export default function SettingsPage() {
                   <div className="text-[11.5px] text-[var(--text-3)] mt-0.5">
                     {p.linked
                       ? p.lastLoginAt
-                        ? `Connected · last used ${new Date(p.lastLoginAt).toLocaleDateString()}`
-                        : 'Connected'
-                      : 'Not connected'}
+                        ? t('linked.connectedLastUsed', { date: new Date(p.lastLoginAt).toLocaleDateString(locale) })
+                        : t('linked.connected')
+                      : t('linked.notConnected')}
                   </div>
                 </div>
                 <Button
@@ -514,10 +520,10 @@ export default function SettingsPage() {
                   onClick={() => (p.linked ? handleUnlink(p) : handleLink(p))}
                 >
                   {linkBusy === p.id
-                    ? 'Working...'
+                    ? t('linked.working')
                     : p.linked
-                      ? 'Disconnect'
-                      : 'Connect'}
+                      ? t('linked.disconnect')
+                      : t('linked.connect')}
                 </Button>
               </div>
             ))}
@@ -528,17 +534,19 @@ export default function SettingsPage() {
       {/* Sign-in methods (Cloud social sign-in) */}
       {isCloud && socialConnections.length > 0 && (
         <Card className="p-[22px]" data-testid="sign-in-methods">
-          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Sign-in methods</h3>
+          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">{t('social.title')}</h3>
           <p className="text-sm text-[var(--text-2)] mb-4">
-            Sign in to AnythingMCP with one of these accounts instead of your password.
+            {t('social.body')}
           </p>
           {!hasPassword && (
             <p className="text-sm text-[var(--text-2)] mb-4">
-              Your account has no password yet.{' '}
-              <Link href="/forgot-password" className="text-[var(--brand)] underline">
-                Set a password
-              </Link>{' '}
-              to also sign in with your email address.
+              {t.rich('social.noPassword', {
+                link: (chunks) => (
+                  <Link href="/forgot-password" className="text-[var(--brand)] underline">
+                    {chunks}
+                  </Link>
+                ),
+              })}
             </p>
           )}
           <div className="space-y-2 max-w-md">
@@ -553,10 +561,10 @@ export default function SettingsPage() {
                     <div className="text-sm font-medium text-[var(--text)]">{p.name}</div>
                     <div className="text-[11.5px] text-[var(--text-3)] mt-0.5 truncate">
                       {p.connected
-                        ? [p.email, p.lastLoginAt ? `last used ${new Date(p.lastLoginAt).toLocaleDateString()}` : null]
+                        ? [p.email, p.lastLoginAt ? t('social.lastUsed', { date: new Date(p.lastLoginAt).toLocaleDateString(locale) }) : null]
                             .filter(Boolean)
-                            .join(' · ') || 'Connected'
-                        : 'Not connected'}
+                            .join(' · ') || t('linked.connected')
+                        : t('linked.notConnected')}
                     </div>
                   </div>
                 </div>
@@ -566,7 +574,7 @@ export default function SettingsPage() {
                   disabled={linkBusy === `social:${p.id}`}
                   onClick={() => (p.connected ? handleSocialUnlink(p) : handleSocialLink(p))}
                 >
-                  {linkBusy === `social:${p.id}` ? 'Working...' : p.connected ? 'Disconnect' : 'Connect'}
+                  {linkBusy === `social:${p.id}` ? t('linked.working') : p.connected ? t('linked.disconnect') : t('linked.connect')}
                 </Button>
               </div>
             ))}
@@ -576,19 +584,21 @@ export default function SettingsPage() {
 
       {/* MCP Auth */}
       <Card className="p-[22px]">
-        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">MCP Server Authentication</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">{t('mcpAuth.title')}</h3>
         <p className="text-sm text-[var(--text-2)] mb-4">
-          Configure how MCP clients (Claude, ChatGPT, Cursor) authenticate to your server.
+          {t('mcpAuth.body')}
         </p>
         <div className="space-y-4 max-w-lg">
           <div>
-            <label className={labelClass}>Auth Method</label>
+            <label className={labelClass}>{t('mcpAuth.method')}</label>
             <div className="flex items-center gap-3">
               <div className="flex-1 h-9 flex items-center rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] px-3 text-sm text-[var(--text-2)]">
-                {AUTH_MODE_LABELS[mcpAuthMode] || mcpAuthMode || 'Loading...'}
+                {(AUTH_MODES as readonly string[]).includes(mcpAuthMode)
+                  ? t(`authModes.${mcpAuthMode as (typeof AUTH_MODES)[number]}`)
+                  : mcpAuthMode || t('mcpAuth.loading')}
               </div>
               {(mcpAuthMode === 'oauth2' || mcpAuthMode === 'both') && (
-                <StatusPill tone="success" dot="var(--ok)">Active</StatusPill>
+                <StatusPill tone="success" dot="var(--ok)">{t('mcpAuth.active')}</StatusPill>
               )}
             </div>
           </div>
@@ -596,7 +606,7 @@ export default function SettingsPage() {
           {/* OAuth2 info */}
           {(mcpAuthMode === 'oauth2' || mcpAuthMode === 'both') && oauthEndpoints && (
             <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-4 space-y-3">
-              <h4 className="text-sm font-semibold text-[var(--text)]">OAuth 2.0 Endpoints</h4>
+              <h4 className="text-sm font-semibold text-[var(--text)]">{t('mcpAuth.oauthTitle')}</h4>
               <div className="grid grid-cols-1 gap-x-3 gap-y-1 text-xs font-mono text-[var(--text)] sm:grid-cols-[auto_minmax(0,1fr)]">
                 <span className="text-[var(--text-3)]">Discovery:</span>
                 <span className="break-all sm:mb-0 mb-1.5">{serverUrl}{oauthEndpoints.wellKnown}</span>
@@ -608,8 +618,7 @@ export default function SettingsPage() {
                 <span className="break-all">{serverUrl}{oauthEndpoints.register}</span>
               </div>
               <p className="text-xs text-[var(--text-3)]">
-                Supports Authorization Code (with PKCE) and Client Credentials grant types.
-                MCP clients like Claude Desktop will auto-discover these endpoints.
+                {t('mcpAuth.oauthNote')}
               </p>
             </div>
           )}
@@ -617,40 +626,39 @@ export default function SettingsPage() {
           {/* Legacy info */}
           {(mcpAuthMode === 'legacy' || mcpAuthMode === 'both') && (
             <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-4 space-y-2">
-              <h4 className="text-sm font-semibold text-[var(--text)]">Legacy Authentication</h4>
+              <h4 className="text-sm font-semibold text-[var(--text)]">{t('mcpAuth.legacyTitle')}</h4>
               <p className="text-xs text-[var(--text-3)]">
-                Set <code className="bg-[var(--surface-3)] px-1 rounded font-mono">MCP_BEARER_TOKEN</code> or <code className="bg-[var(--surface-3)] px-1 rounded font-mono">MCP_API_KEY</code> in your environment variables.
+                {t.rich('mcpAuth.legacyBody', { code: codeTag })}
               </p>
             </div>
           )}
 
           <p className="text-xs text-[var(--text-3)]">
-            Auth mode is configured via the <code className="bg-[var(--surface-3)] px-1 rounded font-mono">MCP_AUTH_MODE</code> environment variable.
-            Set it to <code className="bg-[var(--surface-3)] px-1 rounded font-mono">oauth2</code>, <code className="bg-[var(--surface-3)] px-1 rounded font-mono">legacy</code>, <code className="bg-[var(--surface-3)] px-1 rounded font-mono">both</code>, or <code className="bg-[var(--surface-3)] px-1 rounded font-mono">none</code>.
+            {t.rich('mcpAuth.modeNote', { code: codeTag })}
           </p>
         </div>
       </Card>
 
       {/* MCP API Keys note */}
       <Card className="p-[22px]">
-        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">MCP API Keys</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">{t('apiKeys.title')}</h3>
         <p className="text-sm text-[var(--text-2)]">
-          API keys are now managed per MCP server. Go to{' '}
-          <a href="/mcp-server" className="text-[var(--brand)] hover:underline">MCP Servers</a>{' '}
-          to generate and manage keys for each server.
+          {t.rich('apiKeys.body', {
+            link: (chunks) => (
+              <a href="/mcp-server" className="text-[var(--brand)] hover:underline">{chunks}</a>
+            ),
+          })}
         </p>
       </Card>
 
       {/* Danger Zone */}
       <Card className="p-[22px] border-[var(--danger)]/30 bg-[var(--t-danger-bg)]">
-        <h3 className="text-sm font-semibold text-[var(--danger)] mb-2">Danger Zone</h3>
+        <h3 className="text-sm font-semibold text-[var(--danger)] mb-2">{t('danger.title')}</h3>
         <p className="text-sm text-[var(--text-2)] mb-4">
-          Permanently delete your account. This will remove your profile, password reset tokens,
-          email verification tokens, MCP API keys, connectors, and MCP server configurations.
-          Audit logs are retained without your identifying information.
+          {t('danger.body')}
         </p>
         <Button variant="danger" onClick={() => setDeleteOpen(true)}>
-          Delete my account
+          {t('danger.button')}
         </Button>
       </Card>
 
@@ -658,25 +666,23 @@ export default function SettingsPage() {
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
-            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Delete account</Dialog.Title>
+            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">{t('deleteDialog.title')}</Dialog.Title>
             <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
-              {hasPassword ? (
-                <>This action cannot be undone. Enter your password and type <strong>DELETE</strong> to confirm.</>
-              ) : (
-                <>This action cannot be undone. Type <strong>DELETE</strong> to confirm. If you signed in more than 10 minutes ago, you will be asked to sign in again first.</>
-              )}
+              {t.rich(hasPassword ? 'deleteDialog.descPassword' : 'deleteDialog.descNoPassword', {
+                strong: (chunks) => <strong>{chunks}</strong>,
+              })}
             </Dialog.Description>
 
             {blockingOrgs && blockingOrgs.length > 0 && (
               <div className="mb-4 p-3 rounded-[9px] border border-[var(--danger)]/30 bg-[var(--t-danger-bg)] text-sm text-[var(--t-danger-fg)]">
-                <p className="font-medium mb-1">Cannot delete — you are the only admin of:</p>
+                <p className="font-medium mb-1">{t('deleteDialog.blockingTitle')}</p>
                 <ul className="list-disc pl-5 space-y-0.5">
                   {blockingOrgs.map((o) => (
                     <li key={o.id}>{o.name}</li>
                   ))}
                 </ul>
                 <p className="mt-2">
-                  Promote another admin or delete those organizations first.
+                  {t('deleteDialog.blockingHint')}
                 </p>
               </div>
             )}
@@ -684,7 +690,7 @@ export default function SettingsPage() {
             <div className="space-y-3">
               {hasPassword && (
                 <div>
-                  <label className={labelClass}>Password</label>
+                  <label className={labelClass}>{t('deleteDialog.password')}</label>
                   <input
                     type="password"
                     value={deletePassword}
@@ -694,7 +700,9 @@ export default function SettingsPage() {
                 </div>
               )}
               <div>
-                <label className={labelClass}>Type <code className="font-mono">DELETE</code> to confirm</label>
+                <label className={labelClass}>
+                  {t.rich('deleteDialog.typeConfirm', { code: (chunks) => <code className="font-mono">{chunks}</code> })}
+                </label>
                 <input
                   type="text"
                   value={deleteConfirm}
@@ -708,21 +716,21 @@ export default function SettingsPage() {
               )}
               {deleteNeedsReauth && socialConnections.some((p) => p.connected) && (
                 <Button variant="secondary" onClick={reauthForDelete}>
-                  Sign in again with {socialConnections.find((p) => p.connected)?.name}
+                  {t('deleteDialog.reauth', { provider: socialConnections.find((p) => p.connected)?.name ?? '' })}
                 </Button>
               )}
             </div>
 
             <div className="flex gap-2 justify-end mt-6">
               <Dialog.Close asChild>
-                <Button variant="secondary">Cancel</Button>
+                <Button variant="secondary">{t('deleteDialog.cancel')}</Button>
               </Dialog.Close>
               <Button
                 variant="danger"
                 onClick={handleDeleteAccount}
                 disabled={deleting || deleteConfirm !== 'DELETE' || (hasPassword && !deletePassword)}
               >
-                {deleting ? 'Deleting…' : 'Delete my account'}
+                {deleting ? t('deleteDialog.deleting') : t('deleteDialog.submit')}
               </Button>
             </div>
           </Dialog.Content>
