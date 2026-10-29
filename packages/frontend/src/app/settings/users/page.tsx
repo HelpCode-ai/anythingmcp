@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -23,28 +24,23 @@ import { EnterpriseNotice } from '@/components/enterprise-notice';
 
 const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
 
-const MEMORY_LEVEL_LABEL: Record<MemoryAccessLevel, string> = {
-  none: 'No access',
-  read: 'Read',
-  personal: 'Personal',
-  contribute: 'Contribute',
-};
+type UsersT = ReturnType<typeof useTranslations<'settingsUsers'>>;
 
-function memoryOptions(workspaceDefault: MemoryAccessLevel) {
+function memoryOptions(tu: UsersT, workspaceDefault: MemoryAccessLevel) {
   return [
-    { value: 'inherit', label: `Default (${MEMORY_LEVEL_LABEL[workspaceDefault].toLowerCase()})` },
-    { value: 'none', label: 'No access' },
-    { value: 'read', label: 'Read company memory' },
-    { value: 'personal', label: 'Personal' },
-    { value: 'contribute', label: 'Contribute' },
+    { value: 'inherit', label: tu('memoryDefault', { level: workspaceDefault }) },
+    { value: 'none', label: tu('memoryLevels.none') },
+    { value: 'read', label: tu('memoryLevels.read') },
+    { value: 'personal', label: tu('memoryLevels.personal') },
+    { value: 'contribute', label: tu('memoryLevels.contribute') },
   ];
 }
 
-function learningOptions(workspaceDefault: boolean) {
+function learningOptions(tu: UsersT, workspaceDefault: boolean) {
   return [
-    { value: 'inherit', label: `Default (${workspaceDefault ? 'on' : 'off'})` },
-    { value: 'on', label: 'On' },
-    { value: 'off', label: 'Off' },
+    { value: 'inherit', label: workspaceDefault ? tu('learningDefaultOn') : tu('learningDefaultOff') },
+    { value: 'on', label: tu('on') },
+    { value: 'off', label: tu('off') },
   ];
 }
 
@@ -54,6 +50,8 @@ function getInvitationStatus(invite: any): 'pending' | 'expired' {
 
 export default function SettingsUsersPage() {
   const { token, user: currentUser } = useAuth();
+  const t = useTranslations('settingsUsers');
+  const locale = useLocale();
   const [userList, setUserList] = useState<any[]>([]);
   const [invitationList, setInvitationList] = useState<any[]>([]);
   const [roleList, setRoleList] = useState<any[]>([]);
@@ -105,7 +103,7 @@ export default function SettingsUsersPage() {
       setRoleList(roleData);
       setInvitationList(invitationData);
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     } finally {
       setLoading(false);
     }
@@ -122,9 +120,9 @@ export default function SettingsUsersPage() {
       setUserList((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)),
       );
-      setMsg(`Role updated to ${newRole}`);
+      setMsg(t('roleUpdated', { role: newRole }));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -137,11 +135,11 @@ export default function SettingsUsersPage() {
       setUserList((prev) =>
         prev.map((u) => (userIds.includes(u.id) ? { ...u, learningMode: mode } : u)),
       );
-      const parts = [`Skill learning updated for ${userIds.length} user${userIds.length !== 1 ? 's' : ''}.`];
-      if (clearIntents) parts.push(`${result.intentsCleared} captured request(s) erased.`);
+      const parts = [t('learningUpdated', { count: userIds.length })];
+      if (clearIntents) parts.push(t('requestsErased', { count: result.intentsCleared }));
       setMsg(parts.join(' '));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     } finally {
       setLearningSaving(false);
     }
@@ -155,9 +153,9 @@ export default function SettingsUsersPage() {
       setUserList((prev) =>
         prev.map((u) => (userIds.includes(u.id) ? { ...u, memoryAccess: access } : u)),
       );
-      setMsg(`Memory access updated for ${userIds.length} user${userIds.length !== 1 ? 's' : ''}.`);
+      setMsg(t('memoryUpdated', { count: userIds.length }));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     } finally {
       setLearningSaving(false);
     }
@@ -167,17 +165,15 @@ export default function SettingsUsersPage() {
     if (
       !token ||
       userIds.length === 0 ||
-      !confirm(
-        `Erase the personal memory of ${userIds.length} user${userIds.length !== 1 ? 's' : ''} in this workspace?\n\nIt is deleted without being shown to you. This cannot be undone.`,
-      )
+      !confirm(t('confirmEraseMemory', { count: userIds.length }))
     )
       return;
     try {
       let erased = 0;
       for (const id of userIds) erased += (await memoryApi.erasePersonal(token, id)).erased;
-      setMsg(`${erased} personal memory item(s) erased.`);
+      setMsg(t('memoryErased', { count: erased }));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -193,9 +189,7 @@ export default function SettingsUsersPage() {
   const handleDeactivate = async (userId: string, email: string) => {
     if (
       !token ||
-      !confirm(
-        `Deactivate ${email}?\n\nTheir sessions end now, their MCP keys stop working and they lose access to this workspace. You can reactivate them later.`,
-      )
+      !confirm(t('confirmDeactivate', { email }))
     )
       return;
     try {
@@ -203,9 +197,9 @@ export default function SettingsUsersPage() {
       setUserList((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, active: false, deactivatedAt: new Date().toISOString() } : u)),
       );
-      setMsg('User deactivated');
+      setMsg(t('deactivated'));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -216,10 +210,10 @@ export default function SettingsUsersPage() {
       setUserList((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, active: true, deactivatedAt: null } : u)),
       );
-      setMsg('User reactivated. Revoked MCP keys stay revoked — they can create a new one.');
+      setMsg(t('reactivated'));
       reloadEdition();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -236,39 +230,39 @@ export default function SettingsUsersPage() {
     setRevokeError(null);
     try {
       const result = await users.revokeSessions(revokeTarget.id, { revokeApiKeys }, token);
-      const parts = [`${revokeTarget.email} has been signed out everywhere and must sign in again.`];
-      if (revokeApiKeys) parts.push(`${result.apiKeysRevoked} MCP API key(s) deactivated.`);
+      const parts = [t('signedOut', { email: revokeTarget.email })];
+      if (revokeApiKeys) parts.push(t('keysDeactivated', { count: result.apiKeysRevoked }));
       if (result.crossOrgMemberships > 0) {
-        parts.push(`They were also signed out of ${result.crossOrgMemberships} other workspace(s).`);
+        parts.push(t('otherWorkspaces', { count: result.crossOrgMemberships }));
       }
       setMsg(parts.join(' '));
       closeRevokeDialog();
     } catch (err: any) {
-      setRevokeError(err?.message || 'Failed to revoke sessions');
+      setRevokeError(err?.message || t('revokeFailed'));
       setRevoking(false);
     }
   };
 
   const handleDelete = async (userId: string, email: string) => {
-    if (!token || !confirm(`Remove ${email} from this workspace? If this is their only workspace the account is deleted. This cannot be undone.`)) return;
+    if (!token || !confirm(t('confirmDelete', { email }))) return;
     try {
       await users.delete(userId, token);
       setUserList((prev) => prev.filter((u) => u.id !== userId));
-      setMsg('User deleted');
+      setMsg(t('deleted'));
       reloadEdition();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
   const handleRevokeInvitation = async (inviteId: string, email: string) => {
-    if (!token || !confirm(`Revoke invitation for ${email}?`)) return;
+    if (!token || !confirm(t('confirmRevokeInvite', { email }))) return;
     try {
       await users.deleteInvitation(inviteId, token);
       setInvitationList((prev) => prev.filter((i) => i.id !== inviteId));
-      setMsg('Invitation revoked');
+      setMsg(t('inviteRevoked'));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -294,7 +288,7 @@ export default function SettingsUsersPage() {
       // Reload invitations to show the new one
       users.invitations(token).then(setInvitationList).catch(() => {});
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     } finally {
       setInviting(false);
     }
@@ -304,9 +298,9 @@ export default function SettingsUsersPage() {
     return (
       <div className="flex items-center justify-center py-16">
         <div className="text-center">
-          <h2 className="text-xl font-bold text-[var(--text)] mb-2">Access Denied</h2>
-          <p className="text-[var(--text-2)] mb-4">Only administrators can access this page.</p>
-          <Link href="/settings" className="text-[var(--brand)] hover:underline">Back to Settings</Link>
+          <h2 className="text-xl font-bold text-[var(--text)] mb-2">{t('accessDenied.title')}</h2>
+          <p className="text-[var(--text-2)] mb-4">{t('accessDenied.body')}</p>
+          <Link href="/settings" className="text-[var(--brand)] hover:underline">{t('accessDenied.back')}</Link>
         </div>
       </div>
     );
@@ -324,12 +318,12 @@ export default function SettingsUsersPage() {
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
-            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Sign out everywhere</Dialog.Title>
+            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">{t('revokeDialog.title')}</Dialog.Title>
             <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
-              <strong>{revokeTarget?.email}</strong> will be signed out of the dashboard and of every
-              connected AI client (Claude, ChatGPT, Cursor, …), including clients that hold a refresh
-              token. They keep their role and access, and simply have to sign in again. If they belong
-              to other workspaces, they are signed out there too.
+              {t.rich('revokeDialog.description', {
+                email: revokeTarget?.email ?? '',
+                strong: (chunks) => <strong>{chunks}</strong>,
+              })}
             </Dialog.Description>
 
             <div className="space-y-3">
@@ -341,10 +335,9 @@ export default function SettingsUsersPage() {
                   onChange={(e) => setRevokeApiKeys(e.target.checked)}
                 />
                 <span>
-                  Also deactivate their MCP API keys in this workspace
+                  {t('revokeDialog.alsoKeys')}
                   <span className="block text-xs text-[var(--text-2)]">
-                    API keys are not sessions: without this, any <code className="font-mono">mcp_…</code> key
-                    they created keeps working. Deactivated keys cannot be restored.
+                    {t.rich('revokeDialog.alsoKeysHint', { code: (chunks) => <code className="font-mono">{chunks}</code> })}
                   </span>
                 </span>
               </label>
@@ -353,10 +346,10 @@ export default function SettingsUsersPage() {
 
             <div className="flex gap-2 justify-end mt-6">
               <Dialog.Close asChild>
-                <Button variant="secondary">Cancel</Button>
+                <Button variant="secondary">{t('revokeDialog.cancel')}</Button>
               </Dialog.Close>
               <Button variant="primary" onClick={handleRevokeSessions} disabled={revoking}>
-                {revoking ? 'Signing out…' : 'Sign out everywhere'}
+                {revoking ? t('revokeDialog.signingOut') : t('revokeDialog.submit')}
               </Button>
             </div>
           </Dialog.Content>
@@ -364,28 +357,28 @@ export default function SettingsUsersPage() {
       </Dialog.Root>
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-[var(--text)]">User Management</h2>
+          <h2 className="text-base font-semibold text-[var(--text)]">{t('title')}</h2>
           <p className="text-sm text-[var(--text-2)]">
-            Manage users and send invitations.
+            {t('intro')}
             {edition && edition.seatLimit !== null && (
               <>
                 {' '}
                 {edition.seatsUsed <= edition.seatLimit
-                  ? `${edition.seatsUsed} of ${edition.seatLimit} users on this instance.`
-                  : `${edition.seatsUsed} users on this instance, ${edition.seatLimit} included.`}
+                  ? t('seats', { used: edition.seatsUsed, limit: edition.seatLimit })
+                  : t('seatsOver', { used: edition.seatsUsed, limit: edition.seatLimit })}
               </>
             )}
           </p>
         </div>
         <Button size="sm" onClick={() => setShowInvite(!showInvite)} disabled={seatsFull && !showInvite}>
-          {showInvite ? 'Cancel' : 'Invite User'}
+          {showInvite ? t('cancel') : t('inviteUser')}
         </Button>
       </div>
 
       {msg && (
         <div className="p-3 rounded-[9px] text-sm flex items-center" style={{ background: 'var(--t-info-bg)', color: 'var(--t-info-fg)' }}>
           {msg}
-          <button onClick={() => setMsg('')} className="ml-2 underline">dismiss</button>
+          <button onClick={() => setMsg('')} className="ml-2 underline">{t('dismiss')}</button>
         </div>
       )}
 
@@ -400,21 +393,23 @@ export default function SettingsUsersPage() {
 
       {seatsFull && edition!.edition !== 'community' && (
         <div className="p-3 rounded-[9px] text-sm" style={{ background: 'var(--t-warn-bg)', color: 'var(--t-warn-fg)' }}>
-          Your license includes {edition!.seatLimit} users. To invite more people, change your plan under{' '}
-          <Link href="/settings/license" className="underline font-medium">Settings → License</Link>.
+          {t.rich('licenseSeats', {
+            limit: edition!.seatLimit!,
+            link: (chunks) => <Link href="/settings/license" className="underline font-medium">{chunks}</Link>,
+          })}
         </div>
       )}
 
       {/* Invite User Form */}
       {showInvite && (
         <Card className="p-[22px] space-y-4">
-          <h3 className="text-sm font-semibold text-[var(--text)]">Invite a New User</h3>
+          <h3 className="text-sm font-semibold text-[var(--text)]">{t('invite.title')}</h3>
           <p className="text-xs text-[var(--text-2)]">
-            Send an invitation email. The user will receive a link to create their account with the specified role.
+            {t('invite.body')}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
             <div>
-              <label className={labelClass}>Email</label>
+              <label className={labelClass}>{t('invite.email')}</label>
               <input
                 type="email"
                 value={inviteEmail}
@@ -424,7 +419,7 @@ export default function SettingsUsersPage() {
               />
             </div>
             <div>
-              <label className={labelClass}>App Role</label>
+              <label className={labelClass}>{t('invite.appRole')}</label>
               <AppSelect
                 value={inviteRole}
                 onValueChange={setInviteRole}
@@ -433,13 +428,13 @@ export default function SettingsUsersPage() {
               />
             </div>
             <div>
-              <label className={labelClass}>MCP Tool Role</label>
+              <label className={labelClass}>{t('invite.mcpRole')}</label>
               <AppSelect
                 value={inviteMcpRoleId}
                 onValueChange={setInviteMcpRoleId}
                 className={selectClass}
                 options={[
-                  { value: '', label: 'No restriction (full access)' },
+                  { value: '', label: t('invite.noRestriction') },
                   ...roleList.map((r) => ({ value: r.id, label: r.name })),
                 ]}
               />
@@ -451,14 +446,14 @@ export default function SettingsUsersPage() {
               {inviteEmailError && (
                 <div className="rounded-[9px] p-3" style={{ background: 'var(--t-danger-bg)', color: 'var(--t-danger-fg)' }}>
                   <p className="text-xs font-medium mb-1">
-                    Failed to send email:
+                    {t('invite.emailFailed')}
                   </p>
                   <p className="text-xs">{inviteEmailError}</p>
                 </div>
               )}
               <div className="border border-[var(--border)] bg-[var(--surface-2)] rounded-[9px] p-3">
                 <p className="text-xs font-medium text-[var(--text)] mb-1">
-                  Invitation link (share manually):
+                  {t('invite.link')}
                 </p>
                 <code className="text-xs font-mono bg-[var(--surface)] px-3 py-2 rounded-[9px] border border-[var(--border)] select-all break-all block text-[var(--text)]">
                   {inviteUrl}
@@ -468,7 +463,7 @@ export default function SettingsUsersPage() {
           )}
 
           <Button onClick={handleInvite} disabled={inviting || !inviteEmail.trim()}>
-            {inviting ? 'Sending...' : 'Send Invitation'}
+            {inviting ? t('invite.sending') : t('invite.send')}
           </Button>
         </Card>
       )}
@@ -476,9 +471,9 @@ export default function SettingsUsersPage() {
       {selected.size > 0 && (
         <Card className="p-4 flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium text-[var(--text)]">
-            {selected.size} selected · Skill learning:
+            {t('bulk.selected', { count: selected.size })}
           </span>
-          {learningOptions(learningDefault).map((o) => (
+          {learningOptions(t, learningDefault).map((o) => (
             <Button
               key={o.value}
               variant="secondary"
@@ -495,15 +490,15 @@ export default function SettingsUsersPage() {
               checked={eraseIntents}
               onChange={(e) => setEraseIntents(e.target.checked)}
             />
-            When turning off, also erase the requests already captured from them
+            {t('bulk.eraseWhenOff')}
           </label>
           <button onClick={() => setSelected(new Set())} className="ml-auto text-xs underline text-[var(--text-2)]">
-            Clear selection
+            {t('bulk.clear')}
           </button>
           {memoryDefault && (
             <div className="flex w-full flex-wrap items-center gap-3 border-t border-[var(--border)] pt-3">
-              <span className="text-sm font-medium text-[var(--text)]">Memory:</span>
-              {memoryOptions(memoryDefault).map((o) => (
+              <span className="text-sm font-medium text-[var(--text)]">{t('bulk.memory')}</span>
+              {memoryOptions(t, memoryDefault).map((o) => (
                 <Button
                   key={o.value}
                   variant="secondary"
@@ -520,7 +515,7 @@ export default function SettingsUsersPage() {
                 className="ml-auto"
                 onClick={() => handleErasePersonalMemory([...selected])}
               >
-                Erase personal memory
+                {t('bulk.eraseMemory')}
               </Button>
             </div>
           )}
@@ -528,7 +523,7 @@ export default function SettingsUsersPage() {
       )}
 
       {loading ? (
-        <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
+        <p className="text-center text-[var(--text-3)] py-16">{t('loading')}</p>
       ) : (
         <Card className="overflow-x-auto">
           <table className="w-full min-w-[840px] text-sm">
@@ -537,34 +532,34 @@ export default function SettingsUsersPage() {
                 <th className="pl-4 py-3 w-8">
                   <input
                     type="checkbox"
-                    aria-label="Select all users"
+                    aria-label={t('table.selectAll')}
                     checked={userList.length > 0 && selected.size === userList.length}
                     onChange={(e) =>
                       setSelected(e.target.checked ? new Set(userList.map((u) => u.id)) : new Set())
                     }
                   />
                 </th>
-                <th className="text-left px-4 py-3 font-semibold">Email</th>
-                <th className="text-left px-4 py-3 font-semibold">Name</th>
-                <th className="text-left px-4 py-3 font-semibold">Status</th>
-                <th className="text-left px-4 py-3 font-semibold">Role</th>
-                <th className="text-left px-4 py-3 font-semibold">MCP Role</th>
+                <th className="text-left px-4 py-3 font-semibold">{t('table.email')}</th>
+                <th className="text-left px-4 py-3 font-semibold">{t('table.name')}</th>
+                <th className="text-left px-4 py-3 font-semibold">{t('table.status')}</th>
+                <th className="text-left px-4 py-3 font-semibold">{t('table.role')}</th>
+                <th className="text-left px-4 py-3 font-semibold">{t('table.mcpRole')}</th>
                 <th
                   className="text-left px-4 py-3 font-semibold"
-                  title="Whether this user's requests to AI clients may be used to suggest workspace skills. Default follows Settings → Organization → Capture user intent."
+                  title={t('table.learningHint')}
                 >
-                  Skill learning
+                  {t('table.learning')}
                 </th>
                 {memoryDefault && (
                   <th
                     className="text-left px-4 py-3 font-semibold"
-                    title="What this user's AI clients may do with workspace memory. Default follows the Memory page settings."
+                    title={t('table.memoryHint')}
                   >
-                    Memory
+                    {t('table.memory')}
                   </th>
                 )}
-                <th className="text-left px-4 py-3 font-semibold">Date</th>
-                <th className="text-right px-4 py-3 font-semibold">Actions</th>
+                <th className="text-left px-4 py-3 font-semibold">{t('table.date')}</th>
+                <th className="text-right px-4 py-3 font-semibold">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -573,7 +568,7 @@ export default function SettingsUsersPage() {
                   <td className="pl-4 py-3">
                     <input
                       type="checkbox"
-                      aria-label={`Select ${u.email}`}
+                      aria-label={t('table.select', { email: u.email })}
                       checked={selected.has(u.id)}
                       onChange={() => toggleSelected(u.id)}
                     />
@@ -581,15 +576,15 @@ export default function SettingsUsersPage() {
                   <td className="px-4 py-3">
                     <span className="font-mono text-xs text-[var(--text)]">{u.email}</span>
                     {u.id === currentUser?.id && (
-                      <Badge tone="brand" className="ml-2">you</Badge>
+                      <Badge tone="brand" className="ml-2">{t('table.you')}</Badge>
                     )}
                   </td>
                   <td className="px-4 py-3 text-[var(--text)]">{u.name || '—'}</td>
                   <td className="px-4 py-3">
                     {u.deactivatedAt ? (
-                      <StatusPill tone="danger" dot="var(--danger, #dc2626)">Deactivated</StatusPill>
+                      <StatusPill tone="danger" dot="var(--danger, #dc2626)">{t('table.deactivated')}</StatusPill>
                     ) : (
-                      <StatusPill tone="success" dot="var(--ok)">Active</StatusPill>
+                      <StatusPill tone="success" dot="var(--ok)">{t('table.active')}</StatusPill>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -607,15 +602,15 @@ export default function SettingsUsersPage() {
                   </td>
                   <td className="px-4 py-3">
                     {u.role === 'ADMIN' ? (
-                      <span className="text-xs text-[var(--text-3)]">Full access</span>
+                      <span className="text-xs text-[var(--text-3)]">{t('table.fullAccess')}</span>
                     ) : u.mcpRole ? (
                       <Badge tone="info">{u.mcpRole.name}</Badge>
                     ) : (
                       <span
                         className="text-xs text-[var(--text-3)]"
-                        title="No MCP role assigned. Unrestricted only while this workspace has no tool whitelist; once any role restricts tools, a member without a role gets none."
+                        title={t('table.noRoleHint')}
                       >
-                        No role
+                        {t('table.noRole')}
                       </span>
                     )}
                   </td>
@@ -626,11 +621,11 @@ export default function SettingsUsersPage() {
                         disabled={learningSaving}
                         onValueChange={(v) => handleLearningChange([u.id], v as LearningMode)}
                         className="h-8 whitespace-nowrap rounded-[9px] border border-[var(--border)] px-2 text-xs bg-[var(--surface)] text-[var(--text)]"
-                        options={learningOptions(learningDefault)}
+                        options={learningOptions(t, learningDefault)}
                       />
                       {u.learningOptOut && (
-                        <Badge tone="neutral" title="This user opted out themselves. Their requests are not used, whatever is set here.">
-                          opted out
+                        <Badge tone="neutral" title={t('table.optedOutHint')}>
+                          {t('table.optedOut')}
                         </Badge>
                       )}
                     </div>
@@ -642,37 +637,37 @@ export default function SettingsUsersPage() {
                         disabled={learningSaving}
                         onValueChange={(v) => handleMemoryChange([u.id], v as MemoryAccessSetting)}
                         className="h-8 whitespace-nowrap rounded-[9px] border border-[var(--border)] px-2 text-xs bg-[var(--surface)] text-[var(--text)]"
-                        options={memoryOptions(memoryDefault)}
+                        options={memoryOptions(t, memoryDefault)}
                       />
                     </td>
                   )}
                   <td className="px-4 py-3 text-[var(--text-3)]">
-                    {new Date(u.createdAt).toLocaleDateString()}
+                    {new Date(u.createdAt).toLocaleDateString(locale)}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {u.id !== currentUser?.id && (
                       <div className="inline-flex gap-2">
                         {u.deactivatedAt ? (
                           <Button variant="secondary" size="sm" onClick={() => handleReactivate(u.id)}>
-                            Reactivate
+                            {t('table.reactivate')}
                           </Button>
                         ) : (
                           <>
                             <Button
                               variant="secondary"
                               size="sm"
-                              title="Force this member to sign in again on every client"
+                              title={t('table.signOutHint')}
                               onClick={() => setRevokeTarget({ id: u.id, email: u.email })}
                             >
-                              Sign out everywhere
+                              {t('table.signOut')}
                             </Button>
                             <Button variant="secondary" size="sm" onClick={() => handleDeactivate(u.id, u.email)}>
-                              Deactivate
+                              {t('table.deactivate')}
                             </Button>
                           </>
                         )}
                         <Button variant="danger" size="sm" onClick={() => handleDelete(u.id, u.email)}>
-                          Delete
+                          {t('table.delete')}
                         </Button>
                       </div>
                     )}
@@ -690,9 +685,9 @@ export default function SettingsUsersPage() {
                     <td className="px-4 py-3 text-[var(--text-3)]">—</td>
                     <td className="px-4 py-3">
                       {status === 'pending' ? (
-                        <Badge tone="warn">Pending</Badge>
+                        <Badge tone="warn">{t('table.pending')}</Badge>
                       ) : (
-                        <Badge tone="danger">Expired</Badge>
+                        <Badge tone="danger">{t('table.expired')}</Badge>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -702,21 +697,21 @@ export default function SettingsUsersPage() {
                       <span className="text-xs text-[var(--text-3)]">—</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-xs text-[var(--text-3)]">Default</span>
+                      <span className="text-xs text-[var(--text-3)]">{t('table.default')}</span>
                     </td>
                     {memoryDefault && (
                       <td className="px-4 py-3">
-                        <span className="text-xs text-[var(--text-3)]">Default</span>
+                        <span className="text-xs text-[var(--text-3)]">{t('table.default')}</span>
                       </td>
                     )}
                     <td className="px-4 py-3 text-[var(--text-3)]">
-                      <span title={`Expires: ${new Date(inv.expiresAt).toLocaleString()}`}>
-                        {new Date(inv.createdAt).toLocaleDateString()}
+                      <span title={t('table.expires', { date: new Date(inv.expiresAt).toLocaleString(locale) })}>
+                        {new Date(inv.createdAt).toLocaleDateString(locale)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Button variant="danger" size="sm" onClick={() => handleRevokeInvitation(inv.id, inv.email)}>
-                        Revoke
+                        {t('table.revoke')}
                       </Button>
                     </td>
                   </tr>
@@ -728,12 +723,7 @@ export default function SettingsUsersPage() {
       )}
 
       <p className="text-xs text-[var(--text-3)]">
-        {userList.length} user{userList.length !== 1 ? 's' : ''}
-        {invitationList.length > 0 && (
-          <>, {invitationList.length} pending invitation{invitationList.length !== 1 ? 's' : ''}</>
-        )}
-        {' '}total.
-        The first registered user automatically becomes ADMIN.
+        {t('footer', { users: userList.length, invites: invitationList.length })}
       </p>
     </div>
   );

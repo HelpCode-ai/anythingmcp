@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { AppShell } from '@/components/app-shell';
 import { cn } from '@/lib/utils';
@@ -21,13 +22,15 @@ const SETTINGS_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const t = useTranslations('settingsNav');
+  const tNav = useTranslations('nav');
   const { user, deploymentMode } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const isCloud = deploymentMode === 'cloud';
   const visibleSections = getVisibleSettingsSections(SIDEBAR_SECTIONS, { isAdmin, isCloud });
 
   return (
-    <AppShell title="Settings">
+    <AppShell title={tNav('settings')}>
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[210px_1fr] lg:gap-8">
         {/* Settings sub-navigation */}
         {/* Below lg this is a scrolling strip. The scrollbar is hidden, so the
@@ -37,7 +40,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
             <div key={si} className="contents lg:block">
               {section.title && (
                 <div className="hidden items-center gap-1.5 px-2.5 pb-1 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-3)] lg:flex">
-                  {section.title}
+                  {section.id ? t(`sections.${section.id}`) : section.title}
                 </div>
               )}
               {section.items.map((item) => {
@@ -56,8 +59,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                   >
                     {Icon && <Icon size={15} />}
                     <div className="min-w-0">
-                      <div className="truncate">{item.label}</div>
-                      <div className="hidden truncate text-[11px] text-[var(--text-3)] lg:block">{item.description}</div>
+                      <div className="truncate">{t(`items.${item.id}.label`)}</div>
+                      <div className="hidden truncate text-[11px] text-[var(--text-3)] lg:block">{t(`items.${item.id}.description`)}</div>
                     </div>
                   </Link>
                 );
