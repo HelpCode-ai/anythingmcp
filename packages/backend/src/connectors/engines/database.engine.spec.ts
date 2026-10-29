@@ -413,6 +413,44 @@ describe('DatabaseEngine', () => {
    * splices the credentials in at call time rather than making adapters put a
    * password in the DSN.
    */
+  describe('PostgreSQL statement timeout', () => {
+    const run = () =>
+      engine.execute(
+        { baseUrl: 'postgres://db.example.test:6432/sales', authType: 'CONNECTION_STRING' },
+        { method: 'query', path: '${query}' },
+        { query: 'SELECT 1' },
+      );
+
+    it('sets statement_timeout on the server by default', async () => {
+      mockQuery.mockResolvedValue({ rows: [{ one: 1 }] });
+      await run();
+      expect(Pool).toHaveBeenCalledTimes(1);
+      expect(Pool).toHaveBeenCalledWith(
+        expect.objectContaining({ statement_timeout: 60_000 }),
+      );
+    });
+
+    it('retries with a client-side timeout when PgBouncer refuses the startup parameter', async () => {
+      mockQuery
+        .mockRejectedValueOnce(new Error('unsupported startup parameter: statement_timeout'))
+        .mockResolvedValueOnce({ rows: [{ one: 1 }] });
+      await expect(run()).resolves.toEqual(
+        expect.objectContaining({ rows: [{ one: 1 }] }),
+      );
+      expect(Pool).toHaveBeenCalledTimes(2);
+      const retry = (Pool as unknown as jest.Mock).mock.calls[1][0];
+      expect(retry).toEqual(expect.objectContaining({ query_timeout: 60_000 }));
+      expect(retry).not.toHaveProperty('statement_timeout');
+      expect(mockEnd).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not retry other errors', async () => {
+      mockQuery.mockRejectedValueOnce(new Error('relation "x" does not exist'));
+      await expect(run()).rejects.toThrow('relation "x" does not exist');
+      expect(Pool).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('authConfig credentials', () => {
     it('splices username and password into the Postgres URL', async () => {
       mockQuery.mockResolvedValue({ rows: [] });
