@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import { AppSelect } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import {
@@ -106,37 +107,38 @@ interface ToolEditorProps {
 /*  Target options per connector type                                 */
 /* ------------------------------------------------------------------ */
 
-const TARGET_OPTIONS: Record<string, { value: string; label: string }[]> = {
+/** `labelKey` is under `toolEditor.targets` in the messages. */
+const TARGET_OPTIONS: Record<string, { value: string; labelKey: string }[]> = {
   REST: [
-    { value: 'path', label: 'Path Parameter' },
-    { value: 'query', label: 'Query Parameter' },
-    { value: 'body', label: 'Body Field' },
-    { value: 'header', label: 'Header Value' },
+    { value: 'path', labelKey: 'path' },
+    { value: 'query', labelKey: 'query' },
+    { value: 'body', labelKey: 'body' },
+    { value: 'header', labelKey: 'header' },
   ],
   GRAPHQL: [
-    { value: 'graphql_var', label: 'GraphQL Variable' },
-    { value: 'header', label: 'Header Value' },
+    { value: 'graphql_var', labelKey: 'graphqlVar' },
+    { value: 'header', labelKey: 'header' },
   ],
   SOAP: [
-    { value: 'soap', label: 'SOAP Parameter' },
-    { value: 'header', label: 'Header Value' },
+    { value: 'soap', labelKey: 'soap' },
+    { value: 'header', labelKey: 'header' },
   ],
   DATABASE: [
-    { value: 'sql', label: 'SQL Parameter' },
+    { value: 'sql', labelKey: 'sql' },
   ],
   WEBHOOK: [
-    { value: 'body', label: 'Body Field' },
-    { value: 'query', label: 'Query Parameter' },
-    { value: 'header', label: 'Header Value' },
+    { value: 'body', labelKey: 'body' },
+    { value: 'query', labelKey: 'query' },
+    { value: 'header', labelKey: 'header' },
   ],
   MCP: [
-    { value: 'body', label: 'Pass-through Parameter' },
+    { value: 'body', labelKey: 'passThrough' },
   ],
   ODATA: [
-    { value: 'path', label: 'Path Parameter' },
-    { value: 'query', label: 'Query Parameter' },
-    { value: 'body', label: 'Body Field' },
-    { value: 'header', label: 'Header Value' },
+    { value: 'path', labelKey: 'path' },
+    { value: 'query', labelKey: 'query' },
+    { value: 'body', labelKey: 'body' },
+    { value: 'header', labelKey: 'header' },
   ],
 };
 
@@ -178,16 +180,18 @@ const METHODS_BY_TYPE: Record<string, string[]> = {
   ],
 };
 
-function getNativeLabel(connectorType: string): string {
+/** The key under `toolEditor.native` for a connector type's own call. */
+function nativeLabelKey(connectorType: string): string {
   switch (connectorType) {
-    case 'REST': return 'API Call';
-    case 'ODATA': return 'OData Call';
-    case 'GRAPHQL': return 'GraphQL Operation';
-    case 'SOAP': return 'SOAP Operation';
-    case 'DATABASE': return 'SQL Query';
-    case 'MCP': return 'Remote Tool Call';
-    case 'WEBHOOK': return 'Webhook';
-    default: return 'Native';
+    case 'REST':
+    case 'ODATA':
+    case 'GRAPHQL':
+    case 'SOAP':
+    case 'DATABASE':
+    case 'MCP':
+    case 'WEBHOOK':
+      return connectorType;
+    default: return 'other';
   }
 }
 
@@ -521,6 +525,7 @@ export function ToolEditor({
   onCancel,
   saving = false,
 }: ToolEditorProps) {
+  const t = useTranslations('toolEditor');
   const type = connectorType || 'REST';
   const targets = TARGET_OPTIONS[type] || TARGET_OPTIONS.REST;
   const methods = METHODS_BY_TYPE[type] || METHODS_BY_TYPE.REST;
@@ -687,7 +692,7 @@ export function ToolEditor({
       {/* Header */}
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold">
-          {existingTool ? 'Edit Tool' : 'Create Tool'}
+          {existingTool ? t('titleEdit') : t('titleCreate')}
           <span className="ml-2 text-xs font-normal text-[var(--muted-foreground)]">
             ({type})
           </span>
@@ -697,14 +702,14 @@ export function ToolEditor({
             onClick={onCancel}
             className="border border-[var(--border)] px-3 py-1.5 rounded text-xs hover:bg-[var(--accent)]"
           >
-            Cancel
+            {t('cancel')}
           </button>
           <button
             onClick={handleSave}
             disabled={!isValid || saving}
             className="bg-[var(--primary)] text-[var(--primary-foreground)] px-4 py-1.5 rounded text-xs font-medium hover:brightness-90 disabled:opacity-50"
           >
-            {saving ? 'Saving...' : existingTool ? 'Update Tool' : 'Create Tool'}
+            {saving ? t('saving') : existingTool ? t('update') : t('create')}
           </button>
         </div>
       </div>
@@ -712,7 +717,7 @@ export function ToolEditor({
       {/* Basic Info */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className="block text-xs font-medium mb-1">Tool Name</label>
+          <label className="block text-xs font-medium mb-1">{t('name')}</label>
           <input
             type="text"
             value={name}
@@ -721,20 +726,20 @@ export function ToolEditor({
             className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
           />
           <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-            snake_case, shown to the AI model
+            {t('nameHint')}
           </p>
         </div>
         <div>
-          <label className="block text-xs font-medium mb-1">Description</label>
+          <label className="block text-xs font-medium mb-1">{t('description')}</label>
           <input
             type="text"
             value={description}
             onChange={e => setDescription(e.target.value)}
-            placeholder="Fetch a list of users with optional filtering"
+            placeholder={t('descriptionPlaceholder')}
             className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
           />
           <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-            Clear description helps the AI decide when to use this tool
+            {t('descriptionHint')}
           </p>
         </div>
       </div>
@@ -743,7 +748,7 @@ export function ToolEditor({
       <div className="space-y-3">
         {/* Tool Type selector — available for all connector types */}
         <div>
-          <label className="block text-xs font-medium mb-1">Tool Type</label>
+          <label className="block text-xs font-medium mb-1">{t('toolType')}</label>
           <AppSelect
             value={method === 'static' ? 'static' : 'native'}
             onValueChange={v => {
@@ -756,8 +761,8 @@ export function ToolEditor({
             }}
             className="w-56 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
             options={[
-              { value: 'native', label: getNativeLabel(type) },
-              { value: 'static', label: 'Static Text' },
+              { value: 'native', label: t(`native.${nativeLabelKey(type)}`) },
+              { value: 'static', label: t('staticText') },
             ]}
           />
         </div>
@@ -765,22 +770,22 @@ export function ToolEditor({
         {method === 'static' ? (
           /* Static Response — same for all connector types */
           <div>
-            <label className="block text-xs font-medium mb-1">Static Response Text</label>
+            <label className="block text-xs font-medium mb-1">{t('staticResponse')}</label>
             <textarea
               value={staticResponse}
               onChange={e => setStaticResponse(e.target.value)}
               rows={10}
-              placeholder={"# Instructions\n\nDescribe how to use this tool or provide hardcoded information.\n\nMarkdown formatting is supported."}
+              placeholder={t('staticPlaceholder')}
               className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
             />
             <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-              This text is returned directly without making any API call. Use it for instructions, documentation, or hardcoded responses.
+              {t('staticHint')}
             </p>
           </div>
         ) : type === 'GRAPHQL' ? (
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium mb-1">Operation Type</label>
+              <label className="block text-xs font-medium mb-1">{t('operationType')}</label>
               <AppSelect
                 value={method}
                 onValueChange={setMethod}
@@ -789,7 +794,7 @@ export function ToolEditor({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1">GraphQL Query / Mutation</label>
+              <label className="block text-xs font-medium mb-1">{t('graphqlQuery')}</label>
               <textarea
                 value={graphqlQuery}
                 onChange={e => setGraphqlQuery(e.target.value)}
@@ -798,13 +803,13 @@ export function ToolEditor({
                 className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
               />
               <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-                Use $variables in the query — map them to parameters below as &quot;GraphQL Variable&quot;
+                {t('graphqlHint')}
               </p>
             </div>
           </div>
         ) : type === 'DATABASE' ? (
           <div>
-            <label className="block text-xs font-medium mb-1">SQL Query Template</label>
+            <label className="block text-xs font-medium mb-1">{t('sqlTemplate')}</label>
             <textarea
               value={sqlTemplate}
               onChange={e => setSqlTemplate(e.target.value)}
@@ -813,13 +818,13 @@ export function ToolEditor({
               className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
             />
             <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-              Use $param_name to reference parameters. Only SELECT queries are allowed.
+              {t('sqlHint')}
             </p>
           </div>
         ) : type === 'SOAP' ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-medium mb-1">SOAP Operation</label>
+              <label className="block text-xs font-medium mb-1">{t('soapOperation')}</label>
               <input
                 type="text"
                 value={method}
@@ -828,11 +833,11 @@ export function ToolEditor({
                 className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
               />
               <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-                The SOAP operation/method name from the WSDL
+                {t('soapHint')}
               </p>
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1">Port / Path</label>
+              <label className="block text-xs font-medium mb-1">{t('portPath')}</label>
               <input
                 type="text"
                 value={path}
@@ -846,7 +851,7 @@ export function ToolEditor({
           /* REST / WEBHOOK / MCP */
           <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3">
             <div>
-              <label className="block text-xs font-medium mb-1">Method</label>
+              <label className="block text-xs font-medium mb-1">{t('method')}</label>
               <AppSelect
                 value={method}
                 onValueChange={setMethod}
@@ -855,7 +860,7 @@ export function ToolEditor({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1">Path</label>
+              <label className="block text-xs font-medium mb-1">{t('path')}</label>
               <input
                 type="text"
                 value={path}
@@ -864,7 +869,7 @@ export function ToolEditor({
                 className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
               />
               <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-                Use {'{param}'} for path parameters — they auto-create parameters below
+                {t('pathHint', { example: '{param}' })}
               </p>
             </div>
           </div>
@@ -876,7 +881,7 @@ export function ToolEditor({
       {(type === 'REST' || type === 'ODATA' || type === 'WEBHOOK') && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && (
         <div className="border border-[var(--border)] rounded-md p-3 space-y-2">
           <div className="flex items-center gap-4">
-            <label className="text-xs font-semibold">Request Body</label>
+            <label className="text-xs font-semibold">{t('requestBody')}</label>
             <div className="flex gap-3 text-xs">
               <label className="flex items-center gap-1 cursor-pointer">
                 <input
@@ -888,7 +893,7 @@ export function ToolEditor({
                     setUseBodyMappingJson(false);
                   }}
                 />
-                Body Fields
+                {t('bodyFields')}
               </label>
               <label className="flex items-center gap-1 cursor-pointer">
                 <input
@@ -900,7 +905,7 @@ export function ToolEditor({
                     setUseBodyMappingJson(false);
                   }}
                 />
-                Body Template (JSON)
+                {t('bodyTemplate')}
               </label>
               <label className="flex items-center gap-1 cursor-pointer">
                 <input
@@ -912,7 +917,7 @@ export function ToolEditor({
                     setUseBodyTemplate(false);
                   }}
                 />
-                Body Mapping (JSON)
+                {t('bodyMapping')}
               </label>
             </div>
           </div>
@@ -929,21 +934,22 @@ export function ToolEditor({
               />
               {bodyMappingJsonInvalid && (
                 <p className="text-[11px] text-[var(--danger)]">
-                  Not valid JSON — saving is disabled until this parses.
+                  {t('invalidJson')}
                 </p>
               )}
               <p className="text-[11px] text-[var(--muted-foreground)]">
-                Sent as the request body, structure preserved. Use <code>$param</code> for
-                tool arguments and <code>{'{{VAR}}'}</code> / <code>{'{{amcp.*}}'}</code> for
-                connector and caller-context values. Shown automatically when the stored
-                mapping is nested — editing it here keeps it intact.
+                {t.rich('bodyMappingHint', {
+                  code: (chunks) => <code>{chunks}</code>,
+                  connectorVar: '{{VAR}}',
+                  contextVar: '{{amcp.*}}',
+                })}
               </p>
             </div>
           )}
 
           {!useBodyTemplate && !useBodyMappingJson && (
             <div className="flex items-center gap-2">
-              <label className="text-xs text-[var(--muted-foreground)]">Encoding:</label>
+              <label className="text-xs text-[var(--muted-foreground)]">{t('encoding')}</label>
               <AppSelect
                 value={bodyEncoding}
                 onValueChange={setBodyEncoding}
@@ -970,8 +976,10 @@ export function ToolEditor({
                 className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
               />
               <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-                Use <code className="bg-[var(--muted)] px-1 rounded">${'{param_name}'}</code> for dynamic values.
-                All other fields are sent as-is. Parameters are auto-extracted below.
+                {t.rich('bodyTemplateHint', {
+                  code: (chunks) => <code className="bg-[var(--muted)] px-1 rounded">{chunks}</code>,
+                  example: '${param_name}',
+                })}
               </p>
             </div>
           )}
@@ -982,13 +990,13 @@ export function ToolEditor({
       <div>
         <div className="mb-3 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
           <div className="min-w-[200px] flex-1">
-            <h4 className="text-xs font-semibold">Input Parameters</h4>
+            <h4 className="text-xs font-semibold">{t('params.title')}</h4>
             <p className="text-[10px] text-[var(--muted-foreground)]">
-              Define what the AI model can pass to this tool, and where each value goes in the API request
+              {t('params.hint')}
             </p>
           </div>
           <Button variant="secondary" size="sm" onClick={addParam} className="flex-shrink-0">
-            Add parameter
+            {t('params.add')}
           </Button>
         </div>
 
@@ -997,12 +1005,12 @@ export function ToolEditor({
           <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-[var(--brand-light,var(--info-bg))] border border-[var(--brand,var(--info-text))] border-opacity-30 text-xs text-[var(--foreground)]">
             <span className="text-sm leading-none mt-0.5">&#9889;</span>
             <div>
-              <span className="font-medium">Auto-filled from env:</span>{' '}
+              <span className="font-medium">{t('params.envBanner')}</span>{' '}
               {params.filter(p => p.name && envVarKeys.has(p.name)).map(p => (
                 <code key={p.name} className="mx-0.5 px-1 py-0.5 rounded bg-[var(--muted)] font-mono text-[11px]">{p.name}</code>
               ))}
               <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-                These parameters are injected from environment variables at runtime and hidden from the AI.
+                {t('params.envBannerHint')}
               </p>
             </div>
           </div>
@@ -1010,17 +1018,17 @@ export function ToolEditor({
 
         {params.length === 0 ? (
           <p className="text-xs text-[var(--muted-foreground)] py-3 text-center border border-dashed border-[var(--border)] rounded-md">
-            No parameters yet. Add one for each value the AI model should be able to pass in.
+            {t('params.empty')}
           </p>
         ) : (
           <div className="space-y-2">
             {/* Column headers */}
             <div className="hidden md:grid grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_140px_50px_30px] gap-2 text-[10px] font-medium text-[var(--muted-foreground)] px-1">
-              <span>Name</span>
-              <span>Type</span>
-              <span>Description</span>
-              <span>Maps To</span>
-              <span>Req</span>
+              <span>{t('params.name')}</span>
+              <span>{t('params.type')}</span>
+              <span>{t('params.description')}</span>
+              <span>{t('params.mapsTo')}</span>
+              <span>{t('params.req')}</span>
               <span></span>
             </div>
 
@@ -1037,7 +1045,7 @@ export function ToolEditor({
                 className={`flex flex-col gap-2 rounded-md border border-[var(--border)] p-2.5 md:grid md:grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_140px_50px_30px] md:items-center md:gap-2 md:border-0 md:p-0${isEnvOverridden ? ' opacity-60' : ''}`}
               >
                 <div className="md:contents">
-                  <label htmlFor={`param-${i}-name`} className={PARAM_LABEL}>Name</label>
+                  <label htmlFor={`param-${i}-name`} className={PARAM_LABEL}>{t('params.name')}</label>
                   <div className="relative md:order-1">
                     <input
                       id={`param-${i}-name`}
@@ -1050,7 +1058,7 @@ export function ToolEditor({
                     {isEnvOverridden && (
                       <span
                         className="absolute -top-2 right-1 text-[9px] px-1 rounded bg-[var(--brand)] text-[var(--primary-foreground)] leading-tight"
-                        title="This parameter is auto-filled from an environment variable and hidden from the AI"
+                        title={t('params.envTitle')}
                       >
                         env
                       </span>
@@ -1060,7 +1068,7 @@ export function ToolEditor({
 
                 <div className="grid grid-cols-2 gap-2 md:contents">
                   <div className="min-w-0 md:contents">
-                    <span className={PARAM_LABEL} id={`param-${i}-type-label`}>Type</span>
+                    <span className={PARAM_LABEL} id={`param-${i}-type-label`}>{t('params.type')}</span>
                     <AppSelect
                       value={param.type}
                       onValueChange={v => updateParam(i, { type: v as ToolParam['type'] })}
@@ -1076,31 +1084,31 @@ export function ToolEditor({
                         // A file part only makes sense in a multipart body —
                         // form-urlencoded and JSON can't carry one.
                         ...(param.target === 'body' && bodyEncoding === 'form-data'
-                          ? [{ value: 'file', label: 'file (from URL)' }]
+                          ? [{ value: 'file', label: t('params.fileType') }]
                           : []),
                       ]}
                     />
                   </div>
                   <div className="min-w-0 md:contents">
-                    <span className={PARAM_LABEL} id={`param-${i}-target-label`}>Maps To</span>
+                    <span className={PARAM_LABEL} id={`param-${i}-target-label`}>{t('params.mapsTo')}</span>
                     <AppSelect
                       value={param.target}
                       onValueChange={v => updateParam(i, { target: v as ToolParam['target'] })}
                       className="h-full w-full min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)] md:order-4"
                       aria-labelledby={`param-${i}-target-label`}
-                      options={targets.map(t => ({ value: t.value, label: t.label }))}
+                      options={targets.map((target) => ({ value: target.value, label: t(`targets.${target.labelKey}`) }))}
                     />
                   </div>
                 </div>
 
                 <div className="md:contents">
-                  <label htmlFor={`param-${i}-description`} className={PARAM_LABEL}>Description</label>
+                  <label htmlFor={`param-${i}-description`} className={PARAM_LABEL}>{t('params.description')}</label>
                   <input
                     id={`param-${i}-description`}
                     type="text"
                     value={param.description}
                     onChange={e => updateParam(i, { description: e.target.value })}
-                    placeholder="Describe this parameter…"
+                    placeholder={t('params.descriptionPlaceholder')}
                     className="w-full min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)] md:order-3"
                   />
                 </div>
@@ -1111,17 +1119,17 @@ export function ToolEditor({
                       type="checkbox"
                       checked={param.required}
                       onChange={e => updateParam(i, { required: e.target.checked })}
-                      title="Required"
+                      title={t('params.required')}
                     />
-                    <span className="md:hidden">Required</span>
+                    <span className="md:hidden">{t('params.required')}</span>
                   </label>
                   <button
                     onClick={() => removeParam(i)}
                     className="text-[var(--destructive)] text-xs hover:underline md:order-6"
-                    title="Remove parameter"
-                    aria-label={param.name ? `Remove parameter ${param.name}` : 'Remove parameter'}
+                    title={t('params.removeTitle')}
+                    aria-label={param.name ? t('params.removeNamed', { name: param.name }) : t('params.removeTitle')}
                   >
-                    <span className="md:hidden">Remove</span>
+                    <span className="md:hidden">{t('params.remove')}</span>
                     <span className="hidden md:inline" aria-hidden="true">&times;</span>
                   </button>
                 </div>
@@ -1132,7 +1140,7 @@ export function ToolEditor({
             {/* Query key override for query-targeted params */}
             {params.some(p => (p.target === 'query' || p.target === 'graphql_var') && p.queryKey) && (
               <div className="mt-2 space-y-1">
-                <p className="text-[10px] font-medium text-[var(--muted-foreground)]">Query Key Overrides</p>
+                <p className="text-[10px] font-medium text-[var(--muted-foreground)]">{t('params.queryOverrides')}</p>
                 {params.filter(p => (p.target === 'query' || p.target === 'graphql_var') && p.queryKey).map((param) => {
                   const idx = params.indexOf(param);
                   return (
@@ -1146,7 +1154,7 @@ export function ToolEditor({
                         placeholder={param.name}
                         className="border border-[var(--input)] rounded px-2 py-1 text-xs bg-[var(--background)] font-mono w-48"
                       />
-                      <span className="text-[var(--muted-foreground)] text-[10px]">query key</span>
+                      <span className="text-[var(--muted-foreground)] text-[10px]">{t('params.queryKey')}</span>
                     </div>
                   );
                 })}
@@ -1156,7 +1164,7 @@ export function ToolEditor({
             {/* Header name input for header-targeted params */}
             {params.some(p => p.target === 'header') && (
               <div className="mt-2 space-y-1">
-                <p className="text-[10px] font-medium text-[var(--muted-foreground)]">Header Name Overrides</p>
+                <p className="text-[10px] font-medium text-[var(--muted-foreground)]">{t('params.headerOverrides')}</p>
                 {params.filter(p => p.target === 'header').map((param, _) => {
                   const idx = params.indexOf(param);
                   return (
@@ -1170,7 +1178,7 @@ export function ToolEditor({
                         placeholder={param.name}
                         className="border border-[var(--input)] rounded px-2 py-1 text-xs bg-[var(--background)] font-mono w-48"
                       />
-                      <span className="text-[var(--muted-foreground)] text-[10px]">header name</span>
+                      <span className="text-[var(--muted-foreground)] text-[10px]">{t('params.headerName')}</span>
                     </div>
                   );
                 })}
@@ -1182,7 +1190,7 @@ export function ToolEditor({
 
       {/* Response Caching */}
       <div>
-        <label className="block text-xs font-semibold mb-1">Response Cache TTL</label>
+        <label className="block text-xs font-semibold mb-1">{t('cacheTtl')}</label>
         <div className="flex items-center gap-3">
           <input
             type="number"
@@ -1192,10 +1200,10 @@ export function ToolEditor({
             className="w-32 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
             placeholder="0"
           />
-          <span className="text-xs text-[var(--muted-foreground)]">seconds (0 = no caching)</span>
+          <span className="text-xs text-[var(--muted-foreground)]">{t('cacheSeconds')}</span>
         </div>
         <p className="text-[10px] text-[var(--muted-foreground)] mt-1">
-          Cache identical requests in Redis to reduce API calls. Common values: 60 (1 min), 300 (5 min), 3600 (1 hour).
+          {t('cacheHint')}
         </p>
       </div>
 
@@ -1213,7 +1221,7 @@ export function ToolEditor({
       <div>
         <details className="text-xs">
           <summary className="cursor-pointer font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-            Preview generated mapping (JSON)
+            {t('preview')}
           </summary>
           <pre className="mt-2 p-3 bg-[var(--muted)] rounded text-[10px] font-mono overflow-x-auto max-h-48 overflow-y-auto">
             {JSON.stringify(
