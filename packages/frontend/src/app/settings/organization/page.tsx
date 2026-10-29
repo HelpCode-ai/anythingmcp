@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { organizations, knowledgeGraph, type KgSettings } from '@/lib/api';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -10,16 +11,22 @@ import { StatusPill } from '@/components/ui/badge';
 
 export default function OrganizationSettingsPage() {
   const { token, user, orgName, orgs, setOrgName, switchOrg, replaceSession, logout } = useAuth();
+  const t = useTranslations('settingsOrg');
+  const locale = useLocale();
   const [name, setName] = useState('');
   const [orgId, setOrgId] = useState('');
   const [createdAt, setCreatedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  // Colours used to come from message.includes('success') and
+  // createMessage.includes('created'), which only work in English.
+  const [messageIsError, setMessageIsError] = useState(false);
 
   // Create new org
   const [newOrgName, setNewOrgName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createMessage, setCreateMessage] = useState('');
+  const [createMessageIsError, setCreateMessageIsError] = useState(false);
 
   // Delete organization
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -72,9 +79,11 @@ export default function OrganizationSettingsPage() {
       const updated = await organizations.updateCurrent({ name: name.trim() }, token);
       setName(updated.name);
       setOrgName(updated.name);
-      setMessage('Organization updated successfully');
+      setMessageIsError(false);
+      setMessage(t('updated'));
     } catch (err: any) {
-      setMessage(err.message || 'Failed to update organization');
+      setMessageIsError(true);
+      setMessage(err.message || t('updateFailed'));
     } finally {
       setSaving(false);
     }
@@ -90,7 +99,7 @@ export default function OrganizationSettingsPage() {
       replaceSession(result.accessToken, result.user, result.organization?.name ?? null);
       window.location.href = '/';
     } catch (err: any) {
-      setDeleteError(err?.message || 'Failed to delete organization');
+      setDeleteError(err?.message || t('deleteFailed'));
       setDeleting(false);
     }
   };
@@ -121,15 +130,15 @@ export default function OrganizationSettingsPage() {
         window.location.href = '/login';
         return;
       }
-      const parts = [`${result.membersAffected} member(s) signed out everywhere.`];
+      const parts = [t('membersSignedOut', { count: result.membersAffected })];
       if (result.crossOrgMembersAffected > 0) {
-        parts.push(`${result.crossOrgMembersAffected} of them also belong to other workspaces and were signed out there too.`);
+        parts.push(t('crossOrg', { count: result.crossOrgMembersAffected }));
       }
-      if (revokeApiKeys) parts.push(`${result.apiKeysRevoked} MCP API key(s) deactivated.`);
+      if (revokeApiKeys) parts.push(t('keysDeactivated', { count: result.apiKeysRevoked }));
       setRevokeResult(parts.join(' '));
       resetRevokeDialog();
     } catch (err: any) {
-      setRevokeError(err?.message || 'Failed to revoke sessions');
+      setRevokeError(err?.message || t('revokeFailed'));
       setRevoking(false);
     }
   };
@@ -147,11 +156,13 @@ export default function OrganizationSettingsPage() {
     setCreateMessage('');
     try {
       const newOrg = await organizations.create(newOrgName.trim(), token);
-      setCreateMessage('Organization created! Switching...');
+      setCreateMessageIsError(false);
+      setCreateMessage(t('created'));
       setNewOrgName('');
       await switchOrg(newOrg.id);
     } catch (err: any) {
-      setCreateMessage(err.message || 'Failed to create organization');
+      setCreateMessageIsError(true);
+      setCreateMessage(err.message || t('createFailed'));
       setCreating(false);
     }
   };
@@ -165,25 +176,25 @@ export default function OrganizationSettingsPage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-base font-semibold text-[var(--text)]">Organization</h2>
+        <h2 className="text-base font-semibold text-[var(--text)]">{t('title')}</h2>
         <p className="text-sm text-[var(--text-2)]">
           {isAdmin
-            ? 'Manage your workspace settings. All members of this organization share connectors, MCP servers, and tools.'
-            : 'View your current organization and create new workspaces.'}
+            ? t('introAdmin')
+            : t('introMember')}
         </p>
       </div>
 
       {/* Current organization — editable only for ADMIN */}
       <Card className="p-5 space-y-4">
         <div>
-          <label className={labelClass}>Organization Name</label>
+          <label className={labelClass}>{t('name')}</label>
           {isAdmin ? (
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className={inputClass}
-              placeholder="My Workspace"
+              placeholder={t('namePlaceholder')}
             />
           ) : (
             <p className="flex h-9 items-center rounded-[9px] bg-[var(--surface-2)] border border-[var(--border)] px-3 text-sm text-[var(--text-2)]">
@@ -193,7 +204,7 @@ export default function OrganizationSettingsPage() {
         </div>
 
         <div>
-          <label className={labelClass}>Organization ID</label>
+          <label className={labelClass}>{t('id')}</label>
           <input
             type="text"
             value={orgId}
@@ -203,21 +214,21 @@ export default function OrganizationSettingsPage() {
         </div>
 
         <div>
-          <label className={labelClass}>Your Role</label>
+          <label className={labelClass}>{t('yourRole')}</label>
           <p className="text-sm text-[var(--text-2)]">{user?.role}</p>
         </div>
 
         {createdAt && (
           <div>
-            <label className={labelClass}>Created</label>
+            <label className={labelClass}>{t('createdAt')}</label>
             <p className="text-sm text-[var(--text-2)]">
-              {new Date(createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+              {new Date(createdAt).toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
         )}
 
         {message && (
-          <p className={`text-sm ${message.includes('success') ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
+          <p className={`text-sm ${messageIsError ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
             {message}
           </p>
         )}
@@ -225,7 +236,7 @@ export default function OrganizationSettingsPage() {
         {isAdmin && (
           <div className="pt-2">
             <Button onClick={handleSave} disabled={saving || !name.trim()}>
-              {saving ? 'Saving...' : 'Save Changes'}
+              {saving ? t('saving') : t('save')}
             </Button>
           </div>
         )}
@@ -233,11 +244,11 @@ export default function OrganizationSettingsPage() {
 
       {/* Features */}
       <Card className="p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text)]">Features</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)]">{t('features.title')}</h3>
 
         <FeatureToggle
-          label="Knowledge Graph"
-          description="Auto-discovers relationships between your connectors' entities (from tool definitions and real usage) and exposes them to agents. Disabling it stops graph building, hides the page, and removes the MCP helper tool."
+          label={t('features.kg.label')}
+          description={t('features.kg.description')}
           checked={!!kg?.enabled}
           disabled={!isAdmin || kgSaving || !kg}
           isAdmin={isAdmin}
@@ -246,8 +257,8 @@ export default function OrganizationSettingsPage() {
 
         {kg?.llmAvailable && (
           <FeatureToggle
-            label="AI enrichment"
-            description="Let an LLM suggest extra relationships the heuristics miss (e.g. that a CRM person, a billing customer and a support user are the same person). Only entity and field names are sent — never your data. Suggestions await your confirmation. May incur model costs."
+            label={t('features.llm.label')}
+            description={t('features.llm.description')}
             checked={!!kg?.llmEnabled}
             disabled={!isAdmin || kgSaving || !kg?.enabled}
             isAdmin={isAdmin}
@@ -257,8 +268,8 @@ export default function OrganizationSettingsPage() {
 
         {kg?.llmAvailable && (
           <FeatureToggle
-            label="Auto-apply high-confidence connections"
-            description="When AI enrichment suggests a connection it is confident about (≥ 0.90), add it to the graph automatically instead of leaving it for manual review. Lower-confidence links still wait for your confirmation. No extra model cost — it only changes how existing suggestions are handled."
+            label={t('features.edgeAutoApply.label')}
+            description={t('features.edgeAutoApply.description')}
             checked={!!kg?.edgeAutoApply}
             disabled={!isAdmin || kgSaving || !kg?.enabled || !kg?.llmEnabled}
             isAdmin={isAdmin}
@@ -267,8 +278,8 @@ export default function OrganizationSettingsPage() {
         )}
 
         <FeatureToggle
-          label="Capture user intent"
-          description="Adds an optional parameter to every MCP tool asking the agent for the user's original request. Captures the context behind each call so the graph can be optimized and skills suggested over time. This is the default for every user: override it per user under Settings → Users (Skill learning), and each user can opt out in their own settings."
+          label={t('features.captureIntent.label')}
+          description={t('features.captureIntent.description')}
           checked={!!kg?.captureIntent}
           disabled={!isAdmin || kgSaving || !kg?.enabled}
           isAdmin={isAdmin}
@@ -277,8 +288,8 @@ export default function OrganizationSettingsPage() {
 
         {kg?.llmAvailable && (
           <FeatureToggle
-            label="Scheduled AI extension"
-            description="On a schedule (roughly daily), let the AI extend the graph and generate skills from the captured user intents — so your network and skills keep improving on their own. Cost-careful: it only runs every so often, skips when nothing changed, and stays off until you enable it. Requires AI enrichment + Capture user intent."
+            label={t('features.autoExtend.label')}
+            description={t('features.autoExtend.description')}
             checked={!!kg?.autoExtend}
             disabled={!isAdmin || kgSaving || !kg?.enabled || !kg?.llmEnabled}
             isAdmin={isAdmin}
@@ -288,8 +299,8 @@ export default function OrganizationSettingsPage() {
 
         {kg?.llmAvailable && (
           <FeatureToggle
-            label="Auto-apply high-confidence skills"
-            description="When AI generates a skill it is confident about (≥ 0.90), apply it automatically instead of leaving it as a suggestion to review. Lower-confidence skills still wait for manual approval."
+            label={t('features.skillAutoApply.label')}
+            description={t('features.skillAutoApply.description')}
             checked={!!kg?.skillAutoApply}
             disabled={!isAdmin || kgSaving || !kg?.enabled || !kg?.llmEnabled}
             isAdmin={isAdmin}
@@ -301,15 +312,12 @@ export default function OrganizationSettingsPage() {
       {/* Security — ADMIN only. Reversible actions live here, not in the Danger Zone. */}
       {isAdmin && (
         <Card className="p-5 space-y-3">
-          <h3 className="text-sm font-semibold text-[var(--text)]">Security</h3>
+          <h3 className="text-sm font-semibold text-[var(--text)]">{t('security.title')}</h3>
           <p className="text-xs text-[var(--text-2)]">
-            Sign every member out of the dashboard and of every connected AI client, including
-            clients that hold a refresh token. Nobody loses their role or access; everyone simply has
-            to sign in again. Use it after a suspected credential leak or a change in your identity
-            provider. MCP API keys are not sessions and are left alone unless you say otherwise.
+            {t('security.body')}
           </p>
           <Button variant="secondary" onClick={() => { setRevokeResult(null); setRevokeOpen(true); }}>
-            Sign everyone out
+            {t('security.button')}
           </Button>
           {revokeResult && <p className="text-xs text-[var(--ok)]">{revokeResult}</p>}
         </Card>
@@ -319,16 +327,16 @@ export default function OrganizationSettingsPage() {
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
-            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Sign everyone out</Dialog.Title>
+            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">{t('revokeDialog.title')}</Dialog.Title>
             <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
-              Every member of <strong>{name}</strong> will have to sign in again, on the dashboard and
-              in every AI client. Members who also belong to other workspaces are signed out there
-              too. To confirm, type the organization name below.
+              {t.rich('revokeDialog.description', { name, strong: (chunks) => <strong>{chunks}</strong> })}
             </Dialog.Description>
 
             <div className="space-y-3">
               <div>
-                <label className={labelClass}>Type <code className="font-mono">{name}</code> to confirm</label>
+                <label className={labelClass}>
+                  {t.rich('revokeDialog.typeConfirm', { name, code: (chunks) => <code className="font-mono">{chunks}</code> })}
+                </label>
                 <input
                   type="text"
                   value={revokeConfirmName}
@@ -346,10 +354,9 @@ export default function OrganizationSettingsPage() {
                   onChange={(e) => setRevokeIncludeSelf(e.target.checked)}
                 />
                 <span>
-                  Also sign me out
+                  {t('revokeDialog.alsoMe')}
                   <span className="block text-xs text-[var(--text-2)]">
-                    Keep this on if the compromised session might be yours. You will be taken to the
-                    login page right away.
+                    {t('revokeDialog.alsoMeHint')}
                   </span>
                 </span>
               </label>
@@ -361,10 +368,9 @@ export default function OrganizationSettingsPage() {
                   onChange={(e) => setRevokeApiKeys(e.target.checked)}
                 />
                 <span>
-                  Also deactivate every MCP API key in this workspace
+                  {t('revokeDialog.alsoKeys')}
                   <span className="block text-xs text-[var(--text-2)]">
-                    API keys are not sessions: without this, every <code className="font-mono">mcp_…</code> key
-                    keeps working. Deactivated keys cannot be restored.
+                    {t.rich('revokeDialog.alsoKeysHint', { code: (chunks) => <code className="font-mono">{chunks}</code> })}
                   </span>
                 </span>
               </label>
@@ -373,14 +379,14 @@ export default function OrganizationSettingsPage() {
 
             <div className="flex gap-2 justify-end mt-6">
               <Dialog.Close asChild>
-                <Button variant="secondary">Cancel</Button>
+                <Button variant="secondary">{t('revokeDialog.cancel')}</Button>
               </Dialog.Close>
               <Button
                 variant="primary"
                 onClick={handleRevokeWorkspaceSessions}
                 disabled={revoking || revokeConfirmName.trim() !== name.trim()}
               >
-                {revoking ? 'Signing out…' : 'Sign everyone out'}
+                {revoking ? t('revokeDialog.signingOut') : t('revokeDialog.submit')}
               </Button>
             </div>
           </Dialog.Content>
@@ -390,14 +396,12 @@ export default function OrganizationSettingsPage() {
       {/* Danger Zone — ADMIN only */}
       {isAdmin && (
         <Card className="p-5 space-y-3 border-[var(--danger)]/30 bg-[var(--t-danger-bg)]">
-          <h3 className="text-sm font-semibold text-[var(--danger)]">Danger Zone</h3>
+          <h3 className="text-sm font-semibold text-[var(--danger)]">{t('danger.title')}</h3>
           <p className="text-xs text-[var(--text-2)]">
-            Permanently delete this organization, including all members, connectors, MCP servers,
-            API keys, custom roles, pending invitations, and settings. Other members will be
-            migrated to their next-oldest workspace if they have one. This action cannot be undone.
+            {t('danger.body')}
           </p>
           <Button variant="danger" onClick={() => setDeleteOpen(true)}>
-            Delete this organization
+            {t('danger.button')}
           </Button>
         </Card>
       )}
@@ -406,15 +410,16 @@ export default function OrganizationSettingsPage() {
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
-            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Delete organization</Dialog.Title>
+            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">{t('deleteDialog.title')}</Dialog.Title>
             <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
-              This deletes <strong>{name}</strong> and everything it contains. To confirm, type the
-              organization name below.
+              {t.rich('deleteDialog.description', { name, strong: (chunks) => <strong>{chunks}</strong> })}
             </Dialog.Description>
 
             <div className="space-y-3">
               <div>
-                <label className={labelClass}>Type <code className="font-mono">{name}</code> to confirm</label>
+                <label className={labelClass}>
+                  {t.rich('deleteDialog.typeConfirm', { name, code: (chunks) => <code className="font-mono">{chunks}</code> })}
+                </label>
                 <input
                   type="text"
                   value={deleteConfirmName}
@@ -431,14 +436,14 @@ export default function OrganizationSettingsPage() {
 
             <div className="flex gap-2 justify-end mt-6">
               <Dialog.Close asChild>
-                <Button variant="secondary">Cancel</Button>
+                <Button variant="secondary">{t('deleteDialog.cancel')}</Button>
               </Dialog.Close>
               <Button
                 variant="danger"
                 onClick={handleDeleteOrg}
                 disabled={deleting || deleteConfirmName.trim() !== name.trim()}
               >
-                {deleting ? 'Deleting…' : 'Delete organization'}
+                {deleting ? t('deleteDialog.deleting') : t('deleteDialog.submit')}
               </Button>
             </div>
           </Dialog.Content>
@@ -447,7 +452,7 @@ export default function OrganizationSettingsPage() {
 
       {/* My organizations list + create new — available to ALL users */}
       <Card className="p-5">
-        <h3 className="text-sm font-semibold text-[var(--text)]">My Organizations</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)]">{t('myOrgs.title')}</h3>
         {orgs && orgs.length > 0 && (
           <div className="mt-3">
             {orgs.map((org, index) => {
@@ -463,14 +468,14 @@ export default function OrganizationSettingsPage() {
                         {org.name}
                       </p>
                       <p className="text-xs text-[var(--text-3)]">
-                        {org.role} &middot; Joined {new Date(org.joinedAt).toLocaleDateString()}
+                        {t('myOrgs.joined', { role: org.role, date: new Date(org.joinedAt).toLocaleDateString(locale) })}
                       </p>
                     </div>
                     {isActive ? (
-                      <StatusPill tone="brand" className="flex-shrink-0">Active</StatusPill>
+                      <StatusPill tone="brand" className="flex-shrink-0">{t('myOrgs.active')}</StatusPill>
                     ) : (
                       <Button variant="secondary" size="sm" onClick={() => switchOrg(org.id)} className="flex-shrink-0">
-                        Switch
+                        {t('myOrgs.switch')}
                       </Button>
                     )}
                   </div>
@@ -480,22 +485,22 @@ export default function OrganizationSettingsPage() {
           </div>
         )}
         <div className="space-y-2 mt-8">
-          <p className="text-xs font-medium text-[var(--text-3)]">Create New Organization</p>
+          <p className="text-xs font-medium text-[var(--text-3)]">{t('myOrgs.createTitle')}</p>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
               value={newOrgName}
               onChange={(e) => setNewOrgName(e.target.value)}
               className="flex-1 h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
-              placeholder="New organization name"
+              placeholder={t('myOrgs.createPlaceholder')}
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateOrg(); }}
             />
             <Button onClick={handleCreateOrg} disabled={creating || !newOrgName.trim()} className="sm:flex-shrink-0">
-              {creating ? 'Creating...' : 'Create Organization'}
+              {creating ? t('myOrgs.creating') : t('myOrgs.create')}
             </Button>
           </div>
           {createMessage && (
-            <p className={`text-sm ${createMessage.includes('created') ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
+            <p className={`text-sm ${createMessageIsError ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
               {createMessage}
             </p>
           )}
@@ -520,6 +525,7 @@ function FeatureToggle({
   isAdmin: boolean;
   onToggle: () => void;
 }) {
+  const t = useTranslations('settingsOrg');
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
@@ -531,7 +537,7 @@ function FeatureToggle({
         disabled={disabled}
         role="switch"
         aria-checked={checked}
-        title={isAdmin ? '' : 'Only admins can change this'}
+        title={isAdmin ? '' : t('features.onlyAdmins')}
         className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
           checked ? 'bg-[var(--brand)]' : 'bg-[var(--border-strong)]'
         }`}

@@ -15,7 +15,10 @@ export interface NavGroup {
 }
 
 export interface SettingsItem {
+  /** Message key under `settingsNav.items` (messages/*.json). */
+  id: string;
   href: string;
+  /** English label; the settings sidebar shows `settingsNav.items.<id>.label`. */
   label: string;
   description: string;
   exact?: boolean;
@@ -26,6 +29,8 @@ export interface SettingsItem {
 }
 
 export interface SettingsSection {
+  /** Message key under `settingsNav.sections`, when the section has a title. */
+  id?: string;
   title?: string;
   adminOnly?: boolean;
   items: SettingsItem[];
@@ -71,22 +76,23 @@ export const NAV: NavGroup[] = [
 export const SIDEBAR_SECTIONS: SettingsSection[] = [
   {
     items: [
-      { href: '/settings', label: 'Profile', description: 'Name, email, password', exact: true, keywords: ['profile', 'account', 'user', 'password', 'name', 'email'] },
-      { href: '/settings/connections', label: 'Connections', description: 'What each AI client can reach', keywords: ['connections', 'clients', 'ai', 'claude', 'chatgpt', 'reach'] },
+      { id: 'profile', href: '/settings', label: 'Profile', description: 'Name, email, password', exact: true, keywords: ['profile', 'account', 'user', 'password', 'name', 'email'] },
+      { id: 'connections', href: '/settings/connections', label: 'Connections', description: 'What each AI client can reach', keywords: ['connections', 'clients', 'ai', 'claude', 'chatgpt', 'reach'] },
     ],
   },
   {
+    id: 'organization',
     title: 'Organization',
     items: [
-      { href: '/settings/organization', label: 'General', description: 'Workspace and new orgs', keywords: ['organization', 'general', 'workspace', 'org'] },
-      { href: '/settings/users', label: 'Users', description: 'Members and invitations', adminOnly: true, keywords: ['users', 'members', 'invitations', 'team', 'invite'] },
-      { href: '/settings/roles', label: 'Roles', description: 'MCP tool access control', adminOnly: true, keywords: ['roles', 'permissions', 'access', 'rbac', 'control'] },
+      { id: 'organization', href: '/settings/organization', label: 'General', description: 'Workspace and new orgs', keywords: ['organization', 'general', 'workspace', 'org'] },
+      { id: 'users', href: '/settings/users', label: 'Users', description: 'Members and invitations', adminOnly: true, keywords: ['users', 'members', 'invitations', 'team', 'invite'] },
+      { id: 'roles', href: '/settings/roles', label: 'Roles', description: 'MCP tool access control', adminOnly: true, keywords: ['roles', 'permissions', 'access', 'rbac', 'control'] },
       // Self-hosted only: SSO assumes the workspace owns its own directory,
       // tenant and operator. The backend refuses these routes in cloud, so
       // showing the entry there would lead an admin to a page that 404s.
-      { href: '/settings/identity-providers', label: 'Single sign-on', description: 'Microsoft, Google, Okta', adminOnly: true, selfHostedOnly: true, keywords: ['single sign-on', 'sso', 'saml', 'oidc', 'microsoft', 'google', 'okta', 'identity'] },
-      { href: '/settings/license', label: 'License', description: 'Plan, billing, subscription', adminOnly: true, keywords: ['license', 'billing', 'plan', 'subscription'] },
-      { href: '/settings/admin', label: 'Administration', description: 'SMTP, alerts, footer links', adminOnly: true, keywords: ['administration', 'admin', 'smtp', 'alerts', 'footer', 'email', 'system'] },
+      { id: 'identityProviders', href: '/settings/identity-providers', label: 'Single sign-on', description: 'Microsoft, Google, Okta', adminOnly: true, selfHostedOnly: true, keywords: ['single sign-on', 'sso', 'saml', 'oidc', 'microsoft', 'google', 'okta', 'identity'] },
+      { id: 'license', href: '/settings/license', label: 'License', description: 'Plan, billing, subscription', adminOnly: true, keywords: ['license', 'billing', 'plan', 'subscription'] },
+      { id: 'admin', href: '/settings/admin', label: 'Administration', description: 'SMTP, alerts, footer links', adminOnly: true, keywords: ['administration', 'admin', 'smtp', 'alerts', 'footer', 'email', 'system'] },
     ],
   },
 ];
