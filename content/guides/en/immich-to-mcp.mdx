@@ -1,0 +1,71 @@
+---
+title: "How to Connect Immich to MCP for AI Agents"
+description: "Read your Immich photo library with AI agents via MCP: albums, photo counts, EXIF data, people, places and a monthly timeline. Read-only: the adapter never uploads, edits or deletes."
+category: "connectors"
+keyword: "Immich MCP Server, Immich API AI, Immich REST API MCP, connect Immich to Claude, Immich ChatGPT, self-hosted photos AI"
+publishedAt: "2026-10-29"
+adapterSlug: "immich"
+---
+
+## Immich with AI Agents
+
+Immich is a self-hosted photo and video library, an open-source alternative to Google Photos that runs on your own server or NAS. By connecting its REST API to AnythingMCP, AI agents can count your photos and videos, list your albums and who they are shared with, read the date, place, camera and people of a photo, find the people Immich recognised, and see how many pictures were taken each month.
+
+The adapter is **read-only**: every tool is a `GET` request. It cannot upload, edit, favourite, archive, trash or delete anything, change albums, tags or people, or download originals, thumbnails or videos. It was tested against Immich v3.3.5 and needs Immich 3.0 or newer.
+
+## Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+1. Log in to Immich as the user whose library the AI should read. **No admin account is needed.**
+2. Open **Account Settings > API Keys > New API Key** and grant only these five permissions: `user.read`, `asset.read`, `asset.statistics`, `album.read` and `person.read`. They are the way to keep the key's access small. Copy the key: it is shown once.
+3. Open `http://localhost:3000/connectors/store`, import the Immich adapter, and configure:
+   - `IMMICH_URL`: The address you open Immich at, without a trailing slash and without `/api` (e.g., `https://photos.example.com` or `http://192.168.1.10:2283`).
+   - `IMMICH_API_KEY`: The API key, sent in the `x-api-key` header.
+4. Check the setup with `immich_get_my_user`.
+
+```json
+{
+  "mcpServers": {
+    "immich": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Where Immich Runs
+
+- **Self-hosted AnythingMCP**: Immich usually lives on a home server or NAS (`http://192.168.x.x:2283`). The outbound SSRF guard blocks private and local addresses by default, so an administrator must allow the host through the `SSRF_ALLOWED_HOSTS` environment variable or the allowlist in the admin settings.
+- **AnythingMCP Cloud**: Cloud can only reach an Immich server exposed on the public internet over HTTPS, for example behind a reverse proxy. Private IPs and local hostnames are refused, and the allowlist cannot be changed on Cloud.
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `immich_get_my_user` | The key's user: name, email, admin flag, storage quota and usage (`GET /api/users/me`) |
+| `immich_get_asset_statistics` | Number of images and videos, optionally favourites, trash or archive only (`GET /api/assets/statistics`) |
+| `immich_list_albums` | Compact list of owned and shared albums with owner and members (`GET /api/albums`) |
+| `immich_get_album` | One album with its members, asset count and date range (`GET /api/albums/{id}`) |
+| `immich_get_asset` | One photo or video with dates, EXIF, GPS, city, people and tags (`GET /api/assets/{id}`) |
+| `immich_search_people` | Recognised people by name; `name` is required (`GET /api/search/person`) |
+| `immich_get_timeline_buckets` | Number of assets per month, by person, album, tag or favourites (`GET /api/timeline/buckets`) |
+| `immich_search_places` | Places by name with coordinates; `name` is required (`GET /api/search/places`) |
+
+**Counts:** without filters, the statistics and the monthly timeline count every asset that is not in the trash, archived ones included. Use `visibility=timeline` to match the main timeline, or `isTrashed=true` for the trash. The locked folder cannot be read with an API key.
+
+**Unknown ids:** Immich answers `400 Not found or no ... access`, not 404, when an album or asset id does not exist in this library.
+
+**Response size:** `immich_list_albums` keeps only the fields an agent needs per album (on the test library, 1,433 bytes raw became 558 bytes for two albums). Use `immich_get_album` for one album's full sharing details.
+
+## Privacy
+
+A photo library reveals faces, places and daily life. Server file paths, checksums, thumbhashes, OAuth ids and license keys are removed from the answers. An Immich key only sees its own user's library and the albums shared with that user. Assign this connector only to MCP servers whose users may see this library.
+
+## Use Cases
+
+- **"How many photos did I take last year, month by month?"**
+- **"Which albums have I shared, and with whom?"**
+- **"Where and with which camera was this photo taken?"**
+- **"How many pictures of Anna are there per month?"**
