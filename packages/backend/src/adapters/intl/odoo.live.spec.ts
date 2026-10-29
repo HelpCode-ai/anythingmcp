@@ -64,6 +64,7 @@ describe('odoo adapter — static spec conformance', () => {
     expect(call?.parameters.properties.kwargs.description).toContain('{"vals": {...}}');
     expect(call?.parameters.properties.kwargs.description).toContain('vals_list');
     expect(call?.parameters.properties.ids.description).toContain('Expected singleton');
+    expect(call?.parameters.properties.ids.description).toContain('message_post');
   });
 
   it("ships both a generic search_read and the common wrappers", () => {

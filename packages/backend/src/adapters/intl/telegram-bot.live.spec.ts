@@ -32,6 +32,13 @@ describe('telegram-bot adapter — static spec conformance', () => {
     expect(a.connector.authType).toBe('NONE');
   });
 
+  it('caps the getUpdates long poll below the 30 s request timeout', () => {
+    const t = a.tools.find((x) => x.name === 'telegram_bot_get_updates')! as unknown as {
+      parameters: { properties: { timeout: { maximum: number } } };
+    };
+    expect(t.parameters.properties.timeout.maximum).toBe(25);
+  });
+
   it('downloads a file from the /file/bot<token>/ host path, not the method path', () => {
     const download = a.tools.find((t) => t.name === 'telegram_bot_download_file')!;
     expect(download.endpointMapping).toEqual({
