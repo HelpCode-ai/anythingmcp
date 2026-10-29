@@ -1,0 +1,56 @@
+---
+title: "How to Connect SonarQube to MCP for AI Agents"
+description: "Let Claude, ChatGPT and Copilot read SonarQube quality gates, coverage, measures and issues via MCP. Works with SonarQube Server and SonarQube Cloud, read-only."
+category: "connectors"
+keyword: "SonarQube MCP Server, SonarCloud MCP, SonarQube API AI, connect SonarQube to Claude, SonarQube ChatGPT, quality gate AI"
+publishedAt: "2026-10-28"
+adapterSlug: "sonarqube"
+---
+
+## SonarQube with AI Agents
+
+SonarQube checks code for bugs, security issues, duplication and test coverage, and decides with a quality gate whether a branch is good to ship. By connecting its Web API to AnythingMCP, AI agents can answer questions such as "did the main branch of `payments-api` pass its quality gate?" or "how has coverage changed since June?". All 7 tools are read-only: the AI cannot change issues, quality gates or projects.
+
+One adapter covers both products: **SonarQube Server** (self-hosted, including the free Community Build) and **SonarQube Cloud** (formerly SonarCloud).
+
+## Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Open `http://localhost:3000/connectors/store`, install the SonarQube adapter, and configure:
+- `SONARQUBE_URL`: `https://sonarcloud.io` (Cloud, EU), `https://sonarqube.us` (Cloud, US), or your Server's address, including any context path such as `https://example.com/sonarqube`. No `/api` and no trailing slash.
+- `SONARQUBE_TOKEN`: a personal token. On Server: **My Account → Security**, type **User** (analysis tokens cannot read the Web API). On Cloud: **My Account → Access tokens → Personal Tokens**.
+- `SONARQUBE_ORGANIZATION`: your organization key, on SonarQube Cloud only. Leave it empty on Server.
+
+```json
+{
+  "mcpServers": {
+    "sonarqube": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+A SonarQube Server on a private network needs a self-hosted AnythingMCP on the same network, with the server's host in `SSRF_ALLOWED_HOSTS`. AnythingMCP Cloud reaches SonarQube Cloud and any SonarQube Server that is reachable from the internet.
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `sonarqube_list_projects` | List the projects the token can browse, with their keys |
+| `sonarqube_get_quality_gate_status` | Quality gate status (OK or ERROR) with each condition |
+| `sonarqube_get_measures` | Current metrics such as `coverage` or `software_quality_security_issues` |
+| `sonarqube_get_measures_history` | How metrics changed over time, one value per analysis |
+| `sonarqube_search_issues` | Issues filtered by software quality, severity and status |
+| `sonarqube_list_project_analyses` | Past analyses with their dates, versions and events |
+| `sonarqube_list_branches` | Branches with their last analysis and quality gate status |
+
+## Use Cases
+
+- **"Did the main branch of payments-api pass its quality gate?"**
+- **"List the open high-severity security issues in payments-api."**
+- **"How has coverage changed since June?"**
+- **"Which branches of checkout-service fail their quality gate?"**
+- **"When was billing-api last analyzed, and with which version?"**
