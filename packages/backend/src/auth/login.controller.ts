@@ -588,7 +588,7 @@ export class LoginController {
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
     <h1>${client} is connected</h1>
     <p class="sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
-    <div class="example">“Connect my Etsy shop to AnythingMCP.”</div>
+    <div class="example"><span>“<span id="example-request">Connect my Etsy shop to AnythingMCP.</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
     <p class="body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>
     <a class="button" href="${this.escapeHtml(params.callbackUrl)}">Continue to ${client}</a>
     <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
@@ -596,13 +596,33 @@ export class LoginController {
         ? `
     <p class="trial">Your free trial runs until ${trialEnd}. To keep the workspace running after that, you can <a href="${this.escapeHtml(params.cardTrial.url)}" target="_blank" rel="noopener noreferrer">add a card now (new tab)</a>. Nothing is charged before ${trialEnd}.</p>`
         : ''
-    }`;
+    }
+    <script>
+    // Copy the example request, to paste into the chat after "Continue":
+    // easier than retyping it. The quotes are left out of the copy.
+    (function () {
+      var button = document.getElementById('copy-request');
+      var request = document.getElementById('example-request');
+      if (!button || !request || !navigator.clipboard) { if (button) button.hidden = true; return; }
+      button.addEventListener('click', function () {
+        navigator.clipboard.writeText(request.textContent || '').then(function () {
+          button.textContent = 'Copied';
+        }, function () {
+          button.hidden = true;
+        });
+      });
+    })();
+    </script>`;
     return renderAuthPage({
       title: `${params.clientName} is connected`,
       card,
       trust: this.trust(),
       extraStyles: `
-  .example { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; font-size: 14px; margin: 0 0 14px; }
+  .example { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; font-size: 14px; margin: 0 0 14px;
+             display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .example button.copy { width: auto; min-height: 30px; padding: 0 12px; font-size: 13px; font-weight: 500; flex: none;
+             background: #fff; color: var(--text); border-color: var(--border-strong); }
+  .example button.copy:hover { background: var(--surface); border-color: var(--brand); }
   .body { color: var(--text-2); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
   .trial { font-size: 13px; color: var(--text-2); margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); line-height: 1.5; }
   .trial a { color: var(--brand); }`,

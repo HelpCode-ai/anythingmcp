@@ -85,7 +85,12 @@
 	# localhost. Every path the backend owns is routed here explicitly, so the
 	# OAuth endpoints Claude and ChatGPT connect through never depend on which
 	# process happens to be listening next door.
-	handle /api/* {
+	# The bare paths too: `/api/*` does not match `/api`, which then reached
+	# the frontend, whose `/api/:path*` rewrite to localhost:4000 has nothing
+	# behind it in a container of its own, so it answered 500. `handle` takes
+	# one matcher, hence the named ones.
+	@api path /api /api/*
+	handle @api {
 		import backend
 	}
 	handle /health* {
@@ -100,10 +105,12 @@
 	handle /.well-known/* {
 		import backend
 	}
-	handle /auth/* {
+	@auth path /auth /auth/*
+	handle @auth {
 		import backend
 	}
-	handle /sso/* {
+	@sso path /sso /sso/*
+	handle @sso {
 		import backend
 	}
 	handle /authorize {
