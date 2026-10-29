@@ -850,6 +850,104 @@ test.describe('connector setup and new connector from Accept-Language', () => {
   });
 });
 
+async function connectorDetailSession(page: Page) {
+  await fakeSession(page);
+  const connector = {
+    id: 'c1',
+    name: 'Orders API',
+    type: 'REST',
+    baseUrl: 'https://api.example.com/v1',
+    authType: 'API_KEY',
+    isActive: true,
+    createdAt: '2026-01-15T10:00:00Z',
+    envVars: { API_REGION: 'eu' },
+    maskedEnvVars: [],
+    headers: null,
+    config: {},
+    tools: [],
+    mcpServers: [{ mcpServerId: 's1' }],
+  };
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\/connectors/, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/connectors/c1')) return route.fulfill({ json: connector });
+    if (path.endsWith('/connectors/c1/catalog-diff')) return route.fulfill({ json: { catalogManaged: false } });
+    if (path.endsWith('/connectors/proxy-availability')) return route.fulfill({ json: { available: false } });
+    if (path.endsWith('/connectors/c1/tools')) return route.fulfill({ json: [] });
+    return route.fulfill({ json: {} });
+  });
+}
+
+test.describe('connector page from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders /connectors/[id] in German, in view and edit mode', async ({ page }) => {
+      await connectorDetailSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByText('Connector-Details', { exact: true })).toBeVisible();
+      await expect(page.getByText('API-Schlüssel', { exact: true })).toBeVisible();
+      await expect(page.getByText('Umgebungsvariablen', { exact: true })).toBeVisible();
+      await expect(page.getByText('Aktiv', { exact: true }).first()).toBeVisible();
+
+      await page.getByRole('button', { name: 'Bearbeiten (1)' }).click();
+      await expect(page.getByRole('button', { name: '+ Variable hinzufügen' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Variablen speichern' })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Bearbeiten', exact: true }).click();
+      await expect(page.getByText('Header-Name', { exact: true }).first()).toBeVisible();
+      await expect(page.getByPlaceholder('Leer lassen zum Beibehalten').first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Änderungen speichern' })).toBeVisible();
+
+      await expect(page.getByText('Connector löschen', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Löschen', exact: true }).last().click();
+      await expect(page.getByRole('dialog')).toContainText('Möchten Sie Orders API und alle zugehörigen Tools wirklich löschen?');
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders /connectors/[id] in Italian', async ({ page }) => {
+      await connectorDetailSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByText('Dettagli del connettore', { exact: true })).toBeVisible();
+      await expect(page.getByText('Chiave API', { exact: true })).toBeVisible();
+      await expect(page.getByText('Variabili d\'ambiente', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Modifica', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Salva modifiche' })).toBeVisible();
+      await expect(page.getByText('Elimina connettore', { exact: true }).first()).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps /connectors/[id] in English', async ({ page }) => {
+      await connectorDetailSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.getByText('Connector Details', { exact: true })).toBeVisible();
+      await expect(page.getByText('Auth Type', { exact: true })).toBeVisible();
+      await expect(page.getByText('API Key', { exact: true })).toBeVisible();
+      await expect(page.getByText('Environment Variables', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Edit (1)' }).click();
+      await expect(page.getByRole('button', { name: '+ Add Variable' })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Edit', exact: true }).click();
+      await expect(page.getByText('Header Name', { exact: true })).toBeVisible();
+      await expect(page.getByPlaceholder('Leave empty to keep current').first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Save Changes' })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Delete', exact: true }).last().click();
+      await expect(page.getByRole('dialog')).toContainText(
+        'Are you sure you want to delete Orders API and all its tools? This action cannot be undone.',
+      );
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;

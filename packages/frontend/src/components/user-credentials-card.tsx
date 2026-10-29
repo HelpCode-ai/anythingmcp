@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { useLocale, useTranslations } from 'next-intl';
 import { connectors, type CredentialScope, type MyConnectorCredential } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,8 @@ export function UserCredentialsCard({
   onScopeChanged: () => void;
 }) {
   const { token } = useAuth();
+  const t = useTranslations('userCredentials');
+  const locale = useLocale();
   const [mine, setMine] = useState<MyConnectorCredential | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -62,7 +65,7 @@ export function UserCredentialsCard({
       onScopeChanged();
     } catch (err: any) {
       setPendingScope(null);
-      setError(err?.message || 'Could not change the sign-in mode.');
+      setError(err?.message || t('scopeError'));
     } finally {
       setBusy(false);
     }
@@ -80,7 +83,7 @@ export function UserCredentialsCard({
       }
       if (result.error) setError(result.error);
     } catch (err: any) {
-      setError(err?.message || 'Could not start the sign-in.');
+      setError(err?.message || t('connectError'));
     }
     setBusy(false);
   };
@@ -93,7 +96,7 @@ export function UserCredentialsCard({
       await connectors.disconnectMyCredential(connectorId, token);
       loadMine();
     } catch (err: any) {
-      setError(err?.message || 'Could not disconnect.');
+      setError(err?.message || t('disconnectError'));
     } finally {
       setBusy(false);
     }
@@ -108,15 +111,13 @@ export function UserCredentialsCard({
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
-            Sign-in
-            <StatusPill tone={perUser ? 'purple' : 'neutral'}>{perUser ? 'Per user' : 'Shared'}</StatusPill>
+            {t('title')}
+            <StatusPill tone={perUser ? 'purple' : 'neutral'}>{perUser ? t('perUser') : t('shared')}</StatusPill>
           </h3>
           <p className="text-sm text-[var(--text-3)] max-w-prose">
             {perUser
-              ? `Every user connects their own account. Calls carry the caller's own sign-in, so ${
-                  isMcp ? 'the remote server' : 'the provider'
-                } shows each user only what their account may see.`
-              : 'One authorization serves every user of this workspace: everyone sees what that account can see.'}
+              ? t('perUserBody', { target: isMcp ? 'mcp' : 'provider' })
+              : t('sharedBody')}
           </p>
         </div>
         {canManage && (
@@ -126,7 +127,7 @@ export function UserCredentialsCard({
             onClick={() => setPendingScope(perUser ? 'SHARED' : 'USER')}
             disabled={busy}
           >
-            {perUser ? 'Use one shared sign-in' : 'Require each user to sign in (Enterprise)'}
+            {perUser ? t('switchToShared') : t('switchToUser')}
           </Button>
         )}
       </div>
@@ -137,24 +138,25 @@ export function UserCredentialsCard({
             <>
               {mine.authStatus === 'needs_reauth' ? (
                 <StatusPill tone="danger" dot="var(--danger)" title={mine.authStatusMessage ?? undefined}>
-                  Your sign-in expired
+                  {t('expired')}
                 </StatusPill>
               ) : (
                 <StatusPill tone="success" dot="var(--success)">
-                  Your account is connected
-                  {mine.authorizedAt ? ` since ${new Date(mine.authorizedAt).toLocaleDateString()}` : ''}
+                  {mine.authorizedAt
+                    ? t('connectedSince', { date: new Date(mine.authorizedAt).toLocaleDateString(locale) })
+                    : t('connected')}
                 </StatusPill>
               )}
               <Button variant="primary" size="md" onClick={connect} disabled={busy}>
-                {busy ? 'Redirecting...' : 'Sign in again'}
+                {busy ? t('redirecting') : t('signInAgain')}
               </Button>
               <Button variant="outlineDanger" size="md" onClick={disconnect} disabled={busy}>
-                Disconnect my account
+                {t('disconnect')}
               </Button>
             </>
           ) : (
             <Button variant="primary" size="lg" onClick={connect} disabled={busy}>
-              {busy ? 'Redirecting...' : 'Connect my account'}
+              {busy ? t('redirecting') : t('connect')}
             </Button>
           )}
         </div>
@@ -167,19 +169,19 @@ export function UserCredentialsCard({
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <Dialog.Title className="mb-2 text-lg font-semibold text-[var(--text)]">
-              {pendingScope === 'USER' ? 'Require each user to sign in' : 'Use one shared sign-in'}
+              {pendingScope === 'USER' ? t('dialog.titleUser') : t('dialog.titleShared')}
             </Dialog.Title>
             <Dialog.Description className="mb-5 text-sm text-[var(--text-3)]">
               {pendingScope === 'USER'
-                ? 'The authorization stored on this connector is removed. Every user then connects their own account before their calls work.'
-                : "Every user's own sign-in is removed, and the connector needs one authorization of its own again. Everyone then sees what that one account can see."}
+                ? t('dialog.bodyUser')
+                : t('dialog.bodyShared')}
             </Dialog.Description>
             <div className="flex justify-end gap-2">
               <Dialog.Close className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))} disabled={busy}>
-                Cancel
+                {t('dialog.cancel')}
               </Dialog.Close>
               <Button variant="primary" size="md" onClick={switchScope} disabled={busy}>
-                {busy ? 'Saving…' : 'Switch'}
+                {busy ? t('dialog.saving') : t('dialog.switch')}
               </Button>
             </div>
           </Dialog.Content>
