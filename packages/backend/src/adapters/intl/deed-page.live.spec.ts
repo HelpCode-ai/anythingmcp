@@ -27,6 +27,7 @@ type Tool = {
   name: string;
   description: string;
   enabled?: boolean;
+  omitParameters?: string[];
   parameters: { type: string; required?: string[]; properties: Record<string, { description?: string }> };
   endpointMapping: { method: string; path: string };
   annotations?: Record<string, unknown>;
@@ -54,7 +55,27 @@ const tool = (method: string) => {
 };
 
 const MCP_URL = 'https://deed.page/mcp';
-const OFF = ['agent_seats', 'delete_site', 'delete_webhook', 'remove_domain', 'revoke_token', 'rotate_token'];
+const OFF = [
+  'agent_seats',
+  'claim_share_credit',
+  'delete_site',
+  'delete_webhook',
+  'get_upgrade_link',
+  'remove_domain',
+  'revoke_token',
+  'rotate_token',
+  'set_badge',
+];
+// deed.page's attribution fields: never in an installed schema.
+const ATTRIBUTION = ['via', 'heard_from', 'how_heard'];
+// The tools whose schema on deed.page's server carries one of them.
+const SERVER_ATTRIBUTION: Record<string, string[]> = {
+  publish_site: ['via', 'heard_from'],
+  update_site: ['via'],
+  plan_upload: ['via', 'heard_from'],
+  finalize_upload: ['via', 'heard_from'],
+  get_upgrade_link: ['how_heard'],
+};
 
 describe('deed-page adapter: static spec conformance', () => {
   it("bridges deed.page's official MCP server with the owner token as a Bearer token", () => {
@@ -101,7 +122,7 @@ describe('deed-page adapter: static spec conformance', () => {
     expect(publish.enabled).not.toBe(false);
   });
 
-  it('ships deletes and token changes switched off, and only those', () => {
+  it('ships deletes, token changes and the billing and promotion tools switched off, and only those', () => {
     const off = a.tools.filter((t) => t.enabled === false).map((t) => t.endpointMapping.method);
     expect(off.sort()).toEqual(OFF);
   });
@@ -117,6 +138,40 @@ describe('deed-page adapter: static spec conformance', () => {
     expect(merged.map((t) => t.name).sort()).toEqual(a.tools.map((t) => t.name).sort());
     const off = merged.filter((t) => t.enabled === false).map((t) => t.name).sort();
     expect(off).toEqual(OFF.map((m) => localMcpToolName(m, 'deed_page_')).sort());
+  });
+
+  it('carries no attribution parameter in the snapshot, and omits them from what the server lists', () => {
+    for (const t of a.tools) {
+      for (const p of ATTRIBUTION) expect(`${t.name}: ${p in (t.parameters.properties ?? {})}`).toBe(`${t.name}: false`);
+      for (const p of ATTRIBUTION) expect(t.description).not.toMatch(new RegExp(`\\b${p}\\b`));
+    }
+    for (const [method, params] of Object.entries(SERVER_ATTRIBUTION)) {
+      expect(tool(method).omitParameters?.slice().sort()).toEqual(params.slice().sort());
+    }
+    // Discovery returns the server's schemas, attribution fields included.
+    const discovered = a.tools.map((t) => {
+      const extra = Object.fromEntries(
+        (SERVER_ATTRIBUTION[t.endpointMapping.method] ?? []).map((p) => [p, { type: 'string', description: p }]),
+      );
+      return {
+        name: t.endpointMapping.method,
+        description: `server ${t.endpointMapping.method}`,
+        parameters: { ...t.parameters, properties: { ...t.parameters.properties, ...extra } },
+        endpointMapping: t.endpointMapping,
+      };
+    });
+    expect(Object.keys(discovered.find((d) => d.name === 'publish_site')!.parameters.properties)).toContain('heard_from');
+    const merged = mergeDiscoveredMcpTools(a.tools as never, discovered as never, a.connector.config.mcpToolPrefix);
+    for (const t of merged) {
+      const props = Object.keys((t.parameters as { properties?: Record<string, unknown> }).properties ?? {});
+      for (const p of ATTRIBUTION) expect(`${t.name}: ${props.includes(p)}`).toBe(`${t.name}: false`);
+    }
+  });
+
+  it('keeps one neutral sentence on paid plans and never lets the agent pay', () => {
+    expect(a.instructions).toMatch(/When a plan limit error appears/);
+    expect(a.instructions).not.toMatch(/deed_page_get_upgrade_link` returns/);
+    expect(tool('get_upgrade_link').description).not.toMatch(/complete the payment|payment tool/i);
   });
 
   it('says that sites are public, to ask before publishing, where the token comes from and why rotation is off', () => {

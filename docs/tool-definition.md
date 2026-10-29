@@ -167,7 +167,10 @@ version it runs. The adapter's `tools` array is a snapshot: it is what the
 catalog shows, the fallback installed when the server cannot be reached at
 install, and the place for policy. A snapshot tool with `"enabled": false`
 installs switched off, and `annotations` set there fill the hints the server
-leaves out (the server's own hints win).
+leaves out (the server's own hints win). `omitParameters` (an array of
+top-level parameter names) drops those parameters from the schema the server
+lists, at install and on every **Discover tools**, for vendor fields such as
+attribution that a workspace has no use for.
 Each tool's `endpointMapping` is `{ "method": "<remote tool name>", "path": "/mcp" }`
 (`"/"` for a server at the root of its host, together with
 `connector.config.mcpPath: "/"`).

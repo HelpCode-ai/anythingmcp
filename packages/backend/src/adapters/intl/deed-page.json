@@ -2,7 +2,7 @@
   "slug": "deed-page",
   "name": "deed.page",
   "description": "Publish HTML pages and small static sites that your AI writes to a permanent public URL, update them in place, roll back versions and attach custom domains from Claude, ChatGPT or Copilot through deed.page's official MCP server.",
-  "instructions": "This connector bridges **deed.page's official remote MCP server** (`https://deed.page/mcp`). deed.page is static web hosting built for AI agents: a page or a small site the AI writes (a report, a dashboard, a prototype, a document to share) goes live at `https://<slug>.deed.page/` with one tool call. deed.page's own server provides the tools: publish and update sites, check a slug, list versions and restore one, large uploads by manifest, custom domains, a site password, analytics and webhooks. AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles and the audit log, next to your other systems.\n\n**Everything published is public.** Anyone with the URL can open a site unless it has a password, so never let the AI publish secrets, credentials or private customer data. Sites stay out of the public gallery unless `listed` is true.\n\n**Setup (about 2 minutes)**:\n1. Get an owner token. deed.page has no sign-up: the first publish without a token creates one and returns it once as `token` (it starts with `deed_tok_`). Publish any page once by following https://deed.page/docs, or with any MCP client connected to `https://deed.page/mcp`, and copy the token from the response.\n2. Paste it as `DEED_PAGE_TOKEN` and install. AnythingMCP sends it as a Bearer token on every call, so every site the AI publishes through this connector belongs to that owner and can be updated, listed and deleted later. Leave the tools' own `token` argument empty.\n3. Keep the token safe: whoever has it controls every site of that owner. A lost token cannot be recovered unless a recovery email was attached.\n\n**The tools come from the server.** At install AnythingMCP asks deed.page for its tools, so you get the current set. Open the connector and click **Discover tools** to pick up new ones later.\n\n**Ask before publishing**: the AI should show the user what it is about to put online (the files, or a short summary of them, and the slug) and publish or update only after the user says yes. A `ttl_seconds` preview link is a good way to let them check it first. Don't run publishes from a schedule or another flow nobody is watching.\n\n**Working with it**: call `deed_page_publish_site` with `files` (for example `{\"index.html\": \"<!doctype html>...\"}`) and an optional `slug`; it returns the live `url` and a `version`. Publish to the same slug again, or use `deed_page_update_site`, to replace a page in place. `deed_page_get_site` checks whether a slug is live, `deed_page_list_sites` lists the owner's sites, and `deed_page_list_versions` with `deed_page_restore_version` rolls a site back. Set `ttl_seconds` for a preview link that expires on its own. For many or large files use `deed_page_plan_upload` and `deed_page_finalize_upload`, which skip files deed.page already has.\n\n**Errors**: a taken slug returns `slug_taken` and a reserved one `slug_reserved`, each with a suggestion; a racing or stale update returns `version_conflict`; going over the plan's limits returns a quota error. `deed_page_whoami` shows the plan and its limits, and `deed_page_get_upgrade_link` returns a checkout link for a paid plan; only open it when the user asks.\n\n**Safety**: deleting a site, rotating or revoking the token, managing Pro agent seats (creating a seat returns a new token), removing a custom domain and deleting a webhook install switched off. Rotating or revoking through the connector would also break the token stored here, so do that at deed.page and paste the new token instead. Turn the others on per tool if the AI should be allowed to remove things.",
+  "instructions": "This connector bridges **deed.page's official remote MCP server** (`https://deed.page/mcp`). deed.page is static web hosting built for AI agents: a page or a small site the AI writes (a report, a dashboard, a prototype, a document to share) goes live at `https://<slug>.deed.page/` with one tool call. deed.page's own server provides the tools: publish and update sites, check a slug, list versions and restore one, large uploads by manifest, custom domains, a site password, analytics and webhooks. AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles and the audit log, next to your other systems.\n\n**Everything published is public.** Anyone with the URL can open a site unless it has a password, so never let the AI publish secrets, credentials or private customer data. Sites stay out of the public gallery unless `listed` is true.\n\n**Setup (about 2 minutes)**:\n1. Get an owner token. deed.page has no sign-up: the first publish without a token creates one and returns it once as `token` (it starts with `deed_tok_`). Publish any page once by following https://deed.page/docs, or with any MCP client connected to `https://deed.page/mcp`, and copy the token from the response.\n2. Paste it as `DEED_PAGE_TOKEN` and install. AnythingMCP sends it as a Bearer token on every call, so every site the AI publishes through this connector belongs to that owner and can be updated, listed and deleted later. Leave the tools' own `token` argument empty.\n3. Keep the token safe: whoever has it controls every site of that owner. A lost token cannot be recovered unless a recovery email was attached.\n\n**The tools come from the server.** At install AnythingMCP asks deed.page for its tools, so you get the current set. Open the connector and click **Discover tools** to pick up new ones later.\n\n**Ask before publishing**: the AI should show the user what it is about to put online (the files, or a short summary of them, and the slug) and publish or update only after the user says yes. A `ttl_seconds` preview link is a good way to let them check it first. Don't run publishes from a schedule or another flow nobody is watching.\n\n**Working with it**: call `deed_page_publish_site` with `files` (for example `{\"index.html\": \"<!doctype html>...\"}`) and an optional `slug`; it returns the live `url` and a `version`. Publish to the same slug again, or use `deed_page_update_site`, to replace a page in place. `deed_page_get_site` checks whether a slug is live, `deed_page_list_sites` lists the owner's sites, and `deed_page_list_versions` with `deed_page_restore_version` rolls a site back. Set `ttl_seconds` for a preview link that expires on its own. For many or large files use `deed_page_plan_upload` and `deed_page_finalize_upload`, which skip files deed.page already has.\n\n**Errors**: a taken slug returns `slug_taken` and a reserved one `slug_reserved`, each with a suggestion; a racing or stale update returns `version_conflict`; going over the plan's limits returns a quota error. When a plan limit error appears, tell the user which limit was reached; `deed_page_whoami` shows the current plan and its limits, and deed.page's paid plans and their limits are listed at https://deed.page/pricing.\n\n**Safety**: deleting a site, rotating or revoking the token, managing Pro agent seats (creating a seat returns a new token), removing a custom domain and deleting a webhook install switched off. The billing and promotion tools (`deed_page_get_upgrade_link`, `deed_page_claim_share_credit`, `deed_page_set_badge`) install switched off too; an administrator can turn them on. Rotating or revoking through the connector would also break the token stored here, so do that at deed.page and paste the new token instead. Turn the others on per tool if the AI should be allowed to remove things.",
   "region": "intl",
   "category": "publishing",
   "icon": "deed-page",
@@ -38,7 +38,7 @@
   "tools": [
     {
       "name": "deed_page_publish_site",
-      "description": "Publishes files to a live permanent URL at a slug. Inputs: files (required), and optional slug, spa, ttl_seconds, merge, expected_version, via, heard_from, token, listed, category, tags, title, and description. Paths are stored exactly. Returns url, path_url, slug, version, listing, and token on the first anonymous publish. On deed.page, url and path_url are both https://{slug}.deed.page/. A lost token has no recovery unless an optional recovery email was attached. When expected_version does not match the live version, the result is version_conflict and nothing is written. A racing publish of the same slug returns version_conflict even without expected_version. Malware, executables, and credential-harvesting pages return content_rejected and are not stored. .bin is blocked by file type (it often has no MZ or ELF header). A raw octet-stream body is screened as one file. listed defaults to false, so the slug stays out of the public gallery unless listed is true. Password-protected sites cannot be listed. Before calling, show the user the files and slug and wait for an explicit yes; the result is public.",
+      "description": "Publishes files to a live permanent URL at a slug. Inputs: files (required), and optional slug, spa, ttl_seconds, merge, expected_version, token, listed, category, tags, title, and description. Paths are stored exactly. Returns url, path_url, slug, version, listing, and token on the first anonymous publish. On deed.page, url and path_url are both https://{slug}.deed.page/. A lost token has no recovery unless an optional recovery email was attached. When expected_version does not match the live version, the result is version_conflict and nothing is written. A racing publish of the same slug returns version_conflict even without expected_version. Malware, executables, and credential-harvesting pages return content_rejected and are not stored. .bin is blocked by file type (it often has no MZ or ELF header). A raw octet-stream body is screened as one file. listed defaults to false, so the slug stays out of the public gallery unless listed is true. Password-protected sites cannot be listed. Before calling, show the user the files and slug and wait for an explicit yes; the result is public.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -83,14 +83,6 @@
           "expected_version": {
             "type": "string",
             "description": "Live version this write is based on, such as \"v3\". If the slug is no longer at that version, the result is version_conflict and nothing is written. A racing publish of the same slug returns version_conflict even when this is omitted."
-          },
-          "via": {
-            "type": "string",
-            "description": "Optional label stored with the publish. At most 80 characters. An IP address, a URL, or an email address is not stored. A non-empty value replaces the X-Via header."
-          },
-          "heard_from": {
-            "type": "string",
-            "description": "Optional. Where you or your user found deed.page, such as a skill repo, a directory, a blog post, X, or a friend. Free text, at most 200 characters. An email address, IP address, or phone number is stored as [redacted]. A URL or hostname is kept. Omit it and signup continues."
           },
           "listed": {
             "type": "boolean",
@@ -147,11 +139,15 @@
         "idempotentHint": false,
         "openWorldHint": true,
         "title": "Publish a site"
-      }
+      },
+      "omitParameters": [
+        "via",
+        "heard_from"
+      ]
     },
     {
       "name": "deed_page_update_site",
-      "description": "Replaces the files of a slug owned by the token, or, when merge is true, adds and overwrites only the paths sent. Inputs: slug, files, and optional spa, merge, expected_version, via, token, listed, category, tags, title, and description. Returns url, path_url, slug, listing, and a new version. When expected_version does not match the live version, the result is version_conflict and nothing is written. Two racing updates return version_conflict even without expected_version. listed defaults to false. Password-protected sites cannot be listed. A new version of a listed slug runs the gallery checks again. Before calling, show the user the files and slug and wait for an explicit yes; the result is public.",
+      "description": "Replaces the files of a slug owned by the token, or, when merge is true, adds and overwrites only the paths sent. Inputs: slug, files, and optional spa, merge, expected_version, token, listed, category, tags, title, and description. Returns url, path_url, slug, listing, and a new version. When expected_version does not match the live version, the result is version_conflict and nothing is written. Two racing updates return version_conflict even without expected_version. listed defaults to false. Password-protected sites cannot be listed. A new version of a listed slug runs the gallery checks again. Before calling, show the user the files and slug and wait for an explicit yes; the result is public.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -192,10 +188,6 @@
           "expected_version": {
             "type": "string",
             "description": "Live version this update is based on, such as \"v3\". If the site has moved on, the call returns version_conflict with no write. Omit it and a concurrent update still returns version_conflict rather than dropping files."
-          },
-          "via": {
-            "type": "string",
-            "description": "Optional label stored with the publish. At most 80 characters. An IP address, a URL, or an email address is not stored. A non-empty value replaces the X-Via header."
           },
           "listed": {
             "type": "boolean",
@@ -253,7 +245,10 @@
         "idempotentHint": true,
         "openWorldHint": true,
         "title": "Update a site"
-      }
+      },
+      "omitParameters": [
+        "via"
+      ]
     },
     {
       "name": "deed_page_get_site",
@@ -468,7 +463,7 @@
     },
     {
       "name": "deed_page_get_upgrade_link",
-      "description": "Creates a Stripe Checkout URL that upgrades this token's owner to Hobby ($3/mo) or Pro ($15/mo). Call it when the user asks to upgrade, or right after a tool error that has upgrade_url / user_message (a plan limit). Show the returned checkout_url (or user_message) and the price to the user; normally the human opens it and pays. You may complete the payment yourself only if your human explicitly approved this purchase and you have a payment tool they approved. Never pay without that approval. When payment completes the same token gets the higher limits automatically, and the token's plan (plan.id) then reads hobby or pro. Inputs: plan (hobby or pro; omitted means the next plan up), token, optional how_heard (at most 200 characters, stored on the owner), and optional upgrade_trigger (the limit field from the error, custom_domain_limit, or manual). A token already on a paid plan gets portal_url instead. The call itself does not charge.",
+      "description": "Creates a Stripe Checkout URL that upgrades this token's owner to Hobby ($3/mo) or Pro ($15/mo). Call it only when the user asks for an upgrade link. Show the returned checkout_url and the price to the user; the user opens it and decides whether to pay. When payment completes the same token gets the higher limits automatically, and the token's plan (plan.id) then reads hobby or pro. Inputs: plan (hobby or pro; omitted means the next plan up), token and optional upgrade_trigger (the limit field from the error, custom_domain_limit, or manual). A token already on a paid plan gets portal_url instead. The call itself does not charge.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -479,10 +474,6 @@
               "pro"
             ],
             "description": "Plan to buy. Omit for the next plan above the current one (Free -> hobby, Hobby -> pro)."
-          },
-          "how_heard": {
-            "type": "string",
-            "description": "Optional note, at most 200 characters. Stored on the owner."
           },
           "upgrade_trigger": {
             "type": "string",
@@ -516,7 +507,11 @@
         "destructiveHint": false,
         "openWorldHint": true,
         "title": "Get a paid-plan checkout link"
-      }
+      },
+      "omitParameters": [
+        "how_heard"
+      ],
+      "enabled": false
     },
     {
       "name": "deed_page_claim_share_credit",
@@ -547,7 +542,8 @@
         "idempotentHint": false,
         "openWorldHint": true,
         "title": "Claim the one-time share credit"
-      }
+      },
+      "enabled": false
     },
     {
       "name": "deed_page_list_versions",
@@ -758,7 +754,7 @@
     },
     {
       "name": "deed_page_plan_upload",
-      "description": "Accepts a file manifest and returns which hashes are already stored, a direct upload URL for each missing hash, and a session id. Inputs: files as {path, sha256, size, content_type?}, and optional slug, spa, merge, ttl_seconds, expected_version, via, heard_from, and token. Applies when the files are larger than about 4 MB, or when each sha256 is already known. Does not publish by itself. Per-site size limits are unchanged.",
+      "description": "Accepts a file manifest and returns which hashes are already stored, a direct upload URL for each missing hash, and a session id. Inputs: files as {path, sha256, size, content_type?}, and optional slug, spa, merge, ttl_seconds, expected_version, and token. Applies when the files are larger than about 4 MB, or when each sha256 is already known. Does not publish by itself. Per-site size limits are unchanged.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -808,14 +804,6 @@
             "type": "string",
             "description": "Live version this upload must match, such as \"v3\"."
           },
-          "via": {
-            "type": "string",
-            "description": "Optional label stored with the publish. At most 80 characters. An IP address, a URL, or an email address is not stored. A non-empty value replaces the X-Via header."
-          },
-          "heard_from": {
-            "type": "string",
-            "description": "Optional. Where you or your user found deed.page, such as a skill repo, a directory, a blog post, X, or a friend. Free text, at most 200 characters. An email address, IP address, or phone number is stored as [redacted]. A URL or hostname is kept. Omit it and signup continues."
-          },
           "token": {
             "type": "string",
             "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
@@ -835,11 +823,15 @@
         "idempotentHint": false,
         "openWorldHint": true,
         "title": "Plan a large upload"
-      }
+      },
+      "omitParameters": [
+        "via",
+        "heard_from"
+      ]
     },
     {
       "name": "deed_page_finalize_upload",
-      "description": "Checks uploaded hashes, screens the new bytes, and commits one version under the slug lock. Inputs: session (upl_...), optional expected_version, via, heard_from, and token. A stale expected_version returns version_conflict and writes nothing. A bad hash returns hash_mismatch. An expired session returns session_expired.",
+      "description": "Checks uploaded hashes, screens the new bytes, and commits one version under the slug lock. Inputs: session (upl_...), optional expected_version, and token. A stale expected_version returns version_conflict and writes nothing. A bad hash returns hash_mismatch. An expired session returns session_expired.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -850,14 +842,6 @@
           "expected_version": {
             "type": "string",
             "description": "Version the caller expects to be live. When it does not match, the result is version_conflict and nothing is written."
-          },
-          "via": {
-            "type": "string",
-            "description": "Optional label stored with the publish. At most 80 characters. An IP address, a URL, or an email address is not stored. A non-empty value replaces the X-Via header."
-          },
-          "heard_from": {
-            "type": "string",
-            "description": "Optional. Where you or your user found deed.page, such as a skill repo, a directory, a blog post, X, or a friend. Free text, at most 200 characters. An email address, IP address, or phone number is stored as [redacted]. A URL or hostname is kept. Omit it and signup continues."
           },
           "token": {
             "type": "string",
@@ -878,7 +862,11 @@
         "idempotentHint": true,
         "openWorldHint": true,
         "title": "Finalize a large upload"
-      }
+      },
+      "omitParameters": [
+        "via",
+        "heard_from"
+      ]
     },
     {
       "name": "deed_page_get_manifest",
@@ -1087,7 +1075,8 @@
         "idempotentHint": true,
         "openWorldHint": false,
         "title": "Set the Free-plan badge"
-      }
+      },
+      "enabled": false
     },
     {
       "name": "deed_page_create_webhook",

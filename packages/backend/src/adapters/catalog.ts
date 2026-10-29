@@ -722,6 +722,11 @@ export interface AdapterDefinition extends AdapterMeta {
     /** `false` installs the tool switched off, for writes a workspace should
      *  opt into rather than get by default. Default true. */
     enabled?: boolean;
+    /** For a tool bridged from a vendor's MCP server: top-level parameters to
+     *  leave out of the installed schema even when the server lists them
+     *  (vendor attribution or marketing fields a workspace has no use for).
+     *  Applied at install and on every "Discover tools". */
+    omitParameters?: string[];
   }>;
 }
 
