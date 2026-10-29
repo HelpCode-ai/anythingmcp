@@ -464,7 +464,7 @@
         "properties": {
           "offset": { "type": "integer", "description": "Return updates with update_id >= this value. Pass last_seen_id+1 to ack prior batch." },
           "limit": { "type": "integer", "description": "Max updates 1-100 (default 100)." },
-          "timeout": { "type": "integer", "description": "Long-poll wait in seconds 0-50 (default 0 = short poll). Don't use long timeouts in a request/response MCP." },
+          "timeout": { "type": "integer", "minimum": 0, "maximum": 25, "description": "Long-poll wait in seconds 0-25 (default 0 = short poll). The call is cut off after 30 s, so a longer wait fails instead of returning updates." },
           "allowed_updates": { "type": "array", "description": "Update types to receive, e.g. ['message','callback_query']. Omit for all except chat_member." }
         }
       },

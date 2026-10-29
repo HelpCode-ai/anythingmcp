@@ -40,6 +40,22 @@ describe('etsy adapter — static spec conformance', () => {
    * in Etsy's OpenAPI spec. The adapter had `/active` appended and got 404
    * "Resource not found" on all 37 calls (19 workspaces, 8-22 Oct 2026).
    */
+  /**
+   * getListing accepts only these includes. Models kept asking for
+   * includes=Inventory and got 400 on every call (22 in 6 workspaces on
+   * 28 Oct 2026); inventory has its own tool.
+   */
+  it('limits listing includes to the values Etsy accepts', () => {
+    for (const name of ['etsy_get_listing', 'etsy_get_listings_by_ids']) {
+      const tool = (adapter as any).tools.find((t: any) => t.name === name);
+      const includes = new RegExp(tool.parameters.properties.includes.pattern);
+      expect(includes.test('Images,Shop')).toBe(true);
+      expect(includes.test('Images,Inventory')).toBe(false);
+      expect(includes.test('Inventory')).toBe(false);
+      expect(tool.parameters.properties.includes.description).toContain('etsy_read_listing_inventory');
+    }
+  });
+
   it('lists a shop section with the path from the Etsy OpenAPI spec', () => {
     const tool = (adapter as any).tools.find((t: any) => t.name === 'etsy_get_listings_by_shop_section');
     expect(tool.endpointMapping.path).toBe('/shops/{shop_id}/shop-sections/listings');
