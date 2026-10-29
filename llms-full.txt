@@ -3873,7 +3873,10 @@ Behaviour worth knowing:
   API key or bearer token, and in anonymous mode, there is no user — the variable resolves to an **empty
   string** rather than leaking a literal `{{amcp.…}}` to the target.
 - **Non-spoofable.** The values are resolved server-side from the authenticated request and merged *after*
-  connector env vars, so neither a workspace variable nor a tool argument can shadow them.
+  connector env vars, so neither a workspace variable nor a tool argument can shadow them. Users cannot
+  change their own e-mail address either (`PUT /api/users/me` refuses a new one, on Cloud and self-hosted),
+  so `{{amcp.user_email}}` is the address the account was created with, or the one your identity provider
+  sets through SCIM.
 - **Typos are rejected** when you save the tool, since at runtime an unknown reserved variable would silently
   resolve to empty.
 - These variables apply to `baseUrl`, connector headers and the whole endpoint mapping — `path`,
