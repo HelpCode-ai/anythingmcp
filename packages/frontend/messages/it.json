@@ -904,5 +904,320 @@
     "CONNECTION_STRING": "Connection string",
     "HMAC": "Firma HMAC",
     "LOGIN_TOKEN": "Token di login"
+  },
+  "connectorSetup": {
+    "notAvailable": "Questo connettore non è disponibile.",
+    "authIncomplete": "L'autorizzazione non è stata completata. Riprova.",
+    "authStartFailed": "Impossibile avviare l'autorizzazione.",
+    "genericError": "Qualcosa è andato storto.",
+    "backToMarketplace": "Torna al marketplace",
+    "loading": "Caricamento…",
+    "groups": {
+      "address": "Indirizzo",
+      "credential": "Credenziali",
+      "setting": "Impostazioni"
+    },
+    "actions": {
+      "install": "Installa {name}",
+      "saveAndSignIn": "Salva e accedi a {name}",
+      "checkAndSave": "Verifica e salva",
+      "checkAndInstall": "Verifica e installa",
+      "checkAndSignIn": "Verifica e accedi a {name}",
+      "checkAndConnect": "Verifica e collega"
+    },
+    "verify": {
+      "authFailed": "{name} non ha accettato queste credenziali.",
+      "invalidInput": "Alcuni valori mancano o non sono validi.",
+      "providerError": "{name} ha risposto con un errore.",
+      "suggest": "Configura invece {name}",
+      "suggestOther": "Configura invece l'altro connettore",
+      "saveAnyway": "Salva comunque"
+    },
+    "field": {
+      "required": "Obbligatorio",
+      "looksWrongExample": "Sembra errato. Esempio: {example}",
+      "looksWrong": "Sembra errato",
+      "optional": "(facoltativo)",
+      "stored": "Salvato. Lascia vuoto per mantenerlo",
+      "hide": "Nascondi",
+      "show": "Mostra",
+      "open": "Apri"
+    },
+    "advanced": "Avanzate",
+    "guide": {
+      "oauthNext": "Poi {name} ti chiede di approvare l'accesso. Dopo torni qui automaticamente.",
+      "back": "Indietro",
+      "checking": "Verifica in corso…",
+      "continue": "Continua",
+      "tickHint": "Spunta la casella qui sopra quando hai finito."
+    },
+    "title": {
+      "finish": "Completa la configurazione di {name}",
+      "setUp": "Configura {name}"
+    },
+    "useGuide": "Preferisci passo dopo passo? Usa la configurazione guidata",
+    "beforeStart": "Prima di iniziare",
+    "oauth": {
+      "selfRegistering": "Dopo aver salvato accedi una volta a {name}. AnythingMCP si registra da solo presso il server MCP di {name}, quindi non devi creare nessuna app né copiare chiavi.",
+      "ownApp": "Ti serve una tua app su {name}, poi accedi una volta. Nelle impostazioni dell'app aggiungi questo URL di callback (detto anche redirect URI) esattamente come mostrato:"
+    },
+    "copy": "Copia",
+    "noInput": "Niente da inserire: funziona senza account.",
+    "working": "In corso…",
+    "saveDraft": "Salva come bozza",
+    "draftHint": "Una bozza non viene proposta al tuo client AI finché non è completa.",
+    "stepByStep": "Guida passo passo"
+  },
+  "setupGuide": {
+    "stuck": "Bloccato? Chiedici aiuto",
+    "intro": {
+      "title": "Collega {name} alla tua AI",
+      "steps": "{count, plural, one {# passaggio} other {# passaggi}}",
+      "examples": "Poi chiedi alla tua AI cose come",
+      "needs": "Cosa ti serve",
+      "whyOwnApp": "Perché mi serve una mia app su {name}?",
+      "why": "Perché questa configurazione?",
+      "resume": "Continua dal passaggio {step}: {title}",
+      "startOver": "Ricomincia",
+      "start": "Inizia",
+      "skipTo": "Hai già fatto il resto? Vai al passaggio {step}: {title}",
+      "doneBefore": "L'hai già fatto?",
+      "onePage": "Inserisci tutto in una pagina"
+    },
+    "stepper": {
+      "useIt": "Usalo",
+      "label": "Avanzamento della configurazione"
+    },
+    "value": {
+      "select": "Seleziona <b>{value}</b>",
+      "copied": "Copiato ✓",
+      "copy": "Copia"
+    },
+    "step": {
+      "position": "Passaggio {step} di {total}",
+      "newTab": "(si apre in una nuova scheda)",
+      "fillPrevious": "{action}: compila prima il passaggio precedente.",
+      "screenshot": "Screenshot del {date}; ora la pagina potrebbe essere leggermente diversa.",
+      "problems": "Problemi comuni"
+    }
+  },
+  "setupSuccess": {
+    "copied": "Copiato ✓",
+    "copy": "Copia",
+    "yourServer": "il tuo server MCP",
+    "defaultPrompt": "Cosa puoi fare con {name}?",
+    "serverUrl": "URL del tuo server MCP",
+    "tabs": {
+      "label": "Client AI",
+      "other": "Altro"
+    },
+    "claude": {
+      "step1": "Fai clic su <b>Aggiungi a Claude</b>: Claude apre la finestra <b>Add custom connector</b>.",
+      "step2": "Inserisci un nome (es. AnythingMCP), incolla l'URL qui sotto e fai clic su <b>Add</b>.",
+      "step3": "Fai clic su <b>Connect</b> e approva l'accesso.",
+      "add": "Aggiungi a Claude",
+      "noDialog": "La finestra non compare? In Claude apri <b>Customize → Connectors</b>, fai clic su <b>+</b>, poi su <b>Add custom connector</b>.",
+      "directory": "Oppure aggiungi AnythingMCP dalla <link>Claude Directory</link> e scegli questo server quando accedi."
+    },
+    "chatgpt": {
+      "step1": "Apri <b>Plugins</b> in ChatGPT, fai clic su <b>+</b>, poi su <b>Add custom MCP server</b>.",
+      "step2": "Inserisci un nome, incolla l'URL qui sotto come <b>Server URL</b> e lascia <b>Authentication</b> su <b>OAuth</b>.",
+      "step3": "Seleziona <b>I understand and want to continue</b>, poi <b>Create as a plugin</b>, e accedi ad AnythingMCP.",
+      "step4": "Installa il plugin dai tuoi plugin personali, poi digita <b>@</b> in una chat per usarlo.",
+      "open": "Apri i plugin di ChatGPT",
+      "plan": "I server MCP personalizzati richiedono un piano ChatGPT a pagamento. In un workspace Business solo admin e owner possono aggiungerli."
+    },
+    "copilot": {
+      "body": "Fai clic qui sotto: VS Code si apre e propone di installare il server per GitHub Copilot. Approva l'accesso ad AnythingMCP quando richiesto, poi scegli gli strumenti in Copilot Chat → <b>Tools</b>.",
+      "add": "Aggiungi a VS Code",
+      "other": "Visual Studio, JetBrains, Eclipse o Xcode: vedi <link>la pagina del server</link>."
+    },
+    "other": {
+      "body": "Cursor, Claude Code, Claude Desktop, Gemini CLI, Meta Muse, Windsurf e altri: la pagina del server ha i passaggi per ognuno.",
+      "open": "Apri {name}"
+    },
+    "title": "{name} è collegato",
+    "verified": "AnythingMCP l'ha verificato con {name}: funziona.",
+    "ready": "Ora la tua AI può usare {name}.",
+    "back": {
+      "button": "Torna a {name}",
+      "closeTab": "Puoi chiudere questa scheda e tornare a {name}."
+    },
+    "tryAsking": "Prova a chiedere",
+    "useIt": "Usalo nella tua AI",
+    "loading": "Caricamento…",
+    "noServer": "Aggiungi il connettore a un server MCP per raggiungerlo da un client AI: <link>apri il connettore</link>.",
+    "inUse": "{name} è su <b>{server}</b>, che il tuo client AI usa già. Apri una nuova chat e chiedigli qualcosa dalla lista qui sopra.",
+    "anotherClient": "Collega un altro client AI",
+    "apiKeysOnly": "Questa istanza autentica i client AI con chiavi API (<code>MCP_AUTH_MODE={mode}</code>), quindi aggiungerla tramite URL in Claude o ChatGPT non funziona. Apri <link>{server}</link> per le configurazioni dei client con chiave API.",
+    "localhost": "Questo URL punta a localhost: Claude e ChatGPT sul web non possono raggiungerlo. Usa un client su questo computer (Claude Code, Cursor, VS Code) oppure dai ad AnythingMCP un indirizzo https pubblico.",
+    "sample": "Cosa ha risposto {name} alla verifica",
+    "openConnector": "Apri il connettore",
+    "addAnother": "Aggiungi un'altra app"
+  },
+  "headersEditor": {
+    "label": "Header personalizzati",
+    "hint": "Inviati a ogni richiesta verso questa API. Utili per le API che richiedono header aggiuntivi (es. Autotask: Username, Secret, ApiIntegrationCode).",
+    "name": "Nome dell'header",
+    "valueOf": "Valore dell'header {name}",
+    "valueOfNew": "Valore del nuovo header",
+    "stored": "Impostato: lascia vuoto per mantenere il valore attuale",
+    "value": "valore",
+    "remove": "Rimuovi header",
+    "add": "+ Aggiungi header"
+  },
+  "mcpAssign": {
+    "nameRequired": "Inserisci un nome per il nuovo server MCP",
+    "selectRequired": "Seleziona un server MCP o creane uno nuovo",
+    "assignFailed": "Impossibile assegnare il connettore",
+    "close": "Chiudi",
+    "title": "Aggiungi a un server MCP",
+    "description": "Scegli quale server MCP deve esporre gli strumenti di <b>{name}</b> agli agenti AI.",
+    "loading": "Caricamento dei server MCP...",
+    "search": "Cerca server MCP...",
+    "connectorCount": "{count, plural, one {# connettore} other {# connettori}}",
+    "createNew": "Crea un nuovo server MCP",
+    "serverName": "Nome del server",
+    "serverNamePlaceholder": "es. Il mio server API",
+    "skip": "Salta per ora",
+    "assigning": "Assegnazione...",
+    "assign": "Assegna al server MCP"
+  },
+  "connectorNew": {
+    "back": "Connettori",
+    "title": "Nuovo connettore",
+    "chooseType": "Scegli il tipo di connettore",
+    "chooseTypeHint": "Parti da un connettore pronto o collega la tua API.",
+    "marketplace": {
+      "title": "Marketplace",
+      "description": "Scegli un connettore pronto per un servizio diffuso. Autenticazione e strumenti sono già configurati, aggiungi solo le tue credenziali."
+    },
+    "types": {
+      "REST": {
+        "name": "API REST",
+        "description": "Collegati a qualsiasi API REST. Importa da una specifica OpenAPI/Swagger o configura a mano."
+      },
+      "SOAP": {
+        "name": "Servizio SOAP",
+        "description": "Collegati a servizi web SOAP tramite WSDL."
+      },
+      "GRAPHQL": {
+        "name": "GraphQL",
+        "description": "Collegati ad API GraphQL con introspezione dello schema."
+      },
+      "ODATA": {
+        "name": "OData",
+        "description": "Collegati a servizi OData V2/V4, inclusi SAP S/4HANA e SAP Gateway. Servizi, campi ed etichette vengono letti da $metadata."
+      },
+      "MCP": {
+        "name": "Server MCP",
+        "description": "Ponte verso un altro server MCP: riunisci più server MCP in uno."
+      },
+      "DATABASE": {
+        "name": "Database",
+        "description": "Collegati a PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB o SQLite. Supporta la modalità sola lettura o lettura e scrittura."
+      }
+    },
+    "configure": "Configura {type}",
+    "test": {
+      "rejected": "Credenziali rifiutate: ",
+      "rejectedStatus": "Credenziali rifiutate ({status}): ",
+      "notFound": "Non trovato: ",
+      "unreachable": "Non raggiungibile: ",
+      "error": "Errore: ",
+      "checkCredentials": "Controlla la chiave API, il token o le credenziali OAuth di questo connettore, poi riprova il test.",
+      "ssrf": "→ Aggiungi <code>{host}</code> alla allowlist SSRF"
+    },
+    "fields": {
+      "name": "Nome del connettore",
+      "namePlaceholder": "es. La mia API REST",
+      "connectionString": "Connection string",
+      "baseUrl": "URL di base",
+      "username": "Nome utente",
+      "password": "Password",
+      "optional": "facoltativo"
+    },
+    "catalogMatch": {
+      "title": "{count, plural, one {Esiste un connettore pronto per questa API} other {Esistono connettori pronti per questa API}}",
+      "description": "Strumenti, descrizioni e accesso sono già configurati e testati, e riceve gli aggiornamenti del catalogo.",
+      "tools": "{count, plural, one {# strumento} other {# strumenti}}",
+      "setUp": "Configura questo →"
+    },
+    "mcpUrlHint": "Incolla l'URL completo dell'endpoint MCP, incluso il percorso: ad es. un server gestito da Snowflake in <mono>{example}</mono>. Un host senza percorso usa per impostazione predefinita <mono>{fallback}</mono>.",
+    "odata": {
+      "sapHint": "L'URL di base è l'host SAP; i servizi si trovano tramite il catalogo dei servizi di SAP. Lascia non selezionato per un singolo servizio OData, usando la sua service root come URL di base.",
+      "sapClient": "Mandante SAP",
+      "sapClientPlaceholder": "es. 100",
+      "sapLanguage": "Lingua SAP",
+      "toolsHint": "Il connettore include strumenti per elencare i servizi, leggerne campi ed etichette, interrogare gli entity set e leggere singole entità. Strumenti specifici per ogni entity set si possono importare dopo da $metadata."
+    },
+    "database": {
+      "accessMode": "Modalità di accesso",
+      "readOnly": "Sola lettura",
+      "readWrite": "Lettura e scrittura",
+      "readOnlyHint": "Saranno consentite solo query SELECT. Sicuro per analisi e report.",
+      "readWriteHint": "Saranno consentite tutte le operazioni SQL (SELECT, INSERT, UPDATE, DELETE). Usa con cautela."
+    },
+    "spec": {
+      "openapi": "URL della specifica OpenAPI (facoltativo)",
+      "graphql": "URL di introspezione GraphQL (facoltativo)",
+      "wsdl": "URL WSDL (facoltativo)",
+      "hint": "Indica l'URL di una specifica per generare automaticamente gli strumenti MCP."
+    },
+    "auth": {
+      "label": "Autenticazione",
+      "none": "Nessuna",
+      "apiKey": "Chiave API",
+      "loginToken": "Login → Token (rinnovo automatico)"
+    },
+    "oauth": {
+      "passwordRequired": "Inserisci il nome utente e la password che il password grant invia all'URL del token.",
+      "mcpHint": "Dopo aver creato il connettore verrai reindirizzato per autorizzare l'accesso al server MCP remoto tramite OAuth. Gli strumenti verranno rilevati automaticamente dopo l'autorizzazione.",
+      "grant": "Tipo di grant",
+      "grantCode": "Authorization code (accesso presso il provider)",
+      "grantClient": "Client credentials",
+      "grantPassword": "Password (nome utente e password)",
+      "passwordHint": "Per le API che emettono token senza refresh token: quando scade, ne viene richiesto uno nuovo con nome utente e password. Datto RMM: nome utente = chiave API, password = secret API, client ID public-client, secret public, HTTP Basic.",
+      "authorizationUrl": "URL di autorizzazione",
+      "scopesPlaceholder": "read write (separati da spazi, facoltativo)",
+      "tokenAuth": "Autenticazione all'endpoint del token",
+      "secretInBody": "Client secret nel body",
+      "secretInBodyDefault": "Client secret nel body (predefinito)",
+      "basicHeader": "Header HTTP Basic (client_secret_basic)",
+      "basicHeaderDefault": "Header HTTP Basic (client_secret_basic) (predefinito)",
+      "tokenAuthMachineHint": "Come il client ID e il secret raggiungono l'URL del token.",
+      "tokenAuthHint": "Passa a HTTP Basic se il provider risponde 401 durante lo scambio del codice: DATEV lo richiede. Vale anche per i rinnovi del token.",
+      "machineHint": "Nessun accesso necessario: il connettore richiede il token di accesso all'URL del token, e uno nuovo quando scade.",
+      "redirectHint": "Dopo aver creato il connettore verrai reindirizzato per autorizzare l'accesso tramite OAuth2. I token verranno salvati in modo sicuro.",
+      "callback": "Imposta nel tuo provider OAuth questo <b>Redirect / Callback URI</b>:"
+    },
+    "apiKey": {
+      "header": "Nome dell'header",
+      "headerInvalid": "L'header HTTP in cui viene inviata la chiave, es. X-API-Key: solo lettere, cifre e -, senza spazi.",
+      "key": "Chiave API"
+    },
+    "wsSecurity": {
+      "passwordType": "Tipo di password",
+      "passwordTextDefault": "PasswordText (predefinito)",
+      "hint": "Inviato come UsernameToken wsse:Security nell'header SOAP. PasswordDigest invia un hash della password con nonce e timestamp invece della password stessa."
+    },
+    "loginToken": {
+      "invalidJson": "Il body del login deve essere un JSON valido.",
+      "intro": "Per le API con token di breve durata (es. HRworks): inviamo con POST le tue credenziali all'endpoint di login, leggiamo il token dalla risposta, lo inviamo come Bearer token e lo rinnoviamo automaticamente prima che scada.",
+      "url": "URL di login",
+      "username": "Nome utente / Access key",
+      "usernamePlaceholder": "access key",
+      "password": "Password / Secret",
+      "passwordPlaceholder": "secret",
+      "body": "Body della richiesta di login (JSON)",
+      "bodyHint": "Body inviato all'URL di login. Usa i segnaposto <code>{user}</code> / <code>{pass}</code>. HRworks usa <code>{example}</code>.",
+      "method": "Metodo",
+      "tokenPath": "Percorso JSON del token",
+      "ttl": "TTL del token (s)",
+      "refreshOn401": "In caso di risposta 401, rifai il login e riprova automaticamente"
+    },
+    "creating": "Creazione...",
+    "create": "Crea connettore",
+    "testConnection": "Testa la connessione"
   }
 }

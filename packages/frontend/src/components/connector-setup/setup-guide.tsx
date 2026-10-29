@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useTranslations } from 'next-intl';
 import type { AdapterSetupInfo, SetupGuide, SetupGuideStep } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -10,7 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { openSupportChat } from '@/components/support-chat';
 import { copyText } from '@/lib/clipboard';
-import { effortLabel, effortTone } from '@/lib/setup-effort';
+import { effortTone } from '@/lib/setup-effort';
+import { useEffortLabel } from '@/lib/use-effort-label';
 import { cn } from '@/lib/utils';
 
 /**
@@ -48,6 +50,7 @@ export function GuideMarkdown({ children, className }: { children: string; class
 /** "Stuck? Ask us": opens the support chat where there is one (Cloud). */
 export function StuckLink({ name }: { name: string }) {
   const { deploymentMode } = useAuth();
+  const t = useTranslations('setupGuide');
   if (deploymentMode !== 'cloud') return null;
   return (
     <button
@@ -57,7 +60,7 @@ export function StuckLink({ name }: { name: string }) {
       }}
       className="text-sm text-[var(--text-3)] underline hover:text-[var(--text)]"
     >
-      Stuck? Ask us
+      {t('stuck')}
     </button>
   );
 }
@@ -83,25 +86,25 @@ export function GuideIntro({
   skipTo?: { index: number; title: string } | null;
   onSkip?: () => void;
 }) {
+  const t = useTranslations('setupGuide');
+  const effortLabel = useEffortLabel();
   const short = info.name.split(' ')[0];
   return (
     <div className="space-y-5">
       <div className="flex items-start gap-3">
         <ConnectorLogo icon={info.icon} name={info.name} />
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-[var(--text)]">Connect {info.name} to your AI</h1>
+          <h1 className="text-lg font-semibold text-[var(--text)]">{t('intro.title', { name: info.name })}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--text-3)]">
             <Badge tone={effortTone(guide)}>{effortLabel(guide)}</Badge>
-            <span>
-              {guide.steps.length} step{guide.steps.length === 1 ? '' : 's'}
-            </span>
+            <span>{t('intro.steps', { count: guide.steps.length })}</span>
           </div>
         </div>
       </div>
 
       {guide.examples && guide.examples.length > 0 && (
         <div>
-          <h2 className="mb-2 text-sm font-semibold text-[var(--text)]">Then ask your AI things like</h2>
+          <h2 className="mb-2 text-sm font-semibold text-[var(--text)]">{t('intro.examples')}</h2>
           <ul className="space-y-1.5">
             {guide.examples.map((ex) => (
               <li key={ex} className="rounded-[9px] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-2)]">
@@ -114,7 +117,7 @@ export function GuideIntro({
 
       {guide.needs && guide.needs.length > 0 && (
         <div>
-          <h2 className="mb-2 text-sm font-semibold text-[var(--text)]">What you need</h2>
+          <h2 className="mb-2 text-sm font-semibold text-[var(--text)]">{t('intro.needs')}</h2>
           <ul className="list-disc space-y-1 pl-5 text-sm text-[var(--text-2)]">
             {guide.needs.map((n) => (
               <li key={n}>
@@ -128,7 +131,7 @@ export function GuideIntro({
       {guide.why && (
         <details className="rounded-[9px] border border-[var(--border)] px-3 py-2">
           <summary className="cursor-pointer text-sm font-medium text-[var(--text)]">
-            {guide.effort === 'own_app' ? `Why do I need my own ${short} app?` : 'Why this setup?'}
+            {guide.effort === 'own_app' ? t('intro.whyOwnApp', { name: short }) : t('intro.why')}
           </summary>
           <GuideMarkdown className="mt-2">{guide.why}</GuideMarkdown>
         </details>
@@ -137,26 +140,26 @@ export function GuideIntro({
       <div className="flex flex-wrap items-center gap-3">
         {resume ? (
           <>
-            <Button onClick={onStart}>Continue at step {resume.index + 1}: {resume.title}</Button>
+            <Button onClick={onStart}>{t('intro.resume', { step: resume.index + 1, title: resume.title })}</Button>
             <button type="button" onClick={onRestart} className="text-sm text-[var(--text-3)] underline hover:text-[var(--text)]">
-              Start over
+              {t('intro.startOver')}
             </button>
           </>
         ) : (
           <>
-            <Button onClick={onStart}>Start</Button>
+            <Button onClick={onStart}>{t('intro.start')}</Button>
             {skipTo && onSkip && (
               <button type="button" onClick={onSkip} className="text-sm text-[var(--text-3)] underline hover:text-[var(--text)]">
-                Done the rest already? Go to step {skipTo.index + 1}: {skipTo.title}
+                {t('intro.skipTo', { step: skipTo.index + 1, title: skipTo.title })}
               </button>
             )}
           </>
         )}
       </div>
       <p className="text-xs text-[var(--text-3)]">
-        Done this before?{' '}
+        {t('intro.doneBefore')}{' '}
         <button type="button" onClick={onShowForm} className="underline hover:text-[var(--text)]">
-          Enter everything on one page
+          {t('intro.onePage')}
         </button>
       </p>
     </div>
@@ -165,9 +168,10 @@ export function GuideIntro({
 
 /** Where the user is: numbered steps, then "Use it". Titles from sm up. */
 export function GuideStepper({ steps, current }: { steps: SetupGuideStep[]; current: number }) {
-  const items = [...steps.map((s) => s.title), 'Use it'];
+  const t = useTranslations('setupGuide');
+  const items = [...steps.map((s) => s.title), t('stepper.useIt')];
   return (
-    <ol className="flex items-center gap-1.5" aria-label="Setup progress">
+    <ol className="flex items-center gap-1.5" aria-label={t('stepper.label')}>
       {items.map((title, i) => {
         const done = i < current;
         const active = i === current;
@@ -202,13 +206,14 @@ export function GuideStepper({ steps, current }: { steps: SetupGuideStep[]; curr
 
 /** One value to type at the provider, with a copy button; or an option to pick there. */
 function GuideValue({ label, value, note, pick }: { label: string; value: string; note?: string; pick?: boolean }) {
+  const t = useTranslations('setupGuide');
   const [copied, setCopied] = useState(false);
   return (
     <div className="space-y-1">
       <div className="text-xs font-medium text-[var(--text-3)]">{label}</div>
       {pick ? (
         <div className="text-sm text-[var(--text)]">
-          Select <strong>{value}</strong>
+          {t.rich('value.select', { value, b: (chunks) => <strong>{chunks}</strong> })}
         </div>
       ) : (
         <div className="flex items-start gap-2">
@@ -233,7 +238,7 @@ function GuideValue({ label, value, note, pick }: { label: string; value: string
               }
             }}
           >
-            {copied ? 'Copied ✓' : 'Copy'}
+            {copied ? t('value.copied') : t('value.copy')}
           </Button>
         </div>
       )}
@@ -267,12 +272,13 @@ export function GuideStepView({
   onConfirm: (v: boolean) => void;
   children?: ReactNode;
 }) {
+  const t = useTranslations('setupGuide');
   const fill = (v: string) => v.replace(/\{\{redirectUri\}\}/g, redirectUri ?? '…');
   return (
     <div className="space-y-4">
       <div>
         <p className="text-xs font-medium uppercase tracking-[0.06em] text-[var(--text-3)]">
-          Step {index + 1} of {total}
+          {t('step.position', { step: index + 1, total })}
         </p>
         <h2 className="mt-0.5 text-lg font-semibold text-[var(--text)]">{step.title}</h2>
       </div>
@@ -289,16 +295,16 @@ export function GuideStepView({
           >
             {step.action.label}
             <span aria-hidden>↗</span>
-            <span className="sr-only">(opens in a new tab)</span>
+            <span className="sr-only">{t('step.newTab')}</span>
           </a>
         ) : (
-          <p className="text-xs text-[var(--text-3)]">{step.action.label}: fill in the previous step first.</p>
+          <p className="text-xs text-[var(--text-3)]">{t('step.fillPrevious', { action: step.action.label })}</p>
         ))}
 
       {step.image && (
         <figure className="space-y-1">
           <img src={step.image.src} alt={step.image.alt} className="w-full rounded-[9px] border border-[var(--border)]" />
-          <figcaption className="text-[11px] text-[var(--text-3)]">Screenshot from {step.image.capturedAt}; the page may look slightly different now.</figcaption>
+          <figcaption className="text-[11px] text-[var(--text-3)]">{t('step.screenshot', { date: step.image.capturedAt })}</figcaption>
         </figure>
       )}
 
@@ -326,7 +332,7 @@ export function GuideStepView({
 
       {step.problems && step.problems.length > 0 && (
         <details className="rounded-[9px] border border-[var(--border)] px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium text-[var(--text-2)]">Common problems</summary>
+          <summary className="cursor-pointer text-sm font-medium text-[var(--text-2)]">{t('step.problems')}</summary>
           <div className="mt-2 space-y-3">
             {step.problems.map((p) => (
               <div key={p.q}>

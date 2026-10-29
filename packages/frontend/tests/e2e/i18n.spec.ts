@@ -736,6 +736,120 @@ test.describe('connector list and marketplace from Accept-Language', () => {
   });
 });
 
+async function connectorSetupSession(page: Page) {
+  await fakeSession(page);
+  const shop = {
+    slug: 'shopx',
+    name: 'Shopx',
+    description: 'Your shop',
+    icon: 'shopx',
+    connector: { name: 'Shopx', type: 'REST', baseUrl: '{{SHOPX_URL}}/api', authType: 'API_KEY' },
+    setupKind: 'credentials',
+    envVars: [
+      { name: 'SHOPX_URL', required: true, label: 'Shop address', kind: 'address', secret: false },
+      { name: 'SHOPX_KEY', required: true, label: 'API key', kind: 'credential', secret: true },
+    ],
+    setupGuide: {
+      effort: 'api_key',
+      minutes: 3,
+      examples: ['Which orders came in today?'],
+      steps: [
+        { id: 'shop', title: 'Your shop', fields: ['SHOPX_URL'] },
+        { id: 'key', title: 'Your key', fields: ['SHOPX_KEY'] },
+      ],
+    },
+  };
+  await page.route(/\/health\/server-info/, (route) =>
+    route.fulfill({ json: { mcpAuthMode: 'oauth2', serverUrl: '', mcpEndpoint: '', deploymentMode: 'self-hosted' } }),
+  );
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\/(adapters|connectors|mcp-servers)/, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/adapters/shopx')) return route.fulfill({ json: shop });
+    if (path.endsWith('/adapters/shopx/verify')) return route.fulfill({ json: { ok: true, sample: '{"ok":true}' } });
+    if (path.endsWith('/adapters/shopx/import')) {
+      return route.fulfill({ json: { message: 'ok', connectorId: 'c9', attachedToServer: { id: 's1', name: 'Default' } } });
+    }
+    if (path.endsWith('/connectors/c9')) {
+      return route.fulfill({ json: { id: 'c9', setupStatus: 'ready', envVars: {}, maskedEnvVars: [], mcpServers: [{ mcpServerId: 's1' }] } });
+    }
+    if (path.endsWith('/mcp-servers/s1/activity')) return route.fulfill({ json: { calls30d: 0, lastCallAt: null } });
+    if (path.endsWith('/mcp-servers/s1')) return route.fulfill({ json: { id: 's1', name: 'Default', slug: 'default' } });
+    if (path.endsWith('/connectors/oauth/redirect-uri')) return route.fulfill({ json: { redirectUri: 'https://example.com/cb' } });
+    if (path.endsWith('/adapters/match-url')) return route.fulfill({ json: { matches: [] } });
+    if (path.endsWith('/connectors')) return route.fulfill({ json: [] });
+    return route.fulfill({ json: {} });
+  });
+}
+
+test.describe('connector setup and new connector from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the guided setup in German, through to the success screen', async ({ page }) => {
+      await connectorSetupSession(page);
+      await page.goto('/connectors/setup/shopx');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('heading', { name: 'Shopx mit Ihrer KI verbinden' })).toBeVisible();
+      await expect(page.getByText('API-Schlüssel · 3 Min.', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 Schritte', { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Starten', exact: true }).click();
+      await expect(page.getByText('Schritt 1 von 2', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Weiter', exact: true }).click();
+      await expect(page.getByText('Pflichtfeld', { exact: true })).toBeVisible();
+
+      await page.getByLabel('Shop address').fill('https://shop.example.com');
+      await page.getByRole('button', { name: 'Weiter', exact: true }).click();
+      await page.getByLabel('API key').fill('secret');
+      await page.getByRole('button', { name: 'Prüfen und verbinden', exact: true }).click();
+      await expect(page.getByRole('heading', { name: /Shopx ist verbunden/ })).toBeVisible();
+      await expect(page.getByText('AnythingMCP hat ihn mit Shopx geprüft: Er funktioniert.', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders /connectors/new in Italian', async ({ page }) => {
+      await connectorSetupSession(page);
+      await page.goto('/connectors/new');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByText('Scegli il tipo di connettore', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: /^API REST/ }).click();
+      await expect(page.getByText('Configura API REST', { exact: true })).toBeVisible();
+      await expect(page.getByText('Nome del connettore', { exact: true })).toBeVisible();
+      await expect(page.getByText('Header personalizzati', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Testa la connessione' })).toBeVisible();
+
+      await page.getByRole('button', { name: /^Database/ }).click();
+      await expect(page.getByRole('button', { name: 'Sola lettura', exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the guided setup and /connectors/new in English', async ({ page }) => {
+      await connectorSetupSession(page);
+      await page.goto('/connectors/setup/shopx');
+      await expect(page.getByRole('heading', { name: 'Connect Shopx to your AI' })).toBeVisible();
+      await expect(page.getByText('API key · 3 min', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 steps', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      await expect(page.getByText('Step 1 of 2', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Continue', exact: true }).click();
+      await expect(page.getByText('Required', { exact: true })).toBeVisible();
+
+      await page.goto('/connectors/new');
+      await expect(page.getByText('Choose connector type', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: /^REST API/ }).click();
+      await expect(page.getByText('Configure REST API', { exact: true })).toBeVisible();
+      await expect(page.getByText('Custom headers', { exact: true })).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;
