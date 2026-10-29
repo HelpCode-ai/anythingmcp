@@ -268,6 +268,7 @@ import * as hubspot from './intl/hubspot.json';
 import * as huggingface from './intl/huggingface.json';
 import * as hunter from './intl/hunter.json';
 import * as idealista from './intl/idealista.json';
+import * as immich from './intl/immich.json';
 import * as inoreader from './intl/inoreader.json';
 import * as insightly from './intl/insightly.json';
 import * as instagram from './intl/instagram.json';
@@ -1076,6 +1077,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   huggingface as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
   idealista as unknown as AdapterDefinition,
+  immich as unknown as AdapterDefinition,
   inoreader as unknown as AdapterDefinition,
   insightly as unknown as AdapterDefinition,
   instagram as unknown as AdapterDefinition,

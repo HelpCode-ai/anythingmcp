@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { tools, type MappingPreview, type ResponseTransform } from '@/lib/api';
 
@@ -131,6 +132,8 @@ interface Props {
 }
 
 export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: Props) {
+  const t = useTranslations('responseMapping');
+  const locale = useLocale();
   const { token } = useAuth();
   const [preview, setPreview] = useState<MappingPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -149,9 +152,9 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
     try {
       const res = await tools.previewMapping(connectorId, toolId, { transform }, token);
       setPreview(res);
-      if (!res.ok) setPreviewError(res.error ?? 'Preview failed');
+      if (!res.ok) setPreviewError(res.error ?? t('previewFailed'));
     } catch (err: any) {
-      setPreviewError(err?.message || 'Preview failed');
+      setPreviewError(err?.message || t('previewFailed'));
       setPreview(null);
     } finally {
       setPreviewing(false);
@@ -162,21 +165,13 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
     <div className="border border-[var(--border)] rounded-md p-3 space-y-3">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <label className="text-xs font-semibold">Response Mapping</label>
+          <label className="text-xs font-semibold">{t('title')}</label>
           <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-            Shape the API response before it reaches the AI client. Fewer tokens, and only
-            the fields this tool actually needs leave your workspace. Off = the raw response
-            is returned unchanged.
+            {t('intro')}
           </p>
         </div>
         <div className="flex gap-3 text-xs">
-          {(
-            [
-              ['off', 'Off'],
-              ['select', 'Field selection'],
-              ['jmespath', 'JMESPath'],
-            ] as const
-          ).map(([value, label]) => (
+          {(['off', 'select', 'jmespath'] as const).map((value) => (
             <label key={value} className="flex items-center gap-1 cursor-pointer">
               <input
                 type="radio"
@@ -184,7 +179,7 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
                 checked={state.mode === value}
                 onChange={() => set({ mode: value })}
               />
-              {label}
+              {t(`modes.${value}`)}
             </label>
           ))}
         </div>
@@ -194,13 +189,13 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
         <div className="space-y-2">
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-[11px] font-medium">Output template (JSON)</label>
+              <label className="text-[11px] font-medium">{t('outputTemplate')}</label>
               <button
                 type="button"
                 onClick={() => set({ selectJson: EXAMPLE_SELECT })}
                 className="text-[11px] text-[var(--brand)] hover:underline"
               >
-                Insert example
+                {t('insertExample')}
               </button>
             </div>
             <textarea
@@ -213,21 +208,20 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
             />
             {invalid && (
               <p className="text-[11px] text-[var(--danger)]">
-                Not valid JSON — saving is disabled until this parses.
+                {t('invalidJson')}
               </p>
             )}
             <p className="text-[11px] text-[var(--muted-foreground)] mt-1">
-              Keys are the output names. A leaf is a path (<code>$.a.b</code>,{' '}
-              <code>items[*].id</code>, <code>list[-1].x</code>), a static value (
-              <code>&quot;= my-source&quot;</code>), or{' '}
-              <code>{'{ "$from": "$.rows[*]", "$select": { … } }'}</code> to reshape every
-              element of an array. A path that does not resolve is left out.
+              {t.rich('selectHint', {
+                code: (chunks) => <code>{chunks}</code>,
+                reshape: '{ "$from": "$.rows[*]", "$select": { … } }',
+              })}
             </p>
           </div>
 
           <div>
             <label className="text-[11px] font-medium block mb-1">
-              Exclude paths (one per line)
+              {t('exclude')}
             </label>
             <textarea
               value={state.excludeText}
@@ -238,8 +232,7 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
               className="w-full px-2 py-1.5 border border-[var(--border)] rounded-md bg-[var(--background)] text-xs font-mono"
             />
             <p className="text-[11px] text-[var(--muted-foreground)] mt-1">
-              Removed before the template runs. Use this alone (no template) to drop a few
-              noisy fields while keeping everything else.
+              {t('excludeHint')}
             </p>
           </div>
         </div>
@@ -248,13 +241,13 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
       {state.mode === 'jmespath' && (
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="text-[11px] font-medium">JMESPath expression</label>
+            <label className="text-[11px] font-medium">{t('expression')}</label>
             <button
               type="button"
               onClick={() => set({ expression: EXAMPLE_EXPRESSION })}
               className="text-[11px] text-[var(--brand)] hover:underline"
             >
-              Insert example
+              {t('insertExample')}
             </button>
           </div>
           <textarea
@@ -266,9 +259,10 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
             className="w-full px-2 py-1.5 border border-[var(--border)] rounded-md bg-[var(--background)] text-xs font-mono"
           />
           <p className="text-[11px] text-[var(--muted-foreground)] mt-1">
-            Full JMESPath, including functions — use this for computed values such as{' '}
-            <code>length(devices)</code> or filters like{' '}
-            <code>devices[?online == `false`]</code>.
+            {t.rich('expressionHint', {
+              code: (chunks) => <code>{chunks}</code>,
+              filter: 'devices[?online == `false`]',
+            })}
           </p>
         </div>
       )}
@@ -282,10 +276,10 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
                 checked={state.fallbackToRaw}
                 onChange={(e) => set({ fallbackToRaw: e.target.checked })}
               />
-              Fall back to the raw response if the mapping fails
+              {t('fallback')}
             </label>
             <label className="flex items-center gap-1.5 text-[11px]">
-              Max response size
+              {t('maxSize')}
               <input
                 type="number"
                 min={0}
@@ -293,7 +287,7 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
                 onChange={(e) => set({ maxBytes: Math.max(0, parseInt(e.target.value) || 0) })}
                 className="w-24 border border-[var(--input)] rounded px-2 py-1 text-xs bg-[var(--background)]"
               />
-              bytes (0 = no limit)
+              {t('bytes')}
             </label>
           </div>
 
@@ -304,12 +298,12 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
               disabled={!canPreview || previewing}
               title={
                 canPreview
-                  ? 'Runs the mapping against the most recent real response for this tool. No API call is made.'
-                  : 'Save the tool and run it once to get a real response to preview against.'
+                  ? t('previewTitle')
+                  : t('previewTitleDisabled')
               }
               className="border border-[var(--border)] px-3 py-1 rounded text-xs hover:bg-[var(--accent)] disabled:opacity-50"
             >
-              {previewing ? 'Previewing…' : 'Preview with last real response'}
+              {previewing ? t('previewing') : t('preview')}
             </button>
             {preview?.ok && (
               <span className="text-[11px] text-[var(--muted-foreground)]">
@@ -323,7 +317,7 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
                   {Math.abs(preview.bytesSavedPct ?? 0)}%)
                 </strong>
                 {preview.sampleCapturedAt && (
-                  <> · sample from {new Date(preview.sampleCapturedAt).toLocaleString()}</>
+                  <>{t('sampleFrom', { date: new Date(preview.sampleCapturedAt).toLocaleString(locale) })}</>
                 )}
               </span>
             )}
@@ -334,7 +328,7 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
           )}
           {preview?.ok && preview.mappingError && (
             <p className="text-[11px] text-[var(--danger)]">
-              Mapping failed ({preview.mappingError}) — the raw response is shown.
+              {t('mappingFailed', { error: preview.mappingError })}
             </p>
           )}
 
@@ -342,7 +336,7 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div>
                 <p className="text-[10px] font-medium text-[var(--muted-foreground)] mb-1">
-                  Raw response
+                  {t('raw')}
                 </p>
                 <pre className="p-2 bg-[var(--muted)] rounded text-[10px] font-mono overflow-auto max-h-56">
                   {JSON.stringify(preview.raw, null, 2)}
@@ -350,7 +344,7 @@ export function ResponseMappingPanel({ state, onChange, connectorId, toolId }: P
               </div>
               <div>
                 <p className="text-[10px] font-medium text-[var(--muted-foreground)] mb-1">
-                  What the AI client receives
+                  {t('mapped')}
                 </p>
                 <pre className="p-2 bg-[var(--muted)] rounded text-[10px] font-mono overflow-auto max-h-56">
                   {JSON.stringify(preview.mapped, null, 2)}

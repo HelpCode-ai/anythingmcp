@@ -948,6 +948,126 @@ test.describe('connector page from Accept-Language', () => {
   });
 });
 
+async function connectorToolsSession(page: Page) {
+  await fakeSession(page);
+  const connector = {
+    id: 'c1',
+    name: 'Orders API',
+    type: 'REST',
+    baseUrl: 'https://api.example.com/v1',
+    authType: 'NONE',
+    isActive: true,
+    createdAt: '2026-01-15T10:00:00Z',
+    envVars: {},
+    maskedEnvVars: [],
+    headers: null,
+    config: {},
+    tools: [
+      {
+        id: 't1',
+        name: 'list_orders',
+        description: 'List recent orders',
+        isEnabled: true,
+        parameters: { type: 'object', properties: { status: { type: 'string', description: 'Order status' } } },
+        endpointMapping: { method: 'GET', path: '/orders', queryParams: { status: '$status' } },
+        responseMapping: null,
+      },
+    ],
+    mcpServers: [{ mcpServerId: 's1' }],
+  };
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\/connectors/, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/connectors/c1')) return route.fulfill({ json: connector });
+    if (path.endsWith('/connectors/c1/catalog-diff')) return route.fulfill({ json: { catalogManaged: false } });
+    if (path.endsWith('/connectors/proxy-availability')) return route.fulfill({ json: { available: false } });
+    if (path.endsWith('/tools/t1/annotations')) {
+      return route.fulfill({
+        json: { derived: { readOnlyHint: true }, override: null, effective: { readOnlyHint: true }, supportedKeys: [] },
+      });
+    }
+    return route.fulfill({ json: {} });
+  });
+}
+
+test.describe('connector tools and tool editor from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the tools section and the tool editor in German', async ({ page }) => {
+      await connectorToolsSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByText('MCP-Tools (1)', { exact: true })).toBeVisible();
+      await expect(page.getByText('aktiviert', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 Parameter', { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Testen', exact: true }).last().click();
+      await expect(page.getByText('Eingabeparameter (JSON)', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Test ausführen' })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Bearbeiten', exact: true }).last().click();
+      await expect(page.getByRole('heading', { name: 'Tool bearbeiten(REST)' })).toBeVisible();
+      await expect(page.getByText('Tool-Name', { exact: true })).toBeVisible();
+      await expect(page.getByText('Eingabeparameter', { exact: true })).toBeVisible();
+      await expect(page.getByText('Response-Mapping', { exact: true })).toBeVisible();
+      await page.getByLabel('Feldauswahl').check();
+      await expect(page.getByText('Ausgabevorlage (JSON)', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Tool aktualisieren' })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the import panel and the tool hints in Italian', async ({ page }) => {
+      await connectorToolsSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('button', { name: 'Verifica', exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Importa strumenti' }).click();
+      await expect(page.getByText('Importa strumenti da', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'File HAR (acquisizione del browser)' }).click();
+      await expect(page.getByText(/^Dai DevTools del browser/)).toBeVisible();
+
+      await page.getByRole('button', { name: 'Hint', exact: true }).click();
+      await expect(page.getByText('Sola lettura', { exact: true })).toBeVisible();
+      await expect(page.getByText('Comunicato ai client', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Salva hint' })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the tools section, tool editor and hints in English', async ({ page }) => {
+      await connectorToolsSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.getByText('MCP Tools (1)', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 params', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 query', { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Import Tools' }).click();
+      await expect(page.getByText('Import Tools From', { exact: true })).toBeVisible();
+      await expect(page.getByPlaceholder('Paste OpenAPI JSON/YAML or enter URL...')).toBeVisible();
+      await page.getByRole('button', { name: 'Cancel Import' }).click();
+
+      await page.getByRole('button', { name: 'Hints', exact: true }).click();
+      await expect(page.getByText('Read-only', { exact: true })).toBeVisible();
+      await expect(page.getByRole('option', { name: 'Auto (yes)' }).first()).toBeAttached();
+      await page.getByRole('button', { name: 'Close hints' }).click();
+
+      await page.getByRole('button', { name: 'Edit', exact: true }).last().click();
+      await expect(page.getByRole('heading', { name: 'Edit Tool(REST)' })).toBeVisible();
+      await expect(page.getByText('Input Parameters', { exact: true })).toBeVisible();
+      await expect(page.getByText('Query Parameter', { exact: true }).first()).toBeVisible();
+      await expect(page.getByText('Response Cache TTL', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Update Tool' })).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;
