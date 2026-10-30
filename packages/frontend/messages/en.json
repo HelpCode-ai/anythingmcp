@@ -2075,5 +2075,481 @@
       "revoke": "Revoke"
     },
     "footer": "{users, plural, one {# user} other {# users}}{invites, plural, =0 {} one {, # pending invitation} other {, # pending invitations}} total. The first registered user automatically becomes ADMIN."
+  },
+  "settingsRoles": {
+    "error": "Error: {message}",
+    "created": "Role created",
+    "updated": "Role updated",
+    "confirmDelete": "Delete role \"{name}\"? Users with this role will be unassigned.",
+    "deleted": "Role deleted",
+    "toolAccessUpdated": "Tool access updated",
+    "assigned": "MCP role assigned",
+    "accessDenied": {
+      "title": "Access Denied",
+      "body": "Only administrators can access this page.",
+      "back": "Back to Settings"
+    },
+    "dismiss": "dismiss",
+    "loading": "Loading...",
+    "title": "Custom Roles",
+    "intro": "Create roles to control which MCP tools different users can access. Users without a role have full access. ADMIN always has full access.",
+    "cancel": "Cancel",
+    "createRole": "Create Role",
+    "form": {
+      "name": "Role Name",
+      "namePlaceholder": "e.g. Read Only, Support Team",
+      "description": "Description",
+      "descriptionPlaceholder": "What this role is for...",
+      "create": "Create"
+    },
+    "empty": "No custom roles yet. Create one to start restricting tool access.",
+    "save": "Save",
+    "system": "system",
+    "userCount": "{count, plural, one {# user} other {# users}}",
+    "toolCount": "{count, plural, one {# tool assigned} other {# tools assigned}}",
+    "manageTools": "Manage Tools",
+    "edit": "Edit",
+    "delete": "Delete",
+    "access": {
+      "title": "Select tools this role can access",
+      "body": "Only checked tools will be available to users with this role. If no tools are selected, the role has no MCP tool access.",
+      "noTools": "No tools available. Create connectors and tools first.",
+      "selectAll": "Select all ({count})",
+      "deselectAll": "Deselect all",
+      "selected": "{selected}/{total} selected",
+      "search": "Search tools...",
+      "all": "All",
+      "none": "None",
+      "saving": "Saving...",
+      "save": "Save ({count} tools)"
+    },
+    "assign": {
+      "title": "User MCP Role Assignment",
+      "intro": "Assign MCP roles to users to control which tools they can access via MCP. Users without a role have unrestricted access. ADMIN users always have full access.",
+      "user": "User",
+      "appRole": "App Role",
+      "mcpRole": "MCP Tool Role",
+      "fullAccess": "Full access (admin)",
+      "noRestriction": "No restriction (full access)"
+    }
+  },
+  "settingsAdmin": {
+    "error": "Error: {message}",
+    "accessDenied": {
+      "title": "Access Denied",
+      "body": "Only administrators can access this page.",
+      "back": "Back to Settings"
+    },
+    "remove": "Remove",
+    "copy": "Copy",
+    "copied": "Copied",
+    "smtp": {
+      "saved": "SMTP configuration saved",
+      "testing": "Testing connection...",
+      "confirmRemove": "Remove the workspace SMTP configuration? Emails will be sent by the platform mail service instead.",
+      "removed": "SMTP configuration removed — emails now use the platform mail service",
+      "title": "Email / SMTP Configuration",
+      "intro": "Configure SMTP settings for password reset emails and notifications.",
+      "host": "SMTP Host",
+      "port": "Port",
+      "user": "Username",
+      "password": "Password",
+      "passwordKeep": "••••••••  (enter new to update)",
+      "passwordPlaceholder": "SMTP password",
+      "from": "From Address (optional)",
+      "secure": "Use SSL/TLS (port 465)",
+      "save": "Save SMTP Config",
+      "test": "Test Connection"
+    },
+    "alerts": {
+      "types": {
+        "json": "Generic JSON webhook",
+        "slack": "Slack incoming webhook"
+      },
+      "saved": "Alert webhook saved",
+      "sendingTest": "Sending test alert...",
+      "testDelivered": "Test alert delivered",
+      "deliveryFailed": "delivery failed",
+      "confirmRemove": "Remove the connector-failure alert webhook? Alerts will stop firing for this organization.",
+      "removed": "Alert webhook removed",
+      "title": "Connector Failure Alerts",
+      "intro": "Get a webhook or Slack notification when a connector keeps failing, instead of finding out from the logs.",
+      "url": "Webhook URL",
+      "cloudHttps": "On AnythingMCP Cloud the URL must use https.",
+      "payloadType": "Payload type",
+      "enabled": "Enabled",
+      "threshold": "Failure threshold",
+      "window": "Window (minutes)",
+      "cooldown": "Cooldown (minutes)",
+      "summary": "Alerts after {threshold} failures of the same connector within {window} minutes, then waits {cooldown} minutes before alerting again.",
+      "rotate": "Rotate signing secret on save",
+      "secretOnce": "Signing secret, shown once. Copy it now:",
+      "secretHelp": "Use this to verify the <code>X-AnythingMCP-Signature</code> header (<code>sha256=</code> HMAC of the timestamp and the body; Slack ignores it). It will not be shown again.",
+      "savedIt": "I have saved it",
+      "save": "Save Alert Webhook",
+      "saveUrlFirst": "Save the new URL first",
+      "sendTest": "Send Test Alert"
+    },
+    "footer": {
+      "saved": "Footer links saved",
+      "title": "Footer Links",
+      "intro": "Add links for Impressum, Privacy Policy, Terms of Service, etc. These appear in the footer of every page.",
+      "labelPlaceholder": "Label (e.g., Privacy Policy)",
+      "add": "+ Add Link",
+      "save": "Save Footer Links"
+    },
+    "about": {
+      "title": "About this instance",
+      "unavailable": "Version info unavailable.",
+      "version": "Version",
+      "commit": "commit",
+      "built": "built {date}",
+      "copied": "Copied to clipboard",
+      "copyFailed": "Copy failed",
+      "copy": "Copy version info"
+    }
+  },
+  "settingsLicense": {
+    "errors": {
+      "activate": "Failed to activate license",
+      "invalid": "License is invalid",
+      "verify": "Verification failed",
+      "register": "Failed to register community license",
+      "portal": "Failed to open the billing portal",
+      "trial": "Failed to activate trial"
+    },
+    "verified": "License verified successfully",
+    "none": "None",
+    "statuses": {
+      "active": "active",
+      "expired": "expired",
+      "invalid": "invalid",
+      "revoked": "revoked",
+      "pending": "pending"
+    },
+    "adminOnly": "Only administrators can manage the license.",
+    "title": "License & Plan",
+    "intro": "Manage your Anything MCP license",
+    "currentPlan": "Current Plan",
+    "licenseKey": "License key",
+    "noLicense": "No license registered yet.",
+    "activating": "Activating...",
+    "startTrial": "Start 7-Day Free Trial",
+    "communityHint": "Optional for Community: a free key by email gets you security and release notices.",
+    "registering": "Registering...",
+    "registerCommunity": "Register Free Community License",
+    "fields": {
+      "plan": "Plan",
+      "status": "Status",
+      "expires": "Expires",
+      "lastVerified": "Last Verified",
+      "trialDaysLeft": "Trial Days Left",
+      "days": "{count} days",
+      "instanceId": "Instance ID"
+    },
+    "verifying": "Verifying...",
+    "verify": "Verify Now",
+    "billing": {
+      "opening": "Opening…",
+      "updatePayment": "Update payment method",
+      "keepPlan": "Keep my plan",
+      "manage": "Manage subscription & billing",
+      "cancel": "Cancel subscription"
+    },
+    "features": {
+      "title": "Features",
+      "yes": "Yes",
+      "no": "No",
+      "unlimited": "Unlimited"
+    },
+    "key": {
+      "change": "Change License Key",
+      "activate": "Activate License Key",
+      "changePlan": "To move to another plan, <link>change it in the billing portal</link> — your current subscription is switched and prorated, not duplicated.",
+      "purchase": "Purchase a license at <link>anythingmcp.com</link>",
+      "submit": "Activate"
+    },
+    "upgrade": {
+      "title": "Upgrade Plan",
+      "payBody": "Choose a plan to keep AnythingMCP Cloud running after your trial. This address has had a subscription before, so the plan starts and is billed when you check out.",
+      "cardBody": "Add a payment method to keep AnythingMCP Cloud running after your trial. Nothing is charged before {date}, and you can cancel anytime.",
+      "cardBodyNoDate": "Add a payment method to keep AnythingMCP Cloud running after your trial. Nothing is charged before your trial ends, and you can cancel anytime.",
+      "choosePlan": "Choose a plan",
+      "addPayment": "Add payment method",
+      "compare": "Compare plans",
+      "body": "Upgrade to a paid plan to continue using AnythingMCP Cloud after your trial ends.",
+      "viewPlans": "View Plans"
+    },
+    "activate": {
+      "redirecting": "Redirecting to settings…",
+      "noKey": "No license key was provided in the URL.",
+      "malformed": "The license key in the URL is malformed.",
+      "adminOnly": "Only administrators can activate a license key. Ask your admin to sign in.",
+      "activated": "License activated successfully.",
+      "backToClient": "Taking you back to finish connecting your AI client…",
+      "failed": "Failed to activate license.",
+      "title": "License Activation",
+      "preparing": "Preparing…",
+      "activating": "Activating your license…",
+      "key": "Key:",
+      "goToSettings": "Go to License Settings"
+    }
+  },
+  "settingsSso": {
+    "types": {
+      "ENTRA": {
+        "label": "Microsoft Entra ID",
+        "fields": {
+          "tenantId": {
+            "label": "Directory (tenant) ID",
+            "help": "The tenant GUID from your app registration overview. A directory name such as contoso.onmicrosoft.com is not accepted."
+          }
+        }
+      },
+      "GOOGLE": {
+        "label": "Google Workspace",
+        "fields": {
+          "hostedDomain": {
+            "label": "Workspace domain",
+            "help": "Strongly recommended. Without it Google is not authoritative for a non-gmail.com address, so any Google account could sign in."
+          }
+        }
+      },
+      "OKTA": {
+        "label": "Okta",
+        "hint": "Use your Okta domain, e.g. https://acme.okta.com. Custom domains are not yet supported.",
+        "fields": {
+          "authorizationServerId": {
+            "label": "Authorization server ID (optional)"
+          }
+        }
+      },
+      "AUTH0": {
+        "label": "Auth0",
+        "hint": "Self-hosted deployments only.",
+        "fields": {
+          "rolesClaimNamespace": {
+            "label": "Roles claim namespace",
+            "help": "Auth0 silently drops custom claims that are not namespaced — the sign-in succeeds and the roles are simply missing."
+          }
+        }
+      },
+      "GITHUB": {
+        "label": "GitHub",
+        "hint": "GitHub is not an OpenID Connect provider, so there is no discovery document to test.",
+        "fields": {
+          "organization": {
+            "label": "Restrict to organization (optional)"
+          }
+        }
+      },
+      "OIDC": {
+        "label": "Generic OpenID Connect",
+        "hint": "Self-hosted deployments only.",
+        "fields": {
+          "groupsClaimName": {
+            "label": "Groups claim name (optional)"
+          }
+        }
+      }
+    },
+    "toast": {
+      "loadFailed": "Could not load providers",
+      "enforced": "Single sign-on required",
+      "passwordReenabled": "Password sign-in re-enabled",
+      "enforceFailed": "Could not change enforcement",
+      "updated": "Provider updated",
+      "created": "Provider created",
+      "saveFailed": "Could not save",
+      "deleted": "Provider deleted",
+      "deleteFailed": "Could not delete",
+      "copyFailed": "Could not copy",
+      "testOk": "Connection OK",
+      "testFailed": "Connection failed",
+      "testError": "Test failed"
+    },
+    "confirmEnforce": "Require single sign-on for this workspace?\n\nPassword sign-in stops working for every member. Your recovery codes become the only way in if the identity provider becomes unreachable.",
+    "confirmDelete": "Delete \"{name}\"? Anyone who signs in through it will lose access, and members with password sign-in disabled will be locked out.",
+    "accessDenied": {
+      "title": "Access Denied",
+      "body": "Only administrators can access this page.",
+      "back": "Back to Settings"
+    },
+    "cloud": {
+      "title": "Not available on AnythingMCP Cloud",
+      "body": "Single sign-on, SCIM provisioning and role sync are part of the self-hosted edition, where the instance belongs to one company. On Cloud, members sign in with their email and password."
+    },
+    "loading": "Loading...",
+    "title": "Single sign-on",
+    "intro": "Let members sign in with your organization's identity provider instead of a password. Share the sign-in link below with them — it is the entry point for this workspace.",
+    "cancel": "Cancel",
+    "add": "Add provider",
+    "copy": "Copy",
+    "copied": "Copied",
+    "form": {
+      "provider": "Provider",
+      "typeLocked": "The provider type cannot be changed after creation — the stored settings were validated against it. Create a new provider instead.",
+      "name": "Display name",
+      "namePlaceholder": "Sign in with Microsoft",
+      "nameHelp": "Shown on the sign-in button.",
+      "issuer": "Issuer URL",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "keepBlank": "(leave blank to keep)",
+      "secretHidden": "The secret is never sent back to the browser, so it cannot be shown here.",
+      "secretExpires": "Secret expires on (optional)",
+      "secretExpiresHelp": "Microsoft caps client secrets at 24 months. Recording the date here turns a silent expiry into a warning.",
+      "jit": "Create accounts on first sign-in",
+      "jitHelp": "Off by default. With this on, anyone who can authenticate at your identity provider joins this workspace as a Viewer — including guests you may have invited there for other reasons.",
+      "roleSync": "Sync roles from the directory on every sign-in",
+      "roleSyncHelp": "Rights are then maintained where joiners and leavers are already handled. Roles an admin assigned by hand are never removed by a sync.",
+      "source": "Read roles from",
+      "sources": {
+        "GROUPS": "Security / Microsoft 365 groups",
+        "APP_ROLES": "Application roles"
+      },
+      "sourceHelp": "Groups reuse what the directory already maintains, at the cost of matching on object IDs rather than readable names. Application roles read better but have to be declared in the app manifest first.",
+      "fallback": "When nothing matches",
+      "fallbacks": {
+        "DENY_ALL": "Grant no tools",
+        "KEEP_EXISTING": "Leave existing roles alone",
+        "DEFAULT_ROLE": "Grant a default role"
+      },
+      "fallbackHelp": "“Grant no tools” is the default deliberately: it assigns an explicit no-tools role, so the outcome does not depend on whether this workspace has set up tool whitelists yet.",
+      "defaultRoles": "Default MCP roles",
+      "defaultRolesPlaceholder": "Pick at least one role",
+      "noRoles": "No MCP roles exist yet — create one under Roles",
+      "defaultRolesHelp": "Granted to anyone whose groups match no mapping. Leave it empty and the fallback behaves exactly like “Grant no tools”.",
+      "active": "Active",
+      "defaultRoleMissing": "“Grant a default role” needs at least one default MCP role. Pick one above, or choose a different fallback.",
+      "saving": "Saving...",
+      "saveChanges": "Save changes",
+      "create": "Create provider"
+    },
+    "empty": "No identity providers configured. Members sign in with a password.",
+    "list": {
+      "inactive": "Inactive",
+      "ssoRequired": "SSO required",
+      "secretExpiring": "Secret expiring",
+      "jit": "Creates accounts on first sign-in",
+      "testing": "Testing...",
+      "test": "Test",
+      "edit": "Edit",
+      "delete": "Delete",
+      "hideMappings": "Hide role mappings",
+      "mappings": "Role mappings",
+      "hideScim": "Hide provisioning",
+      "scim": "Provisioning (SCIM)",
+      "enforce": "Require single sign-on"
+    },
+    "recovery": {
+      "generateFailed": "Could not generate codes",
+      "title": "Recovery codes",
+      "intro": "Single-use codes that sign you in when the identity provider cannot be reached — an expired client secret, a tenant migration, a claim that stopped arriving. Requiring single sign-on is only possible once you hold some.",
+      "saveNow": "Save these now — they cannot be shown again.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "download": "Download",
+      "savedThem": "I have saved them",
+      "generating": "Generating...",
+      "generate": "Generate recovery codes",
+      "regenerate": "Regenerate",
+      "noneYet": "None yet.",
+      "unused": "{unused} of {total} unused.",
+      "regenerateWarning": "Regenerating invalidates the current set."
+    },
+    "mappings": {
+      "orgRoles": {
+        "unchanged": "Leave unchanged",
+        "VIEWER": "Viewer",
+        "EDITOR": "Editor",
+        "ADMIN": "Admin"
+      },
+      "loadFailed": "Could not load mappings",
+      "saved": "Mappings saved",
+      "saveFailed": "Could not save",
+      "loading": "Loading mappings...",
+      "groupsTitle": "Group mappings",
+      "appRolesTitle": "App role mappings",
+      "groupsScimHelp": "Groups assigned to the application in Entra appear here automatically once provisioning has run. Assign MCP roles to each; a group with no roles grants nothing. You can still add a group by object ID if it has not been pushed yet.",
+      "groupsHelp": "Enter the group's <strong>object ID</strong>, not its name — Microsoft does not make group names unique, so matching on one would let anyone able to create a group grant themselves a role. Find it in Entra under Groups → the group → Overview → Object Id. Only groups <em>assigned to the application</em> appear in the token.",
+      "appRolesHelp": "Enter the app role's <strong>value</strong> from the application manifest (for example <code>amcp.einkauf</code>), not its display name.",
+      "scimAppRolesWarning": "Roles are read from application roles at sign-in. Group changes pushed over SCIM will not change anyone's roles between sign-ins — switch “Read roles from” to groups to get that.",
+      "syncOff": "Role sync is turned off for this provider, so these mappings are stored but never applied. Turn it on under Edit.",
+      "groupId": "Group object ID",
+      "appRoleValue": "App role value",
+      "fromScim": "from SCIM",
+      "members": "{count, plural, one {# member} other {# members}}",
+      "label": "Name (for humans)",
+      "workspaceRole": "Workspace role",
+      "mcpRoles": "MCP roles",
+      "noRolesPlaceholder": "No roles — grants nothing",
+      "noRoles": "No MCP roles exist yet — create one under Roles",
+      "scimRemoveHint": "Unassign the group from the application in Entra to remove it.",
+      "remove": "Remove",
+      "add": "Add mapping",
+      "saving": "Saving...",
+      "save": "Save mappings",
+      "footer": "A user in several mapped groups receives the <strong>union</strong> of their MCP roles and the <strong>most privileged</strong> workspace role. Roles an admin assigned by hand are never removed by a sync.",
+      "footerDenyAll": "Someone who matches nothing is given a “No access (SSO)” role, which grants no tools."
+    },
+    "scim": {
+      "toast": {
+        "loadFailed": "Could not load provisioning status",
+        "copyFailed": "Copy failed",
+        "copyManually": "Select the value and copy it manually.",
+        "changeFailed": "Provisioning change failed",
+        "enabled": "Provisioning enabled",
+        "rotated": "Token rotated",
+        "resyncFailed": "Resync failed",
+        "disabled": "Provisioning disabled"
+      },
+      "confirmRotate": "Rotate the SCIM token?\n\nThe current token stops working immediately. Entra provisioning fails until you paste the new token into the enterprise application.",
+      "confirmDisable": "Turn off SCIM provisioning?\n\nEntra will no longer be able to create, update or deactivate accounts here. Existing accounts, memberships and roles are left as they are.",
+      "resync": {
+        "title": "{count, plural, one {Resynced # member} other {Resynced # members}}",
+        "changed": "{count} changed",
+        "unchanged": "{count} unchanged",
+        "failed": "{count} failed",
+        "lastAdmin": "{count} last-admin protected",
+        "button": "Resync roles now"
+      },
+      "title": "Provisioning (SCIM)",
+      "intro": "Let Entra create accounts, update them, and — the part that matters — deactivate them the moment someone is disabled or removed in the directory, with no sign-in required. Without this, a leaver keeps any MCP key they already hold until an administrator deactivates them by hand.",
+      "entraOnly": "Provisioning is available for Microsoft Entra ID providers.",
+      "saveNow": "Save the token now — it cannot be shown again.",
+      "tenantUrl": "Tenant URL",
+      "secretToken": "Secret token",
+      "copy": "Copy",
+      "copied": "Copied",
+      "hide": "Hide",
+      "reveal": "Reveal",
+      "savedIt": "I have saved it",
+      "enabling": "Enabling...",
+      "enable": "Enable provisioning",
+      "unlinked": "{count, plural, one {# existing member have no Microsoft identity yet — Entra will report a conflict for them until they sign in with Microsoft once.} other {# existing members have no Microsoft identity yet — Entra will report a conflict for them until they sign in with Microsoft once.}}",
+      "issued": "Token issued {date}",
+      "lastRequest": "Last request from Entra {date}",
+      "never": "never",
+      "stale": "stale",
+      "users": "Users provisioned {count}",
+      "groups": "Groups synced {count}",
+      "rotate": "Rotate token",
+      "resyncNeedsSync": "Turn on role sync under Edit first",
+      "resyncNeedsGroups": "Only applies when roles are read from groups",
+      "disable": "Disable",
+      "steps": {
+        "show": "How to set this up in Entra",
+        "s1": "Entra admin center → <strong>Enterprise applications</strong> → <strong>New application</strong> →<strong> Create your own application</strong> → <em>Integrate any other application you don't find in the gallery</em>. Name it something like <em>AnythingMCP provisioning</em>.",
+        "s1b": "This has to be a <strong>second, non-gallery app</strong>: the app you registered for sign-in came from<em> App registrations</em>, and Entra leaves <strong>Get started</strong> greyed out on those with “automatic provisioning … is not supported”.",
+        "s2": "<strong>Users and groups → Add user/group</strong>: assign the same groups you assigned to the sign-in app. Assignment does not carry over between the two apps, and only assigned groups are provisioned.",
+        "s3": "<strong>Provisioning</strong> → Provisioning Mode: <strong>Automatic</strong>.",
+        "s4": "<strong>Connectivity</strong> (older tenants show this inline as <em>Admin Credentials</em>): authentication method <strong>Bearer authentication</strong>, then paste the <strong>Tenant URL</strong> and the <strong>Secret Token</strong> above → <strong>Test connection</strong>. Entra refuses to save until the test passes.",
+        "s5": "<strong>Attribute mapping</strong>: leave <code>userName</code> ← <code>userPrincipalName</code> and<code> active</code> as they are, but <strong>change <code>externalId</code></strong> — its stock source is <code>mailNickname</code>, it must be <code>objectId</code>. Otherwise the same person ends up with one account from SCIM and another from sign-in.",
+        "s6": "Settings → Scope: <em>Sync only assigned users and groups</em>. Only groups assigned under <strong>Users and groups</strong> are provisioned — the same rule as the groups claim.",
+        "s7": "<strong>Save</strong>, then <strong>Start provisioning</strong>. The first cycle creates <em>every</em> assigned user; later ones run about every 40 minutes.",
+        "s8": "To test one user without waiting: <strong>Provision on demand</strong>. Use it again after disabling the user in Entra."
+      }
+    }
   }
 }
