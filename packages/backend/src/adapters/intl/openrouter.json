@@ -1,0 +1,800 @@
+{
+  "slug": "openrouter",
+  "name": "OpenRouter",
+  "aliases": [
+    "OpenRouter API",
+    "OpenRouter AI"
+  ],
+  "description": "OpenRouter, one API for hundreds of AI models: search the model catalog with prices, providers, benchmarks and rankings, check the key's spending, look up past generations, and send chat completions, embeddings and image requests to any model.",
+  "region": "intl",
+  "category": "data",
+  "icon": "openrouter",
+  "docsUrl": "https://openrouter.ai/docs/api_reference/overview",
+  "instructions": "## OpenRouter\nThis connector uses the **OpenRouter API** (`https://openrouter.ai/api/v1`), one OpenAI-compatible endpoint in front of hundreds of models from OpenAI, Anthropic, Google, Meta, Mistral, DeepSeek and others. It searches the model catalog, compares providers, prices and benchmarks, shows what the key has spent, looks up past generations, and sends chat completions, embeddings and image requests to any model.\n\n**Setup (2 minutes)**\n1. Sign in at https://openrouter.ai and add credits under **Settings, Credits** (free `:free` models work without credits, within daily limits).\n2. Open **Settings, API Keys** (https://openrouter.ai/settings/keys), click **Create Key**, give it a name and, strongly recommended, a **credit limit**: the key can spend the account balance up to that limit.\n3. Paste the key (it starts with `sk-or-v1-`) into `OPENROUTER_API_KEY`. It is sent as `Authorization: Bearer`. Requests carry `HTTP-Referer` and `X-OpenRouter-Title` headers that name AnythingMCP as the calling app on OpenRouter.\n4. Run `openrouter_get_current_key` to check the key.\n\n**Workflow**\n- Choose a model: `openrouter_list_models` (filters such as `q`, `category`, `supported_parameters=tools`, `max_price`, `context`, `sort=pricing-low-to-high`) or `openrouter_list_user_models` for the models this key may use under the account's privacy settings and guardrails. Then `openrouter_get_model` for one model's details, `openrouter_list_model_endpoints` for the providers that serve it with their prices, uptime, latency and throughput, and `openrouter_list_providers` for provider slugs and data policies.\n- Compare quality and popularity: `openrouter_list_benchmarks` (Artificial Analysis, Design Arena, OpenRouter evals), `openrouter_get_model_rankings` (top models by tokens per day, week or month).\n- Run a model: `openrouter_chat_completion` with `model` and `messages`; `models` adds fallbacks, `provider` steers routing (order, only, sort by price or throughput, data_collection deny, zdr), `response_format` asks for JSON, `reasoning` sets the effort. `openrouter_create_embeddings` for vectors, `openrouter_generate_image` for images (returned as image content). These three spend credits: confirm with the user before repeated or large calls and set `max_completion_tokens` to cap a reply.\n- Spending: `openrouter_get_current_key` shows the key's limit, `limit_remaining` and usage today, this week, this month and in total. `openrouter_get_generation` gives the exact cost, tokens and provider of one call (its `id` is the `id` of the completion; it can take a few seconds to appear), `openrouter_get_generation_content` the stored prompt and output when prompt logging is on.\n\n**Reading the answers**\n- Model ids are `author/slug` (`openai/gpt-4o`); split them for `author` and `slug`. Variants: `:free` (free, rate limited), `:online` (web search), `:nitro` (fastest provider), `:floor` (cheapest), `:thinking`.\n- Prices in the catalog are strings in **USD per token** (`\"0.0000025\"` = 2.50 USD per million tokens); `request` and `image` are per request or per image. The `max_price` filters and the routing `max_price` take USD per **million** tokens. Costs and usage in key and generation answers are USD.\n- A completion returns `choices[0].message.content`, the `finish_reason` (`stop`, `length` when the token cap was hit, `tool_calls`, `content_filter`) and `usage` with token counts and `cost`. The `provider` field says who served it.\n- `created` is Unix seconds; dates are UTC.\n\n**Paging**: the model list tools return 50 models by default; pass `offset` 50, 100, ... with the same `limit` until a page comes back shorter than `limit`. Prefer filters and `sort` over reading the whole catalog.\n\n**Limits**: `:free` models allow 20 requests a minute and 50 a day (1,000 a day once 10 USD of credits were ever bought). Paid models are limited by the account balance, the key's credit limit and any budgets an organization admin set; `openrouter_get_current_key` shows them. Benchmarks allow 30 requests a minute per key.\n\n**Not included**: credit balance of the whole account, activity reports, analytics and key management need a separate management key and are not part of this connector; streaming, the legacy text completions endpoint, batches, video and audio are not exposed either.\n\n**Errors**: 401 invalid or disabled key; 402 not enough credits or the key's limit is used up (`error.metadata.limit_source` says which; add credits or raise the limit); 403 blocked by a guardrail or moderation; 404 unknown model or generation; 408 timeout; 429 rate limited (wait, or use a paid variant); 502 the model's provider failed; 503 no provider matches the routing requirements (relax `provider`). A provider error during generation can arrive with HTTP 200 and an `error` object; it is reported as a failed call.\n",
+  "prerequisites": "An OpenRouter account and an API key from openrouter.ai/settings/keys; paid models need credits on the account.",
+  "requiredEnvVars": [
+    "OPENROUTER_API_KEY"
+  ],
+  "envVarMeta": {
+    "OPENROUTER_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "openrouter.ai, Settings, API Keys, Create Key. Set a credit limit on the key: calls to paid models are billed to the account. A management key does not work here.",
+      "link": "https://openrouter.ai/settings/keys",
+      "pattern": "^sk-or-[A-Za-z0-9-]{20,}$",
+      "patternMessage": "Paste the key as OpenRouter shows it, starting with sk-or-, without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "OpenRouter refused the key. Copy it again from openrouter.ai/settings/keys and check that it is not disabled or expired.",
+    "403": "The key is not allowed to make this call, or a guardrail blocked it. Check the key's guardrails in the OpenRouter settings.",
+    "rate_limited": "OpenRouter rate limited the key. Free models allow 20 requests a minute; wait a minute and try again."
+  },
+  "probe": {
+    "tool": "openrouter_get_current_key"
+  },
+  "connector": {
+    "name": "OpenRouter API",
+    "type": "REST",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{OPENROUTER_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP",
+      "HTTP-Referer": "https://anythingmcp.com",
+      "X-OpenRouter-Title": "AnythingMCP"
+    },
+    "healthcheckPath": "/key",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error.message",
+          "messagePath": [
+            "error.code",
+            "error.message"
+          ],
+          "status": 502
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "openrouter_list_models",
+      "description": "Search the OpenRouter model catalog (public, no cost): model ids, context length, prices per token, input and output modalities, supported parameters and reasoning support. Filter by text, category, modality, price, context, author or provider, and sort server-side.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Free-text search on model name or id, e.g. claude, gpt-4o, llama."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "programming",
+              "roleplay",
+              "marketing",
+              "marketing/seo",
+              "technology",
+              "science",
+              "translation",
+              "legal",
+              "finance",
+              "health",
+              "trivia",
+              "academia"
+            ],
+            "description": "Use-case category the model is popular for."
+          },
+          "supported_parameters": {
+            "type": "string",
+            "description": "Comma-separated request parameters the model must support, e.g. tools, response_format, structured_outputs, reasoning, temperature."
+          },
+          "input_modalities": {
+            "type": "string",
+            "description": "Comma-separated input modalities the model must accept: text, image, audio, file."
+          },
+          "output_modalities": {
+            "type": "string",
+            "description": "Comma-separated output modalities to include: text (default), image, embeddings, audio, video, rerank, speech, transcription, or all."
+          },
+          "context": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Minimum context length in tokens, e.g. 128000."
+          },
+          "max_price": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Maximum prompt (input) price in USD per million tokens. 0 finds free models."
+          },
+          "max_output_price": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Maximum completion (output) price in USD per million tokens."
+          },
+          "model_authors": {
+            "type": "string",
+            "description": "Comma-separated author slugs, e.g. openai,anthropic,google,meta-llama."
+          },
+          "providers": {
+            "type": "string",
+            "description": "Comma-separated hosting provider names, e.g. OpenAI,Anthropic,Together."
+          },
+          "zdr": {
+            "type": "string",
+            "enum": [
+              "true"
+            ],
+            "description": "true: only models with a zero-data-retention endpoint."
+          },
+          "region": {
+            "type": "string",
+            "enum": [
+              "eu",
+              "us"
+            ],
+            "description": "Only models with endpoints in this data region."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "most-popular",
+              "newest",
+              "top-weekly",
+              "pricing-low-to-high",
+              "pricing-high-to-low",
+              "context-high-to-low",
+              "throughput-high-to-low",
+              "latency-low-to-high",
+              "intelligence-high-to-low",
+              "coding-high-to-low",
+              "agentic-high-to-low",
+              "design-arena-elo-high-to-low"
+            ],
+            "description": "Server-side order, e.g. pricing-low-to-high, context-high-to-low, newest, most-popular, coding-high-to-low. Models without a score for the chosen benchmark come last."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of models to skip, for paging. Use 0, then 50, 100, ... with the same limit."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Models per page, 1-1000 (default 50). A short page means it was the last one."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/models",
+        "queryParams": {
+          "q": "$q",
+          "category": "$category",
+          "supported_parameters": "$supported_parameters",
+          "input_modalities": "$input_modalities",
+          "output_modalities": "$output_modalities",
+          "context": "$context",
+          "max_price": "$max_price",
+          "max_output_price": "$max_output_price",
+          "model_authors": "$model_authors",
+          "providers": "$providers",
+          "zdr": "$zdr",
+          "region": "$region",
+          "sort": "$sort",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "created": "created",
+                "context_length": "context_length",
+                "pricing": "pricing",
+                "input_modalities": "architecture.input_modalities",
+                "output_modalities": "architecture.output_modalities",
+                "supported_parameters": "supported_parameters",
+                "max_completion_tokens": "top_provider.max_completion_tokens",
+                "reasoning": "reasoning",
+                "knowledge_cutoff": "knowledge_cutoff",
+                "expiration_date": "expiration_date"
+              }
+            }
+          },
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "openrouter_list_user_models",
+      "description": "List the models this API key may actually use, after the account's provider preferences, privacy settings and guardrails are applied. Same fields as openrouter_list_models; use it before choosing a model for a completion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "output_modalities": {
+            "type": "string",
+            "description": "Comma-separated output modalities to include: text (default), image, embeddings, audio, video, rerank, speech, transcription, or all."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "most-popular",
+              "newest",
+              "top-weekly",
+              "pricing-low-to-high",
+              "pricing-high-to-low",
+              "context-high-to-low",
+              "throughput-high-to-low",
+              "latency-low-to-high",
+              "intelligence-high-to-low",
+              "coding-high-to-low",
+              "agentic-high-to-low",
+              "design-arena-elo-high-to-low"
+            ],
+            "description": "Server-side order, e.g. pricing-low-to-high, context-high-to-low, newest, most-popular, coding-high-to-low. Models without a score for the chosen benchmark come last."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of models to skip, for paging. Use 0, then 50, 100, ... with the same limit."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Models per page, 1-1000 (default 50). A short page means it was the last one."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/models/user",
+        "queryParams": {
+          "output_modalities": "$output_modalities",
+          "sort": "$sort",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "created": "created",
+                "context_length": "context_length",
+                "pricing": "pricing",
+                "input_modalities": "architecture.input_modalities",
+                "output_modalities": "architecture.output_modalities",
+                "supported_parameters": "supported_parameters",
+                "max_completion_tokens": "top_provider.max_completion_tokens",
+                "reasoning": "reasoning",
+                "knowledge_cutoff": "knowledge_cutoff",
+                "expiration_date": "expiration_date"
+              }
+            }
+          },
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "openrouter_get_model",
+      "description": "Full details of one model by author and slug (openai/gpt-4o): description, context length, pricing, modalities, supported and default parameters, reasoning efforts, benchmarks and expiration date. Accepts variants such as :free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "author": {
+            "type": "string",
+            "description": "Model author, the part of the model id before the slash (openai in openai/gpt-4o)."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Model slug, the part of the model id after the slash (gpt-4o in openai/gpt-4o). A variant suffix such as :free is allowed where noted."
+          }
+        },
+        "required": [
+          "author",
+          "slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/model/{author}/{slug}"
+      }
+    },
+    {
+      "name": "openrouter_list_model_endpoints",
+      "description": "List the provider endpoints that serve one model: provider name and tag, price per token, context and output limits, quantization, supported parameters, status, uptime, latency and throughput over the last 30 minutes. Use it to choose or pin a provider.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "author": {
+            "type": "string",
+            "description": "Model author, the part of the model id before the slash (openai in openai/gpt-4o)."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Model slug, the part of the model id after the slash (gpt-4o in openai/gpt-4o), without a variant suffix."
+          }
+        },
+        "required": [
+          "author",
+          "slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/models/{author}/{slug}/endpoints"
+      }
+    },
+    {
+      "name": "openrouter_list_providers",
+      "description": "List the inference providers OpenRouter routes to, with slug, name, headquarters, datacenter countries and links to their privacy policy, terms and status page. The slugs go into the provider routing object.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/providers"
+      }
+    },
+    {
+      "name": "openrouter_list_benchmarks",
+      "description": "Benchmark scores of models from Artificial Analysis (intelligence, coding and agentic indices), Design Arena (ELO) and OpenRouter's own evals (GPQA, tau-bench, search). Use it to compare model quality before choosing one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "artificial-analysis",
+              "design-arena",
+              "openrouter"
+            ],
+            "description": "Benchmark source; omit for all sources. The item fields differ per source."
+          },
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "coding",
+              "intelligence",
+              "agentic",
+              "search"
+            ],
+            "description": "Workload to rank for."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "Maximum items to return (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/benchmarks",
+        "queryParams": {
+          "source": "$source",
+          "task_type": "$task_type",
+          "max_results": "$max_results"
+        }
+      }
+    },
+    {
+      "name": "openrouter_get_model_rankings",
+      "description": "Public OpenRouter usage rankings: the top 50 models by tokens processed per day, week or month, plus one aggregated other row per period, as on openrouter.ai/rankings. Data starts on 2025-01-01.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD (UTC), inclusive. Default: 30 days before end_date."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD (UTC), inclusive. Default: the last completed UTC day."
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Time grain of each row (default day). Use week or month for long windows."
+          },
+          "modality": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image_output",
+              "image",
+              "audio",
+              "tool_calling"
+            ],
+            "description": "Only models for this surface: text or image_output (output), image or audio (input), tool_calling (rows with tool calls). Cannot be combined with category."
+          },
+          "category": {
+            "type": "string",
+            "description": "Use-case category such as programming or roleplay. Estimated from sampled data, weekly or monthly only, not combinable with modality."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasets/rankings-daily",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "period": "$period",
+          "modality": "$modality",
+          "category": "$category"
+        }
+      }
+    },
+    {
+      "name": "openrouter_get_current_key",
+      "description": "Spending and limits of the API key in use: label, credit limit and what remains of it, reset interval, usage today, this week, this month and in total (USD), budgets that apply, free-tier status and free-model requests left today.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/key"
+      }
+    },
+    {
+      "name": "openrouter_get_generation",
+      "description": "Cost and metadata of one past generation by its id: model, provider that served it, total cost in USD, prompt, completion and reasoning token counts (native and normalized), latency, generation time, finish reason and whether it was cancelled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^gen-[0-9A-Za-z-]+$",
+            "description": "Generation id, as returned in the id field of a chat completion (starts with gen-)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/generation",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "openrouter_get_generation_content",
+      "description": "The stored prompt, completion, reasoning and error of one past generation by its id. Only available when prompt logging is enabled for the account; otherwise the API answers 404.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^gen-[0-9A-Za-z-]+$",
+            "description": "Generation id, as returned in the id field of a chat completion (starts with gen-)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/generation/content",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "openrouter_chat_completion",
+      "description": "Send a conversation to a model and return its reply (non-streaming). COSTS MONEY: billed per token to the OpenRouter account, unless a :free model is used. Confirm the model and the purpose with the user before larger or repeated calls. The answer's id (gen-...) feeds openrouter_get_generation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model id from openrouter_list_models, e.g. openai/gpt-4o-mini, anthropic/claude-sonnet-4.5, google/gemma-4-31b-it:free. Append :online for web search, :nitro for the fastest provider, :floor for the cheapest. Use openrouter/auto to let OpenRouter pick."
+          },
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object"
+            },
+            "description": "The conversation, oldest first: [{\"role\": \"system\", \"content\": \"...\"}, {\"role\": \"user\", \"content\": \"...\"}]. Roles: system, user, assistant, tool. content is a string, or an array of parts such as {\"type\": \"text\", \"text\": \"...\"} and {\"type\": \"image_url\", \"image_url\": {\"url\": \"https://...\"}}."
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fallback model ids tried in order when the first one fails or is unavailable."
+          },
+          "max_completion_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Upper bound on output tokens. Set it to cap cost; reasoning tokens count toward it."
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2,
+            "description": "Sampling temperature 0-2. Lower is more deterministic."
+          },
+          "top_p": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Nucleus sampling 0-1."
+          },
+          "stop": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "description": "Up to 4 stop sequences."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed for more repeatable outputs, where the provider supports it."
+          },
+          "response_format": {
+            "type": "object",
+            "description": "Structured output: {\"type\": \"json_object\"}, or {\"type\": \"json_schema\", \"json_schema\": {\"name\": \"result\", \"strict\": true, \"schema\": {...}}}. Check that the model lists response_format or structured_outputs in supported_parameters."
+          },
+          "reasoning": {
+            "type": "object",
+            "description": "Reasoning settings for reasoning models: {\"effort\": \"low\" | \"medium\" | \"high\"}, or {\"max_tokens\": 2000}, or {\"exclude\": true} to hide the reasoning text, or {\"enabled\": false}."
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Function definitions the model may call: [{\"type\": \"function\", \"function\": {\"name\": \"...\", \"description\": \"...\", \"parameters\": {...}}}]. The model answers with tool_calls; run them yourself and send the results back as role tool messages."
+          },
+          "provider": {
+            "type": "object",
+            "description": "Provider routing preferences, e.g. {\"order\": [\"anthropic\", \"amazon-bedrock\"], \"allow_fallbacks\": true}, {\"sort\": \"price\"}, {\"only\": [\"openai\"]}, {\"data_collection\": \"deny\"}, {\"zdr\": true}, {\"max_price\": {\"prompt\": 1, \"completion\": 2}} (USD per million tokens). Provider slugs come from openrouter_list_providers or openrouter_list_model_endpoints."
+          },
+          "plugins": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Plugins such as [{\"id\": \"web\", \"max_results\": 5}] for web search or [{\"id\": \"file-parser\"}] for PDFs. Plugins can add their own cost."
+          }
+        },
+        "required": [
+          "model",
+          "messages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/completions",
+        "bodyMapping": {
+          "model": "$model",
+          "messages": "$messages",
+          "models": "$models",
+          "max_completion_tokens": "$max_completion_tokens",
+          "temperature": "$temperature",
+          "top_p": "$top_p",
+          "stop": "$stop",
+          "seed": "$seed",
+          "response_format": "$response_format",
+          "reasoning": "$reasoning",
+          "tools": "$tools",
+          "provider": "$provider",
+          "plugins": "$plugins",
+          "stream": false
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openrouter_create_embeddings",
+      "description": "Turn one text or a list of texts into embedding vectors with an embeddings model. COSTS MONEY per input token. Find models with openrouter_list_models and output_modalities embeddings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Embeddings model id, e.g. openai/text-embedding-3-small."
+          },
+          "input": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "The texts to embed, one vector per item: [\"first text\", \"second text\"]."
+          },
+          "dimensions": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Output vector size, for models that support shortening (e.g. 512)."
+          },
+          "input_type": {
+            "type": "string",
+            "description": "For models that distinguish them: search_query or search_document."
+          },
+          "provider": {
+            "type": "object",
+            "description": "Provider routing preferences, e.g. {\"order\": [\"anthropic\", \"amazon-bedrock\"], \"allow_fallbacks\": true}, {\"sort\": \"price\"}, {\"only\": [\"openai\"]}, {\"data_collection\": \"deny\"}, {\"zdr\": true}, {\"max_price\": {\"prompt\": 1, \"completion\": 2}} (USD per million tokens). Provider slugs come from openrouter_list_providers or openrouter_list_model_endpoints."
+          }
+        },
+        "required": [
+          "model",
+          "input"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/embeddings",
+        "bodyMapping": {
+          "model": "$model",
+          "input": "$input",
+          "dimensions": "$dimensions",
+          "input_type": "$input_type",
+          "provider": "$provider",
+          "encoding_format": "float"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "model": "$.model",
+            "embeddings": {
+              "$from": "$.data[*]",
+              "$select": {
+                "index": "index",
+                "embedding": "embedding"
+              }
+            },
+            "usage": "$.usage"
+          },
+          "maxBytes": 400000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openrouter_generate_image",
+      "description": "Generate images from a text prompt with an image model and return them as images. COSTS MONEY per image. Confirm the prompt and model with the user first. Find models with openrouter_list_models and output_modalities image.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Image model id, e.g. openai/gpt-image-1 or google/gemini-3.1-flash-image."
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Description of the image to create."
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4,
+            "description": "Number of images, 1-4 (default 1). Some providers return fewer or accept only 1."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "1:1",
+              "2:3",
+              "3:2",
+              "3:4",
+              "4:3",
+              "4:5",
+              "5:4",
+              "9:16",
+              "16:9",
+              "21:9"
+            ],
+            "description": "Aspect ratio; providers clamp to what they support."
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "512",
+              "768",
+              "1K",
+              "1.5K",
+              "2K",
+              "4K"
+            ],
+            "description": "Resolution tier; providers derive the pixel size."
+          },
+          "quality": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "Rendering quality, where the provider supports it."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ],
+            "description": "Image encoding (default png)."
+          },
+          "provider": {
+            "type": "object",
+            "description": "Provider routing preferences, e.g. {\"order\": [\"anthropic\", \"amazon-bedrock\"], \"allow_fallbacks\": true}, {\"sort\": \"price\"}, {\"only\": [\"openai\"]}, {\"data_collection\": \"deny\"}, {\"zdr\": true}, {\"max_price\": {\"prompt\": 1, \"completion\": 2}} (USD per million tokens). Provider slugs come from openrouter_list_providers or openrouter_list_model_endpoints."
+          }
+        },
+        "required": [
+          "model",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/images",
+        "bodyMapping": {
+          "model": "$model",
+          "prompt": "$prompt",
+          "n": "$n",
+          "aspect_ratio": "$aspect_ratio",
+          "resolution": "$resolution",
+          "quality": "$quality",
+          "output_format": "$output_format",
+          "provider": "$provider"
+        }
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "data[*].b64_json"
+          ],
+          "maxImages": 4
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    }
+  ]
+}
