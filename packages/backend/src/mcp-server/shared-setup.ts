@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ReturnAssistant } from './shared-toolset';
+import type { ReturnAssistant, SharedToolsetProfile } from './shared-toolset';
 
 /**
  * Connector setup through the shared `/mcp` endpoint.
@@ -27,6 +27,12 @@ export interface SetupContext {
    * setup page can send the user back to it. Absent when unknown.
    */
   assistant?: ReturnAssistant | null;
+  /**
+   * The tool set this connection gets, which decides the catalog connectors it
+   * may find and install (see sharedEndpointAccess). Absent is treated as the
+   * stricter ChatGPT one.
+   */
+  profile?: SharedToolsetProfile;
 }
 
 export interface SetupCallResult {
