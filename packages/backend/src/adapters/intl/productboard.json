@@ -1,0 +1,1027 @@
+{
+  "slug": "productboard",
+  "name": "Productboard",
+  "aliases": [
+    "Productboard API",
+    "Productboard Pulse"
+  ],
+  "description": "Productboard product management through the REST API v2: products, components, features, initiatives, objectives and key results, releases, companies and users as entities with custom fields and relationships, plus customer feedback notes, members and teams.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "productboard",
+  "docsUrl": "https://developer.productboard.com/v2.0.0/reference",
+  "instructions": "## Productboard\nThis connector works with the **Productboard REST API v2** (`https://api.productboard.com/v2`). Everything in the product hierarchy is an **entity** with a `type`: `product`, `component`, `feature`, `subfeature`, `initiative`, `objective`, `keyResult`, `release`, `releaseGroup`, `user`, `company` (and `competitor`, `task` where the workspace has them). Customer feedback lives in **notes**. API v1 (with the `X-Version: 1` header) was deprecated in April 2026 and sunset on 8 July 2026, so this connector uses v2 only.\n\n**Setup (2 minutes)**\n1. In Productboard open **Settings > Integrations > Public APIs > Access Token** and click **+** to create a token (Pro plan or higher). Copy it: it is shown once.\n2. Paste it into `PRODUCTBOARD_API_TOKEN`. It is sent as `Authorization: Bearer <token>` and acts with the rights of the member who created it.\n3. Run `productboard_list_entity_configurations` to check the token.\n\n**Discover the workspace first**: fields differ per workspace. `productboard_list_entity_configurations` returns every entity type with its fields (standard names such as `name`, `description`, `status`, `owner`, `timeframe`, `teams`, `tags`, and custom fields keyed by UUID), which fields are required and which patch operations each supports. `productboard_get_entity_configuration` does the same for one type. `productboard_list_note_configurations` describes note fields. `productboard_list_field_values` lists the options of a select, tag or status field.\n\n**Workflow**\n- Browse the roadmap: `productboard_list_entities` with `types` (for example `[\"feature\"]`) and filters such as `parent_id`, `status_name`, `owner_email` or `archived`; `productboard_search_entities` for structured filters (several ids, owners, statuses, custom field values, parents) and to limit returned fields; `productboard_get_entity` for one item.\n- Products, components, features, releases, objectives and key results, companies and users are all read the same way: pass the type, e.g. `types: [\"company\"]` for companies or `types: [\"objective\", \"keyResult\"]` for OKRs.\n- Create and change: `productboard_create_entity` with `type` and `fields` (for a feature at least `name`; set its parent with `relationships: [{\"type\": \"parent\", \"target\": {\"id\": \"<component id>\"}}]`). `productboard_update_entity` with `fields` to overwrite values, or `patch` for `set`, `addItems`, `removeItems` and `clear` on lists such as `tags` and `teams`.\n- Hierarchy and links: `productboard_list_entity_relationships` shows parent, children, links and blockers; `productboard_set_entity_parent` moves an entity under another one; `productboard_create_entity_relationship` adds a `link`, `isBlockedBy` or `isBlocking` relationship.\n- Feedback: `productboard_create_note` captures a note (`name` and `content`, optional `tags`, `owner`, the customer and linked features through `relationships`). `productboard_list_notes` filters by date, owner, processed or archived; `productboard_search_notes` does full-text search; `productboard_get_note` reads one; `productboard_update_note` changes it; `productboard_list_note_relationships` shows its customer and linked features; `productboard_link_note` attaches a note to a feature or other entity, or to a customer.\n- People: `productboard_list_members` and `productboard_get_member` for workspace members (owners of entities and notes), `productboard_list_teams` and `productboard_list_team_members` for teams.\n\n**Values**: references to members, statuses, teams and tags are objects: `{\"email\": \"jane@example.com\"}` or `{\"id\": \"<uuid>\"}` for owners, `{\"name\": \"In progress\"}` or `{\"id\": ...}` for a status, `[{\"name\": \"Q4\"}]` for tags. `timeframe` is `{\"startDate\": \"2026-10-01\", \"endDate\": \"2026-12-31\", \"granularity\": \"month\"}`. Note `content` and rich text fields take HTML-like rich text or plain text.\n\n**Reading the answers**: lists return `data` (each item with `id`, `type`, `fields`, `links.html` to open it in Productboard, `createdAt`, `updatedAt`). All ids are UUIDs and times are ISO 8601 UTC. Without the `members:pii:read` permission owner emails come back as `[redacted]`.\n\n**Paging**: when `links.next` is set, take the `pageCursor` value out of that URL and pass it as `page_cursor`; stop when `links.next` is null.\n\n**Limits and errors**: 50 requests per second per token; 429 carries `Retry-After`. 401 means a wrong or revoked token, 403 a token without the needed rights, 400 or 422 an unknown field or type (the message names what the workspace accepts: check the configuration). There are no delete tools: deleting an entity in v2 also deletes all its children.",
+  "prerequisites": "A Productboard workspace on the Pro plan or higher and an API access token from Settings > Integrations > Public APIs.",
+  "requiredEnvVars": [
+    "PRODUCTBOARD_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "PRODUCTBOARD_API_TOKEN": {
+      "label": "API access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Productboard > Settings > Integrations > Public APIs > Access Token > +. The token is shown once; it acts with the rights of the member who created it.",
+      "link": "https://developer.productboard.com/reference/api-token",
+      "pattern": "^[A-Za-z0-9._-]{20,}$",
+      "patternMessage": "Paste only the token, without spaces, quotes or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Productboard refused the token. Create a new one under Settings > Integrations > Public APIs > Access Token and paste it without the Bearer prefix.",
+    "403": "The token works but may not read this data. Tokens act with the rights of the member who created them; use a token of a workspace admin or maker.",
+    "rate_limited": "Productboard allows 50 requests per second per token. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "productboard_list_entity_configurations"
+  },
+  "connector": {
+    "name": "Productboard API v2",
+    "type": "REST",
+    "baseUrl": "https://api.productboard.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{PRODUCTBOARD_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP (https://anythingmcp.com)"
+    },
+    "healthcheckPath": "/entities/configurations"
+  },
+  "tools": [
+    {
+      "name": "productboard_list_entity_configurations",
+      "description": "List the entity types of the workspace (product, component, feature, subfeature, initiative, objective, keyResult, release, releaseGroup, user, company, ...) with their fields: standard and custom fields (custom ones keyed by UUID), field types, which are required on create and which patch operations they accept. Call this before creating or filtering entities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these entity types, e.g. [\"feature\", \"initiative\"]. Leave empty for all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entities/configurations",
+        "queryParams": {
+          "type[]": "$types"
+        }
+      }
+    },
+    {
+      "name": "productboard_get_entity_configuration",
+      "description": "Fields of one entity type (e.g. feature or company): standard and custom fields with their types, whether they are required, and the allowed patch operations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Entity type, e.g. feature, component, product, initiative, objective, keyResult, release, releaseGroup, company, user."
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entities/configurations/{type}"
+      }
+    },
+    {
+      "name": "productboard_list_entities",
+      "description": "List entities (features, components, products, initiatives, objectives, key results, releases, companies, users, ...) with their fields, newest first. Filter by type, name, owner, status, team, parent or archived state. Returns links.next when more pages exist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Entity types to list, e.g. [\"feature\"], [\"objective\", \"keyResult\"] or [\"company\"]. Use the types from productboard_list_entity_configurations."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only entities with this name."
+          },
+          "owner_email": {
+            "type": "string",
+            "description": "Only entities owned by the member with this email (needs the members:pii:read permission)."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Only entities owned by the member with this id."
+          },
+          "status_name": {
+            "type": "string",
+            "description": "Only entities in the status with this name, e.g. In progress."
+          },
+          "status_id": {
+            "type": "string",
+            "description": "Only entities in the status with this id."
+          },
+          "team_name": {
+            "type": "string",
+            "description": "Only entities assigned to the team with this name."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Only direct children of this entity, e.g. the features of a component."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true for archived entities only, false for active ones only."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Return only these fields, e.g. [\"name\", \"status\", \"owner\"]; [\"all\"] also returns empty fields. Default: all non-empty fields."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "The pageCursor value from links.next of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entities",
+        "queryParams": {
+          "type[]": "$types",
+          "name": "$name",
+          "owner[email]": "$owner_email",
+          "owner[id]": "$owner_id",
+          "status[name]": "$status_name",
+          "status[id]": "$status_id",
+          "teams[name]": "$team_name",
+          "parent[id]": "$parent_id",
+          "archived": "$archived",
+          "fields[]": "$fields",
+          "pageCursor": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "productboard_search_entities",
+      "description": "Search entities with a structured filter: several types or ids, created or updated date ranges, field values (name, archived, owner, status, teams, creator, custom fields by UUID, company domain, user email) and relationships (parent, customer). Can limit the returned fields. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Entity types to search, e.g. [\"feature\", \"initiative\"]."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these entity ids."
+          },
+          "field_filters": {
+            "type": "object",
+            "description": "Field filters, e.g. {\"archived\": false, \"status\": [{\"name\": \"In progress\"}], \"owner\": [{\"email\": \"jane@example.com\"}]}, {\"domain\": \"example.com\"} for companies or {\"email\": {\"eq\": \"jane@example.com\"}} for users. Custom fields by UUID."
+          },
+          "relationship_filters": {
+            "type": "object",
+            "description": "Relationship filters, e.g. {\"parent\": [{\"id\": \"<component id>\"}]}."
+          },
+          "created_at": {
+            "type": "object",
+            "description": "Creation date range, e.g. {\"from\": \"2026-01-01T00:00:00Z\", \"to\": \"2026-06-30T23:59:59Z\"}."
+          },
+          "updated_at": {
+            "type": "object",
+            "description": "Last update date range, same shape as created_at."
+          },
+          "return_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Return only these fields, e.g. [\"name\", \"status\", \"owner\"]."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "The pageCursor value from links.next of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/entities/search",
+        "queryParams": {
+          "pageCursor": "$page_cursor"
+        },
+        "bodyMapping": {
+          "data": {
+            "filter": {
+              "type": "$types",
+              "id": "$ids",
+              "fields": "$field_filters",
+              "relationships": "$relationship_filters",
+              "createdAt": "$created_at",
+              "updatedAt": "$updated_at"
+            },
+            "return": {
+              "fields": "$return_fields"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "productboard_get_entity",
+      "description": "One entity (feature, component, product, initiative, objective, key result, release, company, user, ...) by id with all its fields, its relationships and the links.html URL to open it in Productboard.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Entity id (UUID)."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Return only these fields; [\"all\"] also returns empty fields."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entities/{id}",
+        "queryParams": {
+          "fields[]": "$fields"
+        }
+      }
+    },
+    {
+      "name": "productboard_create_entity",
+      "description": "Create an entity: a feature, subfeature, component, product, initiative, objective, key result, release, release group, company or user. Pass the type and its fields as the workspace configuration names them; set the parent through relationships.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Entity type, e.g. feature, subfeature, component, product, initiative, objective, keyResult, release, releaseGroup, company, user."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Field values, e.g. {\"name\": \"Dark mode\", \"description\": \"<p>Text</p>\", \"status\": {\"name\": \"New idea\"}, \"owner\": {\"email\": \"jane@example.com\"}, \"tags\": [{\"name\": \"Q4\"}], \"timeframe\": {\"startDate\": \"2026-10-01\", \"endDate\": \"2026-12-31\", \"granularity\": \"month\"}}. Custom fields by UUID. A company takes {\"name\": ..., \"domain\": ...}, a user {\"name\": ..., \"email\": ...}."
+          },
+          "relationships": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Relationships to create with it, e.g. [{\"type\": \"parent\", \"target\": {\"id\": \"<component or feature id>\"}}]. Types: parent, child, link, isBlockedBy, isBlocking."
+          },
+          "source": {
+            "type": "object",
+            "description": "Optional origin record, e.g. {\"system\": \"Jira\", \"recordId\": \"PROJ-456\", \"url\": \"https://...\"}."
+          }
+        },
+        "required": [
+          "type",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/entities",
+        "bodyMapping": {
+          "data": {
+            "type": "$type",
+            "fields": "$fields",
+            "relationships": "$relationships",
+            "metadata": {
+              "source": "$source"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "productboard_update_entity",
+      "description": "Update an entity. fields overwrites the given values (null clears one); patch applies operations: set, addItems and removeItems on lists such as tags or teams, clear on a field path. Fields not named stay unchanged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Entity id (UUID)."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Values to set, e.g. {\"name\": \"Improved feature\", \"status\": {\"name\": \"In progress\"}, \"owner\": {\"email\": \"jane@example.com\"}}."
+          },
+          "patch": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Patch operations, e.g. [{\"op\": \"addItems\", \"path\": \"tags\", \"value\": [{\"name\": \"Q1\"}]}, {\"op\": \"clear\", \"path\": \"timeframe.startDate\"}]."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/entities/{id}",
+        "bodyMapping": {
+          "data": {
+            "fields": "$fields",
+            "patch": "$patch"
+          }
+        }
+      }
+    },
+    {
+      "name": "productboard_list_entity_relationships",
+      "description": "Relationships of an entity: its parent, children, linked entities and blockers (type parent, child, link, isBlockedBy, isBlocking) with the target id and type. Use it to walk the hierarchy, e.g. the features of a component.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Entity id (UUID)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this relationship type.",
+            "enum": [
+              "parent",
+              "child",
+              "link",
+              "isBlockedBy",
+              "isBlocking"
+            ]
+          },
+          "target_type": {
+            "type": "string",
+            "description": "Only relationships to entities of this type, e.g. feature."
+          },
+          "target_id": {
+            "type": "string",
+            "description": "Only the relationship to this entity id."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "The pageCursor value from links.next of the previous page."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entities/{id}/relationships",
+        "queryParams": {
+          "type": "$type",
+          "target[type]": "$target_type",
+          "target[id]": "$target_id",
+          "pageCursor": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "productboard_create_entity_relationship",
+      "description": "Add a relationship from one entity to another: link (related items), isBlockedBy or isBlocking (dependencies), or child. To move an entity under a new parent use productboard_set_entity_parent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Entity id the relationship starts from."
+          },
+          "type": {
+            "type": "string",
+            "description": "Relationship type.",
+            "enum": [
+              "link",
+              "isBlockedBy",
+              "isBlocking",
+              "child"
+            ]
+          },
+          "target_id": {
+            "type": "string",
+            "description": "Id of the other entity."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "target_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/entities/{id}/relationships",
+        "bodyMapping": {
+          "data": {
+            "type": "$type",
+            "target": {
+              "id": "$target_id"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "productboard_set_entity_parent",
+      "description": "Set or replace the parent of an entity, e.g. move a feature to another component, a subfeature under a feature or a key result under an objective. The old parent link is replaced.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Entity id to move."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Id of the new parent entity."
+          }
+        },
+        "required": [
+          "id",
+          "parent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/entities/{id}/relationships/parent",
+        "bodyMapping": {
+          "data": {
+            "target": {
+              "id": "$parent_id"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "productboard_list_field_values",
+      "description": "Allowed values of a select, multi-select, tag or status field (custom field UUID, or a standard field name such as status or tags), with their ids. Use it to pick a valid value before creating or updating an entity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_id": {
+            "type": "string",
+            "description": "Field identifier: the UUID of a custom field, or the API name of a standard field (e.g. status, tags)."
+          },
+          "entity_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only values assigned for these entity types, e.g. [\"feature\"]."
+          },
+          "query": {
+            "type": "string",
+            "description": "Text to search in the value names."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "The pageCursor value from links.next of the previous page."
+          }
+        },
+        "required": [
+          "field_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entities/fields/{field_id}/values",
+        "queryParams": {
+          "assignedEntityType[]": "$entity_types",
+          "query": "$query",
+          "pageCursor": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "productboard_list_note_configurations",
+      "description": "Note types of the workspace (textNote, conversationNote, opportunityNote) with their fields, required fields and patch operations. Call it before creating or filtering notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these note types, e.g. [\"textNote\"]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notes/configurations",
+        "queryParams": {
+          "type[]": "$types"
+        }
+      }
+    },
+    {
+      "name": "productboard_list_notes",
+      "description": "List customer feedback notes, newest first, with name, content, tags, owner, processed and archived state. Filter by creation or update time, owner, creator, source system or state. Returns links.next when more pages exist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these note types, e.g. [\"textNote\", \"conversationNote\"]."
+          },
+          "processed": {
+            "type": "boolean",
+            "description": "true for processed notes, false for unprocessed (and archived) ones."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true for archived notes only, false for non-archived ones."
+          },
+          "owner_email": {
+            "type": "string",
+            "description": "Only notes owned by this member email (needs the members:pii:read permission)."
+          },
+          "creator_email": {
+            "type": "string",
+            "description": "Only notes created by this member email (needs the members:pii:read permission)."
+          },
+          "source_system": {
+            "type": "string",
+            "description": "Only notes imported from this source system, e.g. intercom or zendesk."
+          },
+          "source_record_id": {
+            "type": "string",
+            "description": "Only the note with this record id in the source system."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created at or after this ISO 8601 date-time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created at or before this ISO 8601 date-time."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Updated at or after this ISO 8601 date-time."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Updated at or before this ISO 8601 date-time."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "The pageCursor value from links.next of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notes",
+        "queryParams": {
+          "type[]": "$types",
+          "processed": "$processed",
+          "archived": "$archived",
+          "owner[email]": "$owner_email",
+          "creator[email]": "$creator_email",
+          "metadata[source][system]": "$source_system",
+          "metadata[source][recordId]": "$source_record_id",
+          "createdFrom": "$created_from",
+          "createdTo": "$created_to",
+          "updatedFrom": "$updated_from",
+          "updatedTo": "$updated_to",
+          "pageCursor": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "productboard_search_notes",
+      "description": "Full-text search over notes, optionally combined with filters on tags, owner, processed or archived state, dates, customer and linked entities. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words to search for in the note name and content, e.g. onboarding."
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these note types, e.g. [\"textNote\"]."
+          },
+          "field_filters": {
+            "type": "object",
+            "description": "Field filters, e.g. {\"tag\": [{\"name\": \"important\"}], \"processed\": false, \"owner\": [{\"email\": \"jane@example.com\"}]}."
+          },
+          "relationship_filters": {
+            "type": "object",
+            "description": "Relationship filters, e.g. {\"customer\": [{\"id\": \"<company or user id>\"}], \"link\": [{\"id\": \"<feature id>\"}]}."
+          },
+          "created_at": {
+            "type": "object",
+            "description": "Creation date range, e.g. {\"from\": \"2026-01-01T00:00:00Z\", \"to\": \"2026-06-30T23:59:59Z\"}."
+          },
+          "updated_at": {
+            "type": "object",
+            "description": "Last update date range, same shape as created_at."
+          },
+          "return_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Return only these fields, e.g. [\"name\", \"content\", \"tags\"]."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "The pageCursor value from links.next of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notes/search",
+        "queryParams": {
+          "pageCursor": "$page_cursor"
+        },
+        "bodyMapping": {
+          "data": {
+            "search": {
+              "query": "$query"
+            },
+            "filter": {
+              "type": "$types",
+              "fields": "$field_filters",
+              "relationships": "$relationship_filters",
+              "createdAt": "$created_at",
+              "updatedAt": "$updated_at"
+            },
+            "return": {
+              "fields": "$return_fields"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "productboard_get_note",
+      "description": "One note by id with its fields (name, content, tags, owner, creator, processed, archived), metadata source and the links.html URL to open it in Productboard.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Note id (UUID)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notes/{id}"
+      }
+    },
+    {
+      "name": "productboard_create_note",
+      "description": "Capture customer feedback as a note in the Productboard Insights inbox: a title, the feedback text, optional tags, owner, source record, the customer (user or company) and the features it relates to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Note type: textNote (default choice for plain feedback) or conversationNote.",
+            "enum": [
+              "textNote",
+              "conversationNote"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Note title, e.g. Feature request: dark mode."
+          },
+          "content": {
+            "type": "string",
+            "description": "The feedback text (plain text or simple HTML)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Tags, e.g. [{\"name\": \"mobile\"}, {\"name\": \"q4\"}]."
+          },
+          "owner": {
+            "type": "object",
+            "description": "Owning member, e.g. {\"email\": \"jane@example.com\"}."
+          },
+          "relationships": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Customer and linked entities, e.g. [{\"type\": \"customer\", \"target\": {\"email\": \"buyer@example.com\", \"type\": \"user\"}}, {\"type\": \"customer\", \"target\": {\"id\": \"<company id>\", \"type\": \"company\"}}, {\"type\": \"link\", \"target\": {\"id\": \"<feature id>\", \"type\": \"link\"}}]."
+          },
+          "source": {
+            "type": "object",
+            "description": "Optional origin record, e.g. {\"system\": \"support\", \"recordId\": \"ticket-12345\", \"url\": \"https://...\"}."
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notes",
+        "bodyMapping": {
+          "data": {
+            "type": "$type",
+            "fields": {
+              "name": "$name",
+              "content": "$content",
+              "tags": "$tags",
+              "owner": "$owner"
+            },
+            "relationships": "$relationships",
+            "metadata": {
+              "source": "$source"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "productboard_update_note",
+      "description": "Update a note. fields overwrites the given values (name, content, owner, processed, archived, ...); patch applies set, addItems, removeItems or clear, e.g. to add tags. Fields not named stay unchanged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Note id (UUID)."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Values to set, e.g. {\"name\": \"New title\", \"processed\": true, \"owner\": {\"email\": \"jane@example.com\"}}."
+          },
+          "patch": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Patch operations, e.g. [{\"op\": \"addItems\", \"path\": \"tags\", \"value\": [{\"name\": \"urgent\"}]}]."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/notes/{id}",
+        "bodyMapping": {
+          "data": {
+            "fields": "$fields",
+            "patch": "$patch"
+          }
+        }
+      }
+    },
+    {
+      "name": "productboard_list_note_relationships",
+      "description": "Relationships of a note: the customer (user or company) it came from and the entities (features, components, products) it is linked to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Note id (UUID)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only customer or only link relationships.",
+            "enum": [
+              "customer",
+              "link"
+            ]
+          },
+          "target_type": {
+            "type": "string",
+            "description": "Only targets of this type.",
+            "enum": [
+              "user",
+              "company",
+              "feature",
+              "subfeature",
+              "product",
+              "component"
+            ]
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "The pageCursor value from links.next of the previous page."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notes/{id}/relationships",
+        "queryParams": {
+          "type": "$type",
+          "target[type]": "$target_type",
+          "pageCursor": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "productboard_link_note",
+      "description": "Link a note to a feature, subfeature, component or product (type link, the insight then counts for that item), or assign its customer (type customer, a user or company).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Note id (UUID)."
+          },
+          "type": {
+            "type": "string",
+            "description": "link to attach the note to an entity, customer to set the user or company it came from.",
+            "enum": [
+              "link",
+              "customer"
+            ]
+          },
+          "target": {
+            "type": "object",
+            "description": "For link: {\"id\": \"<feature id>\", \"type\": \"link\"}. For customer: {\"id\": \"<id>\", \"type\": \"company\"}, {\"id\": \"<id>\", \"type\": \"user\"} or {\"email\": \"buyer@example.com\", \"type\": \"user\"}."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "target"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notes/{id}/relationships",
+        "bodyMapping": {
+          "data": {
+            "type": "$type",
+            "target": "$target"
+          }
+        }
+      }
+    },
+    {
+      "name": "productboard_list_members",
+      "description": "Members of the Productboard workspace (name, email, role), oldest first. Use them as owners of entities and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to search in member names and emails."
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these roles, e.g. [\"admin\", \"maker\"]."
+          },
+          "include_disabled": {
+            "type": "boolean",
+            "description": "Also return disabled members."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "The pageCursor value from links.next of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members",
+        "queryParams": {
+          "query": "$query",
+          "roles[]": "$roles",
+          "includeDisabled": "$include_disabled",
+          "pageCursor": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "productboard_get_member",
+      "description": "One workspace member by id: name, email, role, disabled or invited state and teams.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Member id (UUID)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members/{id}"
+      }
+    },
+    {
+      "name": "productboard_list_teams",
+      "description": "Teams of the workspace with name, handle and description, newest first. Teams can be assigned to entities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to search in team names."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "The pageCursor value from links.next of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams",
+        "queryParams": {
+          "query": "$query",
+          "pageCursor": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "productboard_list_team_members",
+      "description": "Members of one team (name, email, role), newest membership first, with cursor paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Team id (UUID) from productboard_list_teams."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "The pageCursor value from links.next of the previous page."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{id}/members",
+        "queryParams": {
+          "pageCursor": "$page_cursor"
+        }
+      }
+    }
+  ]
+}
