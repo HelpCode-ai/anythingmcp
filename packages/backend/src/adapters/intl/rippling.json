@@ -1,0 +1,1705 @@
+{
+  "slug": "rippling",
+  "name": "Rippling",
+  "aliases": [
+    "Rippling HRIS",
+    "Rippling HR",
+    "Rippling Platform"
+  ],
+  "description": "Rippling HR platform: workers and users, departments, teams, work locations, levels, titles, employment types, custom fields, compensation, leave types, balances and requests, supergroups and time entries. Rippling REST API with an API token.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "rippling",
+  "docsUrl": "https://developer.rippling.com/documentation/rest-api",
+  "prerequisites": "A Rippling user with permission to create API tokens (Developer app, API credentials) and access to the data the agent should read.",
+  "requiredEnvVars": [
+    "RIPPLING_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "RIPPLING_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Rippling, Developer > API credentials > New API token. Select the scopes of the tools you use (companies.read at least). The value is shown only once.",
+      "link": "https://developer.rippling.com/documentation/rest-api/essentials/api-tokens",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste only the token, without Bearer, spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Rippling refused the token. It may be revoked, mistyped, or expired: tokens unused for 30 days and tokens of terminated owners are revoked. Create a new one under Developer > API credentials.",
+    "403": "The token lacks a scope (companies.read for the check) or its owner's permission profile does not cover the data. Edit the token's scopes in Developer > API credentials.",
+    "429": "Rippling's rate limit (600 requests per 10 seconds per endpoint) was reached. Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "rippling_list_companies"
+  },
+  "connector": {
+    "name": "Rippling REST API",
+    "type": "REST",
+    "baseUrl": "https://rest.ripplingapis.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{RIPPLING_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/companies/"
+  },
+  "instructions": "## Rippling\nThis connector reads and updates **Rippling** through its REST API (`https://rest.ripplingapis.com`): workers and users, the org structure (departments, teams, work locations, levels, titles, employment types, job codes), custom fields, compensation, leave (types, balances, requests), supergroups and time entries.\n\n**Personal data**: workers, users and compensations hold personal and pay data (names, private emails, phone numbers, home addresses, date of birth, gender, salary). Ask only for the fields the task needs, do not copy them into other systems without a reason, and give the token only the scopes the team uses.\n\n**Setup (5 minutes)**\n1. In Rippling open **Developer > API credentials** (`https://app.rippling.com/api-tokens/tokens`) and click **New API token**. You need the permission *Create and manage API Tokens*.\n2. Name the token and select its **scopes**. The token can only reach data that both its scopes and the owner's permission profile allow. Pick what you use:\n   - `companies.read` (required, the install check), `workers.read`, `users.read`, `departments.read`, `teams.read`, `work-locations.read`, `levels.read`, `titles.read`, `employment-types.read`, `job-codes.read`, `custom-fields.read`, `supergroups.read`.\n   - `compensations.read` only if the agent should see pay.\n   - `leave-types.read`, `leave-balances.read`, `leave-requests.read` (and `leave-requests.read-write` to file or approve leave).\n   - `time-entries.read` (and `time-entries.read-write` to record time; needs Rippling Time).\n   - `departments.read-write`, `teams.read-write`, `work-locations.read-write`, `draft-hires.read-write` for the matching writes.\n3. Copy the token at once (it is shown only once) into `RIPPLING_API_TOKEN`. `rippling_list_companies` is the install check.\n4. Requests run as the token's owner. A token is revoked when it stays unused for 30 days or when its owner is terminated; prefer an owner whose access is stable.\n\n**Workflow**\n- Company: `rippling_list_companies`.\n- People: `rippling_list_workers` (filter by `status`, `work_email`, `user_id`, `created_at`, `updated_at`) and `rippling_get_worker`; a worker is the employment record, its `user_id` points to the login identity read with `rippling_list_users` and `rippling_get_user`. Pass `expand` (e.g. `user,manager,department`) to embed related objects in one call. Pay: `rippling_list_compensations` and `rippling_get_compensation` (the worker's `compensation_id`). Custom field definitions: `rippling_list_custom_fields`; values come with `expand=custom_fields` on workers.\n- Org structure: `rippling_list_departments`, `rippling_get_department`, `rippling_list_teams`, `rippling_get_team`, `rippling_list_work_locations`, `rippling_get_work_location`, `rippling_list_levels`, `rippling_get_level`, `rippling_list_titles`, `rippling_list_employment_types`, `rippling_list_job_codes`.\n- Groups: `rippling_list_supergroups`, `rippling_get_supergroup`, `rippling_list_supergroup_members`.\n- Leave: `rippling_list_leave_types`, `rippling_list_leave_balances` (filter `worker_id eq '...'`), `rippling_get_leave_balance`, `rippling_list_leave_requests` (e.g. `status eq 'PENDING'`), `rippling_get_leave_request`. To book leave use `rippling_create_leave_request`; to approve, reject or cancel use `rippling_update_leave_request` with `status`.\n- Time: `rippling_list_time_entries`, `rippling_get_time_entry`, `rippling_create_time_entry` (send an `idempotency_key` so a retry cannot create a duplicate), `rippling_update_time_entry`.\n- Org changes: `rippling_create_department`, `rippling_update_department`, `rippling_create_team`, `rippling_update_team`, `rippling_create_work_location`, `rippling_update_work_location`.\n- Hiring: `rippling_create_draft_hires` creates up to five draft hires that go through Rippling's review and approval before anyone is hired.\n\n**Switched off at install**: `rippling_delete_team` and `rippling_delete_time_entry`; they cannot be undone, so an admin switches them on when the team needs them.\n\n**Filters**: `filter` takes an OData-style expression on the fields each tool names: `status eq 'ACTIVE'`, `updated_at ge 2026-01-01T00:00:00`, `status in ('HIRED','ACCEPTED')`, combined with `and` / `or`. Quote strings with single quotes. At most 64 nodes per filter.\n\n**Reading the answers**\n- Lists answer `{ \"results\": [...], \"next_link\": \"...\" }`. Ids are 24-character hex strings.\n- Dates are `YYYY-MM-DD`, timestamps ISO 8601 with offset. Money is `{ \"currency_type\": \"USD\", \"value\": 120000 }` in major units.\n- A field the token may not see is `null` and named in `__meta.redacted_fields` with the reason; an expanded object can also be `null` for that reason. Check scopes and the owner's permissions before concluding a value is empty.\n- Worker `status`: INIT, HIRED, ACCEPTED, ACTIVE, TERMINATED.\n\n**Paging**: default 50, `limit` up to 100. When `next_link` is not null, call again with `cursor` set to the `cursor` value inside `next_link`; stop when `next_link` is null.\n\n**Limits and errors**: 600 requests per 10 seconds per endpoint and token, then 429 (wait and retry). 400 means a bad filter, an unexpandable field or `limit` over 100; 401 a revoked or wrong token; 403 a missing scope or permission; 404 an unknown id.\n",
+  "tools": [
+    {
+      "name": "rippling_list_companies",
+      "description": "List the Rippling company the token belongs to (name, legal name, primary email, address, legal entities when expanded). The install check: it only needs the companies.read scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"legal_entities\". Expandable: legal_entities, parent_legal_entity."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/",
+        "queryParams": {
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_workers",
+      "description": "List workers (employees and contractors): status, work and personal email, start and end date, title, department, manager, level, teams, location, employment type and country. Filter by status, work_email, user_id, created_at or updated_at. Contains personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter on status, work_email, user_id, created_at, updated_at. Operators eq, ne, gt, ge, lt, le, in, and, or; quote strings with single quotes, e.g. status eq 'ACTIVE' or work_email eq 'jane@example.com' or updated_at ge 2026-01-01T00:00:00."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"user\". Expandable: user, manager, department, teams, level, employment_type, legal_entity, compensation, job_function, custom_fields, business_partners."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workers/",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_worker",
+      "description": "Read one worker by id with the same fields as rippling_list_workers; expand user, manager or custom_fields for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Worker id (the id field of rippling_list_workers, not the user id)."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"user\". Expandable: user, manager, department, teams, level, employment_type, legal_entity, compensation, job_function, custom_fields, business_partners."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workers/{id}/",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_users",
+      "description": "List users (the login identity behind a worker): name, display name, emails, phone numbers, addresses, time zone, locale and whether the user is active. Contains personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/",
+        "queryParams": {
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_user",
+      "description": "Read one user by id: name, emails, phone numbers, addresses, locale and time zone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "User id (the user_id field of a worker)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{id}/"
+      }
+    },
+    {
+      "name": "rippling_list_compensations",
+      "description": "List compensation packages the token owner may see: annual, monthly, weekly and hourly amounts with currency, bonus targets, commission and salary effective date. Needs the compensations.read scope. Sensitive pay data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"worker\". Expandable: worker."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/compensations/",
+        "queryParams": {
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_compensation",
+      "description": "Read one compensation package by id (the compensation_id of a worker).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Compensation id (compensation_id on the worker)."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"worker\". Expandable: worker."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/compensations/{id}/",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_custom_fields",
+      "description": "List the company's custom fields on employees: id, name, description, data type (TEXT, DATE, NUMBER, SELECT and more), whether required, and the choice values of SELECT and RADIO fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/custom-fields/",
+        "queryParams": {
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_departments",
+      "description": "List departments with name, reference code, parent department and the hierarchy of department ids from the top.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"parent\". Expandable: parent, department_hierarchy."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments/",
+        "queryParams": {
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_department",
+      "description": "Read one department by id: name, reference code, parent and the chain of parent departments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Department id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"parent\". Expandable: parent, department_hierarchy."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments/{id}/",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_teams",
+      "description": "List teams with their name and parent team, to resolve the teams_id values on workers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"parent\". Expandable: parent."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/",
+        "queryParams": {
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_team",
+      "description": "Read one team by id: name and parent team (expand parent for its details).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Team id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"parent\". Expandable: parent."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{id}/",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_work_locations",
+      "description": "List work locations (offices) with name and full address, to resolve a worker's location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/work-locations/",
+        "queryParams": {
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_work_location",
+      "description": "Read one work location by id (the location.work_location_id of a worker).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Work location id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/work-locations/{id}/"
+      }
+    },
+    {
+      "name": "rippling_list_levels",
+      "description": "List job levels with name, parent level, track and rank, to resolve the level_id of workers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"parent\". Expandable: parent, track."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/levels/",
+        "queryParams": {
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_level",
+      "description": "Read one job level by id: name, parent level and track (expand track for its name).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Level id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"parent\". Expandable: parent, track."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/levels/{id}/",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_titles",
+      "description": "List the job titles defined in the company, with id and name, for consistent title values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/titles/",
+        "queryParams": {
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_employment_types",
+      "description": "List employment types: label, CONTRACTOR or EMPLOYEE, HOURLY or SALARIED, FULL-TIME, PART-TIME or TEMPORARY.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/employment-types/",
+        "queryParams": {
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_job_codes",
+      "description": "List job codes (the codes workers log time against) with their job dimension, department and work location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter on job_dimension_id, group_id. Operators eq, ne, gt, ge, lt, le, in, and, or; quote strings with single quotes, e.g. job_dimension_id eq '64f0c2...'."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"job_dimension\". Expandable: job_dimension, work_location, department, pay_rate_exceptions."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/job-codes/",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_supergroups",
+      "description": "List supergroups: the attribute-based groups Rippling uses for policies, apps and workflows (name, type, description, whether terminated people are included).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter on app_owner_id, group_type. Operators eq, ne, gt, ge, lt, le, in, and, or; quote strings with single quotes, e.g. group_type eq 'SPOKE'."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supergroups/",
+        "queryParams": {
+          "filter": "$filter",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_supergroup",
+      "description": "Read one supergroup by id: name, type, description and membership settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Supergroup id from rippling_list_supergroups."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supergroups/{id}/"
+      }
+    },
+    {
+      "name": "rippling_list_supergroup_members",
+      "description": "List the members of a supergroup: worker id, full name and work email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Supergroup id from rippling_list_supergroups."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"worker\". Expandable: worker."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supergroups/{group_id}/members/",
+        "queryParams": {
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_leave_types",
+      "description": "List leave types (vacation, sick and others): name, type, description, whether paid and whether managed by an external system.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter on name. Operators eq, ne, gt, ge, lt, le, in, and, or; quote strings with single quotes, e.g. name eq 'Vacation'."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leave-types/",
+        "queryParams": {
+          "filter": "$filter",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_leave_balances",
+      "description": "List leave balances per worker and leave type: whether unlimited, balance with and without future requests, in hours and in days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter on worker_id, leave_type_id. Operators eq, ne, gt, ge, lt, le, in, and, or; quote strings with single quotes, e.g. worker_id eq '64f0c2...'."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"worker\". Expandable: worker, leave_type."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leave-balances/",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_leave_balance",
+      "description": "Read one leave balance by id: worker, leave type and remaining balance in hours and days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Leave balance id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"worker\". Expandable: worker, leave_type."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leave-balances/{id}/",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_leave_requests",
+      "description": "List leave requests with worker, requester, reviewer, status (PENDING, APPROVED, REJECTED, CANCELED), dates, hours, leave type and comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter on worker_id, requester_id, reviewer_id, status, leave_policy_id, leave_type_id, start_date, end_date. Operators eq, ne, gt, ge, lt, le, in, and, or; quote strings with single quotes, e.g. status eq 'PENDING' and start_date ge 2026-11-01."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"worker\". Expandable: worker, requester, reviewer, leave_type."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leave-requests/",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_leave_request",
+      "description": "Read one leave request by id: worker, status, dates, hours, leave type, reviewer and comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Leave request id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"worker\". Expandable: worker, requester, reviewer, leave_type."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leave-requests/{id}/",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rippling_list_time_entries",
+      "description": "List time entries (worked shifts with job shifts, breaks, duration, status DRAFT, APPROVED, PAID or FINALIZED, pay period and tags). Needs Rippling Time and the time-entries.read scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter on worker_id, start_time, pay_period.start_date, updated_at. Operators eq, ne, gt, ge, lt, le, in, and, or; quote strings with single quotes, e.g. worker_id eq '64f0c2...' and start_time ge 2026-10-01T00:00:00."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"worker\". Expandable: worker, time_card."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field and direction, e.g. \"created_at desc\" or \"updated_at\". Sortable fields: id, created_at, updated_at. Default ascending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor for the next page: the cursor value inside next_link of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time-entries/",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "rippling_get_time_entry",
+      "description": "Read one time entry by id: job shifts, breaks, duration, status, pay period and comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Time entry id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related objects to embed instead of only their id (two levels at most, ten fields at most), e.g. \"worker\". Expandable: worker, time_card."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time-entries/{id}/",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rippling_create_department",
+      "description": "Create a department, optionally under a parent department and with a reference code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Department name."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Parent department id, for a sub-department."
+          },
+          "reference_code": {
+            "type": "string",
+            "description": "Reference code, e.g. a cost center."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/departments/",
+        "bodyMapping": {
+          "name": "$name",
+          "parent_id": "$parent_id",
+          "reference_code": "$reference_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "rippling_update_department",
+      "description": "Change a department's name, parent or reference code. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Department id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "New parent department id."
+          },
+          "reference_code": {
+            "type": "string",
+            "description": "New reference code."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/departments/{id}/",
+        "bodyMapping": {
+          "name": "$name",
+          "parent_id": "$parent_id",
+          "reference_code": "$reference_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rippling_create_team",
+      "description": "Create a team, optionally nested under a parent team; assign workers to it in Rippling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Team name."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Parent team id, for a sub-team."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/teams/",
+        "bodyMapping": {
+          "name": "$name",
+          "parent_id": "$parent_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "rippling_update_team",
+      "description": "Rename a team or move it under another parent team. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Team id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "New parent team id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/teams/{id}/",
+        "bodyMapping": {
+          "name": "$name",
+          "parent_id": "$parent_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rippling_delete_team",
+      "description": "Delete a team; workers lose the team assignment. Cannot be undone; switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Team id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/teams/{id}/"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "rippling_create_work_location",
+      "description": "Create a work location (office) with its name and postal address, for assigning workers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Work location name."
+          },
+          "address": {
+            "type": "object",
+            "description": "Address: {\"street_address\":\"123 Main St\",\"locality\":\"Austin\",\"region\":\"TX\",\"postal_code\":\"78701\",\"country\":\"US\",\"type\":\"WORK\"}. country is ISO 3166-1 alpha-2; type is HOME, WORK or OTHER.",
+            "properties": {
+              "street_address": {
+                "type": "string"
+              },
+              "locality": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              },
+              "postal_code": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "HOME",
+                  "WORK",
+                  "OTHER"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "name",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/work-locations/",
+        "bodyMapping": {
+          "name": "$name",
+          "address": "$address"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "rippling_update_work_location",
+      "description": "Rename a work location or change its address. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Work location id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "address": {
+            "type": "object",
+            "description": "Address: {\"street_address\":\"123 Main St\",\"locality\":\"Austin\",\"region\":\"TX\",\"postal_code\":\"78701\",\"country\":\"US\",\"type\":\"WORK\"}. country is ISO 3166-1 alpha-2; type is HOME, WORK or OTHER.",
+            "properties": {
+              "street_address": {
+                "type": "string"
+              },
+              "locality": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              },
+              "postal_code": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "HOME",
+                  "WORK",
+                  "OTHER"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/work-locations/{id}/",
+        "bodyMapping": {
+          "name": "$name",
+          "address": "$address"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rippling_create_leave_request",
+      "description": "File a leave request for a worker. With status PENDING it follows the normal approval flow; APPROVED records leave that was already agreed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "description": "Worker id of the person taking leave."
+          },
+          "status": {
+            "type": "string",
+            "description": "PENDING asks for approval; APPROVED, REJECTED or CANCELED set the outcome directly.",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED",
+              "CANCELED"
+            ]
+          },
+          "requester_id": {
+            "type": "string",
+            "description": "Worker id of the person filing the request; defaults to the worker."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start time on the first day for a partial day, e.g. 13:00."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End time on the last day for a partial day, e.g. 12:00."
+          },
+          "start_date_custom_hours": {
+            "type": "number",
+            "description": "Hours off on the first day, for a partial day."
+          },
+          "end_date_custom_hours": {
+            "type": "number",
+            "description": "Hours off on the last day, for a partial day."
+          },
+          "leave_type_id": {
+            "type": "string",
+            "description": "Leave type id from rippling_list_leave_types. Give this or leave_policy_id."
+          },
+          "leave_policy_id": {
+            "type": "string",
+            "description": "Leave policy id. Give this or leave_type_id."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Comment shown with the request."
+          },
+          "reason_for_leave": {
+            "type": "string",
+            "description": "Reason for the leave."
+          }
+        },
+        "required": [
+          "worker_id",
+          "status",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/leave-requests/",
+        "bodyMapping": {
+          "worker_id": "$worker_id",
+          "status": "$status",
+          "requester_id": "$requester_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "start_date_custom_hours": "$start_date_custom_hours",
+          "end_date_custom_hours": "$end_date_custom_hours",
+          "leave_type_id": "$leave_type_id",
+          "leave_policy_id": "$leave_policy_id",
+          "comments": "$comments",
+          "reason_for_leave": "$reason_for_leave"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "rippling_update_leave_request",
+      "description": "Approve, reject or cancel a leave request (status), or change its dates and comments. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Leave request id."
+          },
+          "status": {
+            "type": "string",
+            "description": "PENDING asks for approval; APPROVED, REJECTED or CANCELED set the outcome directly.",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED",
+              "CANCELED"
+            ]
+          },
+          "reviewer_id": {
+            "type": "string",
+            "description": "Worker id of the approver, when approving or rejecting."
+          },
+          "reviewed_at": {
+            "type": "string",
+            "description": "When it was reviewed, ISO 8601 date-time."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start time on the first day for a partial day, e.g. 13:00."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End time on the last day for a partial day, e.g. 12:00."
+          },
+          "start_date_custom_hours": {
+            "type": "number",
+            "description": "Hours off on the first day, for a partial day."
+          },
+          "end_date_custom_hours": {
+            "type": "number",
+            "description": "Hours off on the last day, for a partial day."
+          },
+          "leave_type_id": {
+            "type": "string",
+            "description": "Leave type id from rippling_list_leave_types. Give this or leave_policy_id."
+          },
+          "leave_policy_id": {
+            "type": "string",
+            "description": "Leave policy id. Give this or leave_type_id."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Comment shown with the request."
+          },
+          "reason_for_leave": {
+            "type": "string",
+            "description": "Reason for the leave."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/leave-requests/{id}/",
+        "bodyMapping": {
+          "status": "$status",
+          "reviewer_id": "$reviewer_id",
+          "reviewed_at": "$reviewed_at",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "start_date_custom_hours": "$start_date_custom_hours",
+          "end_date_custom_hours": "$end_date_custom_hours",
+          "leave_type_id": "$leave_type_id",
+          "leave_policy_id": "$leave_policy_id",
+          "comments": "$comments",
+          "reason_for_leave": "$reason_for_leave"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rippling_create_time_entry",
+      "description": "Record worked time for a worker, as job shifts with start and end times or as a duration on a day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "description": "Worker id the time belongs to."
+          },
+          "job_shifts": {
+            "type": "array",
+            "description": "Worked periods: [{\"start_time\":\"2026-10-29T09:00:00-05:00\",\"end_time\":\"2026-10-29T17:00:00-05:00\",\"job_codes_id\":[\"...\"]}]. For hours only, use duration and start_date instead of start_time and end_time.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "breaks": {
+            "type": "array",
+            "description": "Breaks: [{\"start_time\":\"...\",\"end_time\":\"...\",\"break_type_id\":\"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "duration": {
+            "type": "number",
+            "description": "Hours worked, when entering a duration instead of start and end times."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Day of a duration entry, YYYY-MM-DD."
+          },
+          "comments": {
+            "type": "array",
+            "description": "Comments: [{\"text\":\"Covered for a colleague\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags for the entry."
+          },
+          "status": {
+            "type": "string",
+            "description": "DRAFT (default) or APPROVED; PAID and FINALIZED are set by payroll.",
+            "enum": [
+              "DRAFT",
+              "APPROVED",
+              "PAID",
+              "FINALIZED"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Your own unique key for the entry; a second create with the same key is refused, so retries cannot duplicate it."
+          }
+        },
+        "required": [
+          "worker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/time-entries/",
+        "bodyMapping": {
+          "worker_id": "$worker_id",
+          "job_shifts": "$job_shifts",
+          "breaks": "$breaks",
+          "duration": "$duration",
+          "start_date": "$start_date",
+          "comments": "$comments",
+          "tags": "$tags",
+          "status": "$status",
+          "idempotency_key": "$idempotency_key"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "rippling_update_time_entry",
+      "description": "Change a time entry: shifts, breaks, duration, comments, tags or status. worker_id is required by the API even when unchanged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Time entry id."
+          },
+          "worker_id": {
+            "type": "string",
+            "description": "Worker id the time belongs to."
+          },
+          "job_shifts": {
+            "type": "array",
+            "description": "Worked periods: [{\"start_time\":\"2026-10-29T09:00:00-05:00\",\"end_time\":\"2026-10-29T17:00:00-05:00\",\"job_codes_id\":[\"...\"]}]. For hours only, use duration and start_date instead of start_time and end_time.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "breaks": {
+            "type": "array",
+            "description": "Breaks: [{\"start_time\":\"...\",\"end_time\":\"...\",\"break_type_id\":\"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "duration": {
+            "type": "number",
+            "description": "Hours worked, when entering a duration instead of start and end times."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Day of a duration entry, YYYY-MM-DD."
+          },
+          "comments": {
+            "type": "array",
+            "description": "Comments: [{\"text\":\"Covered for a colleague\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags for the entry."
+          },
+          "status": {
+            "type": "string",
+            "description": "DRAFT (default) or APPROVED; PAID and FINALIZED are set by payroll.",
+            "enum": [
+              "DRAFT",
+              "APPROVED",
+              "PAID",
+              "FINALIZED"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "worker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/time-entries/{id}/",
+        "bodyMapping": {
+          "worker_id": "$worker_id",
+          "job_shifts": "$job_shifts",
+          "breaks": "$breaks",
+          "duration": "$duration",
+          "start_date": "$start_date",
+          "comments": "$comments",
+          "tags": "$tags",
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rippling_delete_time_entry",
+      "description": "Delete a time entry permanently, e.g. a duplicate. Cannot be undone; switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Time entry id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/time-entries/{id}/"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "rippling_create_draft_hires",
+      "description": "Create draft hires that then follow Rippling's review and approval policies before anyone is hired. Each item needs personal_info (name, invite_email), employment_info (employment_type_id, title) and work_location_info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "draft_hires": {
+            "type": "array",
+            "description": "One to five draft hires, e.g. [{\"personal_info\":{\"name\":{\"first\":\"Jane\",\"last\":\"Doe\"},\"invite_email\":\"jane@example.com\"},\"employment_info\":{\"employment_type_id\":\"...\",\"title\":\"Engineer\",\"start_date\":\"2026-12-01T00:00:00\",\"department_id\":\"...\",\"manager_id\":\"...\"},\"work_location_info\":{\"location_id\":\"...\"}}]. Ids come from rippling_list_employment_types, rippling_list_departments, rippling_list_workers and rippling_list_work_locations.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "draft_hires"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/draft-hires/",
+        "bodyMapping": {
+          "draft_hires": "$draft_hires"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    }
+  ]
+}
