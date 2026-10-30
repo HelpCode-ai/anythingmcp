@@ -1,0 +1,923 @@
+{
+  "slug": "viber",
+  "name": "Viber Bot",
+  "aliases": [
+    "Rakuten Viber",
+    "Viber chatbot"
+  ],
+  "description": "Send Viber messages from a Viber bot through the Viber REST Bot API: text with keyboards, pictures, videos, files, links, contacts, locations, stickers and rich media carousels, broadcasts to up to 300 subscribers, subscriber details and online status, and the bot's webhook. Bot authentication token.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "viber",
+  "docsUrl": "https://developers.viber.com/docs/api/rest-bot-api/",
+  "instructions": "## Viber Bot\nThis connector sends messages as a **Viber bot** through the Viber REST Bot API (`https://chatapi.viber.com/pa`). It covers sending to one subscriber or broadcasting to many, reading the bot account, a subscriber's details and online status, and setting or removing the bot's webhook. It does not receive messages: Viber delivers incoming messages and events only to the bot's webhook, a public HTTPS endpoint of your own.\n\n**Setup (5 minutes once you have a bot)**\n1. You need an existing Viber bot. Since 5 February 2024 Viber creates new bots only on commercial terms: apply through Rakuten Viber or one of its official partners (see https://developers.viber.com/docs/api/rest-bot-api/). Older free bots keep working.\n2. Copy the bot's authentication token (app key): in the Viber app as the bot's admin, **More > Settings > Bots > Edit Info > Your app key**, or in the Viber Admin Panel.\n3. Paste it into `VIBER_AUTH_TOKEN` and run `viber_get_account_info` to check it.\n4. Viber only lets a bot write to users after a webhook is set. If your bot has none yet, set one with `viber_set_webhook` (the URL must answer Viber's check with HTTP 200 and have a certificate from a trusted CA).\n\n**Who can receive messages**: only users **subscribed** to the bot. A user subscribes by sending the bot a message or tapping subscribe; they can unsubscribe at any time. There is no API to list subscribers: their user ids (`sender.id` of incoming messages, `user.id` of the subscribed event) arrive at the webhook, so the id you send to must come from there. Sending to anyone else fails with `receiverNotSubscribed` (6) or `receiverNotRegistered` (5). Messaging people by phone number is a different, paid product (Viber Business Messages) and is not part of this connector.\n\n**Workflow**\n- Check the bot: `viber_get_account_info` returns the name, URI, the webhook, its event types and `subscribers_count`.\n- One user: `viber_send_text` (optionally with a `keyboard` of reply buttons), `viber_send_picture`, `viber_send_video`, `viber_send_file`, `viber_send_url`, `viber_send_contact`, `viber_send_location`, `viber_send_sticker`, and `viber_send_rich_media` for a carousel of cards with images and buttons. Every send tool takes `receiver` (the user id) and `sender_name`, the name shown above the message (at most 28 characters).\n- Many users: `viber_broadcast_message` sends the same message to up to 300 subscribers per call; `replace_me_with_user_name` and `replace_me_with_receiver_id` in the text are replaced for each receiver. Check `failed_list` in the answer for receivers that did not get it.\n- About a user: `viber_get_user_details` (name, country, language, device, Viber version; at most twice per user in 12 hours) and `viber_get_online` (up to 100 ids; `online_status` 0 online, 1 offline with `last_online`, 2 hidden, 3 try later, 4 not a Viber user or not subscribed).\n- Webhook: `viber_set_webhook` points the bot at your endpoint and picks the optional events (`delivered`, `seen`, `failed`, `conversation_started`; `message`, `subscribed` and `unsubscribed` always arrive). `viber_remove_webhook` removes it, which also closes the bot's 1-on-1 chat for users.\n\n**Keyboards and rich media**: `keyboard` is an object `{\"Type\": \"keyboard\", \"Buttons\": [{\"ActionType\": \"reply\", \"ActionBody\": \"yes\", \"Text\": \"Yes\"}]}`; the user's tap comes back to the webhook as a message. Rich media takes `{\"Type\": \"rich_media\", \"ButtonsGroupColumns\": 6, \"ButtonsGroupRows\": 7, \"Buttons\": [...]}` with `Columns`, `Rows`, `ActionType` (`reply`, `open-url`), `ActionBody`, `Text` and `Image` per button; send it with `min_api_version` 7 and an `alt_text` for old clients. Buttons are documented at https://developers.viber.com/docs/tools/keyboards/.\n\n**Reading the answers**: every answer has `status` (0 = ok) and `status_message`; the connector turns any other status into an error. A sent message returns `message_token`. `billing_status` says how Viber bills the message: 0 to 4 are not charged (in a session the user opened, or free), 5 is a charged message outside a session. Times (`last_online`, callback `timestamp`) are Unix milliseconds.\n\n**Limits**: the whole request must stay under 30 KB; text up to 7,000 characters; pictures JPEG, PNG or static GIF up to 1 MB on iOS (3 MB on Android) with the extension in the URL; videos MP4 up to 26 MB and 180 seconds; files up to 50 MB (executables are refused). Broadcasts allow 500 requests in 10 seconds. Commercial bots pay per message outside a session: `freeMessagesExceeded` (23) or `noBalance` (24) means the monthly free messages or the balance are used up.\n\n**Errors** (`status`): 2 invalid token, 3 bad data, 4 missing data, 5 receiver not on Viber, 6 receiver not subscribed, 7 bot blocked, 8 not a bot token, 9 bot suspended, 10 no webhook set, 11 receiver's Viber too old, 12 too many requests, 13 or 14 `min_api_version` too high for the receiver, 21 country not supported.",
+  "prerequisites": "An existing Viber bot (new bots are created only on commercial terms with Rakuten Viber since February 2024) and its authentication token.",
+  "requiredEnvVars": [
+    "VIBER_AUTH_TOKEN"
+  ],
+  "envVarMeta": {
+    "VIBER_AUTH_TOKEN": {
+      "label": "Bot authentication token",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Viber as the bot's admin: More, Settings, Bots, Edit Info, Your app key. Also shown in the Viber Admin Panel.",
+      "link": "https://developers.viber.com/docs/api/rest-bot-api/#authentication-token",
+      "example": "445da6az1s345z78-dazcczb2542zv51a-e0vc5fva17480im9",
+      "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+){2,}$",
+      "patternMessage": "Paste only the token, three groups of letters and digits joined by dashes, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Viber refused the token, or the bot is blocked or suspended. Copy the app key again from the bot's Edit Info screen in Viber or from the Viber Admin Panel.",
+    "rate_limited": "Viber reports too many requests. Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "viber_get_account_info"
+  },
+  "connector": {
+    "name": "Viber REST Bot API",
+    "type": "REST",
+    "baseUrl": "https://chatapi.viber.com/pa",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Viber-Auth-Token",
+      "apiKey": "{{VIBER_AUTH_TOKEN}}"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status",
+          "in": [2, 7, 8, 9, 15],
+          "messagePath": "status_message",
+          "status": 401
+        },
+        {
+          "path": "status",
+          "equals": 12,
+          "messagePath": "status_message",
+          "status": 429
+        },
+        {
+          "path": "status",
+          "messagePath": "status_message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "viber_get_account_info",
+      "description": "Details of the bot account: id, name, uri, icon, category, country, the webhook URL and its event_types, and subscribers_count.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_account_info",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "viber_get_user_details",
+      "description": "Details of one subscribed user: name, avatar, country, language, primary device OS, device type, Viber and API version. Viber allows this at most twice per user in 12 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The user's Viber id, e.g. 01234567890A= (from an incoming message's sender.id)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_user_details",
+        "bodyMapping": {
+          "id": "$id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "viber_get_online",
+      "description": "Online status of up to 100 subscribed users. online_status: 0 online, 1 offline (with last_online in Unix ms), 2 hidden by the user, 3 try later, 4 not a Viber user or not subscribed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Viber user ids."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_online",
+        "bodyMapping": {
+          "ids": "$ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "viber_send_text",
+      "description": "Send a text message (up to 7,000 characters) to one subscribed user, optionally with a keyboard of reply buttons. Returns message_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "The subscribed user's Viber id."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text, up to 7,000 characters. Supports *bold*, _italic_, ~strike~ and ```monospace```."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Name shown as the sender, at most 28 characters (usually the bot's name)."
+          },
+          "sender_avatar": {
+            "type": "string",
+            "description": "URL of the sender's avatar image, at most 100 KB."
+          },
+          "keyboard": {
+            "type": "object",
+            "description": "Optional reply keyboard: {\"Type\": \"keyboard\", \"Buttons\": [{\"ActionType\": \"reply\", \"ActionBody\": \"yes\", \"Text\": \"Yes\"}]}."
+          },
+          "tracking_data": {
+            "type": "string",
+            "description": "Optional text up to 4,096 characters that comes back to the webhook with the user's reply."
+          },
+          "min_api_version": {
+            "type": "integer",
+            "description": "Lowest Viber client API version that may receive the message (default 1; keyboards with newer features need a higher value)."
+          }
+        },
+        "required": [
+          "receiver",
+          "text",
+          "sender_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send_message",
+        "bodyMapping": {
+          "receiver": "$receiver",
+          "type": "text",
+          "text": "$text",
+          "sender": {
+            "name": "$sender_name",
+            "avatar": "$sender_avatar"
+          },
+          "keyboard": "$keyboard",
+          "tracking_data": "$tracking_data",
+          "min_api_version": "$min_api_version"
+        }
+      }
+    },
+    {
+      "name": "viber_send_picture",
+      "description": "Send a picture (JPEG, PNG or static GIF from a URL) with a caption to one subscribed user. The URL must end in .jpg, .jpeg, .png or .gif.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "The subscribed user's Viber id."
+          },
+          "media": {
+            "type": "string",
+            "description": "Public URL of the image, ending in .jpg, .jpeg, .png or .gif; at most 1 MB for iOS users (3 MB on Android)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Caption, up to 768 characters."
+          },
+          "thumbnail": {
+            "type": "string",
+            "description": "Optional URL of a small preview image (about 400x400, at most 100 KB)."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Name shown as the sender, at most 28 characters."
+          },
+          "sender_avatar": {
+            "type": "string",
+            "description": "URL of the sender's avatar image, at most 100 KB."
+          },
+          "keyboard": {
+            "type": "object",
+            "description": "Optional reply keyboard, see viber_send_text."
+          },
+          "tracking_data": {
+            "type": "string",
+            "description": "Optional text that comes back to the webhook with the user's reply."
+          },
+          "min_api_version": {
+            "type": "integer",
+            "description": "Lowest Viber client API version that may receive the message (default 1)."
+          }
+        },
+        "required": [
+          "receiver",
+          "media",
+          "text",
+          "sender_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send_message",
+        "bodyMapping": {
+          "receiver": "$receiver",
+          "type": "picture",
+          "media": "$media",
+          "text": "$text",
+          "thumbnail": "$thumbnail",
+          "sender": {
+            "name": "$sender_name",
+            "avatar": "$sender_avatar"
+          },
+          "keyboard": "$keyboard",
+          "tracking_data": "$tracking_data",
+          "min_api_version": "$min_api_version"
+        }
+      }
+    },
+    {
+      "name": "viber_send_video",
+      "description": "Send an MP4 video (H.264, up to 26 MB and 180 seconds) from a URL to one subscribed user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "The subscribed user's Viber id."
+          },
+          "media": {
+            "type": "string",
+            "description": "Public URL of the video, ending in .mp4."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Size of the video in bytes."
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Duration in seconds, at most 180."
+          },
+          "thumbnail": {
+            "type": "string",
+            "description": "Optional URL of a JPEG preview image, at most 100 KB."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Name shown as the sender, at most 28 characters."
+          },
+          "sender_avatar": {
+            "type": "string",
+            "description": "URL of the sender's avatar image, at most 100 KB."
+          },
+          "keyboard": {
+            "type": "object",
+            "description": "Optional reply keyboard, see viber_send_text."
+          },
+          "tracking_data": {
+            "type": "string",
+            "description": "Optional text that comes back to the webhook with the user's reply."
+          },
+          "min_api_version": {
+            "type": "integer",
+            "description": "Lowest Viber client API version that may receive the message (default 1)."
+          }
+        },
+        "required": [
+          "receiver",
+          "media",
+          "size",
+          "sender_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send_message",
+        "bodyMapping": {
+          "receiver": "$receiver",
+          "type": "video",
+          "media": "$media",
+          "size": "$size",
+          "duration": "$duration",
+          "thumbnail": "$thumbnail",
+          "sender": {
+            "name": "$sender_name",
+            "avatar": "$sender_avatar"
+          },
+          "keyboard": "$keyboard",
+          "tracking_data": "$tracking_data",
+          "min_api_version": "$min_api_version"
+        }
+      }
+    },
+    {
+      "name": "viber_send_file",
+      "description": "Send a file (up to 50 MB, from a URL) to one subscribed user, e.g. a PDF invoice. Executables and scripts are refused by Viber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "The subscribed user's Viber id."
+          },
+          "media": {
+            "type": "string",
+            "description": "Public URL of the file, including the file extension."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Size of the file in bytes."
+          },
+          "file_name": {
+            "type": "string",
+            "description": "File name shown to the user, with extension, at most 256 characters, e.g. invoice-1042.pdf."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Name shown as the sender, at most 28 characters."
+          },
+          "sender_avatar": {
+            "type": "string",
+            "description": "URL of the sender's avatar image, at most 100 KB."
+          },
+          "keyboard": {
+            "type": "object",
+            "description": "Optional reply keyboard, see viber_send_text."
+          },
+          "tracking_data": {
+            "type": "string",
+            "description": "Optional text that comes back to the webhook with the user's reply."
+          },
+          "min_api_version": {
+            "type": "integer",
+            "description": "Lowest Viber client API version that may receive the message (default 1)."
+          }
+        },
+        "required": [
+          "receiver",
+          "media",
+          "size",
+          "file_name",
+          "sender_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send_message",
+        "bodyMapping": {
+          "receiver": "$receiver",
+          "type": "file",
+          "media": "$media",
+          "size": "$size",
+          "file_name": "$file_name",
+          "sender": {
+            "name": "$sender_name",
+            "avatar": "$sender_avatar"
+          },
+          "keyboard": "$keyboard",
+          "tracking_data": "$tracking_data",
+          "min_api_version": "$min_api_version"
+        }
+      }
+    },
+    {
+      "name": "viber_send_url",
+      "description": "Send a link (up to 2,000 characters) to one subscribed user; Viber shows a preview. Also the way to send an animated GIF.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "The subscribed user's Viber id."
+          },
+          "media": {
+            "type": "string",
+            "description": "The URL to send."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Name shown as the sender, at most 28 characters."
+          },
+          "sender_avatar": {
+            "type": "string",
+            "description": "URL of the sender's avatar image, at most 100 KB."
+          },
+          "keyboard": {
+            "type": "object",
+            "description": "Optional reply keyboard, see viber_send_text."
+          },
+          "tracking_data": {
+            "type": "string",
+            "description": "Optional text that comes back to the webhook with the user's reply."
+          },
+          "min_api_version": {
+            "type": "integer",
+            "description": "Lowest Viber client API version that may receive the message (default 1)."
+          }
+        },
+        "required": [
+          "receiver",
+          "media",
+          "sender_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send_message",
+        "bodyMapping": {
+          "receiver": "$receiver",
+          "type": "url",
+          "media": "$media",
+          "sender": {
+            "name": "$sender_name",
+            "avatar": "$sender_avatar"
+          },
+          "keyboard": "$keyboard",
+          "tracking_data": "$tracking_data",
+          "min_api_version": "$min_api_version"
+        }
+      }
+    },
+    {
+      "name": "viber_send_contact",
+      "description": "Send a contact card (name and phone number) to one subscribed user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "The subscribed user's Viber id."
+          },
+          "contact_name": {
+            "type": "string",
+            "description": "Name of the contact, at most 28 characters."
+          },
+          "contact_phone_number": {
+            "type": "string",
+            "description": "Phone number of the contact, at most 18 characters, e.g. +497611234567."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Name shown as the sender, at most 28 characters."
+          },
+          "sender_avatar": {
+            "type": "string",
+            "description": "URL of the sender's avatar image, at most 100 KB."
+          },
+          "keyboard": {
+            "type": "object",
+            "description": "Optional reply keyboard, see viber_send_text."
+          },
+          "tracking_data": {
+            "type": "string",
+            "description": "Optional text that comes back to the webhook with the user's reply."
+          },
+          "min_api_version": {
+            "type": "integer",
+            "description": "Lowest Viber client API version that may receive the message (default 1)."
+          }
+        },
+        "required": [
+          "receiver",
+          "contact_name",
+          "contact_phone_number",
+          "sender_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send_message",
+        "bodyMapping": {
+          "receiver": "$receiver",
+          "type": "contact",
+          "contact": {
+            "name": "$contact_name",
+            "phone_number": "$contact_phone_number"
+          },
+          "sender": {
+            "name": "$sender_name",
+            "avatar": "$sender_avatar"
+          },
+          "keyboard": "$keyboard",
+          "tracking_data": "$tracking_data",
+          "min_api_version": "$min_api_version"
+        }
+      }
+    },
+    {
+      "name": "viber_send_location",
+      "description": "Send a location pin (latitude and longitude) to one subscribed user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "The subscribed user's Viber id."
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Latitude in decimal degrees, e.g. 47.9959."
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Longitude in decimal degrees, e.g. 7.8522."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Name shown as the sender, at most 28 characters."
+          },
+          "sender_avatar": {
+            "type": "string",
+            "description": "URL of the sender's avatar image, at most 100 KB."
+          },
+          "keyboard": {
+            "type": "object",
+            "description": "Optional reply keyboard, see viber_send_text."
+          },
+          "tracking_data": {
+            "type": "string",
+            "description": "Optional text that comes back to the webhook with the user's reply."
+          },
+          "min_api_version": {
+            "type": "integer",
+            "description": "Lowest Viber client API version that may receive the message (default 1)."
+          }
+        },
+        "required": [
+          "receiver",
+          "lat",
+          "lon",
+          "sender_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send_message",
+        "bodyMapping": {
+          "receiver": "$receiver",
+          "type": "location",
+          "location": {
+            "lat": "$lat",
+            "lon": "$lon"
+          },
+          "sender": {
+            "name": "$sender_name",
+            "avatar": "$sender_avatar"
+          },
+          "keyboard": "$keyboard",
+          "tracking_data": "$tracking_data",
+          "min_api_version": "$min_api_version"
+        }
+      }
+    },
+    {
+      "name": "viber_send_sticker",
+      "description": "Send a Viber sticker by its numeric sticker id to one subscribed user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "The subscribed user's Viber id."
+          },
+          "sticker_id": {
+            "type": "integer",
+            "description": "Viber sticker id, e.g. 46105 (see the sticker ids page in the Viber developer docs)."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Name shown as the sender, at most 28 characters."
+          },
+          "sender_avatar": {
+            "type": "string",
+            "description": "URL of the sender's avatar image, at most 100 KB."
+          },
+          "keyboard": {
+            "type": "object",
+            "description": "Optional reply keyboard, see viber_send_text."
+          },
+          "tracking_data": {
+            "type": "string",
+            "description": "Optional text that comes back to the webhook with the user's reply."
+          },
+          "min_api_version": {
+            "type": "integer",
+            "description": "Lowest Viber client API version that may receive the message (default 1)."
+          }
+        },
+        "required": [
+          "receiver",
+          "sticker_id",
+          "sender_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send_message",
+        "bodyMapping": {
+          "receiver": "$receiver",
+          "type": "sticker",
+          "sticker_id": "$sticker_id",
+          "sender": {
+            "name": "$sender_name",
+            "avatar": "$sender_avatar"
+          },
+          "keyboard": "$keyboard",
+          "tracking_data": "$tracking_data",
+          "min_api_version": "$min_api_version"
+        }
+      }
+    },
+    {
+      "name": "viber_send_rich_media",
+      "description": "Send a rich media message (a carousel of cards with images, text and buttons) to one subscribed user. Needs min_api_version 7 for full support; alt_text is shown on older clients.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "The subscribed user's Viber id."
+          },
+          "rich_media": {
+            "type": "object",
+            "description": "{\"Type\": \"rich_media\", \"ButtonsGroupColumns\": 6, \"ButtonsGroupRows\": 7, \"BgColor\": \"#FFFFFF\", \"Buttons\": [{\"Columns\": 6, \"Rows\": 3, \"ActionType\": \"open-url\", \"ActionBody\": \"https://...\", \"Image\": \"https://...\"}, {\"Columns\": 6, \"Rows\": 2, \"Text\": \"<b>Title</b>\", \"ActionType\": \"reply\", \"ActionBody\": \"more\"}]}. Each card spans ButtonsGroupRows rows."
+          },
+          "alt_text": {
+            "type": "string",
+            "description": "Text shown by clients that cannot display rich media."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Name shown as the sender, at most 28 characters."
+          },
+          "sender_avatar": {
+            "type": "string",
+            "description": "URL of the sender's avatar image, at most 100 KB."
+          },
+          "keyboard": {
+            "type": "object",
+            "description": "Optional reply keyboard, see viber_send_text."
+          },
+          "tracking_data": {
+            "type": "string",
+            "description": "Optional text that comes back to the webhook with the user's reply."
+          },
+          "min_api_version": {
+            "type": "integer",
+            "description": "Lowest Viber client API version that may receive the message; use 7 for rich media."
+          }
+        },
+        "required": [
+          "receiver",
+          "rich_media",
+          "sender_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send_message",
+        "bodyMapping": {
+          "receiver": "$receiver",
+          "type": "rich_media",
+          "rich_media": "$rich_media",
+          "alt_text": "$alt_text",
+          "sender": {
+            "name": "$sender_name",
+            "avatar": "$sender_avatar"
+          },
+          "keyboard": "$keyboard",
+          "tracking_data": "$tracking_data",
+          "min_api_version": "$min_api_version"
+        }
+      }
+    },
+    {
+      "name": "viber_broadcast_message",
+      "description": "Send the same message to up to 300 subscribed users in one call. Placeholders replace_me_with_user_name and replace_me_with_receiver_id are filled in per receiver. The answer's failed_list names receivers that did not get it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcast_list": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 300,
+            "description": "Viber ids of the subscribed receivers, at most 300."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "picture",
+              "video",
+              "file",
+              "url",
+              "contact",
+              "location",
+              "sticker",
+              "rich_media"
+            ],
+            "description": "Message type; pass the fields that type needs (text; media and text for picture; media and size for video; media, size and file_name for file; media for url; contact; location; sticker_id; rich_media)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text for type text (up to 7,000 characters) or the caption for picture."
+          },
+          "media": {
+            "type": "string",
+            "description": "URL of the picture, video, file or link."
+          },
+          "thumbnail": {
+            "type": "string",
+            "description": "Optional preview image URL for picture or video."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Size in bytes for video or file."
+          },
+          "file_name": {
+            "type": "string",
+            "description": "File name with extension for type file."
+          },
+          "contact": {
+            "type": "object",
+            "description": "For type contact: {\"name\": \"...\", \"phone_number\": \"+49...\"}."
+          },
+          "location": {
+            "type": "object",
+            "description": "For type location: {\"lat\": 47.9959, \"lon\": 7.8522}."
+          },
+          "sticker_id": {
+            "type": "integer",
+            "description": "Sticker id for type sticker."
+          },
+          "rich_media": {
+            "type": "object",
+            "description": "Rich media object for type rich_media, see viber_send_rich_media."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Name shown as the sender, at most 28 characters."
+          },
+          "sender_avatar": {
+            "type": "string",
+            "description": "URL of the sender's avatar image, at most 100 KB."
+          },
+          "keyboard": {
+            "type": "object",
+            "description": "Optional reply keyboard, see viber_send_text."
+          },
+          "tracking_data": {
+            "type": "string",
+            "description": "Optional text that comes back to the webhook with each user's reply."
+          },
+          "min_api_version": {
+            "type": "integer",
+            "description": "Lowest Viber client API version that may receive the message (default 1; 7 for rich media)."
+          }
+        },
+        "required": [
+          "broadcast_list",
+          "type",
+          "sender_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/broadcast_message",
+        "bodyMapping": {
+          "broadcast_list": "$broadcast_list",
+          "type": "$type",
+          "text": "$text",
+          "media": "$media",
+          "thumbnail": "$thumbnail",
+          "size": "$size",
+          "file_name": "$file_name",
+          "contact": "$contact",
+          "location": "$location",
+          "sticker_id": "$sticker_id",
+          "rich_media": "$rich_media",
+          "sender": {
+            "name": "$sender_name",
+            "avatar": "$sender_avatar"
+          },
+          "keyboard": "$keyboard",
+          "tracking_data": "$tracking_data",
+          "min_api_version": "$min_api_version"
+        }
+      }
+    },
+    {
+      "name": "viber_set_webhook",
+      "description": "Set the bot's webhook, the HTTPS endpoint where Viber delivers incoming messages and events. Replaces the current webhook. Viber calls the URL once to check it answers HTTP 200.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public HTTPS URL with a certificate from a trusted CA (no self-signed certificates)."
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "delivered",
+                "seen",
+                "failed",
+                "subscribed",
+                "unsubscribed",
+                "conversation_started",
+                "message"
+              ]
+            },
+            "description": "Events to receive. Leave out for all events; message, subscribed and unsubscribed always arrive."
+          },
+          "send_name": {
+            "type": "boolean",
+            "description": "Whether callbacks include the user's name (default true)."
+          },
+          "send_photo": {
+            "type": "boolean",
+            "description": "Whether callbacks include the user's photo (default true)."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/set_webhook",
+        "bodyMapping": {
+          "url": "$url",
+          "event_types": "$event_types",
+          "send_name": "$send_name",
+          "send_photo": "$send_photo"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "viber_remove_webhook",
+      "description": "Remove the bot's webhook. The bot then receives nothing and users can no longer open a 1-on-1 chat with it until a webhook is set again.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/set_webhook",
+        "bodyMapping": {
+          "url": ""
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

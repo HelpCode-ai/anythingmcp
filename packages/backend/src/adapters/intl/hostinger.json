@@ -1,0 +1,1683 @@
+{
+  "slug": "hostinger",
+  "name": "Hostinger",
+  "aliases": [
+    "hPanel",
+    "Hostinger VPS"
+  ],
+  "description": "Manage a Hostinger account through its public API: VPS power, metrics, backups, snapshots, Docker projects and firewalls, domains, nameservers and DNS zones with snapshots, subscriptions and the price catalog, and web hosting websites, WordPress sites, databases and cache.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "hostinger",
+  "docsUrl": "https://developers.hostinger.com",
+  "instructions": "## Hostinger\nThis connector works with a **Hostinger** account through the Hostinger public API (`https://developers.hostinger.com`): VPS (machines, power, metrics, actions, backups, snapshots, SSH keys, Docker projects, firewalls), domains (portfolio, availability, nameservers, forwarding, WHOIS profiles), DNS zones and their snapshots, billing (subscriptions, payment methods and the price catalog, read-only) and web hosting (orders, websites, WordPress installations, databases, cron jobs, cache).\n\n**Setup (2 minutes)**\n1. Sign in to hPanel and open **Account**, then **API** (https://hpanel.hostinger.com/profile/api), and create a new token. Pick an expiry; the token has the same rights as your hPanel user.\n2. Paste it into `HOSTINGER_API_TOKEN`. It is sent as `Authorization: Bearer <token>`.\n3. Run `hostinger_list_subscriptions` to check the token.\n\nNothing here buys anything: ordering VPS plans or domains, payment method changes and subscription renewals stay in hPanel.\n\n**VPS**\n- Find a machine: `hostinger_list_virtual_machines`, then `hostinger_get_virtual_machine` with its numeric id. `hostinger_get_vm_metrics` gives CPU, memory, disk, traffic and uptime for a period (both dates required).\n- Power: `hostinger_start_vm`, `hostinger_stop_vm`, `hostinger_restart_vm`; `hostinger_set_vm_hostname` renames it. Each write answers with an action: follow it with `hostinger_get_vm_action` or `hostinger_list_vm_actions` (states created, sent, delayed, success, error). While `actions_lock` is locked, a new action is refused.\n- Recovery: `hostinger_list_vm_backups` and `hostinger_restore_vm_backup`; `hostinger_get_vm_snapshot`, `hostinger_create_vm_snapshot` (replaces the existing snapshot) and `hostinger_restore_vm_snapshot`.\n- Access and setup facts: `hostinger_list_vm_ssh_keys`, `hostinger_list_vps_templates`, `hostinger_list_vps_data_centers`.\n- Docker manager: `hostinger_list_docker_projects`, `hostinger_get_docker_project_containers`, `hostinger_get_docker_project_logs`, `hostinger_restart_docker_project`.\n- Firewalls: `hostinger_list_firewalls`, `hostinger_get_firewall`, `hostinger_create_firewall`, `hostinger_create_firewall_rule`, `hostinger_update_firewall_rule`, `hostinger_delete_firewall_rule`, then `hostinger_sync_firewall` so the machines get the new rules. `hostinger_activate_firewall` and `hostinger_deactivate_firewall` attach or detach a firewall from a VPS. A firewall drops everything no rule accepts: make sure SSH (22) stays allowed before activating or syncing.\n\n**Domains and DNS**\n- `hostinger_list_domains`, `hostinger_get_domain`, `hostinger_get_domain_renewal`, `hostinger_get_domain_forwarding`, `hostinger_list_whois_profiles`; `hostinger_check_domain_availability` before suggesting a name; `hostinger_update_domain_nameservers` to move DNS elsewhere.\n- DNS (domains on Hostinger nameservers): `hostinger_get_dns_records` first. Test changes with `hostinger_validate_dns_records`, apply them with `hostinger_update_dns_records`, remove whole record sets with `hostinger_delete_dns_records`. Every change leaves a snapshot: `hostinger_list_dns_snapshots`, `hostinger_get_dns_snapshot` and `hostinger_restore_dns_snapshot` undo it. In `zone`, `name` is relative to the domain (`@` for the domain itself, `www`), CNAME and NS targets end with a dot, MX content is `<priority> <host>`.\n\n**Billing (read-only)**: `hostinger_list_subscriptions`, `hostinger_list_payment_methods`, `hostinger_get_catalog` (filter by category and name; the full catalog is long).\n\n**Web hosting**: `hostinger_list_hosting_orders` and `hostinger_list_websites` give the order ids and the hosting account user names (`u123456789`) that `hostinger_list_databases` and `hostinger_list_cron_jobs` need; `hostinger_list_wordpress_installations` lists WordPress sites; `hostinger_clear_website_cache` clears a site's cache.\n\n**Confirm before every write**: power changes, restores, snapshots, firewall changes, nameserver and DNS changes can take sites, email or SSH access offline. Name the machine or domain and the effect, show the records or rules, and wait for the user's yes. Backup and snapshot restores overwrite all data on the VPS and cannot be undone.\n\n**Reading the answers**: VPS, action, backup, firewall and rule ids are integers. Times are ISO 8601 in UTC; metrics are keyed by Unix timestamps. Prices are in cents (`1799` = 17.99) of `currency_code`. Memory, disk and bandwidth of a VPS are in MB. Domain contacts and WHOIS profiles hold personal data: show only what the task needs.\n\n**Paging**: lists with `page` return `meta` with `current_page`, `per_page` and `total`; ask for the next page while `current_page * per_page < total`. VPS, domain, DNS and billing lists without `page` return everything at once.\n\n**Limits and errors**: about 90 requests a minute per token; on 429 wait for `Retry-After` seconds (repeated overruns can block the IP for a while). 401 means a wrong, revoked or expired token, 404 an id or domain that is not in this account, 422 invalid input (the answer names the field), 409 or a locked action means the VPS is still busy with another action. Error answers carry a `correlation_id` for Hostinger support.",
+  "prerequisites": "A Hostinger account and an API token from hPanel, Account, API.",
+  "requiredEnvVars": [
+    "HOSTINGER_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "HOSTINGER_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "hPanel, Account, API, create a new token. It has the same rights as your hPanel user.",
+      "link": "https://hpanel.hostinger.com/profile/api",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token, without spaces or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Hostinger refused the API token: it is wrong, revoked or expired. Create a new one in hPanel under Account, API.",
+    "429": "The Hostinger API rate limit (about 90 requests a minute) is reached. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "hostinger_list_subscriptions"
+  },
+  "connector": {
+    "name": "Hostinger API",
+    "type": "REST",
+    "baseUrl": "https://developers.hostinger.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{HOSTINGER_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/billing/v1/subscriptions"
+  },
+  "tools": [
+    {
+      "name": "hostinger_list_virtual_machines",
+      "description": "List every VPS (virtual machine) of the account: id, hostname, state (running, stopped, ...), plan, CPU count, memory and disk in MB, bandwidth, IPv4 and IPv6 addresses, OS template, data center, firewall group and subscription id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines"
+      }
+    },
+    {
+      "name": "hostinger_get_virtual_machine",
+      "description": "Read one VPS in detail: state, plan and resources, IP addresses, OS template, hostname, nameservers, data center, active firewall, subscription and whether an action is still running (actions_lock).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}"
+      }
+    },
+    {
+      "name": "hostinger_get_vm_metrics",
+      "description": "Usage history of a VPS between two times: CPU, memory and disk usage, incoming and outgoing traffic, and uptime, as time series keyed by Unix timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of the period, ISO 8601, e.g. 2026-10-30T00:00:00Z."
+          }
+        },
+        "required": [
+          "virtual_machine_id",
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/metrics",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to"
+        }
+      }
+    },
+    {
+      "name": "hostinger_list_vm_actions",
+      "description": "History of operations run on a VPS (start, stop, restart, backup restore, snapshot, OS change, ...), newest first, with name, state (created, sent, delayed, success, error) and times. Use it to follow up a write that answered with an action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/actions",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hostinger_get_vm_action",
+      "description": "Read one VPS action by id to see whether it is still running, succeeded or failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          },
+          "action_id": {
+            "type": "integer",
+            "description": "Action id (the id returned by a VPS write or from hostinger_list_vm_actions)."
+          }
+        },
+        "required": [
+          "virtual_machine_id",
+          "action_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/actions/{action_id}"
+      }
+    },
+    {
+      "name": "hostinger_start_vm",
+      "description": "Power on a stopped VPS. Answers with an action; the machine is up once that action succeeds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/start"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hostinger_stop_vm",
+      "description": "Power off a VPS. Everything running on it goes offline until it is started again. Billing continues; stopping is not cancelling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/stop"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hostinger_restart_vm",
+      "description": "Reboot a VPS (full stop and start; a stopped VPS is started). Services on it are briefly unavailable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/restart"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "hostinger_set_vm_hostname",
+      "description": "Change the hostname of a VPS. The PTR (reverse DNS) record is not updated automatically, and the domain's A/AAAA records must point to the VPS for the name to resolve.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          },
+          "hostname": {
+            "type": "string",
+            "description": "New hostname, e.g. my.server.tld."
+          }
+        },
+        "required": [
+          "virtual_machine_id",
+          "hostname"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/hostname",
+        "bodyMapping": {
+          "hostname": "$hostname"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hostinger_list_vm_backups",
+      "description": "List the automatic backups of a VPS with their id, size, location and creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/backups",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hostinger_restore_vm_backup",
+      "description": "Restore a VPS from one of its backups. ALL current data on the VPS is overwritten with the backup; changes made since are lost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          },
+          "backup_id": {
+            "type": "integer",
+            "description": "Backup id from hostinger_list_vm_backups."
+          }
+        },
+        "required": [
+          "virtual_machine_id",
+          "backup_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/backups/{backup_id}/restore"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "hostinger_get_vm_snapshot",
+      "description": "Read the snapshot of a VPS (a VPS has at most one): id, creation time, expiry time and restore time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/snapshot"
+      }
+    },
+    {
+      "name": "hostinger_create_vm_snapshot",
+      "description": "Take a snapshot of a VPS's current state. A VPS keeps only one snapshot: creating a new one overwrites the existing snapshot.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/snapshot"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "hostinger_restore_vm_snapshot",
+      "description": "Revert a VPS to its snapshot. Everything changed on the VPS since the snapshot was taken is lost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/snapshot/restore"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "hostinger_list_vm_ssh_keys",
+      "description": "List the SSH public keys of the root user on a VPS: key type, fingerprint data and comment name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/ssh-keys"
+      }
+    },
+    {
+      "name": "hostinger_list_vps_templates",
+      "description": "List the OS templates a VPS can be installed with (Ubuntu, Debian, AlmaLinux, panels and app stacks): id, name and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/templates"
+      }
+    },
+    {
+      "name": "hostinger_list_vps_data_centers",
+      "description": "List Hostinger's VPS data centers: id, name, location code, city and continent.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/data-centers"
+      }
+    },
+    {
+      "name": "hostinger_list_docker_projects",
+      "description": "List the Docker Compose projects on a VPS that uses Hostinger's Docker manager: name, status, compose file path and containers with image, state, health and ports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/docker"
+      }
+    },
+    {
+      "name": "hostinger_get_docker_project_containers",
+      "description": "List the containers of one Docker Compose project on a VPS with status, health, port mappings and CPU and memory stats.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          },
+          "project_name": {
+            "type": "string",
+            "description": "Docker Compose project name (from hostinger_list_docker_projects): letters, digits, dashes and underscores."
+          }
+        },
+        "required": [
+          "virtual_machine_id",
+          "project_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/docker/{project_name}/containers"
+      }
+    },
+    {
+      "name": "hostinger_get_docker_project_logs",
+      "description": "Read the latest log lines (up to 300 in total) of every service of a Docker Compose project on a VPS, grouped by service with timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          },
+          "project_name": {
+            "type": "string",
+            "description": "Docker Compose project name (from hostinger_list_docker_projects): letters, digits, dashes and underscores."
+          }
+        },
+        "required": [
+          "virtual_machine_id",
+          "project_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/docker/{project_name}/logs"
+      }
+    },
+    {
+      "name": "hostinger_restart_docker_project",
+      "description": "Restart all services of a Docker Compose project on a VPS (stop and start in dependency order; volumes are kept). The services are briefly unavailable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          },
+          "project_name": {
+            "type": "string",
+            "description": "Docker Compose project name (from hostinger_list_docker_projects): letters, digits, dashes and underscores."
+          }
+        },
+        "required": [
+          "virtual_machine_id",
+          "project_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/virtual-machines/{virtual_machine_id}/docker/{project_name}/restart"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "hostinger_list_firewalls",
+      "description": "List the VPS firewalls of the account: id, name, whether they are in sync with their machines, and their rules.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/firewall",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "hostinger_get_firewall",
+      "description": "Read one firewall with all its rules (protocol, port, source) and its sync state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firewall_id": {
+            "type": "integer",
+            "description": "Firewall id (from hostinger_list_firewalls)."
+          }
+        },
+        "required": [
+          "firewall_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/vps/v1/firewall/{firewall_id}"
+      }
+    },
+    {
+      "name": "hostinger_create_firewall",
+      "description": "Create an empty firewall. A firewall drops all incoming traffic that no rule accepts, so add rules for SSH and every service before activating it on a VPS.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Firewall name."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/firewall",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "hostinger_create_firewall_rule",
+      "description": "Add an accept rule to a firewall. Machines using the firewall are out of sync afterwards until hostinger_sync_firewall runs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firewall_id": {
+            "type": "integer",
+            "description": "Firewall id (from hostinger_list_firewalls)."
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Protocol, or a service shortcut such as SSH, HTTP, HTTPS, MySQL or PostgreSQL.",
+            "enum": [
+              "TCP",
+              "UDP",
+              "ICMP",
+              "GRE",
+              "any",
+              "ESP",
+              "AH",
+              "ICMPv6",
+              "SSH",
+              "HTTP",
+              "HTTPS",
+              "MySQL",
+              "PostgreSQL"
+            ]
+          },
+          "port": {
+            "type": "string",
+            "description": "Port or port range, e.g. 443 or 1024:2048."
+          },
+          "source": {
+            "type": "string",
+            "description": "any: traffic from everywhere; custom: only from source_detail.",
+            "enum": [
+              "any",
+              "custom"
+            ]
+          },
+          "source_detail": {
+            "type": "string",
+            "description": "IP address, CIDR range (e.g. 203.0.113.0/24) or any."
+          }
+        },
+        "required": [
+          "firewall_id",
+          "protocol",
+          "port",
+          "source",
+          "source_detail"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/firewall/{firewall_id}/rules",
+        "bodyMapping": {
+          "protocol": "$protocol",
+          "port": "$port",
+          "source": "$source",
+          "source_detail": "$source_detail"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "hostinger_update_firewall_rule",
+      "description": "Change a firewall rule. Machines using the firewall are out of sync afterwards until hostinger_sync_firewall runs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firewall_id": {
+            "type": "integer",
+            "description": "Firewall id (from hostinger_list_firewalls)."
+          },
+          "rule_id": {
+            "type": "integer",
+            "description": "Rule id from hostinger_get_firewall."
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Protocol, or a service shortcut such as SSH, HTTP, HTTPS, MySQL or PostgreSQL.",
+            "enum": [
+              "TCP",
+              "UDP",
+              "ICMP",
+              "GRE",
+              "any",
+              "ESP",
+              "AH",
+              "ICMPv6",
+              "SSH",
+              "HTTP",
+              "HTTPS",
+              "MySQL",
+              "PostgreSQL"
+            ]
+          },
+          "port": {
+            "type": "string",
+            "description": "Port or port range, e.g. 443 or 1024:2048."
+          },
+          "source": {
+            "type": "string",
+            "description": "any: traffic from everywhere; custom: only from source_detail.",
+            "enum": [
+              "any",
+              "custom"
+            ]
+          },
+          "source_detail": {
+            "type": "string",
+            "description": "IP address, CIDR range (e.g. 203.0.113.0/24) or any."
+          }
+        },
+        "required": [
+          "firewall_id",
+          "rule_id",
+          "protocol",
+          "port",
+          "source",
+          "source_detail"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/vps/v1/firewall/{firewall_id}/rules/{rule_id}",
+        "bodyMapping": {
+          "protocol": "$protocol",
+          "port": "$port",
+          "source": "$source",
+          "source_detail": "$source_detail"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hostinger_delete_firewall_rule",
+      "description": "Delete a firewall rule. Once synced, traffic that only this rule accepted is dropped (removing the SSH rule locks out SSH).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firewall_id": {
+            "type": "integer",
+            "description": "Firewall id (from hostinger_list_firewalls)."
+          },
+          "rule_id": {
+            "type": "integer",
+            "description": "Rule id from hostinger_get_firewall."
+          }
+        },
+        "required": [
+          "firewall_id",
+          "rule_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/vps/v1/firewall/{firewall_id}/rules/{rule_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hostinger_sync_firewall",
+      "description": "Apply a firewall's current rules to every VPS it is activated on. Needed after rules were added, changed or deleted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firewall_id": {
+            "type": "integer",
+            "description": "Firewall id (from hostinger_list_firewalls)."
+          }
+        },
+        "required": [
+          "firewall_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/firewall/{firewall_id}/sync"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hostinger_activate_firewall",
+      "description": "Activate a firewall on a VPS. A VPS has one active firewall at a time; traffic no rule accepts is dropped from then on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firewall_id": {
+            "type": "integer",
+            "description": "Firewall id (from hostinger_list_firewalls)."
+          },
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "firewall_id",
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/firewall/{firewall_id}/activate/{virtual_machine_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hostinger_deactivate_firewall",
+      "description": "Deactivate a firewall on a VPS: all its ports are reachable again from everywhere.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firewall_id": {
+            "type": "integer",
+            "description": "Firewall id (from hostinger_list_firewalls)."
+          },
+          "virtual_machine_id": {
+            "type": "integer",
+            "description": "Virtual machine id, a number such as 1268054 (from hostinger_list_virtual_machines)."
+          }
+        },
+        "required": [
+          "firewall_id",
+          "virtual_machine_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vps/v1/firewall/{firewall_id}/deactivate/{virtual_machine_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hostinger_list_domains",
+      "description": "List the domains in the account's portfolio: id, domain name, type (domain or free subdomain), status and creation and expiry dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/domains/v1/portfolio"
+      }
+    },
+    {
+      "name": "hostinger_get_domain",
+      "description": "Read one domain: status, nameservers, child nameservers, lock and privacy protection state, WHOIS contact profile ids and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/domains/v1/portfolio/{domain}"
+      }
+    },
+    {
+      "name": "hostinger_get_domain_renewal",
+      "description": "Read a domain's renewal information: status and current expiry date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/domains/v1/portfolio/{domain}/renewal"
+      }
+    },
+    {
+      "name": "hostinger_check_domain_availability",
+      "description": "Check whether a domain name is free to register in one or more TLDs. With a single TLD and with_alternatives true it also suggests similar available names. Rate limited to 90 requests a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "The name without TLD, e.g. mybrand."
+          },
+          "tlds": {
+            "type": "array",
+            "description": "TLDs to check, without the leading dot, e.g. [\"com\", \"net\", \"de\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "with_alternatives": {
+            "type": "boolean",
+            "description": "true adds alternative names; only works with exactly one TLD."
+          }
+        },
+        "required": [
+          "domain",
+          "tlds"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/domains/v1/availability",
+        "bodyMapping": {
+          "domain": "$domain",
+          "tlds": "$tlds",
+          "with_alternatives": "$with_alternatives"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hostinger_update_domain_nameservers",
+      "description": "Point a domain to other nameservers (two to four). Wrong nameservers make the domain and its email unreachable until fixed; changes can take hours to spread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          },
+          "ns1": {
+            "type": "string",
+            "description": "First nameserver, e.g. ns1.example-dns.tld."
+          },
+          "ns2": {
+            "type": "string",
+            "description": "Second nameserver."
+          },
+          "ns3": {
+            "type": "string",
+            "description": "Third nameserver (optional)."
+          },
+          "ns4": {
+            "type": "string",
+            "description": "Fourth nameserver (optional)."
+          }
+        },
+        "required": [
+          "domain",
+          "ns1",
+          "ns2"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/domains/v1/portfolio/{domain}/nameservers",
+        "bodyMapping": {
+          "ns1": "$ns1",
+          "ns2": "$ns2",
+          "ns3": "$ns3",
+          "ns4": "$ns4"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hostinger_get_domain_forwarding",
+      "description": "Read the forwarding (redirect) of a domain: target URL, redirect type (301 or 302) and dates. Answers 404 when no forwarding is set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/domains/v1/forwarding/{domain}"
+      }
+    },
+    {
+      "name": "hostinger_list_whois_profiles",
+      "description": "List the WHOIS contact profiles used to register domains: id, TLD, country, entity type and contact details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tld": {
+            "type": "string",
+            "description": "Only profiles for this TLD, without the dot, e.g. com."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/domains/v1/whois",
+        "queryParams": {
+          "tld": "$tld"
+        }
+      }
+    },
+    {
+      "name": "hostinger_get_dns_records",
+      "description": "Read the DNS zone of a domain managed by Hostinger nameservers: every record set with name, type, TTL and values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/dns/v1/zones/{domain}"
+      }
+    },
+    {
+      "name": "hostinger_validate_dns_records",
+      "description": "Check DNS record changes without applying them: answers success when hostinger_update_dns_records would accept them, or 422 with the problems. Changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          },
+          "zone": {
+            "type": "array",
+            "description": "Records grouped by name and type, e.g. [{\"name\": \"www\", \"type\": \"CNAME\", \"ttl\": 14400, \"records\": [{\"content\": \"mydomain.tld.\"}]}]. Use @ for the domain itself.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Record name, @ for the root."
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "A",
+                    "AAAA",
+                    "CNAME",
+                    "ALIAS",
+                    "MX",
+                    "TXT",
+                    "NS",
+                    "SOA",
+                    "SRV",
+                    "CAA"
+                  ],
+                  "description": "Record type."
+                },
+                "ttl": {
+                  "type": "integer",
+                  "description": "TTL in seconds (default 14400)."
+                },
+                "records": {
+                  "type": "array",
+                  "description": "Values, each as {\"content\": \"...\"}; MX content is \"<priority> <host>\".",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "content": {
+                        "type": "string",
+                        "description": "Record value."
+                      }
+                    },
+                    "required": [
+                      "content"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "records"
+              ]
+            }
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "true: records with the same name and type are replaced by the given ones; false (default): values are added and TTLs updated."
+          }
+        },
+        "required": [
+          "domain",
+          "zone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/dns/v1/zones/{domain}/validate",
+        "bodyMapping": {
+          "zone": "$zone",
+          "overwrite": "$overwrite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hostinger_update_dns_records",
+      "description": "Add or change DNS records of a domain. Without overwrite the values are added to existing record sets; with overwrite true, record sets with the same name and type are replaced. Hostinger keeps a snapshot of the zone before each change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          },
+          "zone": {
+            "type": "array",
+            "description": "Records grouped by name and type, e.g. [{\"name\": \"www\", \"type\": \"CNAME\", \"ttl\": 14400, \"records\": [{\"content\": \"mydomain.tld.\"}]}]. Use @ for the domain itself.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Record name, @ for the root."
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "A",
+                    "AAAA",
+                    "CNAME",
+                    "ALIAS",
+                    "MX",
+                    "TXT",
+                    "NS",
+                    "SOA",
+                    "SRV",
+                    "CAA"
+                  ],
+                  "description": "Record type."
+                },
+                "ttl": {
+                  "type": "integer",
+                  "description": "TTL in seconds (default 14400)."
+                },
+                "records": {
+                  "type": "array",
+                  "description": "Values, each as {\"content\": \"...\"}; MX content is \"<priority> <host>\".",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "content": {
+                        "type": "string",
+                        "description": "Record value."
+                      }
+                    },
+                    "required": [
+                      "content"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "records"
+              ]
+            }
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "true: records with the same name and type are replaced by the given ones; false (default): values are added and TTLs updated."
+          }
+        },
+        "required": [
+          "domain",
+          "zone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/dns/v1/zones/{domain}",
+        "bodyMapping": {
+          "zone": "$zone",
+          "overwrite": "$overwrite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "hostinger_delete_dns_records",
+      "description": "Delete whole DNS record sets of a domain, selected by name and type. To remove only some values of a set, use hostinger_update_dns_records with overwrite true instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          },
+          "filters": {
+            "type": "array",
+            "description": "Record sets to delete, e.g. [{\"name\": \"@\", \"type\": \"TXT\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Record name, @ for the root."
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "A",
+                    "AAAA",
+                    "CNAME",
+                    "ALIAS",
+                    "MX",
+                    "TXT",
+                    "NS",
+                    "SOA",
+                    "SRV",
+                    "CAA"
+                  ],
+                  "description": "Record type."
+                }
+              },
+              "required": [
+                "name",
+                "type"
+              ]
+            }
+          }
+        },
+        "required": [
+          "domain",
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/dns/v1/zones/{domain}",
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hostinger_list_dns_snapshots",
+      "description": "List the saved versions (snapshots) of a domain's DNS zone, taken before each change: id, reason and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/dns/v1/snapshots/{domain}"
+      }
+    },
+    {
+      "name": "hostinger_get_dns_snapshot",
+      "description": "Read one DNS zone snapshot with all the records it contained, e.g. to compare with the current zone before restoring.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          },
+          "snapshot_id": {
+            "type": "integer",
+            "description": "Snapshot id from hostinger_list_dns_snapshots."
+          }
+        },
+        "required": [
+          "domain",
+          "snapshot_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/dns/v1/snapshots/{domain}/{snapshot_id}"
+      }
+    },
+    {
+      "name": "hostinger_restore_dns_snapshot",
+      "description": "Restore a domain's DNS zone to a snapshot. The current records are replaced by the snapshot's records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          },
+          "snapshot_id": {
+            "type": "integer",
+            "description": "Snapshot id from hostinger_list_dns_snapshots."
+          }
+        },
+        "required": [
+          "domain",
+          "snapshot_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/dns/v1/snapshots/{domain}/{snapshot_id}/restore"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "hostinger_list_subscriptions",
+      "description": "List the account's subscriptions: id, name, status, billing period, currency, total and renewal price in cents, auto-renewal flag, creation, expiry and next billing dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/billing/v1/subscriptions"
+      }
+    },
+    {
+      "name": "hostinger_list_payment_methods",
+      "description": "List the payment methods saved in the account: id, name, masked identifier, type, default, expired and suspended flags. Read-only; methods are added in hPanel.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/billing/v1/payment-methods"
+      }
+    },
+    {
+      "name": "hostinger_get_catalog",
+      "description": "List what can be ordered with prices: catalog items (VPS plans, domain TLDs, hosting, email) with their price items per billing period, price and first-period price in cents and currency. Filter by category and name to keep the answer small.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Only this product category.",
+            "enum": [
+              "DOMAIN",
+              "VPS",
+              "EMAIL",
+              "HOSTING"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Only items whose name matches; * is a wildcard, e.g. .COM* for .com domains or KVM* for VPS plans."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/billing/v1/catalog",
+        "queryParams": {
+          "category": "$category",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "hostinger_list_hosting_orders",
+      "description": "List the web and cloud hosting orders (plans) the token can see, own and shared: order id, plan name, status, subscription id and creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, up to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "statuses": {
+            "type": "array",
+            "description": "Only orders with these statuses.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "active",
+                "deleting",
+                "deleted",
+                "suspended"
+              ]
+            }
+          },
+          "order_ids": {
+            "type": "array",
+            "description": "Only these order ids.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/hosting/v1/orders",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "statuses[]": "$statuses",
+          "order_ids[]": "$order_ids"
+        }
+      }
+    },
+    {
+      "name": "hostinger_list_websites",
+      "description": "List the websites on web and cloud hosting: domain, hosting account user name, order id, root directory, whether it is enabled, and the detected type (wordpress, builder, horizons, nodejs, other).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, up to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "domain": {
+            "type": "string",
+            "description": "Only websites whose domain contains this text."
+          },
+          "username": {
+            "type": "string",
+            "description": "Only websites of this hosting account user name."
+          },
+          "order_id": {
+            "type": "integer",
+            "description": "Only websites of this hosting order (from hostinger_list_hosting_orders)."
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "description": "true: only enabled websites; false: only disabled ones."
+          },
+          "website_types": {
+            "type": "string",
+            "description": "Only these types, comma-separated: wordpress, builder, horizons, nodejs, other."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/hosting/v1/websites",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "domain": "$domain",
+          "username": "$username",
+          "order_id": "$order_id",
+          "is_enabled": "$is_enabled",
+          "website_types": "$website_types"
+        }
+      }
+    },
+    {
+      "name": "hostinger_list_wordpress_installations",
+      "description": "List the WordPress installations on web and cloud hosting: id, user name, domain, title, URL, directory, admin login and email, and whether the installation is valid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Only installations of this hosting account user name."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Only installations whose domain contains this text."
+          },
+          "ownership": {
+            "type": "string",
+            "description": "owned (default), managed, or all.",
+            "enum": [
+              "owned",
+              "managed",
+              "all"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/hosting/v1/wordpress/installations",
+        "queryParams": {
+          "username": "$username",
+          "domain": "$domain",
+          "ownership": "$ownership"
+        }
+      }
+    },
+    {
+      "name": "hostinger_list_databases",
+      "description": "List the MySQL databases of a hosting account: name, user, host and port, assigned domain, disk usage and size limit in MB, and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Hosting account user name, e.g. u123456789 (the username field of hostinger_list_websites)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, up to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "domain": {
+            "type": "string",
+            "description": "Only databases whose domain contains this text."
+          },
+          "is_assigned": {
+            "type": "boolean",
+            "description": "With domain: true returns only databases assigned to that domain."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search by database name, user or creation date."
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/hosting/v1/accounts/{username}/databases",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "domain": "$domain",
+          "is_assigned": "$is_assigned",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "hostinger_list_cron_jobs",
+      "description": "List the cron jobs of a hosting account with their schedule and command.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Hosting account user name, e.g. u123456789 (the username field of hostinger_list_websites)."
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/hosting/v1/accounts/{username}/cron-jobs"
+      }
+    },
+    {
+      "name": "hostinger_clear_website_cache",
+      "description": "Clear the server-side cache of a website (and the Hostinger CDN cache when CDN is on), so updated content shows at once. Pages are slower for a short while until the cache fills again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Hosting account user name, e.g. u123456789 (the username field of hostinger_list_websites)."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Domain name with its TLD, e.g. mydomain.tld (from hostinger_list_domains)."
+          },
+          "directory": {
+            "type": "string",
+            "description": "Sub directory of the installation relative to the website root, e.g. blog. Leave out for the root."
+          }
+        },
+        "required": [
+          "username",
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/hosting/v1/accounts/{username}/websites/{domain}/cache/clear",
+        "queryParams": {
+          "directory": "$directory"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}
