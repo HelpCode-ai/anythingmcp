@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { license } from '@/lib/api';
@@ -39,6 +40,7 @@ function takeKeyFromLocation(queryKey: string | null): string {
 type Phase = 'loading' | 'activating' | 'success' | 'error' | 'invalid';
 
 function LicenseActivateInner() {
+  const t = useTranslations('settingsLicense.activate');
   const { token, user, isLoading } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -46,7 +48,7 @@ function LicenseActivateInner() {
   const key = rawKey.toUpperCase();
   const [phase, setPhase] = useState<Phase>('loading');
   const [message, setMessage] = useState('');
-  const [redirectLabel, setRedirectLabel] = useState('Redirecting to settings…');
+  const [redirectLabel, setRedirectLabel] = useState(() => t('redirecting'));
   const ran = useRef(false);
 
   useEffect(() => {
@@ -54,14 +56,14 @@ function LicenseActivateInner() {
 
     if (!key) {
       setPhase('invalid');
-      setMessage('No license key was provided in the URL.');
+      setMessage(t('noKey'));
       ran.current = true;
       return;
     }
 
     if (!KEY_RE.test(key)) {
       setPhase('invalid');
-      setMessage('The license key in the URL is malformed.');
+      setMessage(t('malformed'));
       ran.current = true;
       return;
     }
@@ -75,7 +77,7 @@ function LicenseActivateInner() {
 
     if (user.role !== 'ADMIN') {
       setPhase('error');
-      setMessage('Only administrators can activate a license key. Ask your admin to sign in.');
+      setMessage(t('adminOnly'));
       ran.current = true;
       return;
     }
@@ -86,11 +88,11 @@ function LicenseActivateInner() {
       .then((res) => {
         sessionStore.remove(PENDING_KEY);
         setPhase('success');
-        setMessage(res.message || 'License activated successfully.');
+        setMessage(res.message || t('activated'));
         // Started the card trial while connecting an AI client: finish that
         // authorization (it waits 30 minutes) instead of opening settings.
         const next = takeAuthorizationReturn('/settings/license');
-        setRedirectLabel(next.startsWith('/auth/') ? 'Taking you back to finish connecting your AI client…' : 'Redirecting to settings…');
+        setRedirectLabel(next.startsWith('/auth/') ? t('backToClient') : t('redirecting'));
         // A full load rather than a client-side route change: the app shell
         // (trial banner, licence wall) read the licence before activation and
         // would keep showing the trial until the next reload.
@@ -98,20 +100,20 @@ function LicenseActivateInner() {
       })
       .catch((err: any) => {
         setPhase('error');
-        setMessage(err?.message || 'Failed to activate license.');
+        setMessage(err?.message || t('failed'));
       });
-  }, [key, token, user, isLoading, router]);
+  }, [key, token, user, isLoading, router, t]);
 
   return (
     <div className="mx-auto w-full max-w-md">
       <div className="mb-6">
-        <h1 className="text-base font-semibold text-[var(--text)]">License Activation</h1>
+        <h1 className="text-base font-semibold text-[var(--text)]">{t('title')}</h1>
       </div>
 
       <Card className="p-6 text-sm">
         {phase === 'loading' || phase === 'activating' ? (
           <p className="text-center text-[var(--text-3)]">
-            {phase === 'loading' ? 'Preparing…' : 'Activating your license…'}
+            {phase === 'loading' ? t('preparing') : t('activating')}
           </p>
         ) : null}
 
@@ -127,14 +129,14 @@ function LicenseActivateInner() {
             <p className="text-[var(--danger)]">{message}</p>
             {key && phase === 'error' && (
               <p className="text-xs text-[var(--text-3)] break-all">
-                Key: <span className="font-mono">{key}</span>
+                {t('key')} <span className="font-mono">{key}</span>
               </p>
             )}
             <Link
               href="/settings/license"
               className={cn(buttonVariants({ variant: 'primary' }))}
             >
-              Go to License Settings
+              {t('goToSettings')}
             </Link>
           </div>
         )}

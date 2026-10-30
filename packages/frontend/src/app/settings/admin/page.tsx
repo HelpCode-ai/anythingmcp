@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { adminSettings, versionApi, FOOTER_LINKS_CHANGED, type AlertWebhookInput } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -9,14 +10,13 @@ import { Card } from '@/components/ui/card';
 import { AppSelect } from '@/components/ui/select';
 import { copyText } from '@/lib/clipboard';
 
-const ALERT_WEBHOOK_TYPE_OPTIONS = [
-  { value: 'json', label: 'Generic JSON webhook' },
-  { value: 'slack', label: 'Slack incoming webhook' },
-];
+const ALERT_WEBHOOK_TYPES = ['json', 'slack'] as const;
 
 export default function SettingsAdminPage() {
+  const t = useTranslations('settingsAdmin');
   const { token, user, deploymentMode } = useAuth();
   const isCloud = deploymentMode === 'cloud';
+  const alertTypeOptions = ALERT_WEBHOOK_TYPES.map((value) => ({ value, label: t(`alerts.types.${value}`) }));
 
   // SMTP
   const [smtpHost, setSmtpHost] = useState('');
@@ -27,12 +27,24 @@ export default function SettingsAdminPage() {
   const [smtpSecure, setSmtpSecure] = useState(false);
   const [smtpConfigured, setSmtpConfigured] = useState(false);
   const [smtpMsg, setSmtpMsg] = useState('');
+  // Colour comes from this flag, not from the message text, which is translated.
+  const [smtpMsgIsError, setSmtpMsgIsError] = useState(false);
+  const smtpNote = (text: string, isError = false) => {
+    setSmtpMsg(text);
+    setSmtpMsgIsError(isError);
+  };
 
   // Footer links
   const [footerLinks, setFooterLinks] = useState<Array<{ label: string; url: string }>>([]);
   const [versionInfo, setVersionInfo] = useState<{ version: string; commit: string; buildDate: string | null; deploymentMode: string } | null>(null);
   const [versionMsg, setVersionMsg] = useState('');
+  const [versionMsgIsError, setVersionMsgIsError] = useState(false);
   const [footerMsg, setFooterMsg] = useState('');
+  const [footerMsgIsError, setFooterMsgIsError] = useState(false);
+  const footerNote = (text: string, isError = false) => {
+    setFooterMsg(text);
+    setFooterMsgIsError(isError);
+  };
 
   // Connector-failure alert webhook
   const [alertUrl, setAlertUrl] = useState('');
@@ -44,6 +56,11 @@ export default function SettingsAdminPage() {
   const [alertConfigured, setAlertConfigured] = useState(false);
   const [alertRotateSecret, setAlertRotateSecret] = useState(false);
   const [alertMsg, setAlertMsg] = useState('');
+  const [alertMsgIsError, setAlertMsgIsError] = useState(false);
+  const alertNote = (text: string, isError = false) => {
+    setAlertMsg(text);
+    setAlertMsgIsError(isError);
+  };
   const [alertSecret, setAlertSecret] = useState('');
   const [alertSecretCopied, setAlertSecretCopied] = useState(false);
   // One request at a time: a double-clicked save with "rotate" would mint two
@@ -93,27 +110,27 @@ export default function SettingsAdminPage() {
       }, token);
       setSmtpConfigured(true);
       setSmtpPass('');
-      setSmtpMsg('SMTP configuration saved');
+      smtpNote(t('smtp.saved'));
       setTimeout(() => setSmtpMsg(''), 3000);
     } catch (err: any) {
-      setSmtpMsg(`Error: ${err.message}`);
+      smtpNote(t('error', { message: err.message }), true);
     }
   };
 
   const handleTestSmtp = async () => {
     if (!token) return;
-    setSmtpMsg('Testing connection...');
+    smtpNote(t('smtp.testing'));
     try {
       const result = await adminSettings.testSmtp(token);
-      setSmtpMsg(result.ok ? result.message : `Error: ${result.message}`);
+      smtpNote(result.ok ? result.message : t('error', { message: result.message }), !result.ok);
     } catch (err: any) {
-      setSmtpMsg(`Error: ${err.message}`);
+      smtpNote(t('error', { message: err.message }), true);
     }
   };
 
   const handleRemoveSmtp = async () => {
     if (!token) return;
-    if (!confirm('Remove the workspace SMTP configuration? Emails will be sent by the platform mail service instead.')) return;
+    if (!confirm(t('smtp.confirmRemove'))) return;
     try {
       await adminSettings.deleteSmtp(token);
       setSmtpConfigured(false);
@@ -123,9 +140,9 @@ export default function SettingsAdminPage() {
       setSmtpPass('');
       setSmtpFrom('');
       setSmtpSecure(false);
-      setSmtpMsg('SMTP configuration removed — emails now use the platform mail service');
+      smtpNote(t('smtp.removed'));
     } catch (err: any) {
-      setSmtpMsg(`Error: ${err.message}`);
+      smtpNote(t('error', { message: err.message }), true);
     }
   };
 
@@ -148,14 +165,14 @@ export default function SettingsAdminPage() {
       setAlertUrl(url);
       setSavedAlertUrl(url);
       setAlertRotateSecret(false);
-      setAlertMsg('Alert webhook saved');
+      alertNote(t('alerts.saved'));
       setTimeout(() => setAlertMsg(''), 3000);
       if (result.secret) {
         setAlertSecret(result.secret);
         setAlertSecretCopied(false);
       }
     } catch (err: any) {
-      setAlertMsg(`Error: ${err.message}`);
+      alertNote(t('error', { message: err.message }), true);
     } finally {
       setAlertBusy(false);
     }
@@ -164,12 +181,13 @@ export default function SettingsAdminPage() {
   const handleTestAlertWebhook = async () => {
     if (!token) return;
     setAlertBusy(true);
-    setAlertMsg('Sending test alert...');
+    alertNote(t('alerts.sendingTest'));
     try {
       const result = await adminSettings.testAlertWebhook(token);
-      setAlertMsg(result.success ? 'Test alert delivered' : `Error: ${result.message || 'delivery failed'}`);
+      if (result.success) alertNote(t('alerts.testDelivered'));
+      else alertNote(t('error', { message: result.message || t('alerts.deliveryFailed') }), true);
     } catch (err: any) {
-      setAlertMsg(`Error: ${err.message}`);
+      alertNote(t('error', { message: err.message }), true);
     } finally {
       setAlertBusy(false);
     }
@@ -177,7 +195,7 @@ export default function SettingsAdminPage() {
 
   const handleRemoveAlertWebhook = async () => {
     if (!token) return;
-    if (!confirm('Remove the connector-failure alert webhook? Alerts will stop firing for this organization.')) return;
+    if (!confirm(t('alerts.confirmRemove'))) return;
     setAlertBusy(true);
     try {
       await adminSettings.deleteAlertWebhook(token);
@@ -190,9 +208,9 @@ export default function SettingsAdminPage() {
       setAlertWindowMinutes(10);
       setAlertCooldownMinutes(30);
       setAlertSecret('');
-      setAlertMsg('Alert webhook removed');
+      alertNote(t('alerts.removed'));
     } catch (err: any) {
-      setAlertMsg(`Error: ${err.message}`);
+      alertNote(t('error', { message: err.message }), true);
     } finally {
       setAlertBusy(false);
     }
@@ -211,10 +229,10 @@ export default function SettingsAdminPage() {
     try {
       await adminSettings.updateFooterLinks(footerLinks.filter(l => l.label && l.url), token);
       window.dispatchEvent(new Event(FOOTER_LINKS_CHANGED));
-      setFooterMsg('Footer links saved');
+      footerNote(t('footer.saved'));
       setTimeout(() => setFooterMsg(''), 3000);
     } catch (err: any) {
-      setFooterMsg(`Error: ${err.message}`);
+      footerNote(t('error', { message: err.message }), true);
     }
   };
 
@@ -222,9 +240,9 @@ export default function SettingsAdminPage() {
     return (
       <div className="flex items-center justify-center py-16">
         <div className="text-center">
-          <h2 className="text-xl font-bold text-[var(--text)] mb-2">Access Denied</h2>
-          <p className="text-[var(--text-2)] mb-4">Only administrators can access this page.</p>
-          <Link href="/settings" className="text-[var(--brand)] hover:underline">Back to Settings</Link>
+          <h2 className="text-xl font-bold text-[var(--text)] mb-2">{t('accessDenied.title')}</h2>
+          <p className="text-[var(--text-2)] mb-4">{t('accessDenied.body')}</p>
+          <Link href="/settings" className="text-[var(--brand)] hover:underline">{t('accessDenied.back')}</Link>
         </div>
       </div>
     );
@@ -238,14 +256,14 @@ export default function SettingsAdminPage() {
     <div className="space-y-6">
       {/* SMTP Configuration */}
       <Card className="p-[22px]">
-        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Email / SMTP Configuration</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">{t('smtp.title')}</h3>
         <p className="text-sm text-[var(--text-2)] mb-4">
-          Configure SMTP settings for password reset emails and notifications.
+          {t('smtp.intro')}
         </p>
         <div className="space-y-4 max-w-lg">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelClass}>SMTP Host</label>
+              <label className={labelClass}>{t('smtp.host')}</label>
               <input
                 type="text"
                 value={smtpHost}
@@ -255,7 +273,7 @@ export default function SettingsAdminPage() {
               />
             </div>
             <div>
-              <label className={labelClass}>Port</label>
+              <label className={labelClass}>{t('smtp.port')}</label>
               <input
                 type="number"
                 value={smtpPort}
@@ -266,7 +284,7 @@ export default function SettingsAdminPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelClass}>Username</label>
+              <label className={labelClass}>{t('smtp.user')}</label>
               <input
                 type="text"
                 value={smtpUser}
@@ -276,18 +294,18 @@ export default function SettingsAdminPage() {
               />
             </div>
             <div>
-              <label className={labelClass}>Password</label>
+              <label className={labelClass}>{t('smtp.password')}</label>
               <input
                 type="password"
                 value={smtpPass}
                 onChange={(e) => setSmtpPass(e.target.value)}
-                placeholder={smtpConfigured ? '••••••••  (enter new to update)' : 'SMTP password'}
+                placeholder={smtpConfigured ? t('smtp.passwordKeep') : t('smtp.passwordPlaceholder')}
                 className={inputClass}
               />
             </div>
           </div>
           <div>
-            <label className={labelClass}>From Address (optional)</label>
+            <label className={labelClass}>{t('smtp.from')}</label>
             <input
               type="text"
               value={smtpFrom}
@@ -304,25 +322,25 @@ export default function SettingsAdminPage() {
               onChange={(e) => setSmtpSecure(e.target.checked)}
               className="accent-[var(--brand)]"
             />
-            <label htmlFor="smtpSecure" className="text-sm text-[var(--text-2)]">Use SSL/TLS (port 465)</label>
+            <label htmlFor="smtpSecure" className="text-sm text-[var(--text-2)]">{t('smtp.secure')}</label>
           </div>
           {smtpMsg && (
-            <p className={`text-sm ${smtpMsg.startsWith('Error') ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
+            <p className={`text-sm ${smtpMsgIsError ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
               {smtpMsg}
             </p>
           )}
           <div className="flex gap-2">
             {/* Existing config: password field may stay empty (kept server-side) */}
             <Button onClick={handleSaveSmtp} disabled={!smtpHost || !smtpUser || (!smtpPass && !smtpConfigured)}>
-              Save SMTP Config
+              {t('smtp.save')}
             </Button>
             {smtpConfigured && (
               <>
                 <Button variant="secondary" onClick={handleTestSmtp}>
-                  Test Connection
+                  {t('smtp.test')}
                 </Button>
                 <Button variant="ghost" onClick={handleRemoveSmtp} className="text-[var(--danger)] hover:text-[var(--danger)]">
-                  Remove
+                  {t('remove')}
                 </Button>
               </>
             )}
@@ -332,13 +350,13 @@ export default function SettingsAdminPage() {
 
       {/* Connector Failure Alerts */}
       <Card className="p-[22px]">
-        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Connector Failure Alerts</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">{t('alerts.title')}</h3>
         <p className="text-sm text-[var(--text-2)] mb-4">
-          Get a webhook or Slack notification when a connector keeps failing, instead of finding out from the logs.
+          {t('alerts.intro')}
         </p>
         <div className="space-y-4 max-w-lg">
           <div>
-            <label htmlFor="alertUrl" className={labelClass}>Webhook URL</label>
+            <label htmlFor="alertUrl" className={labelClass}>{t('alerts.url')}</label>
             <input
               id="alertUrl"
               type="text"
@@ -348,18 +366,18 @@ export default function SettingsAdminPage() {
               className={inputClass}
             />
             {isCloud && (
-              <p className="text-[11.5px] text-[var(--text-3)] mt-1">On AnythingMCP Cloud the URL must use https.</p>
+              <p className="text-[11.5px] text-[var(--text-3)] mt-1">{t('alerts.cloudHttps')}</p>
             )}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelClass}>Payload type</label>
+              <label className={labelClass}>{t('alerts.payloadType')}</label>
               <AppSelect
                 value={alertType}
                 onValueChange={(v) => setAlertType(v as 'json' | 'slack')}
-                options={ALERT_WEBHOOK_TYPE_OPTIONS}
+                options={alertTypeOptions}
                 className={inputClass}
-                aria-label="Payload type"
+                aria-label={t('alerts.payloadType')}
               />
             </div>
             <div className="flex items-center gap-2 pt-6">
@@ -370,12 +388,12 @@ export default function SettingsAdminPage() {
                 onChange={(e) => setAlertEnabled(e.target.checked)}
                 className="accent-[var(--brand)]"
               />
-              <label htmlFor="alertEnabled" className="text-sm text-[var(--text-2)]">Enabled</label>
+              <label htmlFor="alertEnabled" className="text-sm text-[var(--text-2)]">{t('alerts.enabled')}</label>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label htmlFor="alertThreshold" className={labelClass}>Failure threshold</label>
+              <label htmlFor="alertThreshold" className={labelClass}>{t('alerts.threshold')}</label>
               <input
                 id="alertThreshold"
                 type="number"
@@ -388,7 +406,7 @@ export default function SettingsAdminPage() {
               />
             </div>
             <div>
-              <label htmlFor="alertWindowMinutes" className={labelClass}>Window (minutes)</label>
+              <label htmlFor="alertWindowMinutes" className={labelClass}>{t('alerts.window')}</label>
               <input
                 id="alertWindowMinutes"
                 type="number"
@@ -401,7 +419,7 @@ export default function SettingsAdminPage() {
               />
             </div>
             <div>
-              <label htmlFor="alertCooldownMinutes" className={labelClass}>Cooldown (minutes)</label>
+              <label htmlFor="alertCooldownMinutes" className={labelClass}>{t('alerts.cooldown')}</label>
               <input
                 id="alertCooldownMinutes"
                 type="number"
@@ -415,7 +433,7 @@ export default function SettingsAdminPage() {
             </div>
           </div>
           <p className="text-[11.5px] text-[var(--text-3)]">
-            Alerts after {alertThreshold} failures of the same connector within {alertWindowMinutes} minutes, then waits {alertCooldownMinutes} minutes before alerting again.
+            {t('alerts.summary', { threshold: alertThreshold, window: alertWindowMinutes, cooldown: alertCooldownMinutes })}
           </p>
           {alertConfigured && (
             <div className="flex items-center gap-2">
@@ -427,38 +445,37 @@ export default function SettingsAdminPage() {
                 className="accent-[var(--brand)]"
               />
               <label htmlFor="alertRotateSecret" className="text-sm text-[var(--text-2)]">
-                Rotate signing secret on save
+                {t('alerts.rotate')}
               </label>
             </div>
           )}
           {alertSecret && (
             <div className="rounded-[9px] border border-[var(--brand)] bg-[var(--brand-tint)] p-3 space-y-2">
               <p className="text-[12.5px] font-medium text-[var(--text)]">
-                Signing secret, shown once. Copy it now:
+                {t('alerts.secretOnce')}
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 overflow-x-auto text-[12px] text-[var(--text)]">{alertSecret}</code>
                 <Button size="sm" variant="secondary" onClick={handleCopyAlertSecret}>
-                  {alertSecretCopied ? 'Copied' : 'Copy'}
+                  {alertSecretCopied ? t('copied') : t('copy')}
                 </Button>
               </div>
               <p className="text-[11.5px] text-[var(--text-3)]">
-                Use this to verify the <code>X-AnythingMCP-Signature</code> header
-                (<code>sha256=</code> HMAC of the timestamp and the body; Slack ignores it). It will not be shown again.
+                {t.rich('alerts.secretHelp', { code: (chunks) => <code>{chunks}</code> })}
               </p>
               <Button size="sm" variant="secondary" onClick={() => setAlertSecret('')}>
-                I have saved it
+                {t('alerts.savedIt')}
               </Button>
             </div>
           )}
           {alertMsg && (
-            <p role="status" className={`text-sm ${alertMsg.startsWith('Error') ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
+            <p role="status" className={`text-sm ${alertMsgIsError ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
               {alertMsg}
             </p>
           )}
           <div className="flex gap-2">
             <Button onClick={handleSaveAlertWebhook} disabled={alertBusy || !alertUrl.trim()}>
-              Save Alert Webhook
+              {t('alerts.save')}
             </Button>
             {alertConfigured && (
               <>
@@ -466,12 +483,12 @@ export default function SettingsAdminPage() {
                   variant="secondary"
                   onClick={handleTestAlertWebhook}
                   disabled={alertBusy || alertUrl.trim() !== savedAlertUrl}
-                  title={alertUrl.trim() !== savedAlertUrl ? 'Save the new URL first' : undefined}
+                  title={alertUrl.trim() !== savedAlertUrl ? t('alerts.saveUrlFirst') : undefined}
                 >
-                  Send Test Alert
+                  {t('alerts.sendTest')}
                 </Button>
                 <Button variant="ghost" onClick={handleRemoveAlertWebhook} disabled={alertBusy} className="text-[var(--danger)] hover:text-[var(--danger)]">
-                  Remove
+                  {t('remove')}
                 </Button>
               </>
             )}
@@ -481,9 +498,9 @@ export default function SettingsAdminPage() {
 
       {/* Footer Links */}
       <Card className="p-[22px]">
-        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Footer Links</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">{t('footer.title')}</h3>
         <p className="text-sm text-[var(--text-2)] mb-4">
-          Add links for Impressum, Privacy Policy, Terms of Service, etc. These appear in the footer of every page.
+          {t('footer.intro')}
         </p>
         <div className="space-y-3 max-w-lg">
           {footerLinks.map((link, i) => (
@@ -496,7 +513,7 @@ export default function SettingsAdminPage() {
                   updated[i] = { ...link, label: e.target.value };
                   setFooterLinks(updated);
                 }}
-                placeholder="Label (e.g., Privacy Policy)"
+                placeholder={t('footer.labelPlaceholder')}
                 className="w-1/3 h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
               />
               <input
@@ -511,20 +528,20 @@ export default function SettingsAdminPage() {
                 className="flex-1 h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
               />
               <Button variant="ghost" size="sm" onClick={() => setFooterLinks(footerLinks.filter((_, j) => j !== i))} className="text-[var(--danger)] hover:text-[var(--danger)]">
-                Remove
+                {t('remove')}
               </Button>
             </div>
           ))}
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => setFooterLinks([...footerLinks, { label: '', url: '' }])}>
-              + Add Link
+              {t('footer.add')}
             </Button>
             <Button size="sm" onClick={handleSaveFooterLinks}>
-              Save Footer Links
+              {t('footer.save')}
             </Button>
           </div>
           {footerMsg && (
-            <p className={`text-sm ${footerMsg.startsWith('Error') ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
+            <p className={`text-sm ${footerMsgIsError ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
               {footerMsg}
             </p>
           )}
@@ -533,18 +550,18 @@ export default function SettingsAdminPage() {
 
       {/* About this instance */}
       <Card className="p-[22px]">
-        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">About this instance</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">{t('about.title')}</h3>
         {!versionInfo && (
-          <p className="text-sm text-[var(--text-3)]">Version info unavailable.</p>
+          <p className="text-sm text-[var(--text-3)]">{t('about.unavailable')}</p>
         )}
         {versionInfo && (
           <div className="space-y-2">
             <p className="text-sm text-[var(--text-2)]">
-              Version <span className="font-mono">{versionInfo.version}</span> · commit{' '}
+              {t('about.version')} <span className="font-mono">{versionInfo.version}</span> · {t('about.commit')}{' '}
               <span className="font-mono">
                 {/^[0-9a-f]{40}$/.test(versionInfo.commit) ? versionInfo.commit.slice(0, 7) : versionInfo.commit}
               </span>
-              {versionInfo.buildDate && <> · built {versionInfo.buildDate.slice(0, 10)}</>}
+              {versionInfo.buildDate && <> · {t('about.built', { date: versionInfo.buildDate.slice(0, 10) })}</>}
             </p>
             <Button
               variant="secondary"
@@ -552,13 +569,15 @@ export default function SettingsAdminPage() {
               onClick={async () => {
                 const text = `AnythingMCP v${versionInfo.version} (commit ${versionInfo.commit}, built ${versionInfo.buildDate ?? 'unknown'}, mode ${versionInfo.deploymentMode})`;
                 const ok = await copyText(text);
-                setVersionMsg(ok ? 'Copied to clipboard' : 'Copy failed');
+                // The copied text stays English: it is pasted into bug reports.
+                setVersionMsg(ok ? t('about.copied') : t('about.copyFailed'));
+                setVersionMsgIsError(!ok);
               }}
             >
-              Copy version info
+              {t('about.copy')}
             </Button>
             {versionMsg && (
-              <p className={`text-sm ${versionMsg === 'Copy failed' ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
+              <p className={`text-sm ${versionMsgIsError ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
                 {versionMsg}
               </p>
             )}
