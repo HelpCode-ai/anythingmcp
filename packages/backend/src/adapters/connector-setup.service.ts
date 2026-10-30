@@ -12,7 +12,7 @@ import {
   SharedSetupProvider,
   SharedSetupRegistry,
 } from '../mcp-server/shared-setup';
-import { ReturnAssistant, isExcludedAdapterSlug } from '../mcp-server/shared-toolset';
+import { ReturnAssistant, isExcludedAdapterSlug, sharedEndpointAccess } from '../mcp-server/shared-toolset';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { findSecretLiterals } from '../common/secret-literals.util';
@@ -139,7 +139,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     // ones and, on the cloud, self-host-only ones.
     const offered = this.adapters
       .listAll()
-      .filter((a) => !isExcludedAdapterSlug(a.slug))
+      .filter((a) => !isExcludedAdapterSlug(a.slug, ctx.profile ?? 'chatgpt'))
       .map((a) => ({ ...a, text: [a.description, a.category] }));
     const search = searchCatalog(offered, query);
     const scored = search.terms.length
@@ -180,6 +180,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
             name: a.name,
             description: a.description,
             alreadyInstalled: installed.has(a.slug),
+            ...(sharedEndpointAccess(a.slug, ctx.profile ?? 'chatgpt') === 'read'
+              ? { servedHere: 'Read tools only. Tools that move money or change payment data run on the server\'s own URL.' }
+              : {}),
             setup:
               full.setupKind === 'none'
                 ? 'Nothing to enter: installs and works right away.'
@@ -215,7 +218,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     const slug = String(args.adapter ?? '').trim();
     let definition: ReturnType<AdaptersService['describe']>;
     try {
-      if (!slug || isExcludedAdapterSlug(slug)) throw new Error('unknown');
+      if (!slug || isExcludedAdapterSlug(slug, ctx.profile ?? 'chatgpt')) throw new Error('unknown');
       definition = this.adapters.describe(slug);
     } catch {
       return { isError: true, body: { error: `No catalog connector '${slug}'. Use setup_find_connectors to get its id.` } };
