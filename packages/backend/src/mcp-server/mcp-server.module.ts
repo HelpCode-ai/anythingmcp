@@ -13,6 +13,7 @@ import { SoapEngine } from '../connectors/engines/soap.engine';
 import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
 import { DatabaseEngine } from '../connectors/engines/database.engine';
 import { ODataEngine } from '../connectors/engines/odata.engine';
+import { EmailEngine } from '../connectors/engines/email.engine';
 import { OAuth2TokenService } from '../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../connectors/engines/login-token.service';
 import { ConnectorAuthStatusService } from '../connectors/engines/connector-auth-status.service';
@@ -32,6 +33,7 @@ const ENGINES = [
   McpClientEngine,
   DatabaseEngine,
   ODataEngine,
+  EmailEngine,
 ];
 
 @Module({

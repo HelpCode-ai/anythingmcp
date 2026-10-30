@@ -22,6 +22,16 @@ import remarkGfm from 'remark-gfm';
 import { authTypeLabel, cn } from '@/lib/utils';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
+import {
+  EMPTY_EMAIL_FORM,
+  EmailSettingsFields,
+  emailBaseUrl,
+  emailFormFromConfig,
+  emailFormToAuthConfig,
+  emailFormToConfig,
+  emailLoginEdited,
+  type EmailFormState,
+} from '@/components/email-settings-fields';
 
 const IMPORT_SOURCES = [
   { id: 'openapi', label: 'OpenAPI / Swagger', placeholder: 'Paste OpenAPI JSON/YAML or enter URL...' },
@@ -158,7 +168,7 @@ function slimHarForUpload(rawText: string, baseUrl?: string): { json: string; by
 }
 
 export default function ConnectorDetailPage() {
-  const { token, user } = useAuth();
+  const { token, user, deploymentMode } = useAuth();
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -236,6 +246,8 @@ export default function ConnectorDetailPage() {
   const [editOdataSapClient, setEditOdataSapClient] = useState('');
   const [editOdataSapLanguage, setEditOdataSapLanguage] = useState('');
   const [editOdataServices, setEditOdataServices] = useState('');
+  // EMAIL: servers and sender from config.email; the login starts empty.
+  const [editEmail, setEditEmail] = useState<EmailFormState>(EMPTY_EMAIL_FORM);
   const [importEntitySets, setImportEntitySets] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
@@ -360,6 +372,7 @@ export default function ConnectorDetailPage() {
         setEditOdataSapClient(odata.sapClient ?? '');
         setEditOdataSapLanguage(odata.sapLanguage ?? '');
         setEditOdataServices(Array.isArray(odata.services) ? odata.services.join('\n') : '');
+        setEditEmail(emailFormFromConfig(c.config));
       }
       setToolList(c.tools || []);
       // Load env vars
@@ -521,7 +534,16 @@ export default function ConnectorDetailPage() {
           await connectors.updateOAuth1Config(id, oauth1Patch, token);
         }
       }
-      if (connector.type !== 'DATABASE' && connector.type !== 'MCP') {
+      if (connector.type === 'EMAIL') {
+        // A catalog install keeps its servers and login in variables.
+        if (!(connector.config as any)?.adapterSlug) {
+          data.baseUrl = emailBaseUrl(editEmail);
+          data.config = { email: emailFormToConfig(editEmail, (connector.config as any)?.email) };
+          if (emailLoginEdited(editEmail)) data.authConfig = emailFormToAuthConfig(editEmail);
+        } else {
+          delete data.baseUrl;
+        }
+      } else if (connector.type !== 'DATABASE' && connector.type !== 'MCP') {
         // Editor is pre-filled with current headers, so this round-trips
         // untouched headers and applies any edits/removals the user made.
         data.headers = headerRowsToObject(editHeaderRows);
@@ -1252,6 +1274,20 @@ export default function ConnectorDetailPage() {
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
+              {connector.type === 'EMAIL' ? (
+                (connector.config as any)?.adapterSlug ? (
+                  <p className="text-xs text-[var(--text-3)]">
+                    This connector was installed from the catalog: its servers and login come from its variables. Change them under Environment variables.
+                  </p>
+                ) : (
+                  <EmailSettingsFields
+                    value={editEmail}
+                    onChange={setEditEmail}
+                    isCloud={deploymentMode === 'cloud'}
+                    existing
+                  />
+                )
+              ) : (
               <div>
                 <label className="block text-sm font-medium mb-1">Base URL</label>
                 <input
@@ -1261,6 +1297,7 @@ export default function ConnectorDetailPage() {
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
+              )}
               {connector.type === 'REST' && (
                 <div>
                   <label className="block text-sm font-medium mb-1">
@@ -1402,6 +1439,8 @@ export default function ConnectorDetailPage() {
                   </div>
                 </div>
               )}
+              {connector.type !== 'EMAIL' && (
+              <>
               <div>
                 <label className="block text-sm font-medium mb-1">Authentication</label>
                 <AppSelect
@@ -1675,7 +1714,9 @@ export default function ConnectorDetailPage() {
                   Leave credential fields empty to keep the current values.
                 </p>
               )}
-              {connector.type !== 'DATABASE' && connector.type !== 'MCP' && (
+              </>
+              )}
+              {connector.type !== 'DATABASE' && connector.type !== 'MCP' && connector.type !== 'EMAIL' && (
                 <HeadersEditor rows={editHeaderRows} onChange={setEditHeaderRows} maskedKeys={connector.maskedHeaders} />
               )}
               <div>
@@ -1704,6 +1745,21 @@ export default function ConnectorDetailPage() {
                 <p className="text-[var(--text-3)]">Auth Type</p>
                 <p className="font-medium">{authTypeLabel(connector.authType)}</p>
               </div>
+              {connector.type === 'EMAIL' && (
+                <div className="col-span-2 min-w-0">
+                  <p className="text-[var(--text-3)]">IMAP server (incoming) / SMTP server (outgoing)</p>
+                  <p className="font-medium font-mono text-xs break-all">
+                    {(() => {
+                      const email = (connector.config as any)?.email ?? {};
+                      const server = (host: unknown, port: unknown, security: unknown) =>
+                        host ? `${host}:${port ?? ''}${security ? ` (${security})` : ''}` : null;
+                      const imap = server(email.imapHost, email.imapPort, email.imapSecurity) ?? connector.baseUrl;
+                      const smtp = server(email.smtpHost, email.smtpPort, email.smtpSecurity) ?? 'not set (read-only)';
+                      return `IMAP ${imap} · SMTP ${smtp}`;
+                    })()}
+                  </p>
+                </div>
+              )}
               {connector.type === 'DATABASE' && (
                 <div>
                   <p className="text-[var(--text-3)]">Access Mode</p>
@@ -1883,9 +1939,12 @@ export default function ConnectorDetailPage() {
               MCP Tools ({toolList.length})
             </h3>
             <div className="flex gap-2 flex-wrap">
-              <Button variant="secondary" size="md" onClick={() => setShowImport(!showImport)}>
-                {showImport ? 'Cancel Import' : 'Import Tools'}
-              </Button>
+              {/* An email connector's tools are its built-ins: nothing to import. */}
+              {connector.type !== 'EMAIL' && (
+                <Button variant="secondary" size="md" onClick={() => setShowImport(!showImport)}>
+                  {showImport ? 'Cancel Import' : 'Import Tools'}
+                </Button>
+              )}
               {(connector.type === 'REST' || connector.type === 'GRAPHQL' || connector.type === 'SOAP') && (
                 <Button variant="secondary" size="md" onClick={handleImportSpec}>
                   Auto-Import from Spec

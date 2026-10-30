@@ -552,6 +552,7 @@ The selected headers are added to the tool result next to the body, and a
 | **SOAP** | SOAP operation name | Port/binding path | — | SOAP parameters | HTTP headers |
 | **Database** | `query` or `static` | SQL/MongoDB query with `$param` | — | — | — |
 | **MCP** | Remote tool name | — | — | Passed through | — |
+| **Email** | `static`, or a built-in `email_list_folders` / `email_search` / `email_get_message` / `email_get_attachment` / `email_set_flags` / `email_move` / `email_delete` / `email_save_draft` / `email_send` (see [Email](connectors/email.md)) | — | — | — (arguments are read directly) | — |
 
 ### Static tools
 

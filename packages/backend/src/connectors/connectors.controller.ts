@@ -93,6 +93,8 @@ import {
 } from './odata/odata-builtins';
 import { parseODataTools } from './parsers/odata.parser';
 import { normalizeSettings } from './engines/odata.engine';
+import { buildEmailBuiltinTools } from './email/email-builtins';
+import { EmailConnectorError, emailToolPrefix, resolveEmailSettings } from './email/email-settings';
 import { computeSetupState } from './connector-setup-status.util';
 import { EditionService } from '../ee/licensing/edition.service';
 import {
@@ -756,6 +758,7 @@ export class ConnectorsController {
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
     this.assertCanCreate(req);
     this.assertUsableBaseUrl(dto.baseUrl, dto.type);
+    if (dto.type === 'EMAIL') this.assertUsableEmailSettings(dto.config, dto.baseUrl);
     // A key typed into the URL or a header (`https://api.telegram.org/bot<token>`)
     // moves into an encrypted variable and is referenced as {{VAR}}.
     const secrets = new SecretExtractor(dto.name, dto.envVars);
@@ -870,6 +873,38 @@ export class ConnectorsController {
       );
     }
 
+    // Email connectors have no endpoints to map: the mailbox is the API, and
+    // the fixed tool set (list folders, search, read, flag, move, draft,
+    // send) is created with the connector.
+    if (dto.type === 'EMAIL') {
+      const builtinTools = buildEmailBuiltinTools({
+        prefix: emailToolPrefix({
+          toolPrefix: (dto.config as { email?: { toolPrefix?: unknown } } | undefined)?.email?.toolPrefix,
+          name: dto.name,
+        }),
+        displayName: dto.name,
+      });
+      for (const tool of builtinTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: connector.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+              // send and delete start switched off (email-builtins.ts).
+              isEnabled: tool.enabled !== false,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // skip duplicates
+        }
+      }
+      await this.mcpServer.reloadConnectorTools(connector.id);
+      this.logger.log(`Auto-created ${builtinTools.length} email tools for connector ${connector.id}`);
+    }
+
     // Put the connector on a server straight away. Assigning it was a separate
     // page most people never found: of the 84 workspaces that imported a
     // working connector in the last fortnight, 49 never attached it to
@@ -916,6 +951,65 @@ export class ConnectorsController {
    * Single-label hostnames are only refused on cloud — self-hosted instances
    * legitimately reach services by Docker network name.
    */
+  /**
+   * The email settings must be usable before anything is saved: an IMAP host,
+   * and on Cloud encryption and standard ports (email-settings.ts). Values
+   * that are still {{VARIABLES}} are checked when the call resolves them.
+   */
+  private assertUsableEmailSettings(config: unknown, baseUrl?: string): void {
+    const email = (config as { email?: Record<string, unknown> } | undefined)?.email;
+    const templated = JSON.stringify(email ?? {}).includes('{{');
+    if (templated) return;
+    try {
+      resolveEmailSettings(email, { cloud: this.deployment.isCloud(), baseUrl });
+    } catch (err) {
+      if (err instanceof EmailConnectorError) throw new BadRequestException(err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * An email connector's login is edited without the stored values (they are
+   * never sent to the browser): an empty username or password keeps the
+   * stored one. The separate SMTP login is kept when the request leaves it
+   * out, replaced when it names one (an empty SMTP password keeps the stored
+   * one), and removed when smtpUsername is sent empty.
+   */
+  private mergeEmailAuthConfig(
+    stored: string | null,
+    incoming: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    // Nothing sent: the stored login stays as it is.
+    if (!incoming || typeof incoming !== 'object') return undefined;
+    let current: Record<string, unknown> = {};
+    if (stored) {
+      try {
+        current = JSON.parse(decrypt(stored, this.encryptionKey)) as Record<string, unknown>;
+      } catch {
+        current = {};
+      }
+    }
+    const given = (key: string) => {
+      const v = incoming[key];
+      return typeof v === 'string' && v !== '' ? v : undefined;
+    };
+    const merged: Record<string, unknown> = {};
+    const keep = (key: string, value: unknown) => {
+      if (value !== undefined) merged[key] = value;
+    };
+    keep('username', given('username') ?? current.username);
+    keep('password', given('password') ?? current.password);
+    keep('mechanism', given('mechanism') ?? current.mechanism);
+    if (!('smtpUsername' in incoming)) {
+      keep('smtpUsername', current.smtpUsername);
+      keep('smtpPassword', current.smtpPassword);
+    } else if (given('smtpUsername')) {
+      keep('smtpUsername', given('smtpUsername'));
+      keep('smtpPassword', given('smtpPassword') ?? current.smtpPassword);
+    }
+    return merged;
+  }
+
   private assertUsableBaseUrl(baseUrl: string, type: string): void {
     const problem = validateBaseUrl(baseUrl, {
       type,
@@ -1079,6 +1173,9 @@ export class ConnectorsController {
     if (dto.baseUrl !== undefined) {
       this.assertUsableBaseUrl(dto.baseUrl, connector.type);
     }
+    if ((connector.type as string) === 'EMAIL' && dto.config && 'email' in (dto.config as object)) {
+      this.assertUsableEmailSettings(dto.config, dto.baseUrl ?? connector.baseUrl);
+    }
     // Switching to OAuth 1.0a writes a whole authConfig through this route,
     // so it gets the same check as PATCH :id/oauth1-config.
     if ((dto.authType ?? connector.authType) === 'OAUTH1') {
@@ -1091,6 +1188,9 @@ export class ConnectorsController {
     // means "unchanged", not "erase".
     const ctx = secretContext(connector);
     const data = { ...dto };
+    if ((connector.type as string) === 'EMAIL') {
+      data.authConfig = this.mergeEmailAuthConfig(connector.authConfig, dto.authConfig);
+    }
     if (dto.envVars) {
       // Cleaned as in PUT :id/env-vars: this route stores variables too.
       data.envVars = this.normalizeVariables(

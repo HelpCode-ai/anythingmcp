@@ -246,6 +246,22 @@ export async function assertSafeOutboundHost(
 }
 
 /**
+ * {@link assertSafeOutboundHost}, returning the addresses it checked so the
+ * caller can connect to exactly those (no second DNS answer in between).
+ * Null when there is nothing to pin: the guard is off, or the host is
+ * allowlisted, and the caller connects by name as before. Used by the mail
+ * clients (IMAP, SMTP), which resolve the name themselves otherwise.
+ */
+export async function resolveSafeOutboundHost(
+  hostname: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<LookupAddress[] | null> {
+  const policy = readPolicy(env);
+  if (!policy.enabled) return null;
+  return vetHost(hostname, policy);
+}
+
+/**
  * Apply the policy to `hostname`. Returns null when the host is allowlisted
  * (env or DB), otherwise the addresses it resolves to, every one of them
  * checked. Throws SsrfBlockedError when the host is not allowed.

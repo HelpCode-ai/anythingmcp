@@ -9,6 +9,7 @@ import { GraphqlEngine } from './engines/graphql.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { ODataEngine } from './engines/odata.engine';
+import { EmailEngine } from './engines/email.engine';
 import { GraphqlSchemaService } from './engines/graphql-schema.service';
 import { OpenApiParser } from './parsers/openapi.parser';
 import { WsdlParser } from './parsers/wsdl.parser';
@@ -32,6 +33,7 @@ const ENGINES = [
   McpClientEngine,
   DatabaseEngine,
   ODataEngine,
+  EmailEngine,
 ];
 
 const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlParser, HarParser];

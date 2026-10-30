@@ -215,6 +215,14 @@ test('DATABASE adapters may authenticate with a connection string', () => {
   assert.deepEqual(result.errors, []);
 });
 
+test('EMAIL adapters (IMAP/SMTP) are a supported connector type', () => {
+  const result = validateAdapter(adapter({
+    slug: 'imap-smtp', icon: 'imap-smtp', region: 'intl',
+    connector: { type: 'EMAIL', authType: 'BASIC_AUTH' },
+  }), 'imap-smtp.json', 'intl');
+  assert.deepEqual(result.errors, []);
+});
+
 test('the per-country region directories are scanned', () => {
   const root = mkdtempSync(join(tmpdir(), 'adapter-validator-regions-'));
   const regions = ['it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk'];

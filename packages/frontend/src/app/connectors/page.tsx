@@ -25,6 +25,7 @@ const TYPE_STYLES: Record<string, { text: string; bg: string; icon: string }> = 
   MCP: { text: 'MCP', bg: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400', icon: 'MCP' },
   DATABASE: { text: 'Database', bg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400', icon: 'DB' },
   ODATA: { text: 'OData', bg: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-400', icon: 'OD' },
+  EMAIL: { text: 'Email (IMAP/SMTP)', bg: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-400', icon: '@' },
 };
 
 /** Connector TYPE → redesign Badge tone. */
@@ -36,6 +37,7 @@ const TYPE_TONE: Record<string, Tone> = {
   GRAPHQL: 'pink',
   MCP: 'purple',
   ODATA: 'success',
+  EMAIL: 'brand',
 };
 
 /** Human-readable label for a connector type Badge. */
@@ -89,6 +91,7 @@ const SUPPORTED_TYPES = [
   { type: 'SOAP', label: 'SOAP' },
   { type: 'MCP', label: 'MCP' },
   { type: 'DATABASE', label: 'Database' },
+  { type: 'EMAIL', label: 'Email (IMAP/SMTP)' },
 ];
 
 export default function ConnectorsPage() {
@@ -458,6 +461,7 @@ export default function ConnectorsPage() {
                 { value: 'ODATA', label: 'OData' },
                 { value: 'MCP', label: 'MCP' },
                 { value: 'DATABASE', label: 'Database' },
+                { value: 'EMAIL', label: 'Email (IMAP/SMTP)' },
               ]}
             />
             <span className="text-[13px] text-[var(--text-3)]">

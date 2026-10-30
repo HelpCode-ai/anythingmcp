@@ -385,6 +385,7 @@ enum ConnectorType {
   DATABASE
   WEBHOOK
   ODATA
+  EMAIL
 }
 
 enum AuthType {
