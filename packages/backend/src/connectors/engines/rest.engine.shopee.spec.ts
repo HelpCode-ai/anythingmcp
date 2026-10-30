@@ -210,12 +210,14 @@ describe('extended HMAC template', () => {
 describe('opt-in: adapters signed before query signing keep the original path', () => {
   const NEW_FIELDS = ['placement', 'paramName', 'timestampParam', 'queryParams'];
 
-  it('every catalog HMAC adapter except shopee uses none of the new fields', () => {
+  it('every catalog HMAC adapter except the query-signed ones uses none of the new fields', () => {
+    // Shopee and the AliExpress (IOP) adapters were written for query signing.
+    const querySigned = ['aliexpress-affiliate', 'aliexpress-dropshipping', 'shopee'];
     const hmac = listAdapters()
       .map((m) => getAdapter(m.slug)!)
       .filter((a) => a.connector.authType === 'HMAC');
-    expect(hmac.map((a) => a.slug).sort()).toEqual(['kaufland', 'shopee']);
-    for (const a of hmac.filter((x) => x.slug !== 'shopee')) {
+    expect(hmac.map((a) => a.slug).sort()).toEqual([...querySigned, 'kaufland'].sort());
+    for (const a of hmac.filter((x) => !querySigned.includes(x.slug))) {
       const sig = (a.connector.authConfig as { signature: Record<string, unknown> }).signature;
       expect(NEW_FIELDS.filter((f) => f in sig)).toEqual([]);
       expect(usesExtendedHmac(sig)).toBe(false);

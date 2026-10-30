@@ -1,0 +1,825 @@
+{
+  "slug": "aliexpress-affiliate",
+  "name": "AliExpress Affiliate",
+  "aliases": [
+    "AliExpress Portals",
+    "AliExpress Affiliate API",
+    "AliExpress Open Platform"
+  ],
+  "description": "Let your AI research AliExpress products for affiliate marketing: search and hot products with prices and commissions, product and SKU details, shipping cost, coupons, affiliate links with your tracking ID and the orders and commissions they earned.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "aliexpress",
+  "docsUrl": "https://openservice.aliexpress.com/doc/api.htm#/api?cid=21407&path=aliexpress.affiliate.product.query&methodType=GET/POST",
+  "instructions": "## AliExpress Affiliate\nThis connector calls the **AliExpress Affiliate API** (AliExpress Open Platform, `api-sg.aliexpress.com`) with your own affiliate app: product search and details, hot products, featured promotions, coupons, shipping cost to a country, affiliate link generation and the orders and commissions your links earned. Everything is read-only.\n\n**What you need**: an AliExpress Portals affiliate account, an Open Platform developer account with an app in the **Affiliates** category, and a tracking ID. About 15 minutes, plus AliExpress's review of the developer profile and app category.\n\n**Setup**\n1. Sign up as an affiliate at https://portals.aliexpress.com and create a **tracking ID** there; it attributes the commissions of your links.\n2. At https://openservice.aliexpress.com click **Create Account** (or sign in), open your profile and choose the developer type **Affiliate (individual)** or **Affiliate (corporation)**. AliExpress reviews the profile.\n3. In the **App Console** click **Create**, apply for the **Affiliates** app category, then create the app (the callback URL is not used by this connector, any https address of yours works). The same Open Platform account cannot hold both an Affiliate and a Dropshipping app: for dropshipping use the AliExpress Dropshipping connector with its own account.\n4. On the app's overview page copy the **App Key** into `ALIEXPRESS_APP_KEY` and the **App Secret** (click View) into `ALIEXPRESS_APP_SECRET`, and put your tracking ID in `ALIEXPRESS_TRACKING_ID`.\n5. A new app runs in test status with a low call quota; click **Apply Online** in the console when you are ready.\n\n**How it signs**: every call carries `app_key`, `method`, a millisecond `timestamp`, `sign_method=sha256` and `sign`, an upper-case HMAC-SHA256 of all parameters sorted by name, keyed with the app secret. The secret never leaves AnythingMCP. A timestamp more than two hours off is refused, so the host clock must be right.\n\n**Where to start**\n- Product research: `aliexpress_affiliate_search_products` (keywords, category, price range, delivery days), `aliexpress_affiliate_list_hot_products` (raised commission), `aliexpress_affiliate_list_categories` for category ids.\n- One product: `aliexpress_affiliate_get_products` (up to 50 ids), `aliexpress_affiliate_get_sku_details` (variants, stock), `aliexpress_affiliate_get_shipping` (cost and delivery time of one SKU, using the `sku_id`, `target_sale_price` and `tax_rate` of a search result), `aliexpress_affiliate_get_promotions` (coupons now).\n- Campaigns: `aliexpress_affiliate_list_featured_promos`, then `aliexpress_affiliate_list_promo_products`.\n- Links: `aliexpress_affiliate_generate_links` turns up to 50 AliExpress URLs into links with your tracking ID. Search and detail results already carry a `promotion_link`.\n- Earnings: `aliexpress_affiliate_list_orders` (time window and status), `aliexpress_affiliate_get_orders` (by id).\n\n**Units and formats**: price filters `min_sale_price` and `max_sale_price` are in **cents** of `target_currency`; prices in answers are decimal strings with their currency next to them (`target_sale_price`, `target_sale_price_currency`). Rates such as `commission_rate` and `discount` are percentages as text (\"7.0%\"). Order times and promotion windows are **Pacific time** (PST/PDT), `YYYY-MM-DD HH:MM:SS`. Product ids are long numbers: keep them as text.\n\n**Paging**: `page_no` from 1 and `page_size` up to 50; answers give `total_record_count` and `total_page_no`. Ask for fewer `fields` to keep long lists short.\n\n**Answers and errors**: results sit under `aliexpress_affiliate_<call>_response.resp_result`, where `resp_code` 200 is success and `result` holds the data; 405 means nothing matched, 402 a bad parameter. Gateway refusals come as `error_response` with a `code`: `InvalidAppKey` or `IncompleteSignature` (key or secret wrong or not of the same app), `InsufficientPermission` (the app lacks the API: check the app category and permission group in the console), call-limit codes when the quota is used up (test apps have a small one).",
+  "prerequisites": "An AliExpress Portals affiliate account with a tracking ID, and an app in the Affiliates category on the AliExpress Open Platform (App Key and App Secret). About 15 minutes, plus AliExpress's review of the developer profile.",
+  "appRegistrationUrl": "https://openservice.aliexpress.com/app/index.htm",
+  "requiredEnvVars": [
+    "ALIEXPRESS_APP_KEY",
+    "ALIEXPRESS_APP_SECRET",
+    "ALIEXPRESS_TRACKING_ID"
+  ],
+  "envVarMeta": {
+    "ALIEXPRESS_APP_KEY": {
+      "label": "App Key",
+      "kind": "setting",
+      "help": "AliExpress Open Platform, App Console, your Affiliates app, Manage: the App Key (a number).",
+      "example": "512345",
+      "link": "https://openservice.aliexpress.com/app/index.htm",
+      "pattern": "^[0-9]{4,12}$",
+      "patternMessage": "The App Key is a number."
+    },
+    "ALIEXPRESS_APP_SECRET": {
+      "label": "App Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page as the App Key: the App Secret (click View). It signs every request and is never sent.",
+      "link": "https://openservice.aliexpress.com/app/index.htm",
+      "pattern": "^\\S{16,128}$",
+      "patternMessage": "Paste the App Secret alone, without spaces or quotes."
+    },
+    "ALIEXPRESS_TRACKING_ID": {
+      "label": "Tracking ID",
+      "kind": "setting",
+      "help": "A tracking ID of your AliExpress Portals account (portals.aliexpress.com). It goes into every affiliate link so the commission is yours.",
+      "link": "https://portals.aliexpress.com",
+      "pattern": "^\\S{1,64}$",
+      "patternMessage": "Paste the tracking ID alone, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "AliExpress refused the app key or the signature. Check that ALIEXPRESS_APP_KEY and ALIEXPRESS_APP_SECRET are the App Key and App Secret of the same app in the AliExpress Open Platform console.",
+    "403": "The app works but lacks this API. Check that the app is in the Affiliates category and that its API permission group includes the Affiliate API.",
+    "rate_limited": "The app's call quota is used up. Apps in test status have a small one: apply for online status in the console, or wait and try again."
+  },
+  "probe": {
+    "tool": "aliexpress_affiliate_list_categories"
+  },
+  "connector": {
+    "name": "AliExpress Affiliate API",
+    "type": "REST",
+    "baseUrl": "https://api-sg.aliexpress.com",
+    "authType": "HMAC",
+    "authConfig": {
+      "signature": {
+        "algorithm": "sha256",
+        "encoding": "hex-upper",
+        "secret": "{{ALIEXPRESS_APP_SECRET}}",
+        "placement": "query",
+        "paramName": "sign",
+        "timestampParam": "timestamp",
+        "timestampFormat": "ms",
+        "queryParams": {
+          "app_key": "{{ALIEXPRESS_APP_KEY}}",
+          "sign_method": "sha256"
+        },
+        "template": "${sortedParams}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error_response.code",
+          "matches": "AppKey|Signature|Token|Session|Auth",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 401
+        },
+        {
+          "path": "error_response.code",
+          "matches": "Permission|Forbidden|Denied|WhiteIp|IpLimit",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 403
+        },
+        {
+          "path": "error_response.code",
+          "matches": "Limit|Throttl|Frequen|Flow",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 429
+        },
+        {
+          "path": "error_response.code",
+          "matches": ".+",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "aliexpress_affiliate_list_categories",
+      "description": "List AliExpress product categories: category_id, category_name and parent_category_id for second-level ones. No parameters. Use the ids to filter product searches and hot products.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.category.get"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_search_products",
+      "description": "Search AliExpress products open to affiliates by keywords, category, price range, delivery time or promotion. Each product has product_id, title, prices (sale, original, app price) in target_currency, discount, commission_rate, sales in the last 30 days (lastest_volume), rating, shop, images and a promotion_link that carries your tracking ID. Pages of up to 50.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "Search words, for example 'wireless earbuds'."
+          },
+          "category_ids": {
+            "type": "string",
+            "description": "Comma-separated category ids from aliexpress_affiliate_list_categories."
+          },
+          "min_sale_price": {
+            "type": "integer",
+            "description": "Lowest price, in cents of target_currency (1500 = 15.00).",
+            "minimum": 0
+          },
+          "max_sale_price": {
+            "type": "integer",
+            "description": "Highest price, in cents of target_currency.",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "SALE_PRICE_ASC",
+              "SALE_PRICE_DESC",
+              "LAST_VOLUME_ASC",
+              "LAST_VOLUME_DESC"
+            ]
+          },
+          "platform_product_type": {
+            "type": "string",
+            "description": "ALL (default), PLAZA or TMALL.",
+            "enum": [
+              "ALL",
+              "PLAZA",
+              "TMALL"
+            ]
+          },
+          "delivery_days": {
+            "type": "string",
+            "description": "Only products delivered within this many days: 3, 5, 7 or 10.",
+            "enum": [
+              "3",
+              "5",
+              "7",
+              "10"
+            ]
+          },
+          "promotion_name": {
+            "type": "string",
+            "description": "Only products of this featured promotion (a name from aliexpress_affiliate_list_featured_promos)."
+          },
+          "ship_to_country": {
+            "type": "string",
+            "description": "Two-letter country the buyer is in (US, DE, FR, ES, IT, GB, ...). Only products that ship there are returned, with that country's prices and taxes."
+          },
+          "target_currency": {
+            "type": "string",
+            "description": "Currency for the prices in the answer, one of USD, GBP, CAD, EUR, UAH, MXN, TRY, RUB, BRL, AUD, INR, JPY, IDR, SEK, KRW, ILS, THB, CLP, VND. AliExpress uses USD when it is left out."
+          },
+          "target_language": {
+            "type": "string",
+            "description": "Language of titles and texts, upper case: EN, RU, PT, ES, FR, ID, IT, TH, JA, AR, VI, TR, DE, HE, KO, NL, PL, MX, CL, IN. EN when left out."
+          },
+          "page_no": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page, 1 to 50. Defaults to 20 here.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional comma-separated list of the product fields to return (for example product_id,product_title,target_sale_price,commission_rate,promotion_link), to keep answers short. All fields when left out."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.product.query",
+          "keywords": "$keywords",
+          "category_ids": "$category_ids",
+          "min_sale_price": "$min_sale_price",
+          "max_sale_price": "$max_sale_price",
+          "sort": "$sort",
+          "platform_product_type": "$platform_product_type",
+          "delivery_days": "$delivery_days",
+          "promotion_name": "$promotion_name",
+          "ship_to_country": "$ship_to_country",
+          "target_currency": "$target_currency",
+          "target_language": "$target_language",
+          "page_no": "$page_no",
+          "page_size": "$page_size",
+          "fields": "$fields",
+          "tracking_id": "{{ALIEXPRESS_TRACKING_ID}}"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_list_hot_products",
+      "description": "Hot products: AliExpress items with a raised commission (hot_product_commission_rate), filtered like aliexpress_affiliate_search_products by keywords, category, price, delivery time or promotion. Same product fields and paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "Search words, for example 'wireless earbuds'."
+          },
+          "category_ids": {
+            "type": "string",
+            "description": "Comma-separated category ids from aliexpress_affiliate_list_categories."
+          },
+          "min_sale_price": {
+            "type": "integer",
+            "description": "Lowest price, in cents of target_currency (1500 = 15.00).",
+            "minimum": 0
+          },
+          "max_sale_price": {
+            "type": "integer",
+            "description": "Highest price, in cents of target_currency.",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "SALE_PRICE_ASC",
+              "SALE_PRICE_DESC",
+              "LAST_VOLUME_ASC",
+              "LAST_VOLUME_DESC"
+            ]
+          },
+          "platform_product_type": {
+            "type": "string",
+            "description": "ALL (default), PLAZA or TMALL.",
+            "enum": [
+              "ALL",
+              "PLAZA",
+              "TMALL"
+            ]
+          },
+          "delivery_days": {
+            "type": "string",
+            "description": "Only products delivered within this many days: 3, 5, 7 or 10.",
+            "enum": [
+              "3",
+              "5",
+              "7",
+              "10"
+            ]
+          },
+          "promotion_name": {
+            "type": "string",
+            "description": "Only products of this featured promotion (a name from aliexpress_affiliate_list_featured_promos)."
+          },
+          "ship_to_country": {
+            "type": "string",
+            "description": "Two-letter country the buyer is in (US, DE, FR, ES, IT, GB, ...). Only products that ship there are returned, with that country's prices and taxes."
+          },
+          "target_currency": {
+            "type": "string",
+            "description": "Currency for the prices in the answer, one of USD, GBP, CAD, EUR, UAH, MXN, TRY, RUB, BRL, AUD, INR, JPY, IDR, SEK, KRW, ILS, THB, CLP, VND. AliExpress uses USD when it is left out."
+          },
+          "target_language": {
+            "type": "string",
+            "description": "Language of titles and texts, upper case: EN, RU, PT, ES, FR, ID, IT, TH, JA, AR, VI, TR, DE, HE, KO, NL, PL, MX, CL, IN. EN when left out."
+          },
+          "page_no": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page, 1 to 50. Defaults to 20 here.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional comma-separated list of the product fields to return (for example product_id,product_title,target_sale_price,commission_rate,promotion_link), to keep answers short. All fields when left out."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.hotproduct.query",
+          "keywords": "$keywords",
+          "category_ids": "$category_ids",
+          "min_sale_price": "$min_sale_price",
+          "max_sale_price": "$max_sale_price",
+          "sort": "$sort",
+          "platform_product_type": "$platform_product_type",
+          "delivery_days": "$delivery_days",
+          "promotion_name": "$promotion_name",
+          "ship_to_country": "$ship_to_country",
+          "target_currency": "$target_currency",
+          "target_language": "$target_language",
+          "page_no": "$page_no",
+          "page_size": "$page_size",
+          "fields": "$fields",
+          "tracking_id": "{{ALIEXPRESS_TRACKING_ID}}"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_get_products",
+      "description": "Details of up to 50 AliExpress products by id: title, prices, discount, commission rates, category, shop, images, video, promotion_link with your tracking ID and any promo code. Ids come from the product URL (aliexpress.com/item/<product_id>.html) or from a search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "string",
+            "description": "Comma-separated product ids, at most 50."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter country the buyer is in (US, DE, FR, ES, IT, GB, ...). Only products that ship there are returned, with that country's prices and taxes."
+          },
+          "target_currency": {
+            "type": "string",
+            "description": "Currency for the prices in the answer, one of USD, GBP, CAD, EUR, UAH, MXN, TRY, RUB, BRL, AUD, INR, JPY, IDR, SEK, KRW, ILS, THB, CLP, VND. AliExpress uses USD when it is left out."
+          },
+          "target_language": {
+            "type": "string",
+            "description": "Language of titles and texts, upper case: EN, RU, PT, ES, FR, ID, IT, TH, JA, AR, VI, TR, DE, HE, KO, NL, PL, MX, CL, IN. EN when left out."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional comma-separated list of the product fields to return (for example product_id,product_title,target_sale_price,commission_rate,promotion_link), to keep answers short. All fields when left out."
+          }
+        },
+        "required": [
+          "product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.productdetail.get",
+          "product_ids": "$product_ids",
+          "country": "$country",
+          "target_currency": "$target_currency",
+          "target_language": "$target_language",
+          "fields": "$fields",
+          "tracking_id": "{{ALIEXPRESS_TRACKING_ID}}"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_get_sku_details",
+      "description": "Every variant (SKU) of one AliExpress product for a destination country: sku_id, its properties (color, size), price in target_currency, stock and, on request, delivery options. At most 20 SKUs per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product id."
+          },
+          "ship_to_country": {
+            "type": "string",
+            "description": "Two-letter country the buyer is in (US, DE, FR, ES, IT, GB, ...). Only products that ship there are returned, with that country's prices and taxes."
+          },
+          "target_currency": {
+            "type": "string",
+            "description": "Currency for the prices in the answer, one of USD, GBP, CAD, EUR, UAH, MXN, TRY, RUB, BRL, AUD, INR, JPY, IDR, SEK, KRW, ILS, THB, CLP, VND. AliExpress uses USD when it is left out."
+          },
+          "target_language": {
+            "type": "string",
+            "description": "Language of titles and texts, upper case: EN, RU, PT, ES, FR, ID, IT, TH, JA, AR, VI, TR, DE, HE, KO, NL, PL, MX, CL, IN. EN when left out."
+          },
+          "sku_ids": {
+            "type": "string",
+            "description": "Optional comma-separated SKU ids; all SKUs of the product (up to 20) when left out."
+          },
+          "need_deliver_info": {
+            "type": "string",
+            "description": "Yes to include delivery information (slower), No (default) to leave it out.",
+            "enum": [
+              "Yes",
+              "No"
+            ]
+          }
+        },
+        "required": [
+          "product_id",
+          "ship_to_country",
+          "target_currency",
+          "target_language"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.product.sku.detail.get",
+          "product_id": "$product_id",
+          "ship_to_country": "$ship_to_country",
+          "target_currency": "$target_currency",
+          "target_language": "$target_language",
+          "sku_ids": "$sku_ids",
+          "need_deliver_info": "$need_deliver_info"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_get_shipping",
+      "description": "Shipping options, cost and delivery time of one SKU to a country. Takes the sku_id, target_sale_price and tax_rate returned by a product search, detail or SKU call for the same country and currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product id."
+          },
+          "sku_id": {
+            "type": "string",
+            "description": "The SKU id (sku_id of a search result or of aliexpress_affiliate_get_sku_details)."
+          },
+          "ship_to_country": {
+            "type": "string",
+            "description": "Two-letter country the buyer is in (US, DE, FR, ES, IT, GB, ...). Only products that ship there are returned, with that country's prices and taxes."
+          },
+          "target_currency": {
+            "type": "string",
+            "description": "Currency for the prices in the answer, one of USD, GBP, CAD, EUR, UAH, MXN, TRY, RUB, BRL, AUD, INR, JPY, IDR, SEK, KRW, ILS, THB, CLP, VND. AliExpress uses USD when it is left out."
+          },
+          "target_sale_price": {
+            "type": "string",
+            "description": "The SKU's sale price in target_currency as returned (for example '12.34')."
+          },
+          "target_language": {
+            "type": "string",
+            "description": "Language of titles and texts, upper case: EN, RU, PT, ES, FR, ID, IT, TH, JA, AR, VI, TR, DE, HE, KO, NL, PL, MX, CL, IN. EN when left out."
+          },
+          "tax_rate": {
+            "type": "string",
+            "description": "The product's tax_rate as returned by the search (for example '0.1')."
+          }
+        },
+        "required": [
+          "product_id",
+          "sku_id",
+          "ship_to_country",
+          "target_currency",
+          "target_sale_price",
+          "target_language",
+          "tax_rate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.product.shipping.get",
+          "product_id": "$product_id",
+          "sku_id": "$sku_id",
+          "ship_to_country": "$ship_to_country",
+          "target_currency": "$target_currency",
+          "target_sale_price": "$target_sale_price",
+          "target_language": "$target_language",
+          "tax_rate": "$tax_rate"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_get_promotions",
+      "description": "Promotions and coupons that apply right now to up to 10 products in one country: coupon codes, face value, minimum spend and validity. Supported countries: AT, BE, CH, CZ, HU, SE, PT, DE, FR, NL, ES, IT, PL, UK, JP, US, CL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Comma-separated product ids, at most 10."
+          },
+          "ship_to_country": {
+            "type": "string",
+            "description": "Two-letter destination country, one of AT, BE, CH, CZ, HU, SE, PT, DE, FR, NL, ES, IT, PL, UK, JP, US, CL."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency for coupon values, for example USD or EUR."
+          },
+          "target_language": {
+            "type": "string",
+            "description": "Language: EN, FR, TH, HE, JA, PT, RU, KO, AR, UK, NL, ES, DE, IT, TR or PL."
+          }
+        },
+        "required": [
+          "product_id",
+          "ship_to_country",
+          "currency",
+          "target_language"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.promotion.info.get",
+          "product_id": "$product_id",
+          "ship_to_country": "$ship_to_country",
+          "currency": "$currency",
+          "target_language": "$target_language"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_generate_links",
+      "description": "Turn up to 50 AliExpress links (product, store or campaign URLs) into affiliate links that carry your tracking ID. Returns promotion_link per source_value. promotion_link_type 0 is the normal commission, 2 the hot-product commission (for products from aliexpress_affiliate_list_hot_products).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_values": {
+            "type": "string",
+            "description": "Comma-separated AliExpress URLs (or product ids), at most 50."
+          },
+          "promotion_link_type": {
+            "type": "integer",
+            "description": "0 normal link (default), 2 hot-product link.",
+            "enum": [
+              0,
+              2
+            ],
+            "default": 0
+          },
+          "ship_to_country": {
+            "type": "string",
+            "description": "Optional two-letter country you promote in."
+          }
+        },
+        "required": [
+          "source_values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.link.generate"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "source_values": "$source_values",
+          "promotion_link_type": "$promotion_link_type",
+          "ship_to_country": "$ship_to_country",
+          "tracking_id": "{{ALIEXPRESS_TRACKING_ID}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_list_featured_promos",
+      "description": "List the featured promotions running now (for example Hot Product, New Arrival, Best Seller, weekly deals): promo_name, description and product count. No parameters. Pass a promo_name to aliexpress_affiliate_list_promo_products or as promotion_name to a search.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.featuredpromo.get"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_list_promo_products",
+      "description": "Products of one featured promotion, with the same product fields as a search (prices, commission, promotion_link). Optional category, time window and sort.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "promotion_name": {
+            "type": "string",
+            "description": "The promo_name from aliexpress_affiliate_list_featured_promos, for example 'Hot Product'."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Optional category id."
+          },
+          "promotion_start_time": {
+            "type": "string",
+            "description": "Optional start of the promotion window, 'YYYY-MM-DD HH:MM:SS' in Pacific time (PST/PDT)."
+          },
+          "promotion_end_time": {
+            "type": "string",
+            "description": "Optional end of the promotion window, same format."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "commissionAsc",
+              "commissionDesc",
+              "priceAsc",
+              "priceDesc",
+              "volumeAsc",
+              "volumeDesc",
+              "discountAsc",
+              "discountDesc",
+              "ratingAsc",
+              "ratingDesc",
+              "promotionTimeAsc",
+              "promotionTimeDesc"
+            ]
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter country the buyer is in (US, DE, FR, ES, IT, GB, ...). Only products that ship there are returned, with that country's prices and taxes."
+          },
+          "target_currency": {
+            "type": "string",
+            "description": "Currency for the prices in the answer, one of USD, GBP, CAD, EUR, UAH, MXN, TRY, RUB, BRL, AUD, INR, JPY, IDR, SEK, KRW, ILS, THB, CLP, VND. AliExpress uses USD when it is left out."
+          },
+          "target_language": {
+            "type": "string",
+            "description": "Language of titles and texts, upper case: EN, RU, PT, ES, FR, ID, IT, TH, JA, AR, VI, TR, DE, HE, KO, NL, PL, MX, CL, IN. EN when left out."
+          },
+          "page_no": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page, 1 to 50. Defaults to 20 here.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional comma-separated list of the product fields to return (for example product_id,product_title,target_sale_price,commission_rate,promotion_link), to keep answers short. All fields when left out."
+          }
+        },
+        "required": [
+          "promotion_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.featuredpromo.products.get",
+          "promotion_name": "$promotion_name",
+          "category_id": "$category_id",
+          "promotion_start_time": "$promotion_start_time",
+          "promotion_end_time": "$promotion_end_time",
+          "sort": "$sort",
+          "country": "$country",
+          "target_currency": "$target_currency",
+          "target_language": "$target_language",
+          "page_no": "$page_no",
+          "page_size": "$page_size",
+          "fields": "$fields",
+          "tracking_id": "{{ALIEXPRESS_TRACKING_ID}}"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_list_orders",
+      "description": "Orders that came through your affiliate links in a time window, by status: order and sub-order ids, product, paid amount, estimated and paid commission, commission rate, tracking ID, order status and dates. Times are Pacific time. Pages of up to 50.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "string",
+            "description": "Start of the window, 'YYYY-MM-DD HH:MM:SS' in Pacific time (PST/PDT)."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End of the window, same format."
+          },
+          "status": {
+            "type": "string",
+            "description": "Order status.",
+            "enum": [
+              "Payment Completed",
+              "Buyer Confirmed Receipt",
+              "Completed Settlement",
+              "Invalid"
+            ]
+          },
+          "time_type": {
+            "type": "string",
+            "description": "Which date the window applies to. Payment Completed Time when left out.",
+            "enum": [
+              "Payment Completed Time",
+              "Buyer Confirmed Receipt Time",
+              "Completed Settlement Time"
+            ]
+          },
+          "locale_site": {
+            "type": "string",
+            "description": "Optional site: global, ru_site, es_site, it_site."
+          },
+          "page_no": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 50. Defaults to 50 here.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional comma-separated list of order fields to return."
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.order.list",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "status": "$status",
+          "time_type": "$time_type",
+          "locale_site": "$locale_site",
+          "page_no": "$page_no",
+          "page_size": "$page_size",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_affiliate_get_orders",
+      "description": "Affiliate orders by order or sub-order id (comma-separated): product, amounts, commission, status and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "string",
+            "description": "Comma-separated order ids or sub-order ids."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional comma-separated list of order fields to return."
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.affiliate.order.get",
+          "order_ids": "$order_ids",
+          "fields": "$fields"
+        }
+      }
+    }
+  ]
+}
