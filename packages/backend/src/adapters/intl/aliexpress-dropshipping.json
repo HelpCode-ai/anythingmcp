@@ -1,0 +1,545 @@
+{
+  "slug": "aliexpress-dropshipping",
+  "name": "AliExpress Dropshipping",
+  "aliases": [
+    "AliExpress DS",
+    "AliExpress Dropshipping API",
+    "AliExpress DS Center"
+  ],
+  "description": "Let your AI source AliExpress products for your store: search with your dropshipper prices, product and SKU details, delivery options and cost, order status and tracking, with order placement available on request.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "aliexpress",
+  "docsUrl": "https://openservice.aliexpress.com/doc/api.htm#/api?cid=21038&path=aliexpress.ds.product.get&methodType=GET/POST",
+  "instructions": "## AliExpress Dropshipping\nThis connector calls the **AliExpress Dropshipping API** (AliExpress Open Platform, `api-sg.aliexpress.com`) for your dropshipper account: product search, product and SKU details at your account's prices, delivery options and cost, order status and tracking, and placing orders. Placing orders is installed switched off.\n\n**What you need**: an AliExpress buyer account activated as a dropshipper, an Open Platform developer account with an app in the **Dropshipping** category, and an access token for your buyer account. About 20 minutes, plus AliExpress's review of the developer profile and app category.\n\n**Setup**\n1. Sign in to AliExpress with a **buyer** account (not a seller account) and accept the Dropshipping Program agreement in the DS Center (https://ds.aliexpress.com).\n2. At https://openservice.aliexpress.com click **Create Account** (or sign in), open your profile and choose the developer type **Dropshipping (individual)** or **Dropshipping (corporation)**. AliExpress reviews the profile.\n3. In the **App Console** click **Create**, apply for the **Dropshipping** app category, then create the app with a callback URL of yours (https). The same Open Platform account cannot hold both a Dropshipping and an Affiliate app.\n4. On the app's overview page copy the **App Key** into `ALIEXPRESS_DS_APP_KEY` and the **App Secret** (click View) into `ALIEXPRESS_DS_APP_SECRET`.\n5. Get an **access token** for your buyer account: open the API test tool of the Open Platform (any Dropshipping API page, then the test link, or https://openservice.aliexpress.com/app/index.htm#/api/test), pick your app, click **Get Token** and sign in with the dropshipper buyer account. Copy the `access_token` into `ALIEXPRESS_DS_ACCESS_TOKEN`. Developers with their own OAuth flow can use the token from `/auth/token/create` instead.\n6. While the app is in test status its tokens last about a day; click **Apply Online** in the console. The console's Auth Management page shows how long tokens of your app category last (for dropshipping apps typically 30 days).\n\n**Token expiry**: the access token is pasted, not renewed by AnythingMCP. When it expires every call fails with an `error_response` about the access token (shown as an authentication error): get a new one as in step 5 and update `ALIEXPRESS_DS_ACCESS_TOKEN`. AliExpress's refresh token does not extend an authorization past the refresh token's own end date (at most about 60 days after authorizing), so a new sign-in is needed periodically anyway. `aliexpress_dropshipping_get_member_benefits` is a quick check that the token works.\n\n**How it signs**: every call carries `app_key`, `access_token`, `method`, a millisecond `timestamp`, `sign_method=sha256` and `sign`, an upper-case HMAC-SHA256 of all parameters sorted by name, keyed with the app secret. The secret never leaves AnythingMCP. A timestamp more than two hours off is refused.\n\n**Where to start**\n- Find products: `aliexpress_dropshipping_search_products` (keyword, destination country, currency), `aliexpress_dropshipping_list_categories` for category ids.\n- One product: `aliexpress_dropshipping_get_product` gives the SKUs with their `sku_id` and `sku_attr`; `aliexpress_dropshipping_get_freight` the delivery options for a SKU, quantity and country, with the `logistics_service_name` to order with.\n- After ordering: `aliexpress_dropshipping_get_order` (status, amounts) and `aliexpress_dropshipping_get_tracking` (carrier, tracking number, events).\n- Ordering: `aliexpress_dropshipping_create_order` places an order with the customer's address and the items (product_id, product_count, sku_attr, logistics_service_name). It is switched off at install; turn it on in the connector's tools when you want the AI to place orders, and confirm each order. Orders are created unpaid: pay them on AliExpress.\n\n**Units and formats**: prices are decimal strings in the requested currency; product, SKU and order ids are long numbers, keep them as text. Countries are two-letter codes; `locale` and `language` take forms like en_US, `target_language` lower case (en). Tracking times are Unix milliseconds. Searches page with `page_index` from 1 and `page_size` up to 50.\n\n**Answers and errors**: results sit under `aliexpress_ds_<call>_response` (or `aliexpress_trade_ds_order_get_response`), usually in `result`, with a call-specific success flag (`rsp_code`, `is_success`, `ret`) and message. Gateway refusals come as `error_response` with a `code`: an access token code when the token expired or belongs to another app, `InvalidAppKey` or `IncompleteSignature` when key and secret do not match, `InsufficientPermission` when the app lacks the API (check the app category), and call-limit codes when the quota is used up.",
+  "prerequisites": "An AliExpress buyer account activated as a dropshipper, an app in the Dropshipping category on the AliExpress Open Platform (App Key and App Secret) and an access token for the buyer account from the Open Platform's API test tool. About 20 minutes, plus AliExpress's review of the developer profile.",
+  "appRegistrationUrl": "https://openservice.aliexpress.com/app/index.htm",
+  "requiredEnvVars": [
+    "ALIEXPRESS_DS_APP_KEY",
+    "ALIEXPRESS_DS_APP_SECRET",
+    "ALIEXPRESS_DS_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "ALIEXPRESS_DS_APP_KEY": {
+      "label": "App Key",
+      "kind": "setting",
+      "help": "AliExpress Open Platform, App Console, your Dropshipping app, Manage: the App Key (a number).",
+      "example": "512345",
+      "link": "https://openservice.aliexpress.com/app/index.htm",
+      "pattern": "^[0-9]{4,12}$",
+      "patternMessage": "The App Key is a number."
+    },
+    "ALIEXPRESS_DS_APP_SECRET": {
+      "label": "App Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page as the App Key: the App Secret (click View). It signs every request and is never sent.",
+      "link": "https://openservice.aliexpress.com/app/index.htm",
+      "pattern": "^\\S{16,128}$",
+      "patternMessage": "Paste the App Secret alone, without spaces or quotes."
+    },
+    "ALIEXPRESS_DS_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "From the Open Platform's API test tool: pick your app, click Get Token and sign in with your dropshipper buyer account. It expires (about 30 days for an online app, one day in test status); paste a new one then.",
+      "link": "https://openservice.aliexpress.com/app/index.htm#/api/test",
+      "pattern": "^\\S{20,512}$",
+      "patternMessage": "Paste the access token alone, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "AliExpress refused the app key, the signature or the access token. Check that ALIEXPRESS_DS_APP_KEY and ALIEXPRESS_DS_APP_SECRET belong to the same Dropshipping app, and get a new access token with the API test tool (tokens expire) for ALIEXPRESS_DS_ACCESS_TOKEN.",
+    "403": "The app works but lacks this API. Check that the app is in the Dropshipping category and that its API permission group includes the Dropshipping API.",
+    "rate_limited": "The app's call quota is used up. Apps in test status have a small one: apply for online status in the console, or wait and try again."
+  },
+  "probe": {
+    "tool": "aliexpress_dropshipping_get_member_benefits"
+  },
+  "connector": {
+    "name": "AliExpress Dropshipping API",
+    "type": "REST",
+    "baseUrl": "https://api-sg.aliexpress.com",
+    "authType": "HMAC",
+    "authConfig": {
+      "signature": {
+        "algorithm": "sha256",
+        "encoding": "hex-upper",
+        "secret": "{{ALIEXPRESS_DS_APP_SECRET}}",
+        "placement": "query",
+        "paramName": "sign",
+        "timestampParam": "timestamp",
+        "timestampFormat": "ms",
+        "queryParams": {
+          "app_key": "{{ALIEXPRESS_DS_APP_KEY}}",
+          "sign_method": "sha256",
+          "access_token": "{{ALIEXPRESS_DS_ACCESS_TOKEN}}"
+        },
+        "template": "${sortedParams}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error_response.code",
+          "matches": "AppKey|Signature|Token|Session|Auth",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 401
+        },
+        {
+          "path": "error_response.code",
+          "matches": "Permission|Forbidden|Denied|WhiteIp|IpLimit",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 403
+        },
+        {
+          "path": "error_response.code",
+          "matches": "Limit|Throttl|Frequen|Flow",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 429
+        },
+        {
+          "path": "error_response.code",
+          "matches": ".+",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "aliexpress_dropshipping_get_member_benefits",
+      "description": "The dropshipper benefits of the authorized AliExpress account (discount levels and their conditions). No parameters; the lightest call that uses the access token, so it also checks that the token is valid.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.ds.member.benefit.get"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_dropshipping_list_categories",
+      "description": "AliExpress category ids and names, in a language. Without category_id the top-level categories; with the id of a level 3 or 4 category, its parent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Optional category id."
+          },
+          "language": {
+            "type": "string",
+            "description": "Lower-case language code: en, de, fr, es, it, pt, ru, ko, ja, ar, tr, pl, nl, vi, th, id, he, uk, zh, hi."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.ds.category.get",
+          "categoryId": "$category_id",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_dropshipping_search_products",
+      "description": "Search AliExpress products for dropshipping by keyword and category, with prices for the destination country in your currency: product id, title, image, price, original price, discount, orders and rating. Pages of up to 50.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Search words, for example 'phone case'."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Two-letter destination country, for example US or DE."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for prices, for example USD or EUR."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language and region, for example en_US, de_DE, fr_FR. Defaults to en_US.",
+            "default": "en_US"
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Optional category id from aliexpress_dropshipping_list_categories."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "min_price,asc",
+              "min_price,desc",
+              "orders,asc",
+              "orders,desc",
+              "comments,asc",
+              "comments,desc"
+            ]
+          },
+          "page_index": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page, up to 50. Defaults to 20 here.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        },
+        "required": [
+          "keyword",
+          "country_code",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.ds.text.search",
+          "keyWord": "$keyword",
+          "countryCode": "$country_code",
+          "currency": "$currency",
+          "local": "$locale",
+          "categoryId": "$category_id",
+          "sortBy": "$sort_by",
+          "pageIndex": "$page_index",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_dropshipping_get_product",
+      "description": "Everything about one AliExpress product for a destination country, at the prices of your dropshipper account: title, description, images, store, every SKU with its sku_attr (needed to order), price, stock and the logistics information.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product id (aliexpress.com/item/<product_id>.html)."
+          },
+          "ship_to_country": {
+            "type": "string",
+            "description": "Two-letter destination country, for example US."
+          },
+          "target_currency": {
+            "type": "string",
+            "description": "Currency for prices, for example USD or EUR."
+          },
+          "target_language": {
+            "type": "string",
+            "description": "Lower-case language, for example en, de, fr."
+          },
+          "remove_personal_benefit": {
+            "type": "boolean",
+            "description": "true to see prices without the account's personal (crowd) promotions."
+          }
+        },
+        "required": [
+          "product_id",
+          "ship_to_country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.ds.product.get",
+          "product_id": "$product_id",
+          "ship_to_country": "$ship_to_country",
+          "target_currency": "$target_currency",
+          "target_language": "$target_language",
+          "remove_personal_benefit": "$remove_personal_benefit"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_dropshipping_get_freight",
+      "description": "Delivery options for a quantity of one SKU to a country: carrier service name (the logistics_service_name an order needs), cost in your currency, delivery time and whether tracking is included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product id."
+          },
+          "sku_id": {
+            "type": "string",
+            "description": "The SKU id from aliexpress_dropshipping_get_product."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Number of items.",
+            "minimum": 1
+          },
+          "ship_to_country": {
+            "type": "string",
+            "description": "Two-letter destination country."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for prices, for example USD or EUR."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language and region, for example en_US.",
+            "default": "en_US"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language, for example en_US.",
+            "default": "en_US"
+          },
+          "province_code": {
+            "type": "string",
+            "description": "Optional province code, for local-to-local products."
+          },
+          "city_code": {
+            "type": "string",
+            "description": "Optional city code."
+          }
+        },
+        "required": [
+          "product_id",
+          "sku_id",
+          "quantity",
+          "ship_to_country",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.ds.freight.query"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "queryDeliveryReq": {
+            "__json": {
+              "productId": "$product_id",
+              "selectedSkuId": "$sku_id",
+              "quantity": "$quantity",
+              "shipToCountry": "$ship_to_country",
+              "currency": "$currency",
+              "locale": "$locale",
+              "language": "$language",
+              "provinceCode": "$province_code",
+              "cityCode": "$city_code"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "aliexpress_dropshipping_get_order",
+      "description": "One order of the authorized dropshipper account by AliExpress order id: status, amounts, products, logistics status and the store.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id (digits only).",
+            "pattern": "^[0-9]{1,24}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.trade.ds.order.get",
+          "single_order_query": "{\"order_id\":${order_id}}"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_dropshipping_get_tracking",
+      "description": "Tracking of one dropshipping order: carrier, tracking number (mail_no), estimated arrival and the tracking events. Times are Unix milliseconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the events, for example en_US.",
+            "default": "en_US"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.ds.order.tracking.get",
+          "ae_order_id": "$order_id",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_dropshipping_create_order",
+      "description": "Place an order on AliExpress for delivery to your customer. The order is created unpaid: pay it on AliExpress (My Orders) or with your payment setup there. Returns the new order numbers, or error_code and error_msg (an address AliExpress cannot validate gives B_DROPSHIPPER_DELIVERY_ADDRESS_VALIDATE_FAIL). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "logistics_address": {
+            "type": "object",
+            "description": "Delivery address: country (two letters), province, city, address, zip, full_name, contact_person, phone_country (e.g. +1), mobile_no; optional address2, tax_number, cpf (Brazil), passport fields where the country needs them.",
+            "properties": {
+              "country": {
+                "type": "string"
+              },
+              "province": {
+                "type": "string"
+              },
+              "city": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "address2": {
+                "type": "string"
+              },
+              "zip": {
+                "type": "string"
+              },
+              "full_name": {
+                "type": "string"
+              },
+              "contact_person": {
+                "type": "string"
+              },
+              "phone_country": {
+                "type": "string"
+              },
+              "mobile_no": {
+                "type": "string"
+              },
+              "tax_number": {
+                "type": "string"
+              },
+              "cpf": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "country",
+              "province",
+              "city",
+              "address"
+            ]
+          },
+          "product_items": {
+            "type": "array",
+            "description": "The items: product_id, product_count, sku_attr (from aliexpress_dropshipping_get_product), logistics_service_name (from aliexpress_dropshipping_get_freight) and an optional order_memo.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_id": {
+                  "type": "integer"
+                },
+                "product_count": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sku_attr": {
+                  "type": "string"
+                },
+                "logistics_service_name": {
+                  "type": "string"
+                },
+                "order_memo": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "product_id",
+                "product_count"
+              ]
+            },
+            "minItems": 1
+          },
+          "out_order_id": {
+            "type": "string",
+            "description": "Optional id of the order in your own shop. AliExpress uses it to refuse a duplicate."
+          }
+        },
+        "required": [
+          "logistics_address",
+          "product_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.ds.order.create"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "param_place_order_request4_open_api_d_t_o": {
+            "__json": {
+              "out_order_id": "$out_order_id",
+              "logistics_address": "$logistics_address",
+              "product_items": "$product_items"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    }
+  ]
+}
