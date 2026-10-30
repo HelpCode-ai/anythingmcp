@@ -1226,6 +1226,145 @@ test.describe('settings pages from Accept-Language', () => {
   });
 });
 
+async function settingsAdminSession(page: Page) {
+  await settingsSession(page);
+  // Registered after settingsSession's routes, so these win for their URLs.
+  await page.route(/\/api\//, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (path === '/api/roles') {
+      return json([{ id: 'r1', name: 'Support', description: 'Support team', isSystem: false, _count: { users: 1, toolAccess: 2 } }]);
+    }
+    if (path === '/api/admin/settings/smtp') return json({ configured: true, host: 'smtp.example.com', port: 587, user: 'mailer', secure: false });
+    if (path === '/api/admin/settings/alert-webhook') {
+      return json({ url: 'https://example.com/hook', type: 'json', enabled: true, threshold: 5, windowMinutes: 10, cooldownMinutes: 30 });
+    }
+    if (path === '/api/admin/settings/footer-links') return json([]);
+    if (path === '/api/version') return json({ version: '1.2.3', commit: 'abc1234', buildDate: '2026-10-01T00:00:00Z', deploymentMode: 'self-hosted' });
+    if (path === '/api/license/status') {
+      return json({
+        plan: 'business', status: 'active', features: null, expiresAt: '2027-01-01T12:00:00Z',
+        lastVerifiedAt: '2026-10-01T12:00:00Z', instanceId: 'inst-1',
+      });
+    }
+    if (path === '/api/identity-providers') {
+      return json([
+        {
+          id: 'p1', type: 'ENTRA', name: 'Contoso', isActive: true, issuer: 'https://login.microsoftonline.com/t1/v2.0',
+          clientId: 'client-1', clientSecretExpiresAt: null, initiateId: 'init1', jitProvisioning: true, jitDefaultRole: 'VIEWER',
+          roleSyncEnabled: true, roleSyncSource: 'GROUPS', roleSyncFallback: 'DENY_ALL', roleSyncDefaultRoleIds: [],
+          scimEnabled: true, scimTokenIssuedAt: '2026-09-01T10:00:00Z', scimLastRequestAt: null, enforceSso: false,
+          lastSuccessfulLoginAt: null, config: { tenantId: 't1' },
+        },
+      ]);
+    }
+    if (path === '/api/auth/recovery-codes') return json({ total: 10, unused: 8, generatedAt: '2026-09-01T10:00:00Z' });
+    if (path === '/api/identity-providers/p1/scim') {
+      return json({
+        enabled: true, supported: true, issuedAt: '2026-09-01T10:00:00Z', lastRequestAt: new Date().toISOString(),
+        tenantUrl: 'http://localhost:3100/api/scim/v2', userCount: 12, groupCount: 3, unlinkedMemberCount: 0,
+      });
+    }
+    if (path === '/api/identity-providers/p1/role-mappings') {
+      return json([{ id: 'm1', externalId: '4be78614-f22d-472f-a2cb-5eb81b6e3f6f', label: 'Sales', userRole: null, mcpRoleIds: ['r1'] }]);
+    }
+    return route.fallback();
+  });
+}
+
+test.describe('settings roles, administration, license and single sign-on from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the roles and single sign-on pages in German', async ({ page }) => {
+      await settingsAdminSession(page);
+      await page.goto('/settings/roles');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('heading', { name: 'Eigene Rollen' })).toBeVisible();
+      await expect(page.getByText('1 Benutzer', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 Tools zugewiesen', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'MCP-Rollen der Benutzer' })).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'MCP-Tool-Rolle' })).toBeVisible();
+
+      await page.goto('/settings/identity-providers');
+      await expect(page.getByRole('heading', { name: 'Single Sign-On', exact: true })).toBeVisible();
+      await expect(page.getByText('Legt Konten bei der ersten Anmeldung an', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Wiederherstellungscodes' })).toBeVisible();
+      await expect(page.getByText('8 von 10 ungenutzt. Neu erzeugen macht den aktuellen Satz ungültig.')).toBeVisible();
+      await page.getByRole('button', { name: 'Provisionierung (SCIM)' }).click();
+      await expect(page.getByText('Provisionierte Benutzer 12', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Rollen jetzt neu synchronisieren' })).toBeVisible();
+      await page.getByRole('button', { name: 'Anbieter hinzufügen' }).click();
+      await expect(page.getByText('Verzeichnis-ID (Mandant)', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^Konten bei der ersten Anmeldung anlegen/)).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the administration and license pages in Italian', async ({ page }) => {
+      await settingsAdminSession(page);
+      await page.goto('/settings/admin');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('heading', { name: 'Avvisi sugli errori dei connettori' })).toBeVisible();
+      await expect(
+        page.getByText('Avvisa dopo 5 errori dello stesso connettore entro 10 minuti, poi attende 30 minuti prima di avvisare di nuovo.'),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Prova la connessione' })).toBeVisible();
+      await expect(page.getByText(/^Versione 1\.2\.3 · commit abc1234 · build del 2026-10-01$/)).toBeVisible();
+
+      await page.goto('/settings/license');
+      await expect(page.getByRole('heading', { name: 'Licenza e piano' })).toBeVisible();
+      await expect(page.getByText('attiva', { exact: true })).toBeVisible();
+      await expect(page.getByText('Ultima verifica', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Cambia chiave di licenza' })).toBeVisible();
+
+      await page.goto('/settings/identity-providers');
+      await page.getByRole('button', { name: 'Associazioni dei ruoli' }).click();
+      await expect(page.getByRole('heading', { name: 'Associazioni dei gruppi' })).toBeVisible();
+      await expect(page.getByText('A chi non corrisponde a nulla', { exact: false })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps these settings pages in English', async ({ page }) => {
+      await settingsAdminSession(page);
+      await page.goto('/settings/roles');
+      await expect(page.getByRole('heading', { name: 'Custom Roles' })).toBeVisible();
+      await expect(page.getByText('1 user', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 tools assigned', { exact: true })).toBeVisible();
+
+      await page.goto('/settings/admin');
+      await expect(
+        page.getByText('Alerts after 5 failures of the same connector within 10 minutes, then waits 30 minutes before alerting again.'),
+      ).toBeVisible();
+      await expect(page.getByText(/^Version 1\.2\.3 · commit abc1234 · built 2026-10-01$/)).toBeVisible();
+
+      await page.goto('/settings/license');
+      await expect(page.getByRole('heading', { name: 'License & Plan' })).toBeVisible();
+      await expect(page.getByText('active', { exact: true })).toBeVisible();
+      await expect(page.getByText('Last Verified', { exact: true })).toBeVisible();
+
+      await page.goto('/settings/identity-providers');
+      await expect(page.getByText('8 of 10 unused. Regenerating invalidates the current set.')).toBeVisible();
+      await page.getByRole('button', { name: 'Provisioning (SCIM)' }).click();
+      await expect(page.getByText('Users provisioned 12', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Role mappings' }).click();
+      await expect(
+        page.getByText(
+          'A user in several mapped groups receives the union of their MCP roles and the most privileged workspace role. Roles an admin assigned by hand are never removed by a sync. Someone who matches nothing is given a “No access (SSO)” role, which grants no tools.',
+        ),
+      ).toBeVisible();
+
+      await page.goto('/settings/license/activate');
+      await expect(page.getByText('No license key was provided in the URL.')).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;
