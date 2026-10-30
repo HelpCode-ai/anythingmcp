@@ -24,6 +24,16 @@ import { cn } from '@/lib/utils';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
+import {
+  EMPTY_EMAIL_FORM,
+  EmailSettingsFields,
+  emailBaseUrl,
+  emailFormFromConfig,
+  emailFormToAuthConfig,
+  emailFormToConfig,
+  emailLoginEdited,
+  type EmailFormState,
+} from '@/components/email-settings-fields';
 
 // Labels and the prose placeholders are in the connectorTools messages; the
 // code examples below are the same in every language.
@@ -162,8 +172,9 @@ function slimHarForUpload(rawText: string, baseUrl?: string): { json: string; by
 }
 
 export default function ConnectorDetailPage() {
-  const { token, user } = useAuth();
+  const { token, user, deploymentMode } = useAuth();
   const t = useTranslations('connectorDetail');
+  const te = useTranslations('emailSettings');
   const tt = useTranslations('connectorTools');
   const locale = useLocale();
   const authTypeLabel = useAuthTypeLabel();
@@ -244,6 +255,8 @@ export default function ConnectorDetailPage() {
   const [editOdataSapClient, setEditOdataSapClient] = useState('');
   const [editOdataSapLanguage, setEditOdataSapLanguage] = useState('');
   const [editOdataServices, setEditOdataServices] = useState('');
+  // EMAIL: servers and sender from config.email; the login starts empty.
+  const [editEmail, setEditEmail] = useState<EmailFormState>(EMPTY_EMAIL_FORM);
   const [importEntitySets, setImportEntitySets] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
@@ -368,6 +381,7 @@ export default function ConnectorDetailPage() {
         setEditOdataSapClient(odata.sapClient ?? '');
         setEditOdataSapLanguage(odata.sapLanguage ?? '');
         setEditOdataServices(Array.isArray(odata.services) ? odata.services.join('\n') : '');
+        setEditEmail(emailFormFromConfig(c.config));
       }
       setToolList(c.tools || []);
       // Load env vars
@@ -529,7 +543,16 @@ export default function ConnectorDetailPage() {
           await connectors.updateOAuth1Config(id, oauth1Patch, token);
         }
       }
-      if (connector.type !== 'DATABASE' && connector.type !== 'MCP') {
+      if (connector.type === 'EMAIL') {
+        // A catalog install keeps its servers and login in variables.
+        if (!(connector.config as any)?.adapterSlug) {
+          data.baseUrl = emailBaseUrl(editEmail);
+          data.config = { email: emailFormToConfig(editEmail, (connector.config as any)?.email) };
+          if (emailLoginEdited(editEmail)) data.authConfig = emailFormToAuthConfig(editEmail);
+        } else {
+          delete data.baseUrl;
+        }
+      } else if (connector.type !== 'DATABASE' && connector.type !== 'MCP') {
         // Editor is pre-filled with current headers, so this round-trips
         // untouched headers and applies any edits/removals the user made.
         data.headers = headerRowsToObject(editHeaderRows);
@@ -1256,6 +1279,18 @@ export default function ConnectorDetailPage() {
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
+              {connector.type === 'EMAIL' ? (
+                (connector.config as any)?.adapterSlug ? (
+                  <p className="text-xs text-[var(--text-3)]">{te('catalogManaged')}</p>
+                ) : (
+                  <EmailSettingsFields
+                    value={editEmail}
+                    onChange={setEditEmail}
+                    isCloud={deploymentMode === 'cloud'}
+                    existing
+                  />
+                )
+              ) : (
               <div>
                 <label className="block text-sm font-medium mb-1">{t('details.baseUrl')}</label>
                 <input
@@ -1265,6 +1300,7 @@ export default function ConnectorDetailPage() {
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
+              )}
               {connector.type === 'REST' && (
                 <div>
                   <label className="block text-sm font-medium mb-1">
@@ -1402,6 +1438,8 @@ export default function ConnectorDetailPage() {
                   </div>
                 </div>
               )}
+              {connector.type !== 'EMAIL' && (
+              <>
               <div>
                 <label className="block text-sm font-medium mb-1">{t('details.auth')}</label>
                 <AppSelect
@@ -1673,7 +1711,9 @@ export default function ConnectorDetailPage() {
                   {t('details.keepCredentials')}
                 </p>
               )}
-              {connector.type !== 'DATABASE' && connector.type !== 'MCP' && (
+              </>
+              )}
+              {connector.type !== 'DATABASE' && connector.type !== 'MCP' && connector.type !== 'EMAIL' && (
                 <HeadersEditor rows={editHeaderRows} onChange={setEditHeaderRows} maskedKeys={connector.maskedHeaders} />
               )}
               <div>
@@ -1702,6 +1742,22 @@ export default function ConnectorDetailPage() {
                 <p className="text-[var(--text-3)]">{t('details.authType')}</p>
                 <p className="font-medium">{authTypeLabel(connector.authType)}</p>
               </div>
+              {connector.type === 'EMAIL' && (
+                <div className="col-span-2 min-w-0">
+                  <p className="text-[var(--text-3)]">{te('imapHost')} / {te('smtpHost')}</p>
+                  <p className="font-medium font-mono text-xs break-all">
+                    {(() => {
+                      const email = (connector.config as any)?.email ?? {};
+                      const server = (host: unknown, port: unknown, security: unknown) =>
+                        host ? `${host}:${port ?? ''}${security ? ` (${security})` : ''}` : null;
+                      return te('summary', {
+                        imap: server(email.imapHost, email.imapPort, email.imapSecurity) ?? connector.baseUrl,
+                        smtp: server(email.smtpHost, email.smtpPort, email.smtpSecurity) ?? te('noSmtp'),
+                      });
+                    })()}
+                  </p>
+                </div>
+              )}
               {connector.type === 'DATABASE' && (
                 <div>
                   <p className="text-[var(--text-3)]">{t('details.accessMode')}</p>
@@ -1888,9 +1944,12 @@ export default function ConnectorDetailPage() {
               {tt('title', { count: toolList.length })}
             </h3>
             <div className="flex gap-2 flex-wrap">
-              <Button variant="secondary" size="md" onClick={() => setShowImport(!showImport)}>
-                {showImport ? tt('cancelImport') : tt('importTools')}
-              </Button>
+              {/* An email connector's tools are its built-ins: nothing to import. */}
+              {connector.type !== 'EMAIL' && (
+                <Button variant="secondary" size="md" onClick={() => setShowImport(!showImport)}>
+                  {showImport ? tt('cancelImport') : tt('importTools')}
+                </Button>
+              )}
               {(connector.type === 'REST' || connector.type === 'GRAPHQL' || connector.type === 'SOAP') && (
                 <Button variant="secondary" size="md" onClick={handleImportSpec}>
                   {tt('autoImport')}

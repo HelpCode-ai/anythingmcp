@@ -665,7 +665,8 @@
     "exportFailed": "Export fehlgeschlagen: {error}",
     "healthCheckFailed": "Statusprüfung fehlgeschlagen: {error}",
     "types": {
-      "database": "Datenbank"
+      "database": "Datenbank",
+      "email": "E-Mail (IMAP/SMTP)"
     },
     "menu": {
       "healthCheck": "Statusprüfung",
@@ -1116,6 +1117,10 @@
       "DATABASE": {
         "name": "Datenbank",
         "description": "Verbindung zu PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB oder SQLite. Unterstützt Nur-Lese- und Lese-/Schreibmodus."
+      },
+      "EMAIL": {
+        "name": "E-Mail (IMAP/SMTP)",
+        "description": "Jedes Postfach verbinden: IONOS, Strato, GMX, web.de, T-Online, Gmail mit App-Passwort, der eigene Mailserver. Mails lesen, suchen, ablegen und senden."
       }
     },
     "configure": "{type} konfigurieren",
@@ -1219,6 +1224,47 @@
     "creating": "Wird angelegt...",
     "create": "Connector anlegen",
     "testConnection": "Verbindung testen"
+  },
+  "emailSettings": {
+    "provider": "Anbieter",
+    "providerPlaceholder": "Auswählen, um die Server einzutragen…",
+    "providerHint": "Trägt Server und Ports ein. Bei anderen Anbietern stehen sie in deren Hilfe (Posteingangs-/Postausgangsserver).",
+    "imapHost": "IMAP-Server (Posteingang)",
+    "smtpHost": "SMTP-Server (Postausgang)",
+    "port": "Port",
+    "securityLabel": "Verschlüsselung",
+    "security": {
+      "tls": "SSL/TLS",
+      "starttls": "STARTTLS",
+      "none": "Keine (Klartext)"
+    },
+    "smtpHint": "Ohne SMTP-Server kann der Connector nur lesen, nicht senden.",
+    "username": "Benutzername",
+    "password": "Passwort oder App-Passwort",
+    "keepUsername": "Unverändert (zum Ersetzen eintippen)",
+    "keepPassword": "Unverändert (zum Ersetzen eintippen)",
+    "passwordHint": "Der Benutzername ist meist die vollständige E-Mail-Adresse. Gmail, Yahoo, iCloud und Fastmail brauchen ein App-Passwort. Microsoft 365 und Outlook.com akzeptieren hier keine Passwörter: dafür den Microsoft-Outlook-Connector verwenden.",
+    "separateSmtpLogin": "Zum Senden ein anderes Login verwenden",
+    "smtpUsername": "SMTP-Benutzername",
+    "smtpPassword": "SMTP-Passwort",
+    "fromAddress": "Absenderadresse",
+    "fromAddressPlaceholder": "Standard: der Benutzername",
+    "fromName": "Absendername",
+    "advanced": "Ordner und Zertifikate",
+    "sentFolder": "Ordner für gesendete Mails",
+    "draftsFolder": "Entwürfe-Ordner",
+    "autoDetected": "Automatisch erkannt",
+    "saveSent": "Kopie gesendeter Mails",
+    "saveSentAuto": "Automatisch (Gmail legt selbst eine Kopie ab)",
+    "saveSentAlways": "Immer eine Kopie in Gesendet ablegen",
+    "saveSentNever": "Nie eine Kopie ablegen",
+    "allowSelfSigned": "Selbstsigniertes Zertifikat akzeptieren",
+    "allowSelfSignedHint": "Nur für einen Mailserver im eigenen Netz, dessen Zertifikat nicht von einer öffentlichen Stelle stammt.",
+    "cloudNote": "AnythingMCP Cloud verbindet sich nur verschlüsselt, mit öffentlichen Mailservern auf den Standardports (993/143, 465/587).",
+    "selfHostedNote": "Ein Mailserver im eigenen Netz muss auf der Allowlist für ausgehende Verbindungen stehen (Admin > Einstellungen).",
+    "catalogManaged": "Dieser Connector stammt aus dem Katalog: Server und Login kommen aus seinen Variablen. Ändern unter Umgebungsvariablen.",
+    "summary": "IMAP {imap} · SMTP {smtp}",
+    "noSmtp": "nicht gesetzt (nur lesen)"
   },
   "connectorDetail": {
     "back": "Connectors",

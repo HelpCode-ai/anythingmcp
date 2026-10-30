@@ -134,6 +134,10 @@ const TARGET_OPTIONS: Record<string, { value: string; labelKey: string }[]> = {
   MCP: [
     { value: 'body', labelKey: 'passThrough' },
   ],
+  // Email built-ins read their arguments directly (EmailEngine).
+  EMAIL: [
+    { value: 'body', labelKey: 'passThrough' },
+  ],
   ODATA: [
     { value: 'path', labelKey: 'path' },
     { value: 'query', labelKey: 'query' },
@@ -154,6 +158,7 @@ const DEFAULT_TARGET: Record<string, string> = {
   WEBHOOK: 'body',
   MCP: 'body',
   ODATA: 'query',
+  EMAIL: 'body',
 };
 
 const METHODS_BY_TYPE: Record<string, string[]> = {
@@ -177,6 +182,19 @@ const METHODS_BY_TYPE: Record<string, string[]> = {
     'odata_describe_entity',
     'odata_query',
     'odata_get',
+  ],
+  // An email connector's tools are its built-ins (and static guides).
+  EMAIL: [
+    'static',
+    'email_list_folders',
+    'email_search',
+    'email_get_message',
+    'email_get_attachment',
+    'email_set_flags',
+    'email_move',
+    'email_delete',
+    'email_save_draft',
+    'email_send',
   ],
 };
 

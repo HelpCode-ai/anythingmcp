@@ -665,7 +665,8 @@
     "exportFailed": "Esportazione non riuscita: {error}",
     "healthCheckFailed": "Controllo di stato non riuscito: {error}",
     "types": {
-      "database": "Database"
+      "database": "Database",
+      "email": "Email (IMAP/SMTP)"
     },
     "menu": {
       "healthCheck": "Controllo di stato",
@@ -1116,6 +1117,10 @@
       "DATABASE": {
         "name": "Database",
         "description": "Collegati a PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB o SQLite. Supporta la modalità sola lettura o lettura e scrittura."
+      },
+      "EMAIL": {
+        "name": "Email (IMAP/SMTP)",
+        "description": "Collega qualsiasi casella: IONOS, Aruba, Strato, GMX, Gmail con password per app, il tuo server di posta. Leggi, cerca, archivia e invia email."
       }
     },
     "configure": "Configura {type}",
@@ -1219,6 +1224,47 @@
     "creating": "Creazione...",
     "create": "Crea connettore",
     "testConnection": "Testa la connessione"
+  },
+  "emailSettings": {
+    "provider": "Provider",
+    "providerPlaceholder": "Scegli per compilare i server…",
+    "providerHint": "Compila server e porte. Per altri provider li trovi nelle loro guide (server in entrata/in uscita).",
+    "imapHost": "Server IMAP (in entrata)",
+    "smtpHost": "Server SMTP (in uscita)",
+    "port": "Porta",
+    "securityLabel": "Sicurezza",
+    "security": {
+      "tls": "SSL/TLS",
+      "starttls": "STARTTLS",
+      "none": "Nessuna (in chiaro)"
+    },
+    "smtpHint": "Senza server SMTP il connettore può solo leggere, non inviare.",
+    "username": "Nome utente",
+    "password": "Password o password per app",
+    "keepUsername": "Invariato (scrivi per sostituire)",
+    "keepPassword": "Invariata (scrivi per sostituire)",
+    "passwordHint": "Il nome utente di solito è l'indirizzo email completo. Gmail, Yahoo, iCloud e Fastmail richiedono una password per app. Microsoft 365 e Outlook.com non accettano password qui: usa il connettore Microsoft Outlook.",
+    "separateSmtpLogin": "Per l'invio si usa un altro login",
+    "smtpUsername": "Nome utente SMTP",
+    "smtpPassword": "Password SMTP",
+    "fromAddress": "Indirizzo mittente",
+    "fromAddressPlaceholder": "Predefinito: il nome utente",
+    "fromName": "Nome mittente",
+    "advanced": "Cartelle e certificati",
+    "sentFolder": "Cartella posta inviata",
+    "draftsFolder": "Cartella bozze",
+    "autoDetected": "Rilevata automaticamente",
+    "saveSent": "Copia della posta inviata",
+    "saveSentAuto": "Automatico (Gmail salva da sé una copia)",
+    "saveSentAlways": "Salva sempre una copia in Inviata",
+    "saveSentNever": "Non salvare copie",
+    "allowSelfSigned": "Accetta un certificato autofirmato",
+    "allowSelfSignedHint": "Solo per un server di posta nella tua rete con un certificato non emesso da un'autorità pubblica.",
+    "cloudNote": "AnythingMCP Cloud si collega solo in modo cifrato, a server di posta pubblici sulle porte standard (993/143, 465/587).",
+    "selfHostedNote": "Un server di posta nella tua rete deve essere nella allowlist delle connessioni in uscita (Admin > Impostazioni).",
+    "catalogManaged": "Questo connettore viene dal catalogo: server e login vengono dalle sue variabili. Modificale in Variabili d'ambiente.",
+    "summary": "IMAP {imap} · SMTP {smtp}",
+    "noSmtp": "non impostato (solo lettura)"
   },
   "connectorDetail": {
     "back": "Connettori",
