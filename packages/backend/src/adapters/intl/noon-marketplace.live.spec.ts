@@ -70,6 +70,8 @@ const PREFIX = 'noon_marketplace_';
 const WRITES_OFF = [
   'noon_marketplace_upsert_product',
   'noon_marketplace_upsert_product_group',
+  'noon_marketplace_map_barcodes',
+  'noon_marketplace_create_barcode_import',
   'noon_marketplace_upsert_prices',
   'noon_marketplace_update_stock',
   'noon_marketplace_mark_items_unavailable',
@@ -106,6 +108,8 @@ const ROUTES: Record<string, [string, string, string[] | null]> = {
   list_export_categories: ['GET', '/impex/v1/export/category/list', null],
   create_export: ['POST', '/impex/v1/export/create', ['export_category_code', 'params']],
   get_export_status: ['POST', '/impex/v1/export/status', ['export_code']],
+  map_barcodes: ['POST', '/catplat/v1/barcode/map', ['items']],
+  create_barcode_import: ['POST', '/catplat/v1/import/barcode', ['client_reference', 'items', 'file_url', 'config']],
   get_import_status: ['GET', '/catplat/v1/import/status/{reference}', null],
 };
 
@@ -171,6 +175,23 @@ describe('noon-marketplace adapter: static spec conformance', () => {
     expect(Object.keys(stockItem.properties).sort()).toEqual(['partner_sku', 'processing_time', 'qty', 'warehouse_code']);
     expect(tool('noon_marketplace_get_product_offers').endpointMapping.encodePathParams).toBe(true);
     expect(tool('noon_marketplace_get_import_status').endpointMapping.encodePathParams).toBe(true);
+    // BarcodeSkuMap takes {items: [{barcode, partner_sku, force_map}]}.
+    expect(tool('noon_marketplace_map_barcodes').endpointMapping.bodyMapping).toEqual({ items: '$items' });
+    const barcodeItem = (tool('noon_marketplace_map_barcodes').parameters?.properties?.items as { items: { properties: Record<string, unknown>; required: string[] } }).items;
+    expect(Object.keys(barcodeItem.properties).sort()).toEqual(['barcode', 'force_map', 'partner_sku']);
+    expect(barcodeItem.required.sort()).toEqual(['barcode', 'partner_sku']);
+    // CreateBarcodeImport nests the inline list as items.data and the overwrite flag as config.force_sync.
+    const imp = tool('noon_marketplace_create_barcode_import');
+    expect(imp.endpointMapping.bodyMapping).toEqual({
+      client_reference: '$client_reference',
+      items: '$items',
+      file_url: '$file_url',
+      config: { force_sync: '$force_sync' },
+    });
+    expect(imp.parameters?.required).toEqual(['client_reference']);
+    const inline = (imp.parameters?.properties?.items as { properties: { data: { maxItems: number; items: { required: string[] } } } }).properties.data;
+    expect(inline.maxItems).toBe(10000);
+    expect(inline.items.required.sort()).toEqual(['barcode', 'partner_sku']);
   });
 
   it('every tool is prefixed, every declared parameter reaches the request and path parameters are required', () => {
