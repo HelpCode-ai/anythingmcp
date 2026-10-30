@@ -2551,5 +2551,29 @@
         "s8": "To test one user without waiting: <strong>Provision on demand</strong>. Use it again after disabling the user in Entra."
       }
     }
+  },
+  "adminPages": {
+    "backToDashboard": "Back to Dashboard",
+    "users": {
+      "inviteNoSmtp": "SMTP not configured. Share this invitation link manually:",
+      "joined": "Joined",
+      "unrestricted": "Unrestricted"
+    },
+    "roles": {
+      "title": "MCP Role Management",
+      "selectAll": "Select all"
+    },
+    "settings": {
+      "title": "Admin Settings"
+    },
+    "ssrf": {
+      "saved": "SSRF allowlist saved",
+      "title": "SSRF allowlist",
+      "intro": "Hostnames (or <code>*.suffix</code> wildcards / plain IPs) that the SSRF guard will let through when they resolve to a private network address. Needed when connectors call services on the internal network — e.g. a Docker-compose service like <code>koch-filesystem-bridge</code>.",
+      "warning": "⚠ Use with caution. Anything added here can be reached by every connector in every organization on this deployment. Do not add hosts you don't fully trust.",
+      "envHosts": "From <code>SSRF_ALLOWED_HOSTS</code> env var (read-only):",
+      "list": "Admin-editable list (one host per line)",
+      "save": "Save allowlist"
+    }
   }
 }

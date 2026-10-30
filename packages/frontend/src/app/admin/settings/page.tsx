@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { adminSettings, FOOTER_LINKS_CHANGED } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
@@ -9,6 +10,8 @@ import { Card } from '@/components/ui/card';
 
 export default function AdminSettingsPage() {
   const { token, user, deploymentMode, deploymentModeLoaded } = useAuth();
+  const t = useTranslations('settingsAdmin');
+  const ta = useTranslations('adminPages');
   // Instance-wide setting: the cloud operator manages it on the server.
   const showSsrf = deploymentModeLoaded && deploymentMode !== 'cloud';
 
@@ -21,16 +24,19 @@ export default function AdminSettingsPage() {
   const [smtpSecure, setSmtpSecure] = useState(false);
   const [smtpConfigured, setSmtpConfigured] = useState(false);
   const [smtpMsg, setSmtpMsg] = useState('');
+  const [smtpMsgIsError, setSmtpMsgIsError] = useState(false);
 
   // Footer links
   const [footerLinks, setFooterLinks] = useState<Array<{ label: string; url: string }>>([]);
   const [footerMsg, setFooterMsg] = useState('');
+  const [footerMsgIsError, setFooterMsgIsError] = useState(false);
 
   // SSRF allowlist
   const [ssrfHosts, setSsrfHosts] = useState<string[]>([]);
   const [ssrfEnvHosts, setSsrfEnvHosts] = useState<string[]>([]);
   const [ssrfDraft, setSsrfDraft] = useState('');
   const [ssrfMsg, setSsrfMsg] = useState('');
+  const [ssrfMsgIsError, setSsrfMsgIsError] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -65,10 +71,12 @@ export default function AdminSettingsPage() {
       const result = await adminSettings.setSsrfAllowedHosts(hosts, token);
       setSsrfHosts(result.hosts);
       setSsrfDraft(result.hosts.join('\n'));
-      setSsrfMsg('SSRF allowlist saved');
+      setSsrfMsgIsError(false);
+      setSsrfMsg(ta('ssrf.saved'));
       setTimeout(() => setSsrfMsg(''), 3000);
     } catch (err: any) {
-      setSsrfMsg(`Error: ${err.message}`);
+      setSsrfMsgIsError(true);
+      setSsrfMsg(t('error', { message: err.message }));
     }
   };
 
@@ -85,27 +93,32 @@ export default function AdminSettingsPage() {
       }, token);
       setSmtpConfigured(true);
       setSmtpPass('');
-      setSmtpMsg('SMTP configuration saved');
+      setSmtpMsgIsError(false);
+      setSmtpMsg(t('smtp.saved'));
       setTimeout(() => setSmtpMsg(''), 3000);
     } catch (err: any) {
-      setSmtpMsg(`Error: ${err.message}`);
+      setSmtpMsgIsError(true);
+      setSmtpMsg(t('error', { message: err.message }));
     }
   };
 
   const handleTestSmtp = async () => {
     if (!token) return;
-    setSmtpMsg('Testing connection...');
+    setSmtpMsgIsError(false);
+    setSmtpMsg(t('smtp.testing'));
     try {
       const result = await adminSettings.testSmtp(token);
-      setSmtpMsg(result.ok ? result.message : `Error: ${result.message}`);
+      setSmtpMsgIsError(!result.ok);
+      setSmtpMsg(result.ok ? result.message : t('error', { message: result.message }));
     } catch (err: any) {
-      setSmtpMsg(`Error: ${err.message}`);
+      setSmtpMsgIsError(true);
+      setSmtpMsg(t('error', { message: err.message }));
     }
   };
 
   const handleRemoveSmtp = async () => {
     if (!token) return;
-    if (!confirm('Remove the workspace SMTP configuration? Emails will be sent by the platform mail service instead.')) return;
+    if (!confirm(t('smtp.confirmRemove'))) return;
     try {
       await adminSettings.deleteSmtp(token);
       setSmtpConfigured(false);
@@ -115,9 +128,11 @@ export default function AdminSettingsPage() {
       setSmtpPass('');
       setSmtpFrom('');
       setSmtpSecure(false);
-      setSmtpMsg('SMTP configuration removed — emails now use the platform mail service');
+      setSmtpMsgIsError(false);
+      setSmtpMsg(t('smtp.removed'));
     } catch (err: any) {
-      setSmtpMsg(`Error: ${err.message}`);
+      setSmtpMsgIsError(true);
+      setSmtpMsg(t('error', { message: err.message }));
     }
   };
 
@@ -126,10 +141,12 @@ export default function AdminSettingsPage() {
     try {
       await adminSettings.updateFooterLinks(footerLinks.filter(l => l.label && l.url), token);
       window.dispatchEvent(new Event(FOOTER_LINKS_CHANGED));
-      setFooterMsg('Footer links saved');
+      setFooterMsgIsError(false);
+      setFooterMsg(t('footer.saved'));
       setTimeout(() => setFooterMsg(''), 3000);
     } catch (err: any) {
-      setFooterMsg(`Error: ${err.message}`);
+      setFooterMsgIsError(true);
+      setFooterMsg(t('error', { message: err.message }));
     }
   };
 
@@ -137,8 +154,8 @@ export default function AdminSettingsPage() {
     return (
       <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-bold mb-2 text-[var(--text)]">Access Denied</h2>
-          <p className="text-[var(--text-3)]">Only administrators can access this page.</p>
+          <h2 className="text-xl font-bold mb-2 text-[var(--text)]">{t('accessDenied.title')}</h2>
+          <p className="text-[var(--text-3)]">{t('accessDenied.body')}</p>
         </div>
       </div>
     );
@@ -149,19 +166,19 @@ export default function AdminSettingsPage() {
 
   return (
     <AppShell
-      title="Admin Settings"
+      title={ta('settings.title')}
     >
       <div className="space-y-6">
         {/* SMTP Configuration */}
         <Card className="p-6">
-          <h3 className="text-[15px] font-semibold mb-2 text-[var(--text)]">Email / SMTP Configuration</h3>
+          <h3 className="text-[15px] font-semibold mb-2 text-[var(--text)]">{t('smtp.title')}</h3>
           <p className="text-sm text-[var(--text-3)] mb-4">
-            Configure SMTP settings for password reset emails and notifications.
+            {t('smtp.intro')}
           </p>
           <div className="space-y-4 max-w-lg">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">SMTP Host</label>
+                <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">{t('smtp.host')}</label>
                 <input
                   type="text"
                   value={smtpHost}
@@ -171,7 +188,7 @@ export default function AdminSettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">Port</label>
+                <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">{t('smtp.port')}</label>
                 <input
                   type="number"
                   value={smtpPort}
@@ -182,7 +199,7 @@ export default function AdminSettingsPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">Username</label>
+                <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">{t('smtp.user')}</label>
                 <input
                   type="text"
                   value={smtpUser}
@@ -192,18 +209,18 @@ export default function AdminSettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">Password</label>
+                <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">{t('smtp.password')}</label>
                 <input
                   type="password"
                   value={smtpPass}
                   onChange={(e) => setSmtpPass(e.target.value)}
-                  placeholder={smtpConfigured ? '••••••••  (enter new to update)' : 'SMTP password'}
+                  placeholder={smtpConfigured ? t('smtp.passwordKeep') : t('smtp.passwordPlaceholder')}
                   className={inputClass}
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">From Address (optional)</label>
+              <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">{t('smtp.from')}</label>
               <input
                 type="text"
                 value={smtpFrom}
@@ -219,10 +236,10 @@ export default function AdminSettingsPage() {
                 checked={smtpSecure}
                 onChange={(e) => setSmtpSecure(e.target.checked)}
               />
-              <label htmlFor="smtpSecure" className="text-sm text-[var(--text-2)]">Use SSL/TLS (port 465)</label>
+              <label htmlFor="smtpSecure" className="text-sm text-[var(--text-2)]">{t('smtp.secure')}</label>
             </div>
             {smtpMsg && (
-              <p className="text-sm" style={{ color: smtpMsg.startsWith('Error') ? 'var(--danger)' : 'var(--ok)' }}>
+              <p className="text-sm" style={{ color: smtpMsgIsError ? 'var(--danger)' : 'var(--ok)' }}>
                 {smtpMsg}
               </p>
             )}
@@ -232,15 +249,15 @@ export default function AdminSettingsPage() {
                 onClick={handleSaveSmtp}
                 disabled={!smtpHost || !smtpUser || (!smtpPass && !smtpConfigured)}
               >
-                Save SMTP Config
+                {t('smtp.save')}
               </Button>
               {smtpConfigured && (
                 <>
                   <Button variant="secondary" onClick={handleTestSmtp}>
-                    Test Connection
+                    {t('smtp.test')}
                   </Button>
                   <Button variant="ghost" onClick={handleRemoveSmtp} className="text-[var(--danger)] hover:text-[var(--danger)]">
-                    Remove
+                    {t('remove')}
                   </Button>
                 </>
               )}
@@ -250,9 +267,9 @@ export default function AdminSettingsPage() {
 
         {/* Footer Links */}
         <Card className="p-6">
-          <h3 className="text-[15px] font-semibold mb-2 text-[var(--text)]">Footer Links</h3>
+          <h3 className="text-[15px] font-semibold mb-2 text-[var(--text)]">{t('footer.title')}</h3>
           <p className="text-sm text-[var(--text-3)] mb-4">
-            Add links for Impressum, Privacy Policy, Terms of Service, etc. These appear in the footer of every page.
+            {t('footer.intro')}
           </p>
           <div className="space-y-3 max-w-lg">
             {footerLinks.map((link, i) => (
@@ -265,7 +282,7 @@ export default function AdminSettingsPage() {
                     updated[i] = { ...link, label: e.target.value };
                     setFooterLinks(updated);
                   }}
-                  placeholder="Label (e.g., Privacy Policy)"
+                  placeholder={t('footer.labelPlaceholder')}
                   className="w-1/3 h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)]"
                 />
                 <input
@@ -283,7 +300,7 @@ export default function AdminSettingsPage() {
                   onClick={() => setFooterLinks(footerLinks.filter((_, j) => j !== i))}
                   className="text-[var(--danger)] px-2 py-1 text-sm hover:underline"
                 >
-                  Remove
+                  {t('remove')}
                 </button>
               </div>
             ))}
@@ -293,14 +310,14 @@ export default function AdminSettingsPage() {
                 size="sm"
                 onClick={() => setFooterLinks([...footerLinks, { label: '', url: '' }])}
               >
-                + Add Link
+                {t('footer.add')}
               </Button>
               <Button size="sm" onClick={handleSaveFooterLinks}>
-                Save Footer Links
+                {t('footer.save')}
               </Button>
             </div>
             {footerMsg && (
-              <p className="text-sm" style={{ color: footerMsg.startsWith('Error') ? 'var(--danger)' : 'var(--ok)' }}>
+              <p className="text-sm" style={{ color: footerMsgIsError ? 'var(--danger)' : 'var(--ok)' }}>
                 {footerMsg}
               </p>
             )}
@@ -310,24 +327,18 @@ export default function AdminSettingsPage() {
         {/* SSRF Allowlist */}
         {showSsrf && (
         <Card id="ssrf" className="p-6">
-          <h3 className="text-[15px] font-semibold mb-2 text-[var(--text)]">SSRF allowlist</h3>
+          <h3 className="text-[15px] font-semibold mb-2 text-[var(--text)]">{ta('ssrf.title')}</h3>
           <p className="text-sm text-[var(--text-3)] mb-2">
-            Hostnames (or <code>*.suffix</code> wildcards / plain IPs) that
-            the SSRF guard will let through when they resolve to a private
-            network address. Needed when connectors call services on the
-            internal network — e.g. a Docker-compose service like{' '}
-            <code>koch-filesystem-bridge</code>.
+            {ta.rich('ssrf.intro', { code: (chunks) => <code>{chunks}</code> })}
           </p>
           <p className="text-xs mb-4 font-medium" style={{ color: 'var(--danger)' }}>
-            ⚠ Use with caution. Anything added here can be reached by every
-            connector in every organization on this deployment. Do not add
-            hosts you don&apos;t fully trust.
+            {ta('ssrf.warning')}
           </p>
 
           {ssrfEnvHosts.length > 0 && (
             <div className="mb-4">
               <p className="text-xs font-semibold mb-1 text-[var(--text-2)]">
-                From <code>SSRF_ALLOWED_HOSTS</code> env var (read-only):
+                {ta.rich('ssrf.envHosts', { code: (chunks) => <code>{chunks}</code> })}
               </p>
               <div className="text-xs font-mono bg-[var(--surface-2)] text-[var(--text)] rounded-[9px] p-2">
                 {ssrfEnvHosts.join(', ')}
@@ -336,7 +347,7 @@ export default function AdminSettingsPage() {
           )}
 
           <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">
-            Admin-editable list (one host per line)
+            {ta('ssrf.list')}
           </label>
           <textarea
             value={ssrfDraft}
@@ -347,13 +358,13 @@ export default function AdminSettingsPage() {
           />
           <div className="flex gap-2 mt-3">
             <Button size="sm" onClick={handleSaveSsrfHosts}>
-              Save allowlist
+              {ta('ssrf.save')}
             </Button>
           </div>
           {ssrfMsg && (
             <p
               className="text-sm mt-2"
-              style={{ color: ssrfMsg.startsWith('Error') ? 'var(--danger)' : 'var(--ok)' }}
+              style={{ color: ssrfMsgIsError ? 'var(--danger)' : 'var(--ok)' }}
             >
               {ssrfMsg}
             </p>

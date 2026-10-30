@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { users, auth, roles } from '@/lib/api';
 import { AppSelect } from '@/components/ui/select';
@@ -14,6 +15,9 @@ const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
 
 export default function AdminUsersPage() {
   const { token, user: currentUser } = useAuth();
+  const t = useTranslations('settingsUsers');
+  const ta = useTranslations('adminPages');
+  const locale = useLocale();
   const [userList, setUserList] = useState<any[]>([]);
   const [roleList, setRoleList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +41,7 @@ export default function AdminUsersPage() {
       setUserList(userData);
       setRoleList(roleData);
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     } finally {
       setLoading(false);
     }
@@ -54,18 +58,16 @@ export default function AdminUsersPage() {
       setUserList((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)),
       );
-      setMsg(`Role updated to ${newRole}`);
+      setMsg(t('roleUpdated', { role: newRole }));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
   const handleDeactivate = async (userId: string, email: string) => {
     if (
       !token ||
-      !confirm(
-        `Deactivate ${email}?\n\nTheir sessions end now, their MCP keys stop working and they lose access to this workspace. You can reactivate them later.`,
-      )
+      !confirm(t('confirmDeactivate', { email }))
     )
       return;
     try {
@@ -73,9 +75,9 @@ export default function AdminUsersPage() {
       setUserList((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, active: false, deactivatedAt: new Date().toISOString() } : u)),
       );
-      setMsg('User deactivated');
+      setMsg(t('deactivated'));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -86,20 +88,20 @@ export default function AdminUsersPage() {
       setUserList((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, active: true, deactivatedAt: null } : u)),
       );
-      setMsg('User reactivated. Revoked MCP keys stay revoked — they can create a new one.');
+      setMsg(t('reactivated'));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
   const handleDelete = async (userId: string, email: string) => {
-    if (!token || !confirm(`Remove ${email} from this workspace? If this is their only workspace the account is deleted. This cannot be undone.`)) return;
+    if (!token || !confirm(t('confirmDelete', { email }))) return;
     try {
       await users.delete(userId, token);
       setUserList((prev) => prev.filter((u) => u.id !== userId));
-      setMsg('User deleted');
+      setMsg(t('deleted'));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -126,7 +128,7 @@ export default function AdminUsersPage() {
         setShowInvite(false);
       }
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     } finally {
       setInviting(false);
     }
@@ -136,9 +138,9 @@ export default function AdminUsersPage() {
     return (
       <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-bold mb-2 text-[var(--text)]">Access Denied</h2>
-          <p className="text-[var(--text-3)] mb-4">Only administrators can access this page.</p>
-          <Link href="/" className="text-[var(--brand)] hover:underline">Back to Dashboard</Link>
+          <h2 className="text-xl font-bold mb-2 text-[var(--text)]">{t('accessDenied.title')}</h2>
+          <p className="text-[var(--text-3)] mb-4">{t('accessDenied.body')}</p>
+          <Link href="/" className="text-[var(--brand)] hover:underline">{ta('backToDashboard')}</Link>
         </div>
       </div>
     );
@@ -149,14 +151,14 @@ export default function AdminUsersPage() {
 
   return (
     <AppShell
-      title="User Management"
+      title={t('title')}
       actions={
         <Button
           variant={showInvite ? 'secondary' : 'primary'}
           size="sm"
           onClick={() => setShowInvite(!showInvite)}
         >
-          {showInvite ? 'Cancel' : 'Invite User'}
+          {showInvite ? t('cancel') : t('inviteUser')}
         </Button>
       }
     >
@@ -166,20 +168,20 @@ export default function AdminUsersPage() {
           style={{ background: 'var(--t-info-bg)', color: 'var(--t-info-fg)', borderColor: 'var(--border)' }}
         >
           {msg}
-          <button onClick={() => setMsg('')} className="ml-2 underline">dismiss</button>
+          <button onClick={() => setMsg('')} className="ml-2 underline">{t('dismiss')}</button>
         </div>
       )}
 
       {/* Invite User Form */}
       {showInvite && (
         <Card className="mb-6 p-6 space-y-4">
-          <h3 className="text-[15px] font-semibold text-[var(--text)]">Invite a New User</h3>
+          <h3 className="text-[15px] font-semibold text-[var(--text)]">{t('invite.title')}</h3>
           <p className="text-xs text-[var(--text-3)]">
-            Send an invitation email. The user will receive a link to create their account with the specified role.
+            {t('invite.body')}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
             <div>
-              <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">Email</label>
+              <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">{t('invite.email')}</label>
               <input
                 type="email"
                 value={inviteEmail}
@@ -189,7 +191,7 @@ export default function AdminUsersPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">App Role</label>
+              <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">{t('invite.appRole')}</label>
               <AppSelect
                 value={inviteRole}
                 onValueChange={setInviteRole}
@@ -198,13 +200,13 @@ export default function AdminUsersPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">MCP Tool Role</label>
+              <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">{t('invite.mcpRole')}</label>
               <AppSelect
                 value={inviteMcpRoleId}
                 onValueChange={setInviteMcpRoleId}
                 className={inputClass}
                 options={[
-                  { value: '', label: 'No restriction (full access)' },
+                  { value: '', label: t('invite.noRestriction') },
                   ...roleList.map((r) => ({ value: r.id, label: r.name })),
                 ]}
               />
@@ -217,7 +219,7 @@ export default function AdminUsersPage() {
               style={{ background: 'var(--t-success-bg)', color: 'var(--t-success-fg)', borderColor: 'var(--border)' }}
             >
               <p className="text-xs font-medium mb-1">
-                SMTP not configured. Share this invitation link manually:
+                {ta('users.inviteNoSmtp')}
               </p>
               <code className="text-xs font-mono bg-[var(--surface)] text-[var(--text)] px-3 py-2 rounded-[9px] border border-[var(--border)] select-all break-all block">
                 {inviteUrl}
@@ -229,24 +231,24 @@ export default function AdminUsersPage() {
             onClick={handleInvite}
             disabled={inviting || !inviteEmail.trim()}
           >
-            {inviting ? 'Sending...' : 'Send Invitation'}
+            {inviting ? t('invite.sending') : t('invite.send')}
           </Button>
         </Card>
       )}
 
       {loading ? (
-        <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
+        <p className="text-center text-[var(--text-3)] py-16">{t('loading')}</p>
       ) : (
         <Card className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-[var(--surface-2)]">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">Role</th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">MCP Role</th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">Joined</th>
-                <th className="text-right px-4 py-3 font-medium text-[var(--text-2)]">Actions</th>
+                <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">{t('table.email')}</th>
+                <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">{t('table.name')}</th>
+                <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">{t('table.role')}</th>
+                <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">{t('table.mcpRole')}</th>
+                <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">{ta('users.joined')}</th>
+                <th className="text-right px-4 py-3 font-medium text-[var(--text-2)]">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -255,10 +257,10 @@ export default function AdminUsersPage() {
                   <td className="px-4 py-3">
                     <span className="font-mono text-xs text-[var(--text)]">{u.email}</span>
                     {u.id === currentUser?.id && (
-                      <Badge tone="brand" className="ml-2">you</Badge>
+                      <Badge tone="brand" className="ml-2">{t('table.you')}</Badge>
                     )}
                     {u.deactivatedAt && (
-                      <Badge tone="danger" className="ml-2">Deactivated</Badge>
+                      <Badge tone="danger" className="ml-2">{t('table.deactivated')}</Badge>
                     )}
                   </td>
                   <td className="px-4 py-3 text-[var(--text)]">{u.name || '—'}</td>
@@ -277,26 +279,26 @@ export default function AdminUsersPage() {
                   </td>
                   <td className="px-4 py-3">
                     {u.role === 'ADMIN' ? (
-                      <span className="text-xs text-[var(--text-3)]">Full access</span>
+                      <span className="text-xs text-[var(--text-3)]">{t('table.fullAccess')}</span>
                     ) : u.mcpRole ? (
                       <Badge tone="info">{u.mcpRole.name}</Badge>
                     ) : (
-                      <span className="text-xs text-[var(--text-3)]">Unrestricted</span>
+                      <span className="text-xs text-[var(--text-3)]">{ta('users.unrestricted')}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-[var(--text-3)]">
-                    {new Date(u.createdAt).toLocaleDateString()}
+                    {new Date(u.createdAt).toLocaleDateString(locale)}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {u.id !== currentUser?.id && (
                       <div className="inline-flex gap-2">
                         {u.deactivatedAt ? (
                           <Button variant="secondary" size="sm" onClick={() => handleReactivate(u.id)}>
-                            Reactivate
+                            {t('table.reactivate')}
                           </Button>
                         ) : (
                           <Button variant="secondary" size="sm" onClick={() => handleDeactivate(u.id, u.email)}>
-                            Deactivate
+                            {t('table.deactivate')}
                           </Button>
                         )}
                         <Button
@@ -304,7 +306,7 @@ export default function AdminUsersPage() {
                           size="sm"
                           onClick={() => handleDelete(u.id, u.email)}
                         >
-                          Delete
+                          {t('table.delete')}
                         </Button>
                       </div>
                     )}
@@ -317,8 +319,7 @@ export default function AdminUsersPage() {
       )}
 
       <p className="text-xs text-[var(--text-3)] mt-4">
-        {userList.length} user{userList.length !== 1 ? 's' : ''} total.
-        The first registered user automatically becomes ADMIN.
+        {t('footer', { users: userList.length, invites: 0 })}
       </p>
     </AppShell>
   );
