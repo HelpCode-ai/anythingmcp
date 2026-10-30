@@ -52,10 +52,19 @@ jobs:
           set -uo pipefail
           fail=0; report=""
           note() { report+="$1"$'\n'; echo "$1"; }
+          # The HTTP status, plus curl's exit code when the transfer failed.
+          # curl prints the status it got before a timeout, so `|| echo 000`
+          # would glue the two together ("200000").
+          http_code() {
+            local code rc
+            code=$(curl -sS -w '%{http_code}' "$@"); rc=$?
+            [ "$rc" -eq 0 ] || code="${code:-000} (curl exit $rc)"
+            echo "$code"
+          }
 
           # 1. Backend health — 200 and status ok. A 503 here is the heap
           #    guard reporting the process degraded before it crashes.
-          code=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 15 https://cloud.anythingmcp.com/health || echo 000)
+          code=$(http_code -o /tmp/health.json --max-time 15 https://cloud.anythingmcp.com/health)
           status=$(jq -r '.status // "?"' /tmp/health.json 2>/dev/null || echo "?")
           heap=$(jq -r '(.info.heap // .details.heap // .error.heap) | select(.!=null) | "\(.percent)% of \(.limitMb) MB (\(.usedMb) MB)"' /tmp/health.json 2>/dev/null || true)
           if [ "$code" = "200" ] && [ "$status" = "ok" ]; then
@@ -65,10 +74,10 @@ jobs:
           fi
 
           # 2. Anonymous MCP demo endpoint — what directories like Glama probe.
-          code=$(curl -sS -o /tmp/mcp.txt -w '%{http_code}' --max-time 20 -X POST \
+          code=$(http_code -o /tmp/mcp.txt --max-time 20 -X POST \
                  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
                  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-                 https://cloud.anythingmcp.com/mcp/demo || echo 000)
+                 https://cloud.anythingmcp.com/mcp/demo)
           if [ "$code" = "200" ] && grep -q '"tools"' /tmp/mcp.txt; then
             note "✅ cloud /mcp/demo tools/list → 200 with tools"
           else
@@ -76,7 +85,7 @@ jobs:
           fi
 
           # 3. Marketing site.
-          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -L https://anythingmcp.com/ || echo 000)
+          code=$(http_code -o /dev/null --max-time 15 -L https://anythingmcp.com/)
           if [ "$code" = "200" ]; then note "✅ anythingmcp.com → 200"; else fail=1; note "❌ anythingmcp.com → HTTP $code"; fi
 
           # The one path that matters is the one that never runs on a good day.
