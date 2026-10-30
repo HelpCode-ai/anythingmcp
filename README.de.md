@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 595 Connectors, 27 davon ohne API-Schlüssel." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 596 Connectors, 27 davon ohne API-Schlüssel." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: selbst gehostetes MCP-Gateway</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP ist ein quelloffenes, selbst gehostetes MCP-Gateway, das jedes REST-/OpenAPI-, SOAP-, GraphQL-, OData- oder SQL-System in MCP-Tools für Claude, ChatGPT und Copilot verwandelt, ohne dass du einen MCP-Server programmierst.</strong><br/>
-  Es bringt 595 fertige Adapter mit, darunter SAP, Etsy, weclapp und Amazon Seller; 27 davon kommen ohne API-Schlüssel aus.
+  Es bringt 596 fertige Adapter mit, darunter SAP, Etsy, weclapp und Amazon Seller; 27 davon kommen ohne API-Schlüssel aus.
 </p>
 
 <p align="center">
@@ -101,6 +101,7 @@ Die meisten Unternehmen haben noch keine MCP-Server. Sie haben eine REST-API, ei
 | **GraphQL** | Introspection macht aus Queries und Mutations Tools, oder du definierst die Operationen selbst | [GraphQL](docs/connectors/graphql.md) · [Anleitung](https://anythingmcp.com/de/guides/graphql-to-mcp) |
 | **OData** (inklusive SAP Gateway) | Liest das `$metadata` jedes Dienstes, sodass das Modell Entitätsmengen, Schlüssel und die fachlichen SAP-Bezeichnungen sieht; V2 und V4 | [OData](docs/connectors/odata.md) · [Anleitung](https://anythingmcp.com/de/guides/odata-to-mcp) |
 | **SQL und MongoDB** | PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SAP HANA, SQLite und MongoDB: Schema-, Beispiel- und Abfrage-Tools, standardmäßig nur lesend | [Datenbank](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp) · [Demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp) |
+| **E-Mail (IMAP/SMTP)** | Jedes Postfach (IONOS, Strato, GMX, T-Online, Gmail mit App-Passwort, eigener Mailserver): Ordner auflisten, suchen, mit Anhängen lesen, markieren, verschieben, Entwürfe speichern und senden | [E-Mail](docs/connectors/email.md) |
 | **Ein anderer MCP-Server** | Seine Tools erkennen und neben deinen eigenen bereitstellen, hinter derselben Authentifizierung und demselben Audit | [MCP-Bridge](docs/connectors/mcp-bridge.md) |
 
 Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connector werden auf dem Server eingesetzt und der KI nie gezeigt.
@@ -111,7 +112,7 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 ## Connector-Katalog
 
-595 Adapter mit über 2.400 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
+596 Adapter mit über 2.400 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
 
 | Kategorie | Beispiele |
 |---|---|

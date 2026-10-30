@@ -284,6 +284,7 @@ import * as hubspot from './intl/hubspot.json';
 import * as huggingface from './intl/huggingface.json';
 import * as hunter from './intl/hunter.json';
 import * as idealista from './intl/idealista.json';
+import * as imapSmtp from './intl/imap-smtp.json';
 import * as immich from './intl/immich.json';
 import * as inoreader from './intl/inoreader.json';
 import * as insightly from './intl/insightly.json';
@@ -615,6 +616,8 @@ import {
   odataToolPrefix,
   wantsODataBuiltins,
 } from '../connectors/odata/odata-builtins';
+import { buildEmailBuiltinTools } from '../connectors/email/email-builtins';
+import { emailToolPrefix } from '../connectors/email/email-settings';
 import { computeAdapterVersion } from './catalog-fingerprint';
 import type { EnvVarMeta, SetupKind } from './env-var-meta';
 import type { SetupEffort, SetupGuide } from './setup-guide';
@@ -831,6 +834,24 @@ function withODataBuiltins(adapter: AdapterDefinition): AdapterDefinition {
   }) as unknown as AdapterDefinition['tools'];
   const own = new Set(adapter.tools.map((t) => t.name));
   return { ...adapter, tools: [...builtins.filter((t) => !own.has(t.name)), ...adapter.tools] };
+}
+
+/**
+ * Auto-inject the email built-ins (list folders, search, get message and
+ * attachment, flags, move, delete to Trash, save draft, send) onto EMAIL
+ * adapters, as a hand-made EMAIL connector gets them. Names use
+ * `config.email.toolPrefix`, else one derived from the adapter slug; a tool
+ * the adapter writes itself (its guide) is kept and never overwritten.
+ */
+function withEmailBuiltins(adapter: AdapterDefinition): AdapterDefinition {
+  if (adapter.connector.type !== 'EMAIL') return adapter;
+  const email = (adapter.connector.config?.email ?? {}) as { toolPrefix?: unknown };
+  const builtins = buildEmailBuiltinTools({
+    prefix: emailToolPrefix({ toolPrefix: email.toolPrefix, name: adapter.slug }),
+    displayName: adapter.name,
+  }) as unknown as AdapterDefinition['tools'];
+  const own = new Set(adapter.tools.map((t) => t.name));
+  return { ...adapter, tools: [...adapter.tools, ...builtins.filter((t) => !own.has(t.name))] };
 }
 
 // To add a new adapter:
@@ -1124,6 +1145,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   huggingface as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
   idealista as unknown as AdapterDefinition,
+  imapSmtp as unknown as AdapterDefinition,
   immich as unknown as AdapterDefinition,
   inoreader as unknown as AdapterDefinition,
   insightly as unknown as AdapterDefinition,
@@ -1453,6 +1475,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
 
 const ALL_ADAPTERS: AdapterDefinition[] = RAW_ADAPTERS.map(withGraphqlBuiltins)
   .map(withODataBuiltins)
+  .map(withEmailBuiltins)
   .map((adapter) => ({
   ...adapter,
   // Computed after withGraphqlBuiltins so generated GraphQL helper tools are

@@ -1,6 +1,7 @@
 import { listAdapters, getAdapter } from './catalog';
 import { REQUEST_BODY_METHODS } from '../connectors/engines/rest.engine';
 import { localMcpToolName, mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
+import { EMAIL_METHODS } from '../connectors/email/email-builtins';
 
 const VALID_AUTH_TYPES = new Set([
   'NONE',
@@ -45,6 +46,10 @@ const VALID_ODATA_BUILTIN_METHODS = new Set([
   'ODATA_QUERY',
   'ODATA_GET',
 ]);
+
+// EMAIL adapters speak IMAP and SMTP: their tools are the email built-ins
+// (EmailEngine) plus `static` guides. No HTTP path, so no URL rules either.
+const VALID_EMAIL_METHODS = new Set([...EMAIL_METHODS.map((m) => m.toUpperCase()), 'STATIC']);
 
 /**
  * Declared tool arguments that are deliberately not sent anywhere, as
@@ -446,6 +451,12 @@ describe('adapter catalog', () => {
           return;
         }
 
+        if (adapter.connector.type === 'EMAIL') {
+          expect(VALID_EMAIL_METHODS.has(String(em.method).toUpperCase())).toBe(true);
+          expect(typeof em.path).toBe('string');
+          return;
+        }
+
         const isDatabase = adapter.connector.type === 'DATABASE';
         const allowed = isDatabase
           ? VALID_DATABASE_METHODS
@@ -511,5 +522,23 @@ describe('adapter catalog', () => {
         }
       },
     );
+  });
+});
+
+describe('EMAIL adapters', () => {
+  it('imap-smtp carries its guide and the nine email built-ins under its prefix', () => {
+    const adapter = getAdapter('imap-smtp');
+    expect(adapter?.connector.type).toBe('EMAIL');
+    const methods = adapter!.tools.map((t) => (t.endpointMapping as { method: string }).method);
+    expect(methods.filter((m) => m !== 'static').sort()).toEqual([...EMAIL_METHODS].sort());
+    expect(adapter!.tools.every((t) => t.name.startsWith('imap_smtp_'))).toBe(true);
+    expect(adapter!.tools[0].name).toBe('imap_smtp_guide');
+    expect(adapter!.probe?.tool).toBe('imap_smtp_list_folders');
+    expect(adapter!.tools.some((t) => t.name === adapter!.probe?.tool)).toBe(true);
+    // Sending and deleting install switched off; drafts are the way to answer.
+    expect(adapter!.tools.filter((t) => t.enabled === false).map((t) => t.name).sort()).toEqual([
+      'imap_smtp_delete_messages',
+      'imap_smtp_send_message',
+    ]);
   });
 });

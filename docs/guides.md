@@ -32,6 +32,7 @@ On an MCP server's page, the **Share this server** card gives you "Add to Cursor
 | **SOAP** | WSDL web services, WCF, legacy enterprise APIs | [Guide →](connectors/soap.md) |
 | **GraphQL** | GraphQL endpoints with introspection | [Guide →](connectors/graphql.md) |
 | **Database** | PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite | [Guide →](connectors/database.md) |
+| **Email (IMAP/SMTP)** | Any mailbox: IONOS, Strato, GMX, T-Online, Gmail (app password), self-hosted Dovecot | [Guide →](connectors/email.md) |
 | **MCP Bridge** | Aggregate multiple MCP servers into one | [Guide →](connectors/mcp-bridge.md) |
 | **LOGIN_TOKEN auth** | APIs that POST credentials → return long-lived bearer | [Guide →](connectors/login-token-auth.md) |
 

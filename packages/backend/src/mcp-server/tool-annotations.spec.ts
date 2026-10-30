@@ -206,6 +206,31 @@ describe('deriveToolAnnotations', () => {
     });
   });
 
+  describe('EMAIL built-ins', () => {
+    const email = (method: string) =>
+      deriveToolAnnotations({ name: `mail_${method}`, connectorType: 'EMAIL', endpointMapping: { method, path: '' } });
+
+    it('marks reads read-only on a closed domain', () => {
+      for (const m of ['email_list_folders', 'email_search', 'email_get_message', 'email_get_attachment']) {
+        expect(email(m)).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+      }
+    });
+
+    it('marks changes as writes, delete as destructive and send as open-world', () => {
+      for (const m of ['email_set_flags', 'email_move', 'email_save_draft']) {
+        expect(email(m)).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+      }
+      expect(email('email_delete')).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+      expect(email('email_send')).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true });
+    });
+
+    it('keeps the static guide read-only', () => {
+      expect(
+        deriveToolAnnotations({ name: 'imap_smtp_guide', connectorType: 'EMAIL', endpointMapping: { method: 'static', path: '' } }),
+      ).toMatchObject({ readOnlyHint: true });
+    });
+  });
+
   describe('SOAP and MCP proxy', () => {
     it('never asserts read-only without verb semantics', () => {
       const a = deriveToolAnnotations({
