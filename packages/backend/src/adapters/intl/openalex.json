@@ -1,0 +1,1121 @@
+{
+  "slug": "openalex",
+  "name": "OpenAlex",
+  "aliases": [
+    "OurResearch",
+    "Open Alex"
+  ],
+  "description": "Search the open research catalog OpenAlex: about 324 million scholarly works with authors, institutions, journals, topics, publishers and funders, citation links, open access status and counts grouped by any field. Read-only; works without a key, a free key raises the daily budget tenfold.",
+  "instructions": "## OpenAlex\nThis connector reads **OpenAlex** (`https://api.openalex.org`), the open catalog of the global research system run by the nonprofit OurResearch: about 324 million works (articles, books, datasets, preprints, theses) with their authors, institutions, journals and repositories (sources), research topics, publishers and funders, linked by citations. Data is CC0. Everything is read-only.\n\n**Setup**\n- Works without a key, but keyless calls share one budget of 0.10 USD a day per network address, so on a shared server it runs out quickly. Recommended: create a free account at https://openalex.org/signup, copy the key from **Settings > API key** (https://openalex.org/settings/api-key) and paste it into `OPENALEX_API_KEY`. It is sent as `Authorization: Bearer` and gives 1 USD of free usage every day (10 times the keyless budget), 30 requests per second and cursor paging.\n- The old polite pool with `mailto=` was replaced by API keys in February 2026; the parameter is ignored.\n- Cost per call: single records (`openalex_get_*`) are free, a filtered list or a group count costs 0.0001 USD, a text search 0.001 USD. Every list answer reports `meta.cost_usd`.\n\n**Ids**: OpenAlex ids are a letter plus digits: W (work), A (author), S (source), I (institution), T (topic), P (publisher), F (funder). The full form is `https://openalex.org/W2741809807`; the short `W2741809807` works everywhere. External ids work in the get tools: `doi:10.7717/peerj.4375`, `orcid:0000-0003-1613-5981`, `ror:042nb2s44`, `issn:0028-0836`, `pmid:29456894`.\n\n**Never filter by a name.** Resolve names to ids first, then filter by id: `openalex_autocomplete` (quickest, free) or `openalex_search_authors` / `openalex_search_institutions` / `openalex_search_sources` / `openalex_search_topics` / `openalex_search_publishers` / `openalex_search_funders`, then the id in a `filter` of `openalex_search_works`.\n\n**Workflow**\n- Literature search: `openalex_search_works` with `search` (keywords, AND/OR/NOT, \"phrases\"), `search_exact` (no stemming) or `search_semantic` (a paragraph, by meaning, max 50 results), plus `filter` and `sort` (e.g. `cited_by_count:desc`).\n- Works of an author, institution, journal, topic or funder: `openalex_search_works` with `filter` `authorships.author.id:A...`, `authorships.institutions.id:I...`, `primary_location.source.id:S...`, `topics.id:T...` or `funders.id:F...`; add `publication_year:2020-2025`, `type:article`, `is_oa:true`.\n- Many DOIs at once: `filter` `doi:10.1/a|10.2/b` (up to 100), `per_page` 100.\n- One record in full: `openalex_get_work`, `openalex_get_author`, `openalex_get_source`, `openalex_get_institution`, `openalex_get_topic`, `openalex_get_publisher`, `openalex_get_funder`; `select` keeps only the top-level fields you name.\n- Who cites a work: `openalex_search_works` with `filter` `cites:W...`; what it cites: `referenced_works` in `openalex_get_work`.\n- Counting and rankings: `openalex_group_by` (e.g. works of an institution by `publication_year`, by `open_access.oa_status`, by `topics.id`, by `authorships.countries`). It is one cheap call instead of paging through records.\n- Browsing: `openalex_search_topics` (domain > field > subfield > topic), `openalex_search_sources`, `openalex_search_publishers`, `openalex_search_funders`, `openalex_search_authors`, `openalex_search_institutions` all take `search`, `filter` and `sort`.\n\n**Reading the answers**: list tools return a slim record per result (id, names, counts, open access and author names); call the matching get tool for everything else. `cited_by_count` counts citing works; `fwci` is the field-weighted citation impact (1.0 = world average). `oa_status` is diamond, gold, green, hybrid, bronze or closed. The abstract of a work comes as `abstract_inverted_index` (word: positions); rebuild the text by placing each word at its positions. Dates are YYYY-MM-DD.\n\n**Paging**: `per_page` up to 100 and `page` for up to 10,000 results; beyond that use `cursor` (`*` first, then `meta.next_cursor`), which needs an API key after the first page. `meta.count` is the total.\n\n**Limits and errors**: 429 means the daily budget is spent (keyless: shared by everyone on the same address) or more than 10 requests per second (30 with a key); semantic search allows 1 per second. Budgets reset at midnight UTC. 403 `key_not_activated` means the key's e-mail address is not yet confirmed. 400 names an invalid filter or field; 404 an unknown id.\n\n**Out of scope**: PDF downloads (0.01 USD each), collections, saved searches and alerts, and author profile corrections are not part of this connector.",
+  "region": "intl",
+  "category": "data",
+  "icon": "openalex",
+  "docsUrl": "https://help.openalex.org/api/",
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "OPENALEX_API_KEY"
+  ],
+  "envVarMeta": {
+    "OPENALEX_API_KEY": {
+      "label": "API key (optional, recommended)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Free at openalex.org: sign up, then Settings > API key. Without it, all keyless callers on the same server share 0.10 USD of usage a day; with it you get 1 USD a day of your own. Sent as Authorization: Bearer.",
+      "link": "https://openalex.org/settings/api-key",
+      "pattern": "^\\S{16,128}$",
+      "patternMessage": "Paste only the key, without spaces or api_key=."
+    }
+  },
+  "verifyHints": {
+    "401": "OpenAlex refused the API key. Copy it again from https://openalex.org/settings/api-key, or leave OPENALEX_API_KEY empty to use the keyless budget.",
+    "403": "OpenAlex refused the key: if the answer says key_not_activated, open the activation link OpenAlex e-mailed and verify again.",
+    "429": "The OpenAlex daily budget is used up (keyless calls from this server share 0.10 USD a day) or the per-second limit was hit. Add a free API key or wait until midnight UTC."
+  },
+  "probe": {
+    "tool": "openalex_search_topics"
+  },
+  "connector": {
+    "name": "OpenAlex",
+    "type": "REST",
+    "baseUrl": "https://api.openalex.org",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "openalex_search_works",
+      "description": "Search and filter OpenAlex works (articles, books, datasets, preprints, theses): by words, by meaning, or by author, institution, source, topic, funder, year, type, open access and citation filters. Returns per work the OpenAlex id, DOI, title, year, type, citation count, open access status and URL, source and author names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Full-text search over titles, abstracts and full texts (stemmed, AND/OR/NOT and \"phrases\" allowed). Only one of search, search_exact and search_semantic."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters as field:value, comma = AND, | = OR (up to 100 values), ! = NOT, > < for numbers and ranges a-b. Works: publication_year:2024, publication_year:2020-2024, type:article|review, is_oa:true, cited_by_count:>100, authorships.author.id:A5023888391, authorships.institutions.id:I63966007, primary_location.source.id:S137773608, topics.id:T10017, funders.id:F4320306076, doi:10.7717/peerj.4375|10.1038/nature12373, language:en, has_fulltext:true. Resolve names to ids first."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with :desc or :asc, e.g. cited_by_count:desc, publication_date:desc. With search the default is relevance_score:desc."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page, 1 to 100."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for basic paging (up to 10,000 results in total)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor paging: * for the first page, then meta.next_cursor of the previous answer. Pages past the first need an API key."
+          },
+          "sample": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Return a random sample of this many results (combine with seed to repeat it)."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed for a reproducible sample."
+          },
+          "search_exact": {
+            "type": "string",
+            "description": "Search without stemming, for exact words. Only one of search, search_exact and search_semantic."
+          },
+          "search_semantic": {
+            "type": "string",
+            "description": "Search by meaning with AI embeddings: a sentence or paragraph (up to 2,000 characters), at most 50 results, 1 request per second; cited_by_count and country filters are not allowed with it."
+          },
+          "corpus": {
+            "type": "string",
+            "enum": [
+              "core",
+              "expansion",
+              "all"
+            ],
+            "description": "core (default, about 324 million curated works), expansion (about 193 million extra works) or all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/works",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "search": "$search",
+          "filter": "$filter",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page",
+          "cursor": "$cursor",
+          "sample": "$sample",
+          "seed": "$seed",
+          "search.exact": "$search_exact",
+          "search.semantic": "$search_semantic",
+          "corpus": "$corpus"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "meta": {
+              "count": "$.meta.count",
+              "page": "$.meta.page",
+              "per_page": "$.meta.per_page",
+              "next_cursor": "$.meta.next_cursor",
+              "cost_usd": "$.meta.cost_usd"
+            },
+            "results": {
+              "$from": "$.results[*]",
+              "$select": {
+                "id": "id",
+                "doi": "doi",
+                "title": "display_name",
+                "publication_year": "publication_year",
+                "publication_date": "publication_date",
+                "type": "type",
+                "cited_by_count": "cited_by_count",
+                "fwci": "fwci",
+                "is_oa": "open_access.is_oa",
+                "oa_status": "open_access.oa_status",
+                "oa_url": "open_access.oa_url",
+                "source": "primary_location.source.display_name",
+                "authors": "authorships[*].author.display_name",
+                "primary_topic": "primary_topic.display_name",
+                "relevance_score": "relevance_score"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_get_work",
+      "description": "Get one OpenAlex work by OpenAlex id, DOI, PubMed id or other id: title, abstract (as an inverted index), authors with institutions, source, topics, keywords, funders and awards, open access locations, references, related works and citations per year. Single-record lookups are free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "work_id": {
+            "type": "string",
+            "description": "W2741809807, https://openalex.org/W2741809807, doi:10.7717/peerj.4375, https://doi.org/10.7717/peerj.4375, pmid:29456894, pmcid:PMC5815332 or mag:2741809807."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return, e.g. id,display_name,cited_by_count. Leave empty for the full record."
+          }
+        },
+        "required": [
+          "work_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/works/{work_id}",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "select": "$select"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_search_authors",
+      "description": "Search and filter OpenAlex authors (disambiguated researcher profiles): id, ORCID, name, works and citation counts, h-index and last known institutions. Several profiles can share a name: compare institutions and counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Author name to search, e.g. Heather Piwowar (also matches alternative spellings)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters as field:value, comma = AND, | = OR (up to 100 values), ! = NOT, > < for numbers and ranges a-b. Authors: last_known_institutions.id:I63966007, works_count:>50, cited_by_count:>1000, orcid:0000-0003-1613-5981, has_orcid:true, last_known_institutions.country_code:DE."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with :desc or :asc, e.g. cited_by_count:desc, works_count:desc. With search the default is relevance_score:desc."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page, 1 to 100."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for basic paging (up to 10,000 results in total)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor paging: * for the first page, then meta.next_cursor of the previous answer. Pages past the first need an API key."
+          },
+          "sample": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Return a random sample of this many results (combine with seed to repeat it)."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed for a reproducible sample."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/authors",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "search": "$search",
+          "filter": "$filter",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page",
+          "cursor": "$cursor",
+          "sample": "$sample",
+          "seed": "$seed"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "meta": {
+              "count": "$.meta.count",
+              "page": "$.meta.page",
+              "per_page": "$.meta.per_page",
+              "next_cursor": "$.meta.next_cursor",
+              "cost_usd": "$.meta.cost_usd"
+            },
+            "results": {
+              "$from": "$.results[*]",
+              "$select": {
+                "id": "id",
+                "orcid": "orcid",
+                "display_name": "display_name",
+                "works_count": "works_count",
+                "cited_by_count": "cited_by_count",
+                "h_index": "summary_stats.h_index",
+                "institutions": "last_known_institutions[*].display_name",
+                "countries": "last_known_institutions[*].country_code",
+                "top_topics": "topics[*].display_name",
+                "relevance_score": "relevance_score"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_get_author",
+      "description": "Get one OpenAlex author: names, ORCID, affiliations over time, works and citation counts per year, h-index and i10-index, main topics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "author_id": {
+            "type": "string",
+            "description": "OpenAlex id such as A5023888391 (or https://openalex.org/A5023888391), or orcid:0000-0003-1613-5981."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return, e.g. id,display_name,cited_by_count. Leave empty for the full record."
+          }
+        },
+        "required": [
+          "author_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/authors/{author_id}",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "select": "$select"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_search_sources",
+      "description": "Search and filter OpenAlex sources (journals, repositories, conferences, book series): id, ISSN, name, type, publisher, open access and DOAJ status, works and citation counts, h-index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Name of a journal, repository or conference to search, e.g. Nature."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters as field:value, comma = AND, | = OR (up to 100 values), ! = NOT, > < for numbers and ranges a-b. Sources: type:journal|repository|conference, is_oa:true, is_in_doaj:true, issn:0028-0836, host_organization.id:P4310320990, country_code:US, works_count:>1000."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with :desc or :asc, e.g. cited_by_count:desc, works_count:desc. With search the default is relevance_score:desc."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page, 1 to 100."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for basic paging (up to 10,000 results in total)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor paging: * for the first page, then meta.next_cursor of the previous answer. Pages past the first need an API key."
+          },
+          "sample": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Return a random sample of this many results (combine with seed to repeat it)."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed for a reproducible sample."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sources",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "search": "$search",
+          "filter": "$filter",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page",
+          "cursor": "$cursor",
+          "sample": "$sample",
+          "seed": "$seed"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "meta": {
+              "count": "$.meta.count",
+              "page": "$.meta.page",
+              "per_page": "$.meta.per_page",
+              "next_cursor": "$.meta.next_cursor",
+              "cost_usd": "$.meta.cost_usd"
+            },
+            "results": {
+              "$from": "$.results[*]",
+              "$select": {
+                "id": "id",
+                "issn_l": "issn_l",
+                "display_name": "display_name",
+                "type": "type",
+                "publisher": "host_organization_name",
+                "is_oa": "is_oa",
+                "is_in_doaj": "is_in_doaj",
+                "apc_usd": "apc_usd",
+                "works_count": "works_count",
+                "cited_by_count": "cited_by_count",
+                "h_index": "summary_stats.h_index",
+                "homepage_url": "homepage_url",
+                "relevance_score": "relevance_score"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_get_source",
+      "description": "Get one OpenAlex source: ISSNs, publisher lineage, type, open access and DOAJ status, APC price, works and citation counts per year, main topics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "OpenAlex id such as S137773608 (or https://openalex.org/S137773608), or issn:0028-0836."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return, e.g. id,display_name,cited_by_count. Leave empty for the full record."
+          }
+        },
+        "required": [
+          "source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sources/{source_id}",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "select": "$select"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_search_institutions",
+      "description": "Search and filter OpenAlex institutions (universities, companies, hospitals, government bodies): id, ROR, name, type, country, city, works and citation counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Institution name to search, e.g. Massachusetts Institute of Technology (acronyms match too)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters as field:value, comma = AND, | = OR (up to 100 values), ! = NOT, > < for numbers and ranges a-b. Institutions: country_code:DE, type:education|company|healthcare|government|facility|nonprofit|archive|funder, ror:https://ror.org/042nb2s44, works_count:>1000, is_super_system:false."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with :desc or :asc, e.g. cited_by_count:desc, works_count:desc. With search the default is relevance_score:desc."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page, 1 to 100."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for basic paging (up to 10,000 results in total)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor paging: * for the first page, then meta.next_cursor of the previous answer. Pages past the first need an API key."
+          },
+          "sample": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Return a random sample of this many results (combine with seed to repeat it)."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed for a reproducible sample."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/institutions",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "search": "$search",
+          "filter": "$filter",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page",
+          "cursor": "$cursor",
+          "sample": "$sample",
+          "seed": "$seed"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "meta": {
+              "count": "$.meta.count",
+              "page": "$.meta.page",
+              "per_page": "$.meta.per_page",
+              "next_cursor": "$.meta.next_cursor",
+              "cost_usd": "$.meta.cost_usd"
+            },
+            "results": {
+              "$from": "$.results[*]",
+              "$select": {
+                "id": "id",
+                "ror": "ror",
+                "display_name": "display_name",
+                "type": "type",
+                "country_code": "country_code",
+                "city": "geo.city",
+                "works_count": "works_count",
+                "cited_by_count": "cited_by_count",
+                "h_index": "summary_stats.h_index",
+                "homepage_url": "homepage_url",
+                "relevance_score": "relevance_score"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_get_institution",
+      "description": "Get one OpenAlex institution: ROR, type, location, parent and child institutions, repositories, works and citation counts per year, main topics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "institution_id": {
+            "type": "string",
+            "description": "OpenAlex id such as I63966007 (or https://openalex.org/I63966007), or ror:042nb2s44."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return, e.g. id,display_name,cited_by_count. Leave empty for the full record."
+          }
+        },
+        "required": [
+          "institution_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/institutions/{institution_id}",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "select": "$select"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_search_topics",
+      "description": "Search and filter the about 4,500 OpenAlex research topics, organised as domain > field > subfield > topic: id, name, description, keywords and hierarchy, works count. Use a topic id in a works filter (topics.id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Words to search in topic names, descriptions and keywords, e.g. machine learning."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters as field:value, comma = AND, | = OR (up to 100 values), ! = NOT, > < for numbers and ranges a-b. Topics: domain.id:3, field.id:17, subfield.id:1702, works_count:>10000."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with :desc or :asc, e.g. works_count:desc, cited_by_count:desc. With search the default is relevance_score:desc."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page, 1 to 100."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for basic paging (up to 10,000 results in total)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor paging: * for the first page, then meta.next_cursor of the previous answer. Pages past the first need an API key."
+          },
+          "sample": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Return a random sample of this many results (combine with seed to repeat it)."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed for a reproducible sample."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/topics",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "search": "$search",
+          "filter": "$filter",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page",
+          "cursor": "$cursor",
+          "sample": "$sample",
+          "seed": "$seed"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "meta": {
+              "count": "$.meta.count",
+              "page": "$.meta.page",
+              "per_page": "$.meta.per_page",
+              "next_cursor": "$.meta.next_cursor",
+              "cost_usd": "$.meta.cost_usd"
+            },
+            "results": {
+              "$from": "$.results[*]",
+              "$select": {
+                "id": "id",
+                "display_name": "display_name",
+                "description": "description",
+                "subfield": "subfield.display_name",
+                "field": "field.display_name",
+                "domain": "domain.display_name",
+                "keywords": "keywords",
+                "works_count": "works_count",
+                "relevance_score": "relevance_score"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_get_topic",
+      "description": "Get one OpenAlex topic: description, keywords, subfield, field and domain, sibling topics, works and citation counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topic_id": {
+            "type": "string",
+            "description": "OpenAlex id such as T10017 (or https://openalex.org/T10017)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return, e.g. id,display_name,cited_by_count. Leave empty for the full record."
+          }
+        },
+        "required": [
+          "topic_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/topics/{topic_id}",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "select": "$select"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_search_publishers",
+      "description": "Search and filter OpenAlex publishers: id, name, place in the publisher hierarchy, countries, works and citation counts, h-index. Their journals are sources with host_organization.id = the publisher id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Publisher name to search, e.g. Springer Nature."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters as field:value, comma = AND, | = OR (up to 100 values), ! = NOT, > < for numbers and ranges a-b. Publishers: hierarchy_level:0 (top-level groups), parent_publisher:P4310319965, country_codes:GB, works_count:>10000."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with :desc or :asc, e.g. works_count:desc, cited_by_count:desc. With search the default is relevance_score:desc."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page, 1 to 100."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for basic paging (up to 10,000 results in total)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor paging: * for the first page, then meta.next_cursor of the previous answer. Pages past the first need an API key."
+          },
+          "sample": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Return a random sample of this many results (combine with seed to repeat it)."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed for a reproducible sample."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "search": "$search",
+          "filter": "$filter",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page",
+          "cursor": "$cursor",
+          "sample": "$sample",
+          "seed": "$seed"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "meta": {
+              "count": "$.meta.count",
+              "page": "$.meta.page",
+              "per_page": "$.meta.per_page",
+              "next_cursor": "$.meta.next_cursor",
+              "cost_usd": "$.meta.cost_usd"
+            },
+            "results": {
+              "$from": "$.results[*]",
+              "$select": {
+                "id": "id",
+                "display_name": "display_name",
+                "hierarchy_level": "hierarchy_level",
+                "parent_publisher": "parent_publisher",
+                "country_codes": "country_codes",
+                "works_count": "works_count",
+                "cited_by_count": "cited_by_count",
+                "h_index": "summary_stats.h_index",
+                "homepage_url": "homepage_url",
+                "relevance_score": "relevance_score"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_get_publisher",
+      "description": "Get one OpenAlex publisher: alternate names, parent publisher and lineage, countries, homepage, works and citation counts per year.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "description": "OpenAlex id such as P4310320990 (or https://openalex.org/P4310320990)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return, e.g. id,display_name,cited_by_count. Leave empty for the full record."
+          }
+        },
+        "required": [
+          "publisher_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/{publisher_id}",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "select": "$select"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_search_funders",
+      "description": "Search and filter OpenAlex funders (agencies, foundations, companies that fund research): id, name, country, description, number of awards, funded works and their citations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Funder name to search, e.g. National Science Foundation or European Research Council."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters as field:value, comma = AND, | = OR (up to 100 values), ! = NOT, > < for numbers and ranges a-b. Funders: country_code:US, awards_count:>100, works_count:>1000."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with :desc or :asc, e.g. works_count:desc, cited_by_count:desc. With search the default is relevance_score:desc."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Results per page, 1 to 100."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number for basic paging (up to 10,000 results in total)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor paging: * for the first page, then meta.next_cursor of the previous answer. Pages past the first need an API key."
+          },
+          "sample": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Return a random sample of this many results (combine with seed to repeat it)."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed for a reproducible sample."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funders",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "search": "$search",
+          "filter": "$filter",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page",
+          "cursor": "$cursor",
+          "sample": "$sample",
+          "seed": "$seed"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "meta": {
+              "count": "$.meta.count",
+              "page": "$.meta.page",
+              "per_page": "$.meta.per_page",
+              "next_cursor": "$.meta.next_cursor",
+              "cost_usd": "$.meta.cost_usd"
+            },
+            "results": {
+              "$from": "$.results[*]",
+              "$select": {
+                "id": "id",
+                "display_name": "display_name",
+                "country_code": "country_code",
+                "description": "description",
+                "awards_count": "awards_count",
+                "works_count": "works_count",
+                "cited_by_count": "cited_by_count",
+                "h_index": "summary_stats.h_index",
+                "homepage_url": "homepage_url",
+                "relevance_score": "relevance_score"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_get_funder",
+      "description": "Get one OpenAlex funder: alternate names, country, description, homepage, awards and funded works and citations per year. Funded works: openalex_search_works with filter funders.id:<id>.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "funder_id": {
+            "type": "string",
+            "description": "OpenAlex id such as F4320306076 (or https://openalex.org/F4320306076), or ror:021nxhr62."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return, e.g. id,display_name,cited_by_count. Leave empty for the full record."
+          }
+        },
+        "required": [
+          "funder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funders/{funder_id}",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "select": "$select"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_group_by",
+      "description": "Count OpenAlex records grouped by a field, e.g. works per publication year, per open access status, per institution, per country or per topic, for a filtered or searched set. Returns up to 200 groups with key, display name and count; the cheapest way to answer how-many and top-N questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "enum": [
+              "works",
+              "authors",
+              "sources",
+              "institutions",
+              "topics",
+              "publishers",
+              "funders"
+            ],
+            "default": "works",
+            "description": "What to count: works (default), authors, sources, institutions, topics, publishers or funders."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Field to group by. Works: publication_year, type, open_access.oa_status, open_access.is_oa, authorships.institutions.id, authorships.countries, authorships.author.id, primary_location.source.id, topics.id, primary_topic.field.id, funders.id, language, sustainable_development_goals.id. Authors: last_known_institutions.country_code. Institutions: type, country_code. Sources: type, is_oa."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters of the chosen entity, same syntax as the search tools, e.g. authorships.institutions.id:I63966007,publication_year:2020-2025."
+          },
+          "search": {
+            "type": "string",
+            "description": "Optional full-text search to restrict the counted set, e.g. \"climate adaptation\"."
+          }
+        },
+        "required": [
+          "entity",
+          "group_by"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity}",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "group_by": "$group_by",
+          "filter": "$filter",
+          "search": "$search"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "count": "$.meta.count",
+            "groups_count": "$.meta.groups_count",
+            "cost_usd": "$.meta.cost_usd",
+            "groups": {
+              "$from": "$.group_by[*]",
+              "$select": {
+                "key": "key",
+                "name": "key_display_name",
+                "count": "count"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "openalex_autocomplete",
+      "description": "Type-ahead lookup of OpenAlex works, authors, sources, institutions, topics, keywords, publishers or funders: the fastest way to turn a name into an OpenAlex id. Returns up to 10 matches with id, name, a hint (authors, institution or location), citation and works counts and the external id (DOI, ORCID, ROR, ISSN). Also resolves an ORCID, DOI or OpenAlex id typed as q.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "works",
+              "authors",
+              "sources",
+              "institutions",
+              "topics",
+              "keywords",
+              "publishers",
+              "funders"
+            ],
+            "description": "Kind of record to suggest."
+          },
+          "q": {
+            "type": "string",
+            "description": "The partial name, e.g. stanf, or an id such as https://orcid.org/0000-0002-7436-3176."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional filter of that entity, e.g. country_code:US for institutions or publication_year:2024 for works."
+          }
+        },
+        "required": [
+          "entity_type",
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autocomplete/{entity_type}",
+        "headers": {
+          "Authorization": "Bearer ${OPENALEX_API_KEY}"
+        },
+        "queryParams": {
+          "q": "$q",
+          "filter": "$filter"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "count": "$.meta.count",
+            "results": {
+              "$from": "$.results[*]",
+              "$select": {
+                "id": "id",
+                "display_name": "display_name",
+                "hint": "hint",
+                "entity_type": "entity_type",
+                "external_id": "external_id",
+                "cited_by_count": "cited_by_count",
+                "works_count": "works_count"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

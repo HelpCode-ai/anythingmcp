@@ -1,0 +1,1639 @@
+{
+  "slug": "lokalise",
+  "name": "Lokalise",
+  "aliases": [
+    "Lokalise API",
+    "Lokalise TMS"
+  ],
+  "description": "Lokalise translation management: projects, keys and translations, languages, contributors, translation and review tasks, file exports as background processes, comments, screenshot metadata, branches and the glossary. Lokalise API v2 with an API token.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "lokalise",
+  "docsUrl": "https://developers.lokalise.com/reference/lokalise-rest-api",
+  "instructions": "## Lokalise\nThis connector works with the **Lokalise API v2** (`https://api.lokalise.com/api2`): projects, keys and translations, languages, contributors, tasks, file exports, comments, screenshot metadata, branches, glossary terms and custom translation statuses. Lokalise also runs its own MCP server in beta (`https://mcp.lokalise.com/mcp/project-management` and `/mcp/software-development`, OAuth or an `apikey` header).\n\n**Setup (2 minutes)**\n1. In Lokalise open your **profile > API tokens** and generate a token. A read-only token is enough for the reading tools; the writes need a read and write token.\n2. Paste it into `LOKALISE_API_TOKEN`. It is sent in the `X-Api-Token` header and acts with your rights in each project.\n3. Run `lokalise_list_projects` to check the token.\n\n**Workflow**\n- Orientation: `lokalise_list_projects` (with `include_statistics: 1` for progress per language), `lokalise_get_project`, `lokalise_list_project_languages`, `lokalise_list_system_languages` for ISO codes, `lokalise_list_translation_statuses`.\n- Keys and translations: `lokalise_list_keys` (with `include_translations: 1` to see the texts; filter by name, tag, file, platform, untranslated or QA issues), `lokalise_get_key`, `lokalise_list_translations` (filter by language, reviewed, unverified, untranslated or task) and `lokalise_get_translation`.\n- Change content: `lokalise_create_keys` (new strings with their source text), `lokalise_update_key`, `lokalise_bulk_update_keys`, `lokalise_update_translation` (text plus reviewed or unverified flags), `lokalise_add_languages`.\n- Team and work: `lokalise_list_contributors`, `lokalise_get_contributor`, `lokalise_get_my_contributor`, `lokalise_add_contributors` (sends invitations); `lokalise_list_tasks`, `lokalise_get_task`, `lokalise_create_task` (translation, review or automatic_translation for some keys and languages), `lokalise_update_task` (`{\"close_task\": true}` closes it).\n- Export files: `lokalise_download_files` starts an export and returns a `process_id`; call `lokalise_get_process` until `status` is `finished` and hand the `details.download_url` zip link to the user (it expires after a while). `lokalise_list_files` shows the files of the project. Uploading files needs base64 content and is not part of this connector.\n- Context: `lokalise_list_project_comments`, `lokalise_list_key_comments`, `lokalise_add_key_comments`, `lokalise_list_screenshots`, `lokalise_get_screenshot`.\n- Branches and glossary: `lokalise_list_branches`, `lokalise_create_branch`; `lokalise_list_glossary_terms`, `lokalise_get_glossary_term`, `lokalise_create_glossary_terms`, `lokalise_update_glossary_terms`.\n\n**Switched off at install**: `lokalise_delete_key`; it cannot be undone, so an admin switches it on when the team needs it.\n\n**Ids**: project ids look like `767946315e9866d013c1d0.08299127`; to work on a branch pass `<project id>:<branch name>`. Key, translation, task, language and user ids are numbers. Languages are ISO codes such as `en`, `de`, `pt_BR`.\n\n**Reading the answers**: list answers wrap the items (`projects`, `keys`, `translations`, ...). Times come as `YYYY-MM-DD HH:MM:SS (Etc/UTC)` plus a Unix `..._timestamp`. Plural translations are JSON strings with the forms (`one`, `other`, ...). Flags in filters are `0` or `1`.\n\n**Paging**: `limit` and `page`; the totals come in the `x-pagination-total-count` and `x-pagination-page-count` headers, shown under `_headers`. Keys and translations also accept `pagination: cursor`: pass the `x-pagination-next-cursor` header value as `cursor` until it is missing. Glossary terms page with `cursor` only.\n\n**Limits and errors**: 6 requests per second per token and per IP address, and at most 10 requests in flight per project; 429 means slow down. 401 is a wrong token, 403 a read-only token used for a write or missing project rights, 404 an unknown project or item, 400 a validation error with the field named in the message.",
+  "prerequisites": "A Lokalise account and an API token from your profile (read-only for reading, read and write for changes).",
+  "requiredEnvVars": [
+    "LOKALISE_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "LOKALISE_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Lokalise > profile picture > Profile settings > API tokens > Generate new token (read-only or read and write). Sent in the X-Api-Token header.",
+      "link": "https://app.lokalise.com/profile#apitokens",
+      "pattern": "^[A-Za-z0-9]{32,64}$",
+      "patternMessage": "A Lokalise API token is a string of 40 letters and digits; paste only the token."
+    }
+  },
+  "verifyHints": {
+    "400": "Lokalise says the X-Api-Token header is invalid: paste the 40-character token itself, without spaces or quotes.",
+    "401": "Lokalise refused the token. Generate a new one under Profile settings > API tokens.",
+    "403": "The token cannot do this: use a read and write token for changes, and check your rights in the project.",
+    "rate_limited": "Lokalise allows 6 requests per second per token and 10 concurrent requests per project. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "lokalise_list_projects"
+  },
+  "connector": {
+    "name": "Lokalise API v2",
+    "type": "REST",
+    "baseUrl": "https://api.lokalise.com/api2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Token",
+      "apiKey": "{{LOKALISE_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP (https://anythingmcp.com)"
+    },
+    "healthcheckPath": "/projects?limit=1"
+  },
+  "tools": [
+    {
+      "name": "lokalise_list_projects",
+      "description": "Projects the token can reach, with id, name, type (localization_files, paged_documents, ...), base language, team and, on request, statistics (progress, keys, words per language) and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_names": {
+            "type": "string",
+            "description": "Comma-separated project names."
+          },
+          "filter_team_id": {
+            "type": "integer",
+            "description": "Only projects of this team id."
+          },
+          "include_statistics": {
+            "type": "integer",
+            "description": "1 to include progress and counts.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "include_settings": {
+            "type": "integer",
+            "description": "1 to include project settings.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "filter_names": "$filter_names",
+          "filter_team_id": "$filter_team_id",
+          "include_statistics": "$include_statistics",
+          "include_settings": "$include_settings",
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_get_project",
+      "description": "One project with its settings and statistics: progress, keys, words and QA issues per language, base language and team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}"
+      }
+    },
+    {
+      "name": "lokalise_list_keys",
+      "description": "Translation keys of a project with name per platform, description, tags, filenames and, with include_translations 1, the translations. Filter by key name, tag, filename, platform, language, untranslated or QA issues. Supports cursor paging (pagination cursor) for large projects.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "filter_keys": {
+            "type": "string",
+            "description": "Comma-separated key names."
+          },
+          "filter_key_ids": {
+            "type": "string",
+            "description": "Comma-separated key ids."
+          },
+          "filter_tags": {
+            "type": "string",
+            "description": "Comma-separated tags."
+          },
+          "filter_filenames": {
+            "type": "string",
+            "description": "Comma-separated file names."
+          },
+          "filter_platforms": {
+            "type": "string",
+            "description": "Comma-separated platforms: ios, android, web, other."
+          },
+          "filter_untranslated": {
+            "type": "integer",
+            "description": "1 for keys with at least one untranslated language.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "filter_qa_issues": {
+            "type": "string",
+            "description": "Comma-separated QA issues, e.g. placeholders,spelling_and_grammar,html."
+          },
+          "filter_archived": {
+            "type": "string",
+            "description": "Archived keys.",
+            "enum": [
+              "exclude",
+              "include",
+              "only"
+            ]
+          },
+          "include_translations": {
+            "type": "integer",
+            "description": "1 to include the translations.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "filter_translation_lang_ids": {
+            "type": "string",
+            "description": "With include_translations: only these language ids, comma-separated."
+          },
+          "include_comments": {
+            "type": "integer",
+            "description": "1 to include comments.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "include_screenshots": {
+            "type": "integer",
+            "description": "1 to include screenshots.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "disable_references": {
+            "type": "integer",
+            "description": "1 to return key references as they are, not resolved.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "pagination": {
+            "type": "string",
+            "description": "offset (default) or cursor.",
+            "enum": [
+              "offset",
+              "cursor"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The x-pagination-next-cursor header value of the previous page, with pagination cursor."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Keys per page (max 500)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, offset paging only."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/keys",
+        "queryParams": {
+          "filter_keys": "$filter_keys",
+          "filter_key_ids": "$filter_key_ids",
+          "filter_tags": "$filter_tags",
+          "filter_filenames": "$filter_filenames",
+          "filter_platforms": "$filter_platforms",
+          "filter_untranslated": "$filter_untranslated",
+          "filter_qa_issues": "$filter_qa_issues",
+          "filter_archived": "$filter_archived",
+          "include_translations": "$include_translations",
+          "filter_translation_lang_ids": "$filter_translation_lang_ids",
+          "include_comments": "$include_comments",
+          "include_screenshots": "$include_screenshots",
+          "disable_references": "$disable_references",
+          "pagination": "$pagination",
+          "cursor": "$cursor",
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_get_key",
+      "description": "One key with all its translations, tags, platforms, filenames, description, context, character limit and custom attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "key_id": {
+            "type": "integer",
+            "description": "Numeric key id."
+          },
+          "disable_references": {
+            "type": "integer",
+            "description": "1 to return references unresolved.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "project_id",
+          "key_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/keys/{key_id}",
+        "queryParams": {
+          "disable_references": "$disable_references"
+        }
+      }
+    },
+    {
+      "name": "lokalise_create_keys",
+      "description": "Create one or more keys, with their translations if known. Each key needs key_name and platforms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "keys": {
+            "type": "array",
+            "description": "Keys, e.g. [{\"key_name\": \"checkout.title\", \"platforms\": [\"web\"], \"description\": \"Checkout page title\", \"tags\": [\"checkout\"], \"translations\": [{\"language_iso\": \"en\", \"translation\": \"Checkout\"}]}]. key_name may also be {\"ios\": ..., \"android\": ..., \"web\": ..., \"other\": ...}.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "use_automations": {
+            "type": "boolean",
+            "description": "Run the project's automations (machine translation and so on) on the new translations."
+          }
+        },
+        "required": [
+          "project_id",
+          "keys"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/keys",
+        "bodyMapping": {
+          "keys": "$keys",
+          "use_automations": "$use_automations"
+        }
+      }
+    },
+    {
+      "name": "lokalise_update_key",
+      "description": "Update a key's name, description, platforms, filenames, tags (merge_tags to add rather than replace), plural settings, hidden or archived flag, context or character limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "key_id": {
+            "type": "integer",
+            "description": "Numeric key id."
+          },
+          "key": {
+            "type": "object",
+            "description": "Fields to change, e.g. {\"description\": \"Shown on the cart\", \"tags\": [\"cart\"], \"merge_tags\": true, \"char_limit\": 40, \"is_archived\": false}."
+          }
+        },
+        "required": [
+          "project_id",
+          "key_id",
+          "key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/projects/{project_id}/keys/{key_id}",
+        "bodyMapping": {
+          "__merge": "$key"
+        }
+      }
+    },
+    {
+      "name": "lokalise_bulk_update_keys",
+      "description": "Update several keys in one call. Each entry carries key_id and the fields to change, including translations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "keys": {
+            "type": "array",
+            "description": "Changes, e.g. [{\"key_id\": 331223, \"tags\": [\"v2\"], \"merge_tags\": true}, {\"key_id\": 331224, \"description\": \"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "use_automations": {
+            "type": "boolean",
+            "description": "Run the project's automations on changed translations."
+          }
+        },
+        "required": [
+          "project_id",
+          "keys"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/projects/{project_id}/keys",
+        "bodyMapping": {
+          "keys": "$keys",
+          "use_automations": "$use_automations"
+        }
+      }
+    },
+    {
+      "name": "lokalise_delete_key",
+      "description": "Delete a key and all its translations from a software project.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "key_id": {
+            "type": "integer",
+            "description": "Numeric key id."
+          }
+        },
+        "required": [
+          "project_id",
+          "key_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/projects/{project_id}/keys/{key_id}"
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "lokalise_list_translations",
+      "description": "Translations of a project, one row per key and language, with the text, reviewed and unverified flags, custom statuses, words and modification time. Filter by language, reviewed, unverified, untranslated, QA issues or active task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "filter_lang_id": {
+            "type": "integer",
+            "description": "Only this language id."
+          },
+          "filter_is_reviewed": {
+            "type": "integer",
+            "description": "1 reviewed only, 0 not reviewed.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "filter_unverified": {
+            "type": "integer",
+            "description": "1 unverified only.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "filter_untranslated": {
+            "type": "integer",
+            "description": "1 empty translations only.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "filter_qa_issues": {
+            "type": "string",
+            "description": "Comma-separated QA issues."
+          },
+          "filter_active_task_id": {
+            "type": "integer",
+            "description": "Only translations in this task id."
+          },
+          "disable_references": {
+            "type": "integer",
+            "description": "1 to return references unresolved.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "pagination": {
+            "type": "string",
+            "description": "offset (default) or cursor.",
+            "enum": [
+              "offset",
+              "cursor"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The x-pagination-next-cursor header value, with pagination cursor."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page (max 5000)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, offset paging only."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/translations",
+        "queryParams": {
+          "filter_lang_id": "$filter_lang_id",
+          "filter_is_reviewed": "$filter_is_reviewed",
+          "filter_unverified": "$filter_unverified",
+          "filter_untranslated": "$filter_untranslated",
+          "filter_qa_issues": "$filter_qa_issues",
+          "filter_active_task_id": "$filter_active_task_id",
+          "disable_references": "$disable_references",
+          "pagination": "$pagination",
+          "cursor": "$cursor",
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_get_translation",
+      "description": "One translation by id: key, language, text, reviewed and unverified flags, custom statuses, word count and who changed it last.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "translation_id": {
+            "type": "integer",
+            "description": "Numeric translation id."
+          },
+          "disable_references": {
+            "type": "integer",
+            "description": "1 to return references unresolved.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "project_id",
+          "translation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/translations/{translation_id}",
+        "queryParams": {
+          "disable_references": "$disable_references"
+        }
+      }
+    },
+    {
+      "name": "lokalise_update_translation",
+      "description": "Change the text of one translation and its reviewed, unverified or custom status flags. Plural keys take a JSON string with the forms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "translation_id": {
+            "type": "integer",
+            "description": "Numeric translation id."
+          },
+          "translation": {
+            "type": "string",
+            "description": "The new text. For a plural key a JSON string such as {\"one\": \"1 item\", \"other\": \"%d items\"}."
+          },
+          "is_reviewed": {
+            "type": "boolean",
+            "description": "Mark as reviewed."
+          },
+          "is_unverified": {
+            "type": "boolean",
+            "description": "Mark as unverified (needs another look)."
+          },
+          "custom_translation_status_ids": {
+            "type": "array",
+            "description": "Custom translation status ids to set.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "translation_id",
+          "translation"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/projects/{project_id}/translations/{translation_id}",
+        "bodyMapping": {
+          "translation": "$translation",
+          "is_reviewed": "$is_reviewed",
+          "is_unverified": "$is_unverified",
+          "custom_translation_status_ids": "$custom_translation_status_ids"
+        }
+      }
+    },
+    {
+      "name": "lokalise_list_project_languages",
+      "description": "Languages of a project with lang_id, lang_iso, name, right-to-left flag and plural forms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/languages",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_add_languages",
+      "description": "Add languages to a project by ISO code, e.g. de or pt_BR, optionally with a custom code or name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "languages": {
+            "type": "array",
+            "description": "Languages, e.g. [{\"lang_iso\": \"de\"}, {\"lang_iso\": \"pt_BR\", \"custom_name\": \"Portuguese (Brazil)\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "languages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/languages",
+        "bodyMapping": {
+          "languages": "$languages"
+        }
+      }
+    },
+    {
+      "name": "lokalise_list_system_languages",
+      "description": "All languages Lokalise supports, with lang_id, lang_iso, name and plural forms. Use it to find the right ISO code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/system/languages",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_list_contributors",
+      "description": "Contributors of a project with email, name, admin and reviewer flags, role and the languages each may translate or review.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/contributors",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_get_contributor",
+      "description": "One contributor of a project by user id, with rights and languages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "contributor_id": {
+            "type": "integer",
+            "description": "User id of the contributor."
+          }
+        },
+        "required": [
+          "project_id",
+          "contributor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/contributors/{contributor_id}"
+      }
+    },
+    {
+      "name": "lokalise_get_my_contributor",
+      "description": "The token owner as a contributor of a project: user id, rights and languages. Useful to know whose name writes go under.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/contributors/me"
+      }
+    },
+    {
+      "name": "lokalise_add_contributors",
+      "description": "Invite people to a project by email with their languages and rights. They receive an invitation email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "contributors": {
+            "type": "array",
+            "description": "Contributors, e.g. [{\"email\": \"translator@example.com\", \"fullname\": \"Ana\", \"languages\": [{\"lang_iso\": \"es\", \"is_writable\": true}], \"role_id\": 3}]. Role ids 1 to 5 map to the role templates (see the Lokalise docs).",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "contributors"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/contributors",
+        "bodyMapping": {
+          "contributors": "$contributors"
+        }
+      }
+    },
+    {
+      "name": "lokalise_list_tasks",
+      "description": "Tasks of a project with title, status, type (translation, review, automatic_translation, lqa_by_ai), due date, languages with assignees and progress.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "filter_title": {
+            "type": "string",
+            "description": "Only tasks with this title."
+          },
+          "filter_statuses": {
+            "type": "string",
+            "description": "Comma-separated statuses: created, queued, in_progress, completed."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/tasks",
+        "queryParams": {
+          "filter_title": "$filter_title",
+          "filter_statuses": "$filter_statuses",
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_get_task",
+      "description": "One task with its languages, assignees, keys count, progress, closing tags and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "task_id": {
+            "type": "integer",
+            "description": "Numeric task id."
+          }
+        },
+        "required": [
+          "project_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/tasks/{task_id}"
+      }
+    },
+    {
+      "name": "lokalise_create_task",
+      "description": "Create a translation or review task for some keys and languages, assigned to users or groups, with a due date. automatic_translation uses machine translation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Instructions for the assignees."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD HH:MM:SS in UTC."
+          },
+          "keys": {
+            "type": "array",
+            "description": "Key ids to include.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "languages": {
+            "type": "array",
+            "description": "Languages and assignees, e.g. [{\"language_iso\": \"de\", \"users\": [421], \"groups\": []}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "task_type": {
+            "type": "string",
+            "description": "Task type.",
+            "enum": [
+              "translation",
+              "automatic_translation",
+              "lqa_by_ai",
+              "review"
+            ]
+          },
+          "source_language_iso": {
+            "type": "string",
+            "description": "Source language, default the base language."
+          },
+          "auto_close_languages": {
+            "type": "boolean",
+            "description": "Close a language when all its items are done."
+          },
+          "auto_close_task": {
+            "type": "boolean",
+            "description": "Close the task when all languages are done."
+          },
+          "closing_tags": {
+            "type": "array",
+            "description": "Tags added to the keys when the task closes.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "do_lock_translations": {
+            "type": "boolean",
+            "description": "Lock the translations to the assignees while the task is open."
+          },
+          "parent_task_id": {
+            "type": "integer",
+            "description": "Parent task id, for a review task following a translation task."
+          }
+        },
+        "required": [
+          "project_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/tasks",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "due_date": "$due_date",
+          "keys": "$keys",
+          "languages": "$languages",
+          "task_type": "$task_type",
+          "source_language_iso": "$source_language_iso",
+          "auto_close_languages": "$auto_close_languages",
+          "auto_close_task": "$auto_close_task",
+          "closing_tags": "$closing_tags",
+          "do_lock_translations": "$do_lock_translations",
+          "parent_task_id": "$parent_task_id"
+        }
+      }
+    },
+    {
+      "name": "lokalise_update_task",
+      "description": "Change a task's title, description, due date, languages or assignees, its auto-close settings, or close it with close_task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "task_id": {
+            "type": "integer",
+            "description": "Numeric task id."
+          },
+          "task": {
+            "type": "object",
+            "description": "Fields to change, e.g. {\"due_date\": \"2026-12-01 18:00:00\", \"languages\": [{\"language_iso\": \"de\", \"users\": [421]}]} or {\"close_task\": true}."
+          }
+        },
+        "required": [
+          "project_id",
+          "task_id",
+          "task"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/projects/{project_id}/tasks/{task_id}",
+        "bodyMapping": {
+          "__merge": "$task"
+        }
+      }
+    },
+    {
+      "name": "lokalise_list_files",
+      "description": "Files of a project with filename, key count and the date they were last imported.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "filter_filename": {
+            "type": "string",
+            "description": "Only this file name."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/files",
+        "queryParams": {
+          "filter_filename": "$filter_filename",
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_download_files",
+      "description": "Start an export of the project's translations as language files (json, xliff, strings, xml, po, yaml, ...). Returns a process_id: poll lokalise_get_process until status is finished, then use details.download_url (a zip). Read-only for the project, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "format": {
+            "type": "string",
+            "description": "File format, e.g. json, json_structured, xliff, strings, stringsdict, xml, po, yaml, csv, xlsx, arb, properties."
+          },
+          "original_filenames": {
+            "type": "boolean",
+            "description": "Keep the files as uploaded (default true); false bundles by bundle_structure."
+          },
+          "bundle_structure": {
+            "type": "string",
+            "description": "Path pattern when original_filenames is false, e.g. locale/%LANG_ISO%.json."
+          },
+          "filter_langs": {
+            "type": "array",
+            "description": "Only these language ISO codes.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filter_data": {
+            "type": "array",
+            "description": "Only translations with these states: translated, untranslated, reviewed, reviewed_only, last_reviewed_only, verified, nonhidden, nonarchived.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filter_filenames": {
+            "type": "array",
+            "description": "Only these files.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "include_tags": {
+            "type": "array",
+            "description": "Only keys with these tags.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exclude_tags": {
+            "type": "array",
+            "description": "Leave keys with these tags out.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "export_empty_as": {
+            "type": "string",
+            "description": "What to do with empty translations.",
+            "enum": [
+              "base",
+              "empty",
+              "null",
+              "skip"
+            ]
+          },
+          "plural_format": {
+            "type": "string",
+            "description": "Plural format, e.g. i18next_v4 or icu."
+          },
+          "placeholder_format": {
+            "type": "string",
+            "description": "Placeholder format, e.g. icu, printf, ios."
+          },
+          "filter_task_id": {
+            "type": "integer",
+            "description": "Only the keys of this task."
+          }
+        },
+        "required": [
+          "project_id",
+          "format"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/files/async-download",
+        "bodyMapping": {
+          "format": "$format",
+          "original_filenames": "$original_filenames",
+          "bundle_structure": "$bundle_structure",
+          "filter_langs": "$filter_langs",
+          "filter_data": "$filter_data",
+          "filter_filenames": "$filter_filenames",
+          "include_tags": "$include_tags",
+          "exclude_tags": "$exclude_tags",
+          "export_empty_as": "$export_empty_as",
+          "plural_format": "$plural_format",
+          "placeholder_format": "$placeholder_format",
+          "filter_task_id": "$filter_task_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lokalise_get_process",
+      "description": "Status of a background process (file download or upload): queued, running, finished or failed, with details; for a download, details.download_url is the zip to fetch.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "process_id": {
+            "type": "string",
+            "description": "Process id returned by lokalise_download_files."
+          }
+        },
+        "required": [
+          "project_id",
+          "process_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/processes/{process_id}"
+      }
+    },
+    {
+      "name": "lokalise_list_project_comments",
+      "description": "All comments of a project, with the key they belong to, author and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/comments",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_list_key_comments",
+      "description": "Comments on one key, with comment id, text, author and time, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "key_id": {
+            "type": "integer",
+            "description": "Numeric key id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "project_id",
+          "key_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/keys/{key_id}/comments",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_add_key_comments",
+      "description": "Add one or more comments to a key, e.g. a question to translators or context for a string.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "key_id": {
+            "type": "integer",
+            "description": "Numeric key id."
+          },
+          "comments": {
+            "type": "array",
+            "description": "Comments, e.g. [{\"comment\": \"This is the button label, keep it under 20 characters.\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "key_id",
+          "comments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/keys/{key_id}/comments",
+        "bodyMapping": {
+          "comments": "$comments"
+        }
+      }
+    },
+    {
+      "name": "lokalise_list_screenshots",
+      "description": "Screenshots of a project (metadata only): title, description, URL, size, tags and the keys linked to them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/screenshots",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_get_screenshot",
+      "description": "One screenshot's metadata: title, description, URL, width and height, tags and linked key ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "screenshot_id": {
+            "type": "integer",
+            "description": "Numeric screenshot id."
+          }
+        },
+        "required": [
+          "project_id",
+          "screenshot_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/screenshots/{screenshot_id}"
+      }
+    },
+    {
+      "name": "lokalise_list_branches",
+      "description": "Branches of a project with branch id, name and creation time. Use project_id:branch_name in other tools to work on a branch.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/branches",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_create_branch",
+      "description": "Create a branch of a project (a copy of the main content to change in isolation and merge later).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "name": {
+            "type": "string",
+            "description": "Branch name, e.g. feature-checkout."
+          }
+        },
+        "required": [
+          "project_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/branches",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "lokalise_list_glossary_terms",
+      "description": "Glossary terms of a project with description, case sensitivity, translatable and forbidden flags, translations and tags. Paged with a cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Terms per page."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous answer."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/glossary-terms",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "lokalise_get_glossary_term",
+      "description": "One glossary term with description, translations per language, tags and flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "term_id": {
+            "type": "integer",
+            "description": "Numeric glossary term id."
+          }
+        },
+        "required": [
+          "project_id",
+          "term_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/glossary-terms/{term_id}"
+      }
+    },
+    {
+      "name": "lokalise_create_glossary_terms",
+      "description": "Add terms to the project glossary, e.g. brand names that must not be translated (translatable false) or words that must never be used (forbidden true).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "terms": {
+            "type": "array",
+            "description": "Terms, e.g. [{\"term\": \"AnyBrand\", \"description\": \"Product name\", \"caseSensitive\": true, \"translatable\": false, \"forbidden\": false, \"translations\": [], \"tags\": [\"brand\"]}]. All five flags and description are required.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "terms"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/glossary-terms",
+        "bodyMapping": {
+          "terms": "$terms"
+        }
+      }
+    },
+    {
+      "name": "lokalise_update_glossary_terms",
+      "description": "Change glossary terms by id: text, description, flags, translations or tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "terms": {
+            "type": "array",
+            "description": "Changes, e.g. [{\"id\": 5012, \"description\": \"Company name, never translate\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "terms"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/projects/{project_id}/glossary-terms",
+        "bodyMapping": {
+          "terms": "$terms"
+        }
+      }
+    },
+    {
+      "name": "lokalise_list_translation_statuses",
+      "description": "Custom translation statuses of a project (e.g. Needs legal review) with id, title and color, for custom_translation_status_ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, e.g. 767946315e9866d013c1d0.08299127. For a branch append it after a colon: <project id>:<branch name>."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/custom_translation_statuses",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-pagination-total-count",
+          "x-pagination-page-count",
+          "x-pagination-page",
+          "x-pagination-next-cursor"
+        ]
+      }
+    }
+  ]
+}

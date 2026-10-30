@@ -1,0 +1,202 @@
+{
+  "slug": "groq",
+  "name": "Groq",
+  "aliases": ["Groq API", "GroqCloud"],
+  "description": "Let your AI use GroqCloud with your own API key: fast chat completions from open models such as Llama, GPT-OSS and Qwen, speech-to-text and translation of audio files from a link with Whisper, and the model list, batch jobs and files of the account.",
+  "region": "intl",
+  "category": "data",
+  "icon": "groq",
+  "docsUrl": "https://console.groq.com/docs/api-reference",
+  "prerequisites": "A GroqCloud account and an API key from console.groq.com/keys. The free plan works within its rate limits; on the Developer plan every model call is billed to the organization. About 2 minutes.",
+  "requiredEnvVars": ["GROQ_API_KEY"],
+  "envVarMeta": {
+    "GROQ_API_KEY": {
+      "label": "Groq API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "console.groq.com, API Keys, Create API Key. Groq shows the key once. Calls are counted against the organization's limits and, on the Developer plan, billed to it.",
+      "link": "https://console.groq.com/keys",
+      "pattern": "^gsk_[A-Za-z0-9]{20,}$",
+      "patternMessage": "Paste the key as Groq shows it, starting with gsk_, without spaces and without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Groq refused the API key: it is wrong or was deleted. Create a new one at https://console.groq.com/keys.",
+    "403": "The key's organization or project may not use this model or endpoint. Check the project's model permissions in the GroqCloud console.",
+    "rate_limited": "Groq rate limited the key. Free plan limits are per minute and per day; wait and try again, or upgrade at https://console.groq.com/settings/billing."
+  },
+  "probe": { "tool": "groq_list_models" },
+  "connector": {
+    "name": "Groq API",
+    "type": "REST",
+    "baseUrl": "https://api.groq.com/openai/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": { "token": "{{GROQ_API_KEY}}" },
+    "headers": { "Accept": "application/json", "User-Agent": "AnythingMCP" },
+    "healthcheckPath": "/models"
+  },
+  "instructions": "## Groq\nThis connector calls the **GroqCloud API** (`https://api.groq.com/openai/v1`, OpenAI-compatible) with the user's own key: very fast chat completions from open models hosted by Groq (Llama, OpenAI GPT-OSS, Qwen and others), speech-to-text and speech translation with Whisper, and the model list, batch jobs and files of the organization.\n\n**Paid calls**: `groq_chat_completion`, `groq_transcribe_audio` and `groq_translate_audio` run a model. On the free plan they are free but rate limited; on the Developer plan each call is billed (per token for text, per hour of audio for Whisper, with a 10 second minimum per request). Confirm with the user before large or repeated calls, and set `max_completion_tokens` to cap a reply. The model, batch and file reads cost nothing.\n\n**Setup (2 minutes)**\n1. Sign in at https://console.groq.com.\n2. Open **API Keys** (https://console.groq.com/keys), click **Create API Key**, name it and copy it (it starts with `gsk_` and is shown only once).\n3. Paste it into `GROQ_API_KEY`. It is sent as `Authorization: Bearer` and only to Groq.\n4. Run `groq_list_models` to check the key.\n\n**Workflow**\n- Choose a model: `groq_list_models` lists every model the key can use with its `context_window` and `max_completion_tokens`; `groq_get_model` reads one. Model ids change often; preview models can be removed at short notice, production models are stable. Common ids: `llama-3.3-70b-versatile`, `llama-3.1-8b-instant` (cheapest), `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`; Whisper: `whisper-large-v3-turbo` (cheaper) and `whisper-large-v3`.\n- Generate text: `groq_chat_completion` with `model` and `messages`. `response_format` asks for JSON or a JSON schema, `tools` adds function calling, `reasoning_effort` and `reasoning_format` steer reasoning models (GPT-OSS takes `low`, `medium`, `high`; Qwen takes `none` or `default`). The result carries `_headers` with the remaining requests and tokens of the rate limit.\n- Audio: `groq_transcribe_audio` turns speech into text in its own language, `groq_translate_audio` into English text (only `whisper-large-v3` translates). Both take a **public link** to the audio file (`url`): Groq downloads it itself, so no upload is needed. Formats flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm. Pass `language` (ISO-639-1, e.g. `de`) when known: it is faster and more accurate. `response_format` `verbose_json` adds segments with timestamps, and `timestamp_granularities` `word` word timings.\n- Batch jobs started elsewhere: `groq_list_batches` and `groq_get_batch` show status, request counts and the `output_file_id` / `error_file_id`; `groq_list_files` and `groq_get_file` show the files (purpose `batch` or `batch_output`). Content download, upload, creating and cancelling batches are not part of this connector.\n\n**Reading answers**: a completion returns `choices[0].message.content`, `finish_reason` (`stop`, `length` when `max_completion_tokens` was hit, `tool_calls`), and `usage` with token counts and timings in seconds. Reasoning models may put their reasoning in `choices[0].message.reasoning`. Transcriptions return `text`. `created`, `created_at` and other timestamps are Unix seconds, UTC. File sizes are bytes.\n\n**Limits**: rate limits are per organization and model (requests and tokens per minute and per day); see https://console.groq.com/settings/limits. Audio links can point to files up to 100 MB on paid plans and 25 MB on the free plan.\n\n**Errors**: 400 bad parameter (e.g. a parameter the model does not support, or audio that cannot be read); 401 invalid key; 403 the project may not use the model; 404 unknown model, batch or file; 413 audio too large; 429 rate limit reached (wait the seconds in `retry-after`, do not loop); 498 flex tier capacity exceeded; 500 and 503 Groq-side errors, retry once later.",
+  "tools": [
+    {
+      "name": "groq_list_models",
+      "description": "List the models this Groq API key can use (chat, reasoning, Whisper speech-to-text, text-to-speech, safety), with owner, context window, maximum completion tokens and whether each is active. Free.",
+      "endpointMapping": { "method": "GET", "path": "/models" }
+    },
+    {
+      "name": "groq_get_model",
+      "description": "Read one Groq model: owner, creation time, context window, maximum completion tokens and whether it is active. Answers 404 for a model id the key cannot use. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "description": "Model id as listed by groq_list_models, e.g. llama-3.3-70b-versatile or openai/gpt-oss-120b." }
+        },
+        "required": ["model"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/models/{model}" }
+    },
+    {
+      "name": "groq_chat_completion",
+      "description": "Send a conversation to a Groq-hosted model and return its reply (non-streaming). COSTS MONEY on the Developer plan: billed per input and output token to the Groq organization (free plan: free within rate limits). Confirm with the user before larger or repeated calls and set max_completion_tokens to cap the cost. The result includes _headers with the remaining rate limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "description": "Model id from groq_list_models, e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant (cheapest), openai/gpt-oss-120b." },
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "object" },
+            "description": "The conversation, oldest first: [{\"role\": \"system\", \"content\": \"...\"}, {\"role\": \"user\", \"content\": \"...\"}]. Roles: system, user, assistant, tool. For vision models content can be a list of parts such as {\"type\": \"image_url\", \"image_url\": {\"url\": \"https://...\"}}."
+          },
+          "max_completion_tokens": { "type": "integer", "minimum": 1, "description": "Upper bound on generated tokens, reasoning included. Set it to cap cost." },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 2, "description": "Sampling temperature 0-2; lower is more deterministic." },
+          "top_p": { "type": "number", "minimum": 0, "maximum": 1, "description": "Nucleus sampling 0-1." },
+          "stop": { "type": "array", "items": { "type": "string" }, "maxItems": 4, "description": "Up to 4 sequences where generation stops." },
+          "seed": { "type": "integer", "description": "Seed for best-effort repeatable sampling." },
+          "response_format": { "type": "object", "description": "Structured output: {\"type\": \"json_object\"}, or {\"type\": \"json_schema\", \"json_schema\": {\"name\": \"result\", \"strict\": true, \"schema\": {...}}} on models that support it." },
+          "tools": { "type": "array", "items": { "type": "object" }, "description": "Function definitions the model may call: [{\"type\": \"function\", \"function\": {\"name\": \"...\", \"description\": \"...\", \"parameters\": {...}}}]. The model answers with tool_calls; run them and send the results back as role tool messages." },
+          "tool_choice": { "description": "none, auto, required, or {\"type\": \"function\", \"function\": {\"name\": \"...\"}} to force one function." },
+          "reasoning_effort": { "type": "string", "enum": ["none", "default", "low", "medium", "high"], "description": "Reasoning effort of reasoning models: low, medium or high for openai/gpt-oss-*; none or default for Qwen models. Other values are refused with 400." },
+          "reasoning_format": { "type": "string", "enum": ["hidden", "raw", "parsed"], "description": "How reasoning is returned: parsed (in message.reasoning), raw (inside the content) or hidden." },
+          "service_tier": { "type": "string", "enum": ["on_demand", "auto", "flex"], "description": "Service tier, default on_demand. flex answers or fails fast (error 498) when capacity is short." }
+        },
+        "required": ["model", "messages"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/completions",
+        "bodyMapping": {
+          "model": "$model",
+          "messages": "$messages",
+          "max_completion_tokens": "$max_completion_tokens",
+          "temperature": "$temperature",
+          "top_p": "$top_p",
+          "stop": "$stop",
+          "seed": "$seed",
+          "response_format": "$response_format",
+          "tools": "$tools",
+          "tool_choice": "$tool_choice",
+          "reasoning_effort": "$reasoning_effort",
+          "reasoning_format": "$reasoning_format",
+          "service_tier": "$service_tier",
+          "stream": false
+        },
+        "exposeHeaders": ["x-ratelimit-remaining-requests", "x-ratelimit-remaining-tokens", "retry-after"]
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "groq_transcribe_audio",
+      "description": "Transcribe speech in an audio file to text in its own language with Whisper. Pass a public link to the file; Groq downloads it itself (flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm). COSTS MONEY on the Developer plan: billed per hour of audio, at least 10 seconds per request. Confirm with the user before transcribing long recordings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "format": "uri", "description": "Public HTTPS link to the audio file." },
+          "model": { "type": "string", "enum": ["whisper-large-v3-turbo", "whisper-large-v3"], "default": "whisper-large-v3-turbo", "description": "whisper-large-v3-turbo (default, cheaper and faster) or whisper-large-v3 (most accurate)." },
+          "language": { "type": "string", "description": "Language of the audio as an ISO-639-1 code, e.g. en, de, it. Improves accuracy and speed." },
+          "prompt": { "type": "string", "description": "Optional text to guide spelling and style, in the language of the audio (names, terms, the previous segment)." },
+          "response_format": { "type": "string", "enum": ["json", "text", "verbose_json"], "description": "json (default, {text}), text (plain text) or verbose_json (segments with timestamps)." },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 1, "description": "Sampling temperature 0-1; 0 lets the model adapt it." },
+          "timestamp_granularities": { "type": "string", "enum": ["word", "segment"], "description": "With response_format verbose_json: word or segment timestamps (segments are included by default)." }
+        },
+        "required": ["url"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/audio/transcriptions",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "url": "$url",
+          "model": "$model",
+          "language": "$language",
+          "prompt": "$prompt",
+          "response_format": "$response_format",
+          "temperature": "$temperature",
+          "timestamp_granularities[]": "$timestamp_granularities"
+        }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "groq_translate_audio",
+      "description": "Translate speech in an audio file into English text with Whisper (only whisper-large-v3 translates). Pass a public link to the file; Groq downloads it itself. COSTS MONEY on the Developer plan: billed per hour of audio, at least 10 seconds per request. Confirm with the user before translating long recordings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "format": "uri", "description": "Public HTTPS link to the audio file (flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm)." },
+          "model": { "type": "string", "enum": ["whisper-large-v3"], "default": "whisper-large-v3", "description": "Translation model; only whisper-large-v3." },
+          "prompt": { "type": "string", "description": "Optional English text to guide spelling and style." },
+          "response_format": { "type": "string", "enum": ["json", "text", "verbose_json"], "description": "json (default), text or verbose_json." },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 1, "description": "Sampling temperature 0-1." }
+        },
+        "required": ["url"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/audio/translations",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "url": "$url",
+          "model": "$model",
+          "prompt": "$prompt",
+          "response_format": "$response_format",
+          "temperature": "$temperature"
+        }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "groq_list_batches",
+      "description": "List the Batch API jobs of the Groq organization: endpoint, status (validating, in_progress, finalizing, completed, failed, expired, cancelling, cancelled), request counts, completion window, input, output and error file ids and timestamps. Free.",
+      "endpointMapping": { "method": "GET", "path": "/batches" }
+    },
+    {
+      "name": "groq_get_batch",
+      "description": "Read one Groq batch job: status, timestamps of each stage, request counts (total, completed, failed), errors, metadata and the output_file_id and error_file_id. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": { "type": "string", "description": "Batch id (batch_...) from groq_list_batches." }
+        },
+        "required": ["batch_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/batches/{batch_id}" }
+    },
+    {
+      "name": "groq_list_files",
+      "description": "List the files stored in the Groq organization (batch inputs and batch outputs) with id, file name, size in bytes, purpose and creation time. Does not download content. Free.",
+      "endpointMapping": { "method": "GET", "path": "/files" }
+    },
+    {
+      "name": "groq_get_file",
+      "description": "Read the metadata of one Groq file: name, size in bytes, purpose (batch or batch_output) and creation time. Does not download the content. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": { "type": "string", "description": "File id (file_...) from groq_list_files or a batch's output_file_id / error_file_id." }
+        },
+        "required": ["file_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/files/{file_id}" }
+    }
+  ]
+}

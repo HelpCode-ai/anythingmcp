@@ -1,0 +1,1124 @@
+{
+  "slug": "coinmarketcap",
+  "name": "CoinMarketCap",
+  "aliases": [
+    "CMC",
+    "CoinMarketCap Pro API"
+  ],
+  "description": "Crypto market data from the CoinMarketCap Pro API: coin and exchange ids and metadata, latest and historical prices, rankings, categories, global market metrics, Fear and Greed, Altcoin Season and CMC100 indexes, proof-of-reserves and price conversion. Read-only.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "coinmarketcap",
+  "docsUrl": "https://coinmarketcap.com/api/documentation/pro-api-reference/endpoint-overview",
+  "instructions": "## CoinMarketCap\nThis connector reads crypto market data from the **CoinMarketCap Pro API** (`https://pro-api.coinmarketcap.com`): ids and metadata of coins and exchanges, latest and historical prices, rankings, categories, global market totals, the Fear and Greed and Altcoin Season indexes, the CMC100 index, proof-of-reserves and currency conversion. Everything is read-only.\n\n**Setup (2 minutes)**\n1. Sign up at https://pro.coinmarketcap.com/signup. The free Basic plan is enough for most tools (10,000 credits a month, 30 requests a minute).\n2. Copy the API key from the dashboard at https://pro.coinmarketcap.com/account and paste it into `CMC_PRO_API_KEY`. It is sent in the `X-CMC_PRO_API_KEY` header.\n3. Run `coinmarketcap_get_key_info` to check the key; it shows your plan, the credits left and costs no credit.\n\n**Identify the coin first**: symbols are not unique (several coins use the same ticker). Resolve a name or ticker to its numeric CoinMarketCap id with `coinmarketcap_map_cryptocurrencies` (pass `symbol`) and use `id` in every other call. Well-known ids: 1 = Bitcoin, 1027 = Ethereum, 825 = Tether, 5426 = Solana. Fiat ids for `convert_id` come from `coinmarketcap_map_fiat` (2781 = USD).\n\n**Workflow**\n- Price now: `coinmarketcap_get_simple_price` for the quickest answer, `coinmarketcap_get_quotes_latest` for the full quote (market cap, volume, changes, supply).\n- Rankings and screens: `coinmarketcap_list_listings_latest` (top coins, sort and filter by price, market cap, volume or 24 hour change); `coinmarketcap_list_gainers_losers` for the biggest movers (paid plans).\n- History: `coinmarketcap_get_quotes_historical` for prices over time, `coinmarketcap_get_ohlcv_historical` for candles (paid plans), `coinmarketcap_get_global_metrics_historical` for the whole market.\n- Profile of a coin: `coinmarketcap_get_cryptocurrency_info` (description, links, contract addresses, tags); its categories with `coinmarketcap_list_categories` (pass `id`), a category's members with `coinmarketcap_get_category`.\n- Market mood: `coinmarketcap_get_global_metrics` (total market cap, BTC dominance), `coinmarketcap_get_fear_and_greed_latest` and `coinmarketcap_get_fear_and_greed_historical`, `coinmarketcap_get_altcoin_season_index`, `coinmarketcap_get_cmc100_index`.\n- Exchanges: `coinmarketcap_map_exchanges` to find the id, `coinmarketcap_get_exchange_info` for the profile and fees, `coinmarketcap_get_exchange_assets` for its proof-of-reserves wallets.\n- Conversion: `coinmarketcap_convert_price` (amount, from id or symbol, target currencies).\n- Key and plan: `coinmarketcap_get_key_info`.\n\n**Reading the answers**: every response has a `status` object (`error_code`, `error_message`, `credit_count`) and the result in `data`. In listings and quotes latest (`/v3`), `data` is a list and each coin's `quote` is a list with one entry per requested currency; in other endpoints `quote` is an object keyed by currency symbol (`quote.USD.price`). Prices and market caps are in the requested currency (USD by default), percent changes are percentages (2.5 = +2.5%), supplies are in coin units. Times are ISO 8601 in UTC. Metadata answers (`info`, quotes by symbol) are keyed by id or symbol.\n\n**Paging**: list tools take `start` (1-based) and `limit`. To get the next page, add `limit` to `start`.\n\n**Credits and plans**: each call costs at least one credit; listings cost one credit per 250 coins, historical calls one per 100 points, and every `convert` currency beyond the first one more. Credits reset daily and monthly (the Basic plan at UTC midnight). `coinmarketcap_get_ohlcv_historical`, `coinmarketcap_list_gainers_losers` and historical conversion need the Startup plan or higher; the Basic plan answers 403 for them. Historical quotes on Basic reach 1 month back for intraday and 1 year for daily intervals.\n\n**Errors**: 401 means a missing or wrong key (1001, 1002), 402 an unpaid plan, 403 an endpoint your plan does not include (1006), 429 the minute rate limit or the daily or monthly credits (1008 to 1011), 400 an invalid parameter (for example an unknown symbol without `skip_invalid`).\n",
+  "prerequisites": "A CoinMarketCap API key from pro.coinmarketcap.com (the Basic plan is free).",
+  "requiredEnvVars": [
+    "CMC_PRO_API_KEY"
+  ],
+  "envVarMeta": {
+    "CMC_PRO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "pro.coinmarketcap.com, Overview: the API key of your account. It is sent in the X-CMC_PRO_API_KEY header.",
+      "link": "https://pro.coinmarketcap.com/account",
+      "pattern": "^[A-Za-z0-9-]{20,}$",
+      "patternMessage": "Paste only the API key (letters, digits and dashes), without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "CoinMarketCap refused the API key. Copy it again from pro.coinmarketcap.com/account.",
+    "402": "Your CoinMarketCap plan has an unpaid balance or has expired. Check pro.coinmarketcap.com/account/plan.",
+    "403": "Your CoinMarketCap plan does not include this endpoint. The free Basic plan covers most tools; OHLCV and gainers and losers need Startup or higher.",
+    "429": "The CoinMarketCap rate limit or your daily or monthly credits are used up. Check them with coinmarketcap_get_key_info."
+  },
+  "probe": {
+    "tool": "coinmarketcap_get_key_info"
+  },
+  "connector": {
+    "name": "CoinMarketCap Pro API",
+    "type": "REST",
+    "baseUrl": "https://pro-api.coinmarketcap.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-CMC_PRO_API_KEY",
+      "apiKey": "{{CMC_PRO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v1/key/info"
+  },
+  "tools": [
+    {
+      "name": "coinmarketcap_get_key_info",
+      "description": "Plan and usage of the API key: monthly credit limit and reset date, rate limit per minute, credits used and left today and this month, requests made this minute. Costs no credit. Use it to check the key or before heavy use.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/key/info"
+      }
+    },
+    {
+      "name": "coinmarketcap_map_cryptocurrencies",
+      "description": "Map of cryptocurrencies to their CoinMarketCap ids: id, name, symbol, slug, rank, active flag, first and last data dates and, for tokens, the platform and contract address. Pass symbol to resolve tickers (BTC,ETH) to ids; the other filters are then ignored. Always counts as one credit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Tickers to resolve, comma-separated (BTC,ETH,SOL). A symbol can map to several coins; pick by rank."
+          },
+          "listing_status": {
+            "type": "string",
+            "description": "active (default), inactive, untracked, or several comma-separated."
+          },
+          "start": {
+            "type": "integer",
+            "description": "1-based offset of the first item to return (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of items to return (default all; use with start to page)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field: id (default) or cmc_rank.",
+            "enum": [
+              "id",
+              "cmc_rank"
+            ]
+          },
+          "aux": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: platform,first_historical_data,last_historical_data,is_active,status."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/cryptocurrency/map",
+        "queryParams": {
+          "symbol": "$symbol",
+          "listing_status": "$listing_status",
+          "start": "$start",
+          "limit": "$limit",
+          "sort": "$sort",
+          "aux": "$aux"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_cryptocurrency_info",
+      "description": "Static metadata of one or more cryptocurrencies: description, logo, website, whitepaper, explorers, source code, social links, tags, category, launch date, platform and contract addresses. Look up by id, slug, symbol or a contract address. Data is keyed by id (by symbol or slug when you asked by those).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "CoinMarketCap cryptocurrency ids, comma-separated (1 = Bitcoin, 1027 = Ethereum). The most reliable identifier; get it from coinmarketcap_map_cryptocurrencies."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Alternatively, slugs, comma-separated (bitcoin,ethereum)."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Alternatively, ticker symbols, comma-separated (BTC,ETH). Symbols are not unique; prefer id."
+          },
+          "address": {
+            "type": "string",
+            "description": "Alternatively, a token contract address (0x...)."
+          },
+          "aux": {
+            "type": "string",
+            "description": "Fields to include, comma-separated: urls,logo,description,tags,platform,date_added,notice,status. Leave description out to keep the answer short."
+          },
+          "skip_invalid": {
+            "type": "boolean",
+            "description": "true: skip ids or symbols that do not match instead of failing the whole request."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/cryptocurrency/info",
+        "queryParams": {
+          "id": "$id",
+          "slug": "$slug",
+          "symbol": "$symbol",
+          "address": "$address",
+          "aux": "$aux",
+          "skip_invalid": "$skip_invalid"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_list_listings_latest",
+      "description": "Ranked list of active cryptocurrencies with latest market data: price, market cap, dominance, fully diluted market cap, 24 hour volume, percent change over 1h, 24h, 7d, 30d, 60d and 90d, supply and rank. Sort and filter by price, market cap, volume, supply or 24 hour change; filter coins vs tokens or by tag. Page with start and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "integer",
+            "description": "1-based offset of the first item to return (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of coins to return (default 100). Each 250 coins cost one credit."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Ranking field (default market_cap).",
+            "enum": [
+              "market_cap",
+              "market_cap_strict",
+              "name",
+              "symbol",
+              "date_added",
+              "price",
+              "circulating_supply",
+              "total_supply",
+              "max_supply",
+              "num_market_pairs",
+              "market_cap_by_total_supply_strict",
+              "volume_24h",
+              "volume_7d",
+              "volume_30d",
+              "percent_change_1h",
+              "percent_change_24h",
+              "percent_change_7d"
+            ]
+          },
+          "sort_dir": {
+            "type": "string",
+            "description": "asc or desc (default desc).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "cryptocurrency_type": {
+            "type": "string",
+            "description": "all (default), coins or tokens.",
+            "enum": [
+              "all",
+              "coins",
+              "tokens"
+            ]
+          },
+          "tag": {
+            "type": "string",
+            "description": "all (default), defi or filesharing.",
+            "enum": [
+              "all",
+              "defi",
+              "filesharing"
+            ]
+          },
+          "price_min": {
+            "type": "number",
+            "description": "Minimum price in USD."
+          },
+          "price_max": {
+            "type": "number",
+            "description": "Maximum price in USD."
+          },
+          "market_cap_min": {
+            "type": "number",
+            "description": "Minimum market cap in USD."
+          },
+          "market_cap_max": {
+            "type": "number",
+            "description": "Maximum market cap in USD."
+          },
+          "volume_24h_min": {
+            "type": "number",
+            "description": "Minimum 24 hour volume in USD."
+          },
+          "volume_24h_max": {
+            "type": "number",
+            "description": "Maximum 24 hour volume in USD."
+          },
+          "circulating_supply_min": {
+            "type": "number",
+            "description": "Minimum circulating supply (coin units)."
+          },
+          "circulating_supply_max": {
+            "type": "number",
+            "description": "Maximum circulating supply (coin units)."
+          },
+          "percent_change_24h_min": {
+            "type": "number",
+            "description": "Minimum 24 hour change in percent (-10 = -10%)."
+          },
+          "percent_change_24h_max": {
+            "type": "number",
+            "description": "Maximum 24 hour change in percent."
+          },
+          "convert": {
+            "type": "string",
+            "description": "Currencies to price in, comma-separated symbols (USD, EUR, BTC, ...). Default USD. Each currency beyond the first costs one more credit. Do not combine with convert_id."
+          },
+          "convert_id": {
+            "type": "string",
+            "description": "Same as convert, but with CoinMarketCap currency ids (2781 = USD, 1 = BTC). Do not combine with convert."
+          },
+          "aux": {
+            "type": "string",
+            "description": "Extra fields, comma-separated, e.g. num_market_pairs,cmc_rank,date_added,tags,platform,max_supply,circulating_supply,total_supply,volume_7d,volume_30d."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/cryptocurrency/listings/latest",
+        "queryParams": {
+          "start": "$start",
+          "limit": "$limit",
+          "sort": "$sort",
+          "sort_dir": "$sort_dir",
+          "cryptocurrency_type": "$cryptocurrency_type",
+          "tag": "$tag",
+          "price_min": "$price_min",
+          "price_max": "$price_max",
+          "market_cap_min": "$market_cap_min",
+          "market_cap_max": "$market_cap_max",
+          "volume_24h_min": "$volume_24h_min",
+          "volume_24h_max": "$volume_24h_max",
+          "circulating_supply_min": "$circulating_supply_min",
+          "circulating_supply_max": "$circulating_supply_max",
+          "percent_change_24h_min": "$percent_change_24h_min",
+          "percent_change_24h_max": "$percent_change_24h_max",
+          "convert": "$convert",
+          "convert_id": "$convert_id",
+          "aux": "$aux"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_quotes_latest",
+      "description": "Latest market quote for specific cryptocurrencies: price, market cap, dominance, 24 hour volume and volume change, percent change over 1h to 90d, supply, rank and last update. Use it when you know which coins you want; coinmarketcap_list_listings_latest is for ranked lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "CoinMarketCap cryptocurrency ids, comma-separated (1 = Bitcoin, 1027 = Ethereum). The most reliable identifier; get it from coinmarketcap_map_cryptocurrencies."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Alternatively, slugs, comma-separated (bitcoin,ethereum)."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Alternatively, ticker symbols, comma-separated (BTC,ETH). Symbols are not unique; prefer id."
+          },
+          "convert": {
+            "type": "string",
+            "description": "Currencies to price in, comma-separated symbols (USD, EUR, BTC, ...). Default USD. Each currency beyond the first costs one more credit. Do not combine with convert_id."
+          },
+          "convert_id": {
+            "type": "string",
+            "description": "Same as convert, but with CoinMarketCap currency ids (2781 = USD, 1 = BTC). Do not combine with convert."
+          },
+          "aux": {
+            "type": "string",
+            "description": "Extra fields, comma-separated, e.g. num_market_pairs,cmc_rank,date_added,tags,platform,max_supply,circulating_supply,total_supply,is_active."
+          },
+          "skip_invalid": {
+            "type": "boolean",
+            "description": "true: skip ids or symbols that do not match instead of failing the whole request."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/cryptocurrency/quotes/latest",
+        "queryParams": {
+          "id": "$id",
+          "slug": "$slug",
+          "symbol": "$symbol",
+          "convert": "$convert",
+          "convert_id": "$convert_id",
+          "aux": "$aux",
+          "skip_invalid": "$skip_invalid"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_simple_price",
+      "description": "Fastest price lookup: the current price of one or more cryptocurrencies in one or more currencies, optionally with market cap, 24 hour volume, 24 hour change and the last update time. Use it for 'what is X worth now'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "CoinMarketCap cryptocurrency ids, comma-separated (1 = Bitcoin, 1027 = Ethereum). The most reliable identifier; get it from coinmarketcap_map_cryptocurrencies."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Alternatively, slugs, comma-separated (bitcoin,ethereum)."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Alternatively, ticker symbols, comma-separated (BTC,ETH). A symbol that matches several coins returns the one with the highest market cap."
+          },
+          "convert": {
+            "type": "string",
+            "description": "Currencies to price in, comma-separated symbols (USD, EUR, BTC, ...). Default USD. Each currency beyond the first costs one more credit. Do not combine with convert_id."
+          },
+          "convert_id": {
+            "type": "string",
+            "description": "Same as convert, but with CoinMarketCap currency ids (2781 = USD, 1 = BTC). Do not combine with convert."
+          },
+          "include_market_cap": {
+            "type": "boolean",
+            "description": "Add market_cap to each quote."
+          },
+          "include_24h_volume": {
+            "type": "boolean",
+            "description": "Add volume_24h to each quote."
+          },
+          "include_24h_change": {
+            "type": "boolean",
+            "description": "Add percent_change_24h to each quote."
+          },
+          "include_last_updated": {
+            "type": "boolean",
+            "description": "Add last_updated to each quote."
+          },
+          "include_all": {
+            "type": "boolean",
+            "description": "Shortcut for all four include_ flags."
+          },
+          "precision": {
+            "type": "integer",
+            "description": "Round prices, market caps and volumes to this many decimals."
+          },
+          "skip_invalid": {
+            "type": "boolean",
+            "description": "true: skip ids or symbols that do not match instead of failing the whole request."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/simple/price",
+        "queryParams": {
+          "id": "$id",
+          "slug": "$slug",
+          "symbol": "$symbol",
+          "convert": "$convert",
+          "convert_id": "$convert_id",
+          "include_market_cap": "$include_market_cap",
+          "include_24h_volume": "$include_24h_volume",
+          "include_24h_change": "$include_24h_change",
+          "include_last_updated": "$include_last_updated",
+          "include_all": "$include_all",
+          "precision": "$precision",
+          "skip_invalid": "$skip_invalid"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_quotes_historical",
+      "description": "Historical quotes of one or more cryptocurrencies at regular intervals: price, volume, market cap and supply per point. The Basic plan reaches 1 month back for intraday intervals and 1 year for daily; paid plans reach further. Each 100 points cost one credit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "CoinMarketCap cryptocurrency ids, comma-separated (1 = Bitcoin, 1027 = Ethereum). The most reliable identifier; get it from coinmarketcap_map_cryptocurrencies."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Alternatively, ticker symbols, comma-separated (BTC,ETH). Symbols are not unique; prefer id."
+          },
+          "time_start": {
+            "type": "string",
+            "description": "Start of the period: ISO 8601 date or time (2026-01-01) or Unix seconds. Optional."
+          },
+          "time_end": {
+            "type": "string",
+            "description": "End of the period (inclusive): ISO 8601 or Unix seconds. Default now."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of data points to return when time_start and time_end are not both given (default 10)."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Spacing of the points (default 5m): 5m to 12h, daily, weekly, monthly, yearly, 1d to 365d.",
+            "enum": [
+              "yearly",
+              "monthly",
+              "weekly",
+              "daily",
+              "hourly",
+              "5m",
+              "10m",
+              "15m",
+              "30m",
+              "45m",
+              "1h",
+              "2h",
+              "3h",
+              "4h",
+              "6h",
+              "12h",
+              "24h",
+              "1d",
+              "2d",
+              "3d",
+              "7d",
+              "14d",
+              "15d",
+              "30d",
+              "60d",
+              "90d",
+              "365d"
+            ]
+          },
+          "convert": {
+            "type": "string",
+            "description": "Up to 3 currencies to price in, comma-separated (default USD)."
+          },
+          "convert_id": {
+            "type": "string",
+            "description": "Same as convert, but with CoinMarketCap currency ids (2781 = USD, 1 = BTC). Do not combine with convert."
+          },
+          "aux": {
+            "type": "string",
+            "description": "Fields per point, comma-separated: price,volume,market_cap,circulating_supply,total_supply,quote_timestamp,is_active,is_fiat,search_interval."
+          },
+          "skip_invalid": {
+            "type": "boolean",
+            "description": "true: skip ids or symbols that do not match instead of failing the whole request."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/cryptocurrency/quotes/historical",
+        "queryParams": {
+          "id": "$id",
+          "symbol": "$symbol",
+          "time_start": "$time_start",
+          "time_end": "$time_end",
+          "count": "$count",
+          "interval": "$interval",
+          "convert": "$convert",
+          "convert_id": "$convert_id",
+          "aux": "$aux",
+          "skip_invalid": "$skip_invalid"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_ohlcv_historical",
+      "description": "Daily or hourly open, high, low, close and volume candles of one or more cryptocurrencies over a period. Needs a paid plan (Startup or higher); the Basic plan answers 403.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "CoinMarketCap cryptocurrency ids, comma-separated (1 = Bitcoin, 1027 = Ethereum). The most reliable identifier; get it from coinmarketcap_map_cryptocurrencies."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Alternatively, slugs, comma-separated (bitcoin,ethereum)."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Alternatively, ticker symbols, comma-separated (BTC,ETH). Symbols are not unique; prefer id."
+          },
+          "time_period": {
+            "type": "string",
+            "description": "Candle size: daily (default, 00:00 to 23:59 UTC) or hourly.",
+            "enum": [
+              "daily",
+              "hourly"
+            ]
+          },
+          "time_start": {
+            "type": "string",
+            "description": "Start of the period. For daily candles send a date only, e.g. 2026-01-01."
+          },
+          "time_end": {
+            "type": "string",
+            "description": "End of the period (inclusive). Default now."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of data points to return when time_start and time_end are not both given (default 10)."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Sample every n periods (default daily).",
+            "enum": [
+              "hourly",
+              "daily",
+              "weekly",
+              "monthly",
+              "yearly",
+              "1h",
+              "2h",
+              "3h",
+              "4h",
+              "6h",
+              "12h",
+              "1d",
+              "2d",
+              "3d",
+              "7d",
+              "14d",
+              "15d",
+              "30d",
+              "60d",
+              "90d",
+              "365d"
+            ]
+          },
+          "convert": {
+            "type": "string",
+            "description": "Up to 3 currencies to price in, comma-separated (default USD)."
+          },
+          "convert_id": {
+            "type": "string",
+            "description": "Same as convert, but with CoinMarketCap currency ids (2781 = USD, 1 = BTC). Do not combine with convert."
+          },
+          "skip_invalid": {
+            "type": "boolean",
+            "description": "true: skip ids or symbols that do not match instead of failing the whole request."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/cryptocurrency/ohlcv/historical",
+        "queryParams": {
+          "id": "$id",
+          "slug": "$slug",
+          "symbol": "$symbol",
+          "time_period": "$time_period",
+          "time_start": "$time_start",
+          "time_end": "$time_end",
+          "count": "$count",
+          "interval": "$interval",
+          "convert": "$convert",
+          "convert_id": "$convert_id",
+          "skip_invalid": "$skip_invalid"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_list_gainers_losers",
+      "description": "Biggest gainers and losers by price change over 1h, 24h, 7d or 30d, with full market data. Needs a paid plan (Startup or higher); the Basic plan answers 403.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_period": {
+            "type": "string",
+            "description": "Window (default 24h).",
+            "enum": [
+              "1h",
+              "24h",
+              "7d",
+              "30d"
+            ]
+          },
+          "sort_dir": {
+            "type": "string",
+            "description": "desc: gainers first (default); asc: losers first.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; only percent_change_24h is accepted.",
+            "enum": [
+              "percent_change_24h"
+            ]
+          },
+          "start": {
+            "type": "integer",
+            "description": "1-based offset of the first item to return (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of coins (default 100)."
+          },
+          "convert": {
+            "type": "string",
+            "description": "Currencies to price in, comma-separated symbols (USD, EUR, BTC, ...). Default USD. Each currency beyond the first costs one more credit. Do not combine with convert_id."
+          },
+          "convert_id": {
+            "type": "string",
+            "description": "Same as convert, but with CoinMarketCap currency ids (2781 = USD, 1 = BTC). Do not combine with convert."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/cryptocurrency/trending/gainers-losers",
+        "queryParams": {
+          "time_period": "$time_period",
+          "sort_dir": "$sort_dir",
+          "sort": "$sort",
+          "start": "$start",
+          "limit": "$limit",
+          "convert": "$convert",
+          "convert_id": "$convert_id"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_list_categories",
+      "description": "Cryptocurrency categories (DeFi, Layer 1, Memes, AI, ...) with id, name, number of tokens, average price change, market cap and volume and their 24 hour change. Filter to the categories a coin belongs to with id, slug or symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "integer",
+            "description": "1-based offset of the first item to return (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of categories to return."
+          },
+          "id": {
+            "type": "string",
+            "description": "Only categories containing these cryptocurrency ids, comma-separated."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Alternatively, cryptocurrency slugs, comma-separated."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Alternatively, cryptocurrency symbols, comma-separated."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/cryptocurrency/categories",
+        "queryParams": {
+          "start": "$start",
+          "limit": "$limit",
+          "id": "$id",
+          "slug": "$slug",
+          "symbol": "$symbol"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_category",
+      "description": "One category with its aggregate figures and the coins in it, each with market data. The category id comes from coinmarketcap_list_categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Category id from coinmarketcap_list_categories (a 24 character hex string)."
+          },
+          "start": {
+            "type": "integer",
+            "description": "1-based offset of the first item to return (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of coins to return (default 100)."
+          },
+          "convert": {
+            "type": "string",
+            "description": "Currencies to price in, comma-separated symbols (USD, EUR, BTC, ...). Default USD. Each currency beyond the first costs one more credit. Do not combine with convert_id."
+          },
+          "convert_id": {
+            "type": "string",
+            "description": "Same as convert, but with CoinMarketCap currency ids (2781 = USD, 1 = BTC). Do not combine with convert."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/cryptocurrency/category",
+        "queryParams": {
+          "id": "$id",
+          "start": "$start",
+          "limit": "$limit",
+          "convert": "$convert",
+          "convert_id": "$convert_id"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_global_metrics",
+      "description": "Latest totals of the whole crypto market: total market cap and 24 hour volume, Bitcoin and Ethereum dominance with their change since yesterday, DeFi, stablecoin and derivatives market cap and volume, number of active coins, exchanges and market pairs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "convert": {
+            "type": "string",
+            "description": "Currencies to price in, comma-separated symbols (USD, EUR, BTC, ...). Default USD. Each currency beyond the first costs one more credit. Do not combine with convert_id."
+          },
+          "convert_id": {
+            "type": "string",
+            "description": "Same as convert, but with CoinMarketCap currency ids (2781 = USD, 1 = BTC). Do not combine with convert."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/global-metrics/quotes/latest",
+        "queryParams": {
+          "convert": "$convert",
+          "convert_id": "$convert_id"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_global_metrics_historical",
+      "description": "Total market cap, volume and dominance of the crypto market over time. The Basic plan reaches 1 month back for intraday intervals and 1 year for daily. Each 100 points cost one credit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_start": {
+            "type": "string",
+            "description": "Start of the period: ISO 8601 date or time (2026-01-01) or Unix seconds. Optional."
+          },
+          "time_end": {
+            "type": "string",
+            "description": "End of the period (inclusive): ISO 8601 or Unix seconds. Default now."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of data points to return when time_start and time_end are not both given (default 10)."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Spacing of the points (default 1d).",
+            "enum": [
+              "yearly",
+              "monthly",
+              "weekly",
+              "daily",
+              "hourly",
+              "5m",
+              "10m",
+              "15m",
+              "30m",
+              "45m",
+              "1h",
+              "2h",
+              "3h",
+              "4h",
+              "6h",
+              "12h",
+              "24h",
+              "1d",
+              "2d",
+              "3d",
+              "7d",
+              "14d",
+              "15d",
+              "30d",
+              "60d",
+              "90d",
+              "365d"
+            ]
+          },
+          "convert": {
+            "type": "string",
+            "description": "Up to 3 currencies to price in, comma-separated (default USD)."
+          },
+          "convert_id": {
+            "type": "string",
+            "description": "Same as convert, but with CoinMarketCap currency ids (2781 = USD, 1 = BTC). Do not combine with convert."
+          },
+          "aux": {
+            "type": "string",
+            "description": "Fields per point, comma-separated: btc_dominance,eth_dominance,active_cryptocurrencies,active_exchanges,active_market_pairs,total_volume_24h,total_volume_24h_reported,altcoin_market_cap,altcoin_volume_24h,altcoin_volume_24h_reported,search_interval."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/global-metrics/quotes/historical",
+        "queryParams": {
+          "time_start": "$time_start",
+          "time_end": "$time_end",
+          "count": "$count",
+          "interval": "$interval",
+          "convert": "$convert",
+          "convert_id": "$convert_id",
+          "aux": "$aux"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_fear_and_greed_latest",
+      "description": "Today's CMC Crypto Fear and Greed Index: a value from 0 (extreme fear) to 100 (extreme greed), its classification (Extreme fear, Fear, Neutral, Greed, Extreme greed) and the update time.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fear-and-greed/latest"
+      }
+    },
+    {
+      "name": "coinmarketcap_get_fear_and_greed_historical",
+      "description": "Past values of the CMC Crypto Fear and Greed Index, one per day, newest first, each with value, classification and timestamp. One credit per call whatever the size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "integer",
+            "description": "1-based offset of the first item to return (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of days to return (default 50, at most 500)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fear-and-greed/historical",
+        "queryParams": {
+          "start": "$start",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_altcoin_season_index",
+      "description": "CMC Altcoin Season Index (0 to 100): above 75 means altcoin season, below 25 Bitcoin season. Includes altcoin market cap and the yearly high and low with their dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/altcoin-season-index/latest"
+      }
+    },
+    {
+      "name": "coinmarketcap_get_cmc100_index",
+      "description": "Latest value of the CoinMarketCap 100 index with its 24 hour change, the constituents and their weights in percent, and the next rebalance time.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/index/cmc100-latest"
+      }
+    },
+    {
+      "name": "coinmarketcap_map_exchanges",
+      "description": "Map of exchanges to their CoinMarketCap ids: id, name, slug, active flag and first and last data dates. Pass slug (binance,coinbase-exchange) to resolve names; pass crypto_id to list only exchanges trading that coin.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Exchange slugs to resolve, comma-separated (binance,kraken). Other filters are then ignored."
+          },
+          "crypto_id": {
+            "type": "string",
+            "description": "Only exchanges that list this cryptocurrency id (1 = BTC)."
+          },
+          "listing_status": {
+            "type": "string",
+            "description": "active (default), inactive, untracked, or several comma-separated."
+          },
+          "start": {
+            "type": "integer",
+            "description": "1-based offset of the first item to return (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of exchanges to return."
+          },
+          "sort": {
+            "type": "string",
+            "description": "id (default) or volume_24h.",
+            "enum": [
+              "id",
+              "volume_24h"
+            ]
+          },
+          "aux": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: first_historical_data,last_historical_data,is_active,status."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/exchange/map",
+        "queryParams": {
+          "slug": "$slug",
+          "crypto_id": "$crypto_id",
+          "listing_status": "$listing_status",
+          "start": "$start",
+          "limit": "$limit",
+          "sort": "$sort",
+          "aux": "$aux"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_exchange_info",
+      "description": "Static metadata of one or more exchanges: description, logo, website and fee links, launch date, countries, fiat currencies, maker and taker fees, weekly visits and spot volume. Look up by id or slug.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Exchange ids, comma-separated (270 = Binance), from coinmarketcap_map_exchanges."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Alternatively, exchange slugs, comma-separated (binance,kraken)."
+          },
+          "aux": {
+            "type": "string",
+            "description": "Fields to include, comma-separated: urls,logo,description,date_launched,notice,status."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/exchange/info",
+        "queryParams": {
+          "id": "$id",
+          "slug": "$slug",
+          "aux": "$aux"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_get_exchange_assets",
+      "description": "Proof-of-reserves wallets of one exchange: each wallet address with its blockchain, the token held, the balance and its USD value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "One exchange id from coinmarketcap_map_exchanges (270 = Binance)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/exchange/assets",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_convert_price",
+      "description": "Convert an amount of one cryptocurrency or fiat currency into one or more others at the latest rate, or at a past time with the time parameter (the Basic plan converts at latest rates only).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "Amount to convert, e.g. 1.5."
+          },
+          "id": {
+            "type": "string",
+            "description": "CoinMarketCap id of the currency to convert from (1 = BTC, 2781 = USD)."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Alternatively, its symbol (BTC). Not unique; prefer id."
+          },
+          "time": {
+            "type": "string",
+            "description": "Optional past time (ISO 8601 or Unix seconds) to convert at historical rates. Needs a paid plan."
+          },
+          "convert": {
+            "type": "string",
+            "description": "Target currencies, comma-separated symbols (USD,EUR)."
+          },
+          "convert_id": {
+            "type": "string",
+            "description": "Target currencies by CoinMarketCap id. Do not combine with convert."
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/tools/price-conversion",
+        "queryParams": {
+          "amount": "$amount",
+          "id": "$id",
+          "symbol": "$symbol",
+          "time": "$time",
+          "convert": "$convert",
+          "convert_id": "$convert_id"
+        }
+      }
+    },
+    {
+      "name": "coinmarketcap_map_fiat",
+      "description": "Fiat currencies (and optionally precious metals) with their CoinMarketCap ids, names, signs and symbols, for use in convert_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "integer",
+            "description": "1-based offset of the first item to return (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of items to return."
+          },
+          "sort": {
+            "type": "string",
+            "description": "id (default) or name.",
+            "enum": [
+              "id",
+              "name"
+            ]
+          },
+          "include_metals": {
+            "type": "boolean",
+            "description": "true also lists gold, silver, platinum and palladium."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fiat/map",
+        "queryParams": {
+          "start": "$start",
+          "limit": "$limit",
+          "sort": "$sort",
+          "include_metals": "$include_metals"
+        }
+      }
+    }
+  ]
+}
