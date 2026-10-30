@@ -1,0 +1,1307 @@
+{
+  "slug": "ringcentral",
+  "name": "RingCentral",
+  "aliases": [
+    "RingCentral RingEX",
+    "RingEX",
+    "RingCentral MVP"
+  ],
+  "description": "Let your AI work with RingCentral: look up users, numbers and the company directory, review the call log and active calls, place RingOut calls, send SMS and read texts, voicemails and faxes, manage personal contacts, check and set presence, and list or create RingCentral Video meetings.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "ringcentral",
+  "docsUrl": "https://developers.ringcentral.com/api-reference",
+  "instructions": "## RingCentral\nThis connector works with one **RingCentral** (RingEX) account through the RingCentral REST API (`https://platform.ringcentral.com/restapi/v1.0`), signed in as the RingCentral user who authorizes it: account and extensions, the company directory, the user's phone numbers, call log (own and, for admins, the whole company), active calls, RingOut calls, SMS and the message store (texts, voicemails, faxes) with attachments, the personal address book, presence, and RingCentral Video meetings.\n\n**Setup (about 10 minutes)**\n1. Sign in at https://developers.ringcentral.com/console with your RingCentral account and click **Register App**, type **REST API App**.\n2. Under **Auth**, choose **3-legged OAuth flow authorization code** and **Server-side web app** (it keeps a client secret). Under **OAuth Redirect URI** enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself.\n3. Under **Security**, **Application Scopes**, select the permissions the tools need: Read Accounts, Read Call Log, Read Messages, Edit Messages, SMS, RingOut, Read Contacts, Contacts, Read Presence, Edit Presence and Video. RingCentral takes the permissions from the app, not from the sign-in request, so a permission you leave out makes those tools answer 403.\n4. Create the app and copy the **Client ID** and **Client Secret** (Credentials) into `RINGCENTRAL_CLIENT_ID` and `RINGCENTRAL_CLIENT_SECRET`.\n5. Install, then click **Authorize with Provider** on the connector page and sign in with the RingCentral user the AI should act as. Run `ringcentral_get_my_extension` to check.\n\n**Environment**: everything runs against production, `platform.ringcentral.com`. RingCentral retired its developer sandbox (`platform.devtest.ringcentral.com`) at the end of 2024; the host no longer exists. Test with your normal account or a separate RingEX account. Apps no longer need graduation: the credentials in the console are production credentials.\n\n**Sign-in lifetime**: an access token lasts one hour and is renewed automatically with the refresh token. RingCentral refresh tokens expire after 7 days by default and each renewal hands out a new one, so a connector that is not used for more than a week has to be authorized again.\n\n**Calls and texts reach real people**: `ringcentral_ringout_call` places a call and `ringcentral_send_sms` sends a text; both can cost money. In the US, business texting requires a registered sender (10DLC campaign or verified toll-free number) and the recipient's consent. Show the user the numbers and the text and act only after a clear yes. `ringcentral_cancel_ringout`, `ringcentral_update_presence`, `ringcentral_create_contact`, `ringcentral_update_contact`, `ringcentral_mark_message` and `ringcentral_create_video_meeting` change data; confirm them too.\n\n**Workflow**\n- Who and where: `ringcentral_get_my_extension`, `ringcentral_get_account`, `ringcentral_list_extensions`, `ringcentral_get_extension`, `ringcentral_search_directory`, `ringcentral_list_my_phone_numbers` (the SMS-capable numbers have the SmsSender feature).\n- Calls: `ringcentral_list_call_log` (own) or `ringcentral_list_company_call_log` (admin), `ringcentral_get_call_record`, `ringcentral_list_active_calls`. Place a call with `ringcentral_ringout_call`, follow it with `ringcentral_get_ringout_status`, stop it with `ringcentral_cancel_ringout`.\n- Texts, voicemail and fax: `ringcentral_list_messages` (message_type SMS, VoiceMail or Fax; distinct_conversations for an inbox), `ringcentral_get_message`, `ringcentral_get_message_attachment` for the audio, the fax document or the voicemail transcription, `ringcentral_mark_message`. Send a text with `ringcentral_send_sms`. Sending faxes is not part of this connector.\n- Contacts: `ringcentral_list_contacts`, `ringcentral_get_contact`, `ringcentral_create_contact`, `ringcentral_update_contact`.\n- Availability: `ringcentral_get_presence`, `ringcentral_list_presence`, `ringcentral_update_presence`.\n- Video: `ringcentral_list_video_meetings`, `ringcentral_get_video_meeting`, `ringcentral_create_video_meeting`.\n\n**Reading the answers**: `~` in a path means the signed-in account or user. Ids are numeric strings. Times are ISO 8601 in UTC (`2026-10-30T14:05:00.000Z`); call `duration` is in seconds; video `startTime` / `endTime` filters are Unix milliseconds. Phone numbers are E.164 (`+14155550123`); the call log `phone_number` filter takes the digits without the plus. In the message store `subject` holds the SMS text. A call `result` such as Missed, Voicemail, Accepted or Call connected says how it ended.\n\n**Paging**: list answers carry `records` and `paging` (page, perPage, totalPages, totalElements); pass `page` for the next one. Call log and message store default to the last 24 hours: set `date_from` for older items. Video history pages with `page_token` (paging.nextPageToken).\n\n**Limits and errors**: RingCentral limits each user and app per minute by API group: Light 50, Medium 40, Heavy 10 requests (call log, active calls, presence of all users, directory search, contacts and RingOut are Heavy). A 429 means wait about a minute. 401 means the sign-in expired (authorize again); 403 with InsufficientPermissions means the app lacks the permission (add it under Application Scopes and authorize again) or the user lacks the role, for example for the company call log; 404 an unknown id; 400 or CMN-101 an invalid number or parameter; FeatureNotAvailable means the number cannot send SMS.",
+  "prerequisites": "A RingCentral (RingEX) account and a REST API app of your own in the RingCentral Developer Console (authorization code flow, with the permissions listed in the setup). About 10 minutes.",
+  "requiredEnvVars": [
+    "RINGCENTRAL_CLIENT_ID",
+    "RINGCENTRAL_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://developers.ringcentral.com/console",
+  "envVarMeta": {
+    "RINGCENTRAL_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "RingCentral Developer Console, your REST API app, Credentials: Client ID.",
+      "link": "https://developers.ringcentral.com/console",
+      "pattern": "^[A-Za-z0-9_-]{10,64}$",
+      "patternMessage": "The Client ID is a code of letters and digits, without spaces."
+    },
+    "RINGCENTRAL_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page, Credentials: Client Secret (click to reveal, then copy).",
+      "link": "https://developers.ringcentral.com/console",
+      "pattern": "^\\S{10,128}$",
+      "patternMessage": "Paste only the Client Secret, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "RingCentral did not accept the sign-in. Authorize again with Authorize with Provider; refresh tokens expire after 7 days without use.",
+    "403": "RingCentral refused the request: the app lacks this permission (Developer Console, Security, Application Scopes) or the user lacks the role. Add the permission and authorize again.",
+    "429": "RingCentral rate limit reached (Heavy requests allow 10 per minute). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "ringcentral_get_my_extension"
+  },
+  "connector": {
+    "name": "RingCentral REST API",
+    "type": "REST",
+    "baseUrl": "https://platform.ringcentral.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{RINGCENTRAL_CLIENT_ID}}",
+      "clientSecret": "{{RINGCENTRAL_CLIENT_SECRET}}",
+      "authorizationUrl": "https://platform.ringcentral.com/restapi/oauth/authorize",
+      "tokenUrl": "https://platform.ringcentral.com/restapi/oauth/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/restapi/v1.0/account/~/extension/~"
+  },
+  "tools": [
+    {
+      "name": "ringcentral_get_account",
+      "description": "The RingCentral account: id, main number, operator extension, status, service plan and edition (serviceInfo), regional settings (country, time zone, language, currency) and limits.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~"
+      }
+    },
+    {
+      "name": "ringcentral_get_my_extension",
+      "description": "The signed-in user (extension): id, extensionNumber, name, contact email and phone, type, status, permissions (admin or not), regional settings and time zone. The starting point for every other call.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~"
+      }
+    },
+    {
+      "name": "ringcentral_list_extensions",
+      "description": "List the extensions of the account (users, departments, call queues, IVR menus, ...): id, extensionNumber, name, type, status, contact email. Filter by type, status, number or email; paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Only this type of extension.",
+            "enum": [
+              "User",
+              "Department",
+              "Announcement",
+              "Voicemail",
+              "DigitalUser",
+              "VirtualUser",
+              "FaxUser",
+              "PagingOnly",
+              "SharedLinesGroup",
+              "IvrMenu",
+              "ApplicationExtension",
+              "ParkLocation",
+              "Limited",
+              "Bot",
+              "Site",
+              "Room",
+              "ProxyAdmin",
+              "DelegatedLinesGroup",
+              "GroupCallPickup"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Only extensions in this state.",
+            "enum": [
+              "Enabled",
+              "Disabled",
+              "Frozen",
+              "NotActivated",
+              "Unassigned"
+            ]
+          },
+          "extension_number": {
+            "type": "string",
+            "description": "Only the extension with this short number."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only the extension with this email address."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (RingCentral default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension",
+        "queryParams": {
+          "type": "$type",
+          "status": "$status",
+          "extensionNumber": "$extension_number",
+          "email": "$email",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "navigation",
+            "records[*].uri"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ringcentral_get_extension",
+      "description": "One extension of the account by id: name, extensionNumber, type, status, contact details, departments, regional settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "extension_id": {
+            "type": "string",
+            "description": "The extension id (from ringcentral_list_extensions), not the short extension number."
+          }
+        },
+        "required": [
+          "extension_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/{extension_id}"
+      }
+    },
+    {
+      "name": "ringcentral_search_directory",
+      "description": "Search the company directory (users and other extensions, also federated accounts): name, extension number, phone numbers, email, job title, department, site. Read-only, though sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_string": {
+            "type": "string",
+            "description": "Text searched in first and last name, extension number, phone number, email, job title and department."
+          },
+          "extension_type": {
+            "type": "string",
+            "description": "Only this type, e.g. User or Department."
+          },
+          "department": {
+            "type": "string",
+            "description": "Only this department."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/restapi/v1.0/account/~/directory/entries/search",
+        "bodyMapping": {
+          "searchString": "$search_string",
+          "extensionType": "$extension_type",
+          "department": "$department",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ringcentral_list_my_phone_numbers",
+      "description": "Phone numbers of the signed-in user: phoneNumber (E.164), usageType (DirectNumber, MainCompanyNumber, ...), type (VoiceFax, VoiceOnly, FaxOnly) and features. A number can send SMS only when features contains SmsSender, and can be a caller id when it contains CallerId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only numbers in this state.",
+            "enum": [
+              "Normal",
+              "Pending",
+              "PortedIn",
+              "Temporary"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (RingCentral default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~/phone-number",
+        "queryParams": {
+          "status": "$status",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "navigation",
+            "records[*].uri"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ringcentral_list_call_log",
+      "description": "Call history of the signed-in user, newest first: id, sessionId, startTime, duration (seconds), direction, type, action, result (Accepted, Missed, Voicemail, ...), from and to with name and number, recording metadata. Default range: the last 24 hours; set date_from for older calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Start of the time range, ISO 8601 with time zone, e.g. 2026-10-01T00:00:00Z. Default: 24 hours ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of the time range, ISO 8601 with time zone. Default: now."
+          },
+          "direction": {
+            "type": "string",
+            "description": "Only Inbound or Outbound calls.",
+            "enum": [
+              "Inbound",
+              "Outbound"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Only Voice or Fax calls.",
+            "enum": [
+              "Voice",
+              "Fax"
+            ]
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Only calls from or to this number, E.164 without the plus sign, e.g. 14155550123."
+          },
+          "recording_type": {
+            "type": "string",
+            "description": "Only calls with a recording of this type.",
+            "enum": [
+              "Automatic",
+              "OnDemand",
+              "All"
+            ]
+          },
+          "view": {
+            "type": "string",
+            "description": "Simple (default) or Detailed, which adds the call legs.",
+            "enum": [
+              "Simple",
+              "Detailed"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Only the call with this session id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (RingCentral default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~/call-log",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "direction": "$direction",
+          "type": "$type",
+          "phoneNumber": "$phone_number",
+          "recordingType": "$recording_type",
+          "view": "$view",
+          "sessionId": "$session_id",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "navigation",
+            "records[*].uri"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ringcentral_list_company_call_log",
+      "description": "Call history of the whole account (every extension), newest first, with the same fields as ringcentral_list_call_log. Needs a user with the company call log permission (an admin). Default range: the last 24 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Start of the time range, ISO 8601 with time zone, e.g. 2026-10-01T00:00:00Z. Default: 24 hours ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of the time range, ISO 8601 with time zone. Default: now."
+          },
+          "direction": {
+            "type": "string",
+            "description": "Only Inbound or Outbound calls.",
+            "enum": [
+              "Inbound",
+              "Outbound"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Only Voice or Fax calls.",
+            "enum": [
+              "Voice",
+              "Fax"
+            ]
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Only calls from or to this number, E.164 without the plus sign, e.g. 14155550123."
+          },
+          "extension_number": {
+            "type": "string",
+            "description": "Only calls of this short extension number (company call log), e.g. 101."
+          },
+          "recording_type": {
+            "type": "string",
+            "description": "Only calls with a recording of this type.",
+            "enum": [
+              "Automatic",
+              "OnDemand",
+              "All"
+            ]
+          },
+          "view": {
+            "type": "string",
+            "description": "Simple (default) or Detailed, which adds the call legs.",
+            "enum": [
+              "Simple",
+              "Detailed"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Only the call with this session id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (RingCentral default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/call-log",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "direction": "$direction",
+          "type": "$type",
+          "phoneNumber": "$phone_number",
+          "extensionNumber": "$extension_number",
+          "recordingType": "$recording_type",
+          "view": "$view",
+          "sessionId": "$session_id",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "navigation",
+            "records[*].uri"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ringcentral_get_call_record",
+      "description": "One call log record of the signed-in user by id, with legs when view is Detailed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_record_id": {
+            "type": "string",
+            "description": "The call record id (id from ringcentral_list_call_log)."
+          },
+          "view": {
+            "type": "string",
+            "description": "Simple (default) or Detailed.",
+            "enum": [
+              "Simple",
+              "Detailed"
+            ]
+          }
+        },
+        "required": [
+          "call_record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~/call-log/{call_record_id}",
+        "queryParams": {
+          "view": "$view"
+        }
+      }
+    },
+    {
+      "name": "ringcentral_list_active_calls",
+      "description": "Calls of the signed-in user that are in progress right now: direction, from, to, start time, telephony session id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "description": "Only Inbound or Outbound.",
+            "enum": [
+              "Inbound",
+              "Outbound"
+            ]
+          },
+          "view": {
+            "type": "string",
+            "description": "Simple or Detailed.",
+            "enum": [
+              "Simple",
+              "Detailed"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (RingCentral default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~/active-calls",
+        "queryParams": {
+          "direction": "$direction",
+          "view": "$view",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "navigation",
+            "records[*].uri"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ringcentral_ringout_call",
+      "description": "Place a phone call with RingOut: RingCentral first rings from_number (the user's own phone), and when the user answers it dials to_number. This reaches a real person and can cost money (international and premium destinations are billed), so show the user both numbers and the caller id and call only after the user confirms. Returns the RingOut id and status; check it with ringcentral_get_ringout_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_number": {
+            "type": "string",
+            "description": "The user's phone that rings first (a RingCentral number or a forwarding number of the user), in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "to_number": {
+            "type": "string",
+            "description": "The number to call, in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "caller_id": {
+            "type": "string",
+            "description": "Number shown to the person called (one of the user's numbers with the CallerId feature), in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "play_prompt": {
+            "type": "boolean",
+            "description": "Play the prompt 'press 1 to connect' to the user before dialing (default true)."
+          }
+        },
+        "required": [
+          "from_number",
+          "to_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/restapi/v1.0/account/~/extension/~/ring-out",
+        "bodyMapping": {
+          "from": {
+            "phoneNumber": "$from_number"
+          },
+          "to": {
+            "phoneNumber": "$to_number"
+          },
+          "callerId": {
+            "phoneNumber": "$caller_id"
+          },
+          "playPrompt": "$play_prompt"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "ringcentral_get_ringout_status",
+      "description": "Status of a RingOut call: callStatus and callerStatus / calleeStatus (InProgress, Success, NoAnswer, Busy, Rejected, ...).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ringout_id": {
+            "type": "string",
+            "description": "The RingOut id returned by ringcentral_ringout_call."
+          }
+        },
+        "required": [
+          "ringout_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~/ring-out/{ringout_id}"
+      }
+    },
+    {
+      "name": "ringcentral_cancel_ringout",
+      "description": "Cancel a RingOut call that is still ringing or connecting. Hangs up both legs; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ringout_id": {
+            "type": "string",
+            "description": "The RingOut id."
+          }
+        },
+        "required": [
+          "ringout_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/restapi/v1.0/account/~/extension/~/ring-out/{ringout_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ringcentral_send_sms",
+      "description": "Send a text message (SMS) from one of the user's numbers to one number. This reaches real people and can cost money, and in the US the sending number must be registered for business texting (10DLC campaign or verified toll-free) and recipients must have agreed to texts; show the user sender, recipients and exact text and send only after the user confirms. Returns the message with id, messageStatus (Queued, Sent, Delivered, DeliveryFailed) and conversationId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_number": {
+            "type": "string",
+            "description": "The sending number, one of the user's numbers with the SmsSender feature (ringcentral_list_my_phone_numbers), in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "to_number": {
+            "type": "string",
+            "description": "The recipient, in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "text": {
+            "type": "string",
+            "description": "The message, at most 1000 characters."
+          }
+        },
+        "required": [
+          "from_number",
+          "to_number",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/restapi/v1.0/account/~/extension/~/sms",
+        "bodyMapping": {
+          "from": {
+            "phoneNumber": "$from_number"
+          },
+          "to": [
+            {
+              "phoneNumber": "$to_number"
+            }
+          ],
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "ringcentral_list_messages",
+      "description": "The signed-in user's message store, newest first: SMS, voicemails, faxes and pager messages with id, type, direction, from, to, subject (the SMS text), creationTime, readStatus, messageStatus, conversationId and attachments (voicemail audio, fax PDF, with their ids). Default range: the last 24 hours; set date_from for older messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_type": {
+            "type": "string",
+            "description": "Only this type.",
+            "enum": [
+              "SMS",
+              "VoiceMail",
+              "Fax",
+              "Pager",
+              "Text"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "description": "Only Inbound or Outbound.",
+            "enum": [
+              "Inbound",
+              "Outbound"
+            ]
+          },
+          "read_status": {
+            "type": "string",
+            "description": "Only Read or Unread messages.",
+            "enum": [
+              "Read",
+              "Unread"
+            ]
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start of the time range, ISO 8601 with time zone, e.g. 2026-10-01T00:00:00Z. Default: 24 hours ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of the time range, ISO 8601 with time zone. Default: now."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Only the messages of this conversation."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Only messages from or to this number."
+          },
+          "distinct_conversations": {
+            "type": "boolean",
+            "description": "Return only the latest message of each conversation (an inbox view)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (RingCentral default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~/message-store",
+        "queryParams": {
+          "messageType": "$message_type",
+          "direction": "$direction",
+          "readStatus": "$read_status",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "conversationId": "$conversation_id",
+          "phoneNumber": "$phone_number",
+          "distinctConversations": "$distinct_conversations",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "navigation",
+            "records[*].uri"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ringcentral_get_message",
+      "description": "One message of the store by id, with its attachments (ids, content type, voicemail duration, fax page count) and, for voicemails with transcription, the vmTranscriptionStatus.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "The message id."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~/message-store/{message_id}"
+      }
+    },
+    {
+      "name": "ringcentral_get_message_attachment",
+      "description": "Download one attachment of a message: the voicemail audio, the fax document (PDF or TIFF), an MMS image or the text of a voicemail transcription. Files are handed over as attachments of the result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "The message id."
+          },
+          "attachment_id": {
+            "type": "string",
+            "description": "The attachment id from the message's attachments list."
+          }
+        },
+        "required": [
+          "message_id",
+          "attachment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~/message-store/{message_id}/content/{attachment_id}"
+      }
+    },
+    {
+      "name": "ringcentral_mark_message",
+      "description": "Mark a message (SMS, voicemail or fax) as Read or Unread in the user's message store.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "The message id."
+          },
+          "read_status": {
+            "type": "string",
+            "description": "The new read status.",
+            "enum": [
+              "Read",
+              "Unread"
+            ]
+          }
+        },
+        "required": [
+          "message_id",
+          "read_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/restapi/v1.0/account/~/extension/~/message-store/{message_id}",
+        "bodyMapping": {
+          "readStatus": "$read_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ringcentral_list_contacts",
+      "description": "The signed-in user's personal address book: id, name, company, job title, email, phone numbers, addresses, notes. Search by the start of a first or last name, or by phone number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "starts_with": {
+            "type": "string",
+            "description": "Only contacts whose first or last name starts with this text."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Only contacts with this number, in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "FirstName",
+              "LastName",
+              "Company"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (RingCentral default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~/address-book/contact",
+        "queryParams": {
+          "startsWith": "$starts_with",
+          "phoneNumber": "$phone_number",
+          "sortBy": "$sort_by",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "navigation",
+            "records[*].uri"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ringcentral_get_contact",
+      "description": "One personal contact by id with all its fields: names, company, emails, phone numbers, addresses and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/~/address-book/contact/{contact_id}"
+      }
+    },
+    {
+      "name": "ringcentral_create_contact",
+      "description": "Add a contact to the signed-in user's personal address book. Give at least a name and one phone number or email. Returns the contact with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "mobile_phone": {
+            "type": "string",
+            "description": "Mobile number, in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "business_phone": {
+            "type": "string",
+            "description": "Business number, in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "home_phone": {
+            "type": "string",
+            "description": "Home number, in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Free notes about the contact."
+          },
+          "business_address": {
+            "type": "object",
+            "description": "Business address: {\"street\": \"...\", \"city\": \"...\", \"state\": \"...\", \"zip\": \"...\", \"country\": \"...\"}."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/restapi/v1.0/account/~/extension/~/address-book/contact",
+        "bodyMapping": {
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "company": "$company",
+          "jobTitle": "$job_title",
+          "email": "$email",
+          "mobilePhone": "$mobile_phone",
+          "businessPhone": "$business_phone",
+          "homePhone": "$home_phone",
+          "notes": "$notes",
+          "businessAddress": "$business_address"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "ringcentral_update_contact",
+      "description": "Change fields of a personal contact. Only the fields you send change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "mobile_phone": {
+            "type": "string",
+            "description": "Mobile number, in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "business_phone": {
+            "type": "string",
+            "description": "Business number, in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "home_phone": {
+            "type": "string",
+            "description": "Home number, in E.164 format with the plus sign, e.g. +14155550123."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Free notes about the contact."
+          },
+          "business_address": {
+            "type": "object",
+            "description": "Business address: {\"street\": \"...\", \"city\": \"...\", \"state\": \"...\", \"zip\": \"...\", \"country\": \"...\"}."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/restapi/v1.0/account/~/extension/~/address-book/contact/{contact_id}",
+        "bodyMapping": {
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "company": "$company",
+          "jobTitle": "$job_title",
+          "email": "$email",
+          "mobilePhone": "$mobile_phone",
+          "businessPhone": "$business_phone",
+          "homePhone": "$home_phone",
+          "notes": "$notes",
+          "businessAddress": "$business_address"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "ringcentral_get_presence",
+      "description": "Presence of one extension: presenceStatus (Available, Busy, Offline), userStatus, dndStatus (TakeAllCalls, DoNotAcceptAnyCalls, ...), telephonyStatus (NoCall, Ringing, CallConnected, OnHold), meetingStatus and the status message. Use ~ for the signed-in user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "extension_id": {
+            "type": "string",
+            "description": "The extension id, or ~ for the signed-in user."
+          },
+          "detailed_telephony_state": {
+            "type": "boolean",
+            "description": "Also return the active calls in detail."
+          }
+        },
+        "required": [
+          "extension_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/extension/{extension_id}/presence",
+        "queryParams": {
+          "detailedTelephonyState": "$detailed_telephony_state"
+        }
+      }
+    },
+    {
+      "name": "ringcentral_list_presence",
+      "description": "Presence of every extension of the account (who is available, busy, on a call or on do not disturb). Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "detailed_telephony_state": {
+            "type": "boolean",
+            "description": "Also return the active calls in detail."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (RingCentral default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/restapi/v1.0/account/~/presence",
+        "queryParams": {
+          "detailedTelephonyState": "$detailed_telephony_state",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "navigation",
+            "records[*].uri",
+            "records[*].extension.uri"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ringcentral_update_presence",
+      "description": "Set the signed-in user's own status: userStatus (Available, Busy, Offline), do not disturb mode and the status message others see.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_status": {
+            "type": "string",
+            "description": "The user's status.",
+            "enum": [
+              "Available",
+              "Busy",
+              "Offline"
+            ]
+          },
+          "dnd_status": {
+            "type": "string",
+            "description": "Do not disturb mode.",
+            "enum": [
+              "TakeAllCalls",
+              "DoNotAcceptDepartmentCalls",
+              "TakeDepartmentCallsOnly",
+              "DoNotAcceptAnyCalls"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Status message shown to colleagues."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/restapi/v1.0/account/~/extension/~/presence",
+        "bodyMapping": {
+          "userStatus": "$user_status",
+          "dndStatus": "$dnd_status",
+          "message": "$message"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ringcentral_list_video_meetings",
+      "description": "History of RingCentral Video meetings of the signed-in user, newest first: id, displayName, startTime, duration, status, host, participants, recordings and AI summaries when available. Paged with pageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Search text in the meeting name."
+          },
+          "type": {
+            "type": "string",
+            "description": "All (default), My (hosted by the user), Deleted or Shared.",
+            "enum": [
+              "All",
+              "My",
+              "Deleted",
+              "Shared"
+            ]
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Only meetings from this time on, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "Only meetings up to this time, Unix milliseconds."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "The nextPageToken of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rcvideo/v1/history/meetings",
+        "queryParams": {
+          "text": "$text",
+          "type": "$type",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "perPage": "$per_page",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "ringcentral_get_video_meeting",
+      "description": "One past RingCentral Video meeting: participants with join and leave times, recordings, chat, keywords and the short and long AI summary when available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "The meeting id from ringcentral_list_video_meetings."
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rcvideo/v1/history/meetings/{meeting_id}"
+      }
+    },
+    {
+      "name": "ringcentral_create_video_meeting",
+      "description": "Create a RingCentral Video meeting room (bridge) for the signed-in user and return its join link (discovery.web), PINs and settings. Instant rooms are for one meeting; Scheduled rooms can be used at a planned time. Nobody is invited: share the link yourself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the meeting."
+          },
+          "type": {
+            "type": "string",
+            "description": "Instant (default) or Scheduled.",
+            "enum": [
+              "Instant",
+              "Scheduled"
+            ]
+          },
+          "security": {
+            "type": "object",
+            "description": "Security settings: {\"passwordProtected\": true, \"password\": \"...\", \"noGuests\": false, \"sameAccount\": false, \"e2ee\": false}."
+          },
+          "preferences": {
+            "type": "object",
+            "description": "Preferences: {\"joinBeforeHost\": true, \"screenSharing\": true, \"musicOnHold\": false, \"recordingsMode\": \"User\", \"transcriptionsMode\": \"User\"}."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rcvideo/v2/account/~/extension/~/bridges",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "security": "$security",
+          "preferences": "$preferences"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

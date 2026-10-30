@@ -109,6 +109,7 @@ import * as archer from './intl/archer.json';
 import * as asana from './intl/asana.json';
 import * as ashby from './intl/ashby.json';
 import * as asite from './intl/asite.json';
+import * as assemblyai from './intl/assemblyai.json';
 import * as atera from './intl/atera.json';
 import * as atlassian from './intl/atlassian.json';
 import * as attio from './intl/attio.json';
@@ -133,6 +134,7 @@ import * as bitbucket from './intl/bitbucket.json';
 import * as bitrix24 from './intl/bitrix24.json';
 import * as blockcypher from './intl/blockcypher.json';
 import * as bluesky from './intl/bluesky.json';
+import * as boldsign from './intl/boldsign.json';
 import * as botpress from './intl/botpress.json';
 import * as box from './intl/box.json';
 import * as braveSearch from './intl/brave-search.json';
@@ -152,6 +154,7 @@ import * as chatwoot from './intl/chatwoot.json';
 import * as checko from './intl/checko.json';
 import * as circleci from './intl/circleci.json';
 import * as claap from './intl/claap.json';
+import * as clay from './intl/clay.json';
 import * as clearbit from './intl/clearbit.json';
 import * as clickup from './intl/clickup.json';
 import * as clockify from './intl/clockify.json';
@@ -163,6 +166,7 @@ import * as coinbase from './intl/coinbase.json';
 import * as coingecko from './intl/coingecko.json';
 import * as coinglass from './intl/coinglass.json';
 import * as conductorMonitoring from './intl/conductor-monitoring.json';
+import * as constantContact from './intl/constant-contact.json';
 import * as contentful from './intl/contentful.json';
 import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
@@ -184,6 +188,7 @@ import * as digitalocean from './intl/digitalocean.json';
 import * as directus from './intl/directus.json';
 import * as discordBot from './intl/discord-bot.json';
 import * as dockerhub from './intl/dockerhub.json';
+import * as documenso from './intl/documenso.json';
 import * as docuseal from './intl/docuseal.json';
 import * as docusign from './intl/docusign.json';
 import * as drip from './intl/drip.json';
@@ -203,6 +208,7 @@ import * as erpnext from './intl/erpnext.json';
 import * as espn from './intl/espn.json';
 import * as espocrm from './intl/espocrm.json';
 import * as etsy from './intl/etsy.json';
+import * as eurostat from './intl/eurostat.json';
 import * as eventbrite from './intl/eventbrite.json';
 import * as everhour from './intl/everhour.json';
 import * as exa from './intl/exa.json';
@@ -217,6 +223,7 @@ import * as firebase from './intl/firebase.json';
 import * as firecrawl from './intl/firecrawl.json';
 import * as fireflies from './intl/fireflies.json';
 import * as firma from './intl/firma.json';
+import * as fishAudio from './intl/fish-audio.json';
 import * as flutterwave from './intl/flutterwave.json';
 import * as folk from './intl/folk.json';
 import * as footballData from './intl/football-data.json';
@@ -225,6 +232,7 @@ import * as freepik from './intl/freepik.json';
 import * as freshbooks from './intl/freshbooks.json';
 import * as freshchat from './intl/freshchat.json';
 import * as freshdesk from './intl/freshdesk.json';
+import * as freshsales from './intl/freshsales.json';
 import * as freshservice from './intl/freshservice.json';
 import * as front from './intl/front.json';
 import * as fudo from './intl/fudo.json';
@@ -234,6 +242,7 @@ import * as gelato from './intl/gelato.json';
 import * as gemini from './intl/gemini.json';
 import * as genapi from './intl/genapi.json';
 import * as georgianRailway from './intl/georgian-railway.json';
+import * as getresponse from './intl/getresponse.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
 import * as gitea from './intl/gitea.json';
@@ -276,6 +285,7 @@ import * as helius from './intl/helius.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
 import * as heygen from './intl/heygen.json';
+import * as heyreach from './intl/heyreach.json';
 import * as hibob from './intl/hibob.json';
 import * as higgsfield from './intl/higgsfield.json';
 import * as homeAssistant from './intl/home-assistant.json';
@@ -286,6 +296,7 @@ import * as hunter from './intl/hunter.json';
 import * as idealista from './intl/idealista.json';
 import * as imapSmtp from './intl/imap-smtp.json';
 import * as immich from './intl/immich.json';
+import * as incidentIo from './intl/incident-io.json';
 import * as inoreader from './intl/inoreader.json';
 import * as insightly from './intl/insightly.json';
 import * as instagram from './intl/instagram.json';
@@ -319,6 +330,7 @@ import * as magento from './intl/magento.json';
 import * as mailchimp from './intl/mailchimp.json';
 import * as mailerlite from './intl/mailerlite.json';
 import * as mailshake from './intl/mailshake.json';
+import * as mailtrap from './intl/mailtrap.json';
 import * as make from './intl/make.json';
 import * as mangools from './intl/mangools.json';
 import * as manychat from './intl/manychat.json';
@@ -406,6 +418,7 @@ import * as pcloud from './intl/pcloud.json';
 import * as peopleDataLabs from './intl/people-data-labs.json';
 import * as perplexity from './intl/perplexity.json';
 import * as pexels from './intl/pexels.json';
+import * as phantombuster from './intl/phantombuster.json';
 import * as phorest from './intl/phorest.json';
 import * as pinecone from './intl/pinecone.json';
 import * as pinkConnect from './intl/pink-connect.json';
@@ -438,10 +451,13 @@ import * as redmine from './intl/redmine.json';
 import * as render from './intl/render.json';
 import * as replicate from './intl/replicate.json';
 import * as resy from './intl/resy.json';
+import * as retellAi from './intl/retell-ai.json';
 import * as revolutBusiness from './intl/revolut-business.json';
+import * as ringcentral from './intl/ringcentral.json';
 import * as ringostat from './intl/ringostat.json';
 import * as rivile from './intl/rivile.json';
 import * as rocketreach from './intl/rocketreach.json';
+import * as rollbar from './intl/rollbar.json';
 import * as rozetka from './intl/rozetka.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
@@ -474,9 +490,11 @@ import * as shoper from './intl/shoper.json';
 import * as shopify from './intl/shopify.json';
 import * as shoptet from './intl/shoptet.json';
 import * as shortcut from './intl/shortcut.json';
+import * as signnow from './intl/signnow.json';
 import * as signwell from './intl/signwell.json';
 import * as slab from './intl/slab.json';
 import * as slack from './intl/slack.json';
+import * as smartlead from './intl/smartlead.json';
 import * as smartsheet from './intl/smartsheet.json';
 import * as snapchat from './intl/snapchat.json';
 import * as snov from './intl/snov.json';
@@ -488,7 +506,9 @@ import * as splunk from './intl/splunk.json';
 import * as sportmonks from './intl/sportmonks.json';
 import * as spotify from './intl/spotify.json';
 import * as square from './intl/square.json';
+import * as stabilityAi from './intl/stability-ai.json';
 import * as statsig from './intl/statsig.json';
+import * as statuspage from './intl/statuspage.json';
 import * as strapi from './intl/strapi.json';
 import * as streak from './intl/streak.json';
 import * as stripe from './intl/stripe.json';
@@ -526,6 +546,7 @@ import * as typeform from './intl/typeform.json';
 import * as untappd from './intl/untappd.json';
 import * as uptimeRobot from './intl/uptime-robot.json';
 import * as uzumMarket from './intl/uzum-market.json';
+import * as vapi from './intl/vapi.json';
 import * as vercelAnalytics from './intl/vercel-analytics.json';
 import * as viber from './intl/viber.json';
 import * as vimeo from './intl/vimeo.json';
@@ -970,6 +991,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   asana as unknown as AdapterDefinition,
   ashby as unknown as AdapterDefinition,
   asite as unknown as AdapterDefinition,
+  assemblyai as unknown as AdapterDefinition,
   atera as unknown as AdapterDefinition,
   atlassian as unknown as AdapterDefinition,
   attio as unknown as AdapterDefinition,
@@ -994,6 +1016,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   bitrix24 as unknown as AdapterDefinition,
   blockcypher as unknown as AdapterDefinition,
   bluesky as unknown as AdapterDefinition,
+  boldsign as unknown as AdapterDefinition,
   botpress as unknown as AdapterDefinition,
   box as unknown as AdapterDefinition,
   braveSearch as unknown as AdapterDefinition,
@@ -1013,6 +1036,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   checko as unknown as AdapterDefinition,
   circleci as unknown as AdapterDefinition,
   claap as unknown as AdapterDefinition,
+  clay as unknown as AdapterDefinition,
   clearbit as unknown as AdapterDefinition,
   clickup as unknown as AdapterDefinition,
   clockify as unknown as AdapterDefinition,
@@ -1024,6 +1048,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   coingecko as unknown as AdapterDefinition,
   coinglass as unknown as AdapterDefinition,
   conductorMonitoring as unknown as AdapterDefinition,
+  constantContact as unknown as AdapterDefinition,
   contentful as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
@@ -1045,6 +1070,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   directus as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
   dockerhub as unknown as AdapterDefinition,
+  documenso as unknown as AdapterDefinition,
   docuseal as unknown as AdapterDefinition,
   docusign as unknown as AdapterDefinition,
   drip as unknown as AdapterDefinition,
@@ -1064,6 +1090,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   espn as unknown as AdapterDefinition,
   espocrm as unknown as AdapterDefinition,
   etsy as unknown as AdapterDefinition,
+  eurostat as unknown as AdapterDefinition,
   eventbrite as unknown as AdapterDefinition,
   everhour as unknown as AdapterDefinition,
   exa as unknown as AdapterDefinition,
@@ -1078,6 +1105,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   firecrawl as unknown as AdapterDefinition,
   fireflies as unknown as AdapterDefinition,
   firma as unknown as AdapterDefinition,
+  fishAudio as unknown as AdapterDefinition,
   flutterwave as unknown as AdapterDefinition,
   folk as unknown as AdapterDefinition,
   footballData as unknown as AdapterDefinition,
@@ -1086,6 +1114,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   freshbooks as unknown as AdapterDefinition,
   freshchat as unknown as AdapterDefinition,
   freshdesk as unknown as AdapterDefinition,
+  freshsales as unknown as AdapterDefinition,
   freshservice as unknown as AdapterDefinition,
   front as unknown as AdapterDefinition,
   fudo as unknown as AdapterDefinition,
@@ -1095,6 +1124,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   gemini as unknown as AdapterDefinition,
   genapi as unknown as AdapterDefinition,
   georgianRailway as unknown as AdapterDefinition,
+  getresponse as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
   gitea as unknown as AdapterDefinition,
@@ -1137,6 +1167,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   helpScout as unknown as AdapterDefinition,
   hetznerCloud as unknown as AdapterDefinition,
   heygen as unknown as AdapterDefinition,
+  heyreach as unknown as AdapterDefinition,
   hibob as unknown as AdapterDefinition,
   higgsfield as unknown as AdapterDefinition,
   homeAssistant as unknown as AdapterDefinition,
@@ -1147,6 +1178,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   idealista as unknown as AdapterDefinition,
   imapSmtp as unknown as AdapterDefinition,
   immich as unknown as AdapterDefinition,
+  incidentIo as unknown as AdapterDefinition,
   inoreader as unknown as AdapterDefinition,
   insightly as unknown as AdapterDefinition,
   instagram as unknown as AdapterDefinition,
@@ -1180,6 +1212,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mailchimp as unknown as AdapterDefinition,
   mailerlite as unknown as AdapterDefinition,
   mailshake as unknown as AdapterDefinition,
+  mailtrap as unknown as AdapterDefinition,
   make as unknown as AdapterDefinition,
   mangools as unknown as AdapterDefinition,
   manychat as unknown as AdapterDefinition,
@@ -1267,6 +1300,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   peopleDataLabs as unknown as AdapterDefinition,
   perplexity as unknown as AdapterDefinition,
   pexels as unknown as AdapterDefinition,
+  phantombuster as unknown as AdapterDefinition,
   phorest as unknown as AdapterDefinition,
   pinecone as unknown as AdapterDefinition,
   pinkConnect as unknown as AdapterDefinition,
@@ -1299,10 +1333,13 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   render as unknown as AdapterDefinition,
   replicate as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
+  retellAi as unknown as AdapterDefinition,
   revolutBusiness as unknown as AdapterDefinition,
+  ringcentral as unknown as AdapterDefinition,
   ringostat as unknown as AdapterDefinition,
   rivile as unknown as AdapterDefinition,
   rocketreach as unknown as AdapterDefinition,
+  rollbar as unknown as AdapterDefinition,
   rozetka as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
@@ -1335,9 +1372,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   shopify as unknown as AdapterDefinition,
   shoptet as unknown as AdapterDefinition,
   shortcut as unknown as AdapterDefinition,
+  signnow as unknown as AdapterDefinition,
   signwell as unknown as AdapterDefinition,
   slab as unknown as AdapterDefinition,
   slack as unknown as AdapterDefinition,
+  smartlead as unknown as AdapterDefinition,
   smartsheet as unknown as AdapterDefinition,
   snapchat as unknown as AdapterDefinition,
   snov as unknown as AdapterDefinition,
@@ -1349,7 +1388,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sportmonks as unknown as AdapterDefinition,
   spotify as unknown as AdapterDefinition,
   square as unknown as AdapterDefinition,
+  stabilityAi as unknown as AdapterDefinition,
   statsig as unknown as AdapterDefinition,
+  statuspage as unknown as AdapterDefinition,
   strapi as unknown as AdapterDefinition,
   streak as unknown as AdapterDefinition,
   stripe as unknown as AdapterDefinition,
@@ -1387,6 +1428,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   untappd as unknown as AdapterDefinition,
   uptimeRobot as unknown as AdapterDefinition,
   uzumMarket as unknown as AdapterDefinition,
+  vapi as unknown as AdapterDefinition,
   vercelAnalytics as unknown as AdapterDefinition,
   viber as unknown as AdapterDefinition,
   vimeo as unknown as AdapterDefinition,
