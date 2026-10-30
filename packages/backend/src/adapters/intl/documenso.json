@@ -1,0 +1,1215 @@
+{
+  "slug": "documenso",
+  "name": "Documenso",
+  "description": "Let your AI work with Documenso, the open-source e-signature platform (Cloud or self-hosted): find documents and templates, check who has signed, read recipients, fields and audit logs, download signed PDFs and certificates, create documents from a PDF or a template, place recipients and fields, send, remind, cancel and delete.",
+  "region": "intl",
+  "category": "e-signature",
+  "icon": "documenso",
+  "docsUrl": "https://docs.documenso.com/docs/developers/api",
+  "prerequisites": "A Documenso account (Cloud or self-hosted) and a team API token from Team Settings, API Tokens.",
+  "instructions": "## Documenso\nThis connector works with **Documenso**, the open-source document signing platform, through its **API v2** (envelope API): on Documenso Cloud (`https://app.documenso.com/api/v2`) or on your own server (`https://<your host>/api/v2`). An envelope is a document to sign or a template; it holds one or more PDFs (envelope items), recipients and fields. The connector lists and reads envelopes, recipients, fields and folders, downloads signed PDFs, audit logs and certificates, creates documents from a PDF or from a template, places recipients and fields, sends, reminds, cancels and deletes.\n\n**Setup (2 minutes)**\n1. In Documenso open the team the AI should work in, then **Team Settings, API Tokens** (`https://app.documenso.com/t/<team url>/settings/tokens`, or the same path on your own server). Create a token; choose an expiry (7 days up to never).\n2. Paste it into `DOCUMENSO_API_KEY`. It is sent as is in the `Authorization` header (no \"Bearer\"), e.g. `api_xxxxxxxx`. A token has full API access to its team; there are no narrower scopes.\n3. Set `DOCUMENSO_API_URL`: `https://app.documenso.com/api/v2` for Documenso Cloud, or `https://<your host>/api/v2` for a self-hosted instance. No trailing slash.\n4. Run `documenso_list_envelopes` to check.\n\n**Workflow**\n- Find: `documenso_list_envelopes` (filter `type` DOCUMENT or TEMPLATE, `status`, `query`, `folder_id`), `documenso_list_folders`.\n- Read: `documenso_get_envelope` (recipients with signing status, fields, envelope items), `documenso_get_recipient`, `documenso_get_field`, `documenso_get_envelope_audit_log`.\n- Signed files: take `envelopeItems[].id` from `documenso_get_envelope` and call `documenso_download_document` (version `signed`); `documenso_download_audit_log_pdf` and `documenso_download_certificate` give the audit trail and signing certificate as PDFs.\n- Send from a template: `documenso_list_envelopes` with `type` TEMPLATE, `documenso_get_envelope` on the template for its recipient ids and field ids, then `documenso_use_template` with one entry per template recipient (`id` = template recipient id) and `distribute` true. Pre-fill fields with `prefill_fields`.\n- Send a one-off PDF: `documenso_create_envelope` with `file_url` and `recipients` (fields can be given per recipient), or add them afterwards with `documenso_add_recipients` and `documenso_add_fields`; then `documenso_distribute_envelope`. Every SIGNER needs a signature field.\n- Change a draft or template: `documenso_update_envelope`, `documenso_update_recipients`, `documenso_delete_recipient`, `documenso_delete_field`, `documenso_duplicate_envelope`.\n- Follow up: `documenso_redistribute_envelope` reminds recipients who have not acted and renews expired links; `documenso_cancel_envelope` stops a pending document; `documenso_delete_envelope` removes it.\n\n**Sending is real: confirm first.** `documenso_distribute_envelope`, `documenso_use_template` with `distribute` true and `documenso_redistribute_envelope` email the recipients. Show the user the document, the recipients with their roles and the message, and send only after a clear yes. Cancel and delete cannot be undone.\n\n**Reading the answers**: envelope ids are strings (`envelope_...`); recipient, field and template ids (`templateId`) are numbers. Times are ISO 8601 in UTC. Envelope `status`: DRAFT (not sent), PENDING (out for signing), COMPLETED, REJECTED (a recipient declined), CANCELLED. Recipient `signingStatus`: NOT_SIGNED, SIGNED, REJECTED; `readStatus`: NOT_OPENED, OPENED; `sendStatus`: NOT_SENT, SENT. Roles: SIGNER, APPROVER, VIEWER, CC, ASSISTANT. Field positions and sizes are percent of the page (0 to 100), pages start at 1. A recipient's signing link is `signingUrl` in the send answers (`<your Documenso address>/sign/<token>`). Recipients and fields cannot be changed once a document is PENDING.\n\n**Files**: `file_url` must be a public https link to a PDF; AnythingMCP downloads it and uploads it. Downloads return the PDF itself.\n\n**Paging**: lists return `{\"data\": [...], \"count\", \"currentPage\", \"perPage\", \"totalPages\"}`; raise `page` until it reaches `totalPages`.\n\n**Limits and errors**: 1000 requests per minute per IP address; 429 means wait (`Retry-After` seconds). The free Cloud plan allows 5 documents a month; over a plan limit the API answers 400 `LIMIT_EXCEEDED`. 401 \"Invalid token\" for a wrong or expired token, or a token of another instance; 404 for an unknown id or a URL without `/api/v2`; 400 with the validation issues for invalid input.\n\n\n**Switched off at install**: `documenso_cancel_envelope`, `documenso_delete_envelope`, `documenso_delete_recipient` and `documenso_delete_field`; they cannot be undone, so an admin switches them on when the team needs them.",
+  "requiredEnvVars": [
+    "DOCUMENSO_API_URL",
+    "DOCUMENSO_API_KEY"
+  ],
+  "envVarMeta": {
+    "DOCUMENSO_API_URL": {
+      "label": "API address",
+      "kind": "address",
+      "help": "https://app.documenso.com/api/v2 for Documenso Cloud, or https://<your host>/api/v2 for a self-hosted Documenso.",
+      "example": "https://app.documenso.com/api/v2",
+      "pattern": "^https?://[^\\s/]+(/[^\\s]*)?/api/v2$",
+      "patternMessage": "Use https://app.documenso.com/api/v2 or your server address followed by /api/v2, without a trailing slash."
+    },
+    "DOCUMENSO_API_KEY": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Team Settings, API Tokens in Documenso. Sent as is in the Authorization header.",
+      "link": "https://docs.documenso.com/docs/developers/getting-started/authentication",
+      "pattern": "^\\S{12,}$",
+      "patternMessage": "Paste only the token (for example api_...), without \"Bearer\" or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Documenso refused the token. Create a new one under Team Settings, API Tokens (it may have expired), and check that DOCUMENSO_API_URL points to the instance the token belongs to.",
+    "404": "Nothing answered at this address. DOCUMENSO_API_URL must end in /api/v2, e.g. https://app.documenso.com/api/v2 or https://sign.example.com/api/v2.",
+    "rate_limited": "Documenso is throttling these requests (1000 per minute per IP, lower organisation limits may apply). Wait the seconds in Retry-After and try again."
+  },
+  "probe": {
+    "tool": "documenso_list_envelopes",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "connector": {
+    "name": "Documenso API v2",
+    "type": "REST",
+    "baseUrl": "{{DOCUMENSO_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{DOCUMENSO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/envelope?perPage=1"
+  },
+  "tools": [
+    {
+      "name": "documenso_list_envelopes",
+      "description": "List documents and templates (envelopes), newest first: id, title, type (DOCUMENT or TEMPLATE), status, source, externalId, folder, created and completed time, owner and recipients with their signing status. Filter by text, type, status, template or folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Only envelopes whose title or recipient matches this text."
+          },
+          "type": {
+            "type": "string",
+            "description": "DOCUMENT for documents sent or to send, TEMPLATE for templates.",
+            "enum": [
+              "DOCUMENT",
+              "TEMPLATE"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Only envelopes in this state.",
+            "enum": [
+              "DRAFT",
+              "PENDING",
+              "COMPLETED",
+              "REJECTED",
+              "CANCELLED"
+            ]
+          },
+          "template_id": {
+            "type": "integer",
+            "description": "Only documents created from this template (numeric templateId, as in the templateId of an envelope)."
+          },
+          "source": {
+            "type": "string",
+            "description": "How the document was created.",
+            "enum": [
+              "DOCUMENT",
+              "TEMPLATE",
+              "TEMPLATE_DIRECT_LINK"
+            ]
+          },
+          "has_expired_recipients": {
+            "type": "string",
+            "description": "\"true\" for envelopes with at least one recipient whose signing link expired.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Only envelopes in this folder (id from documenso_list_folders)."
+          },
+          "order_direction": {
+            "type": "string",
+            "description": "Sort by creation date: desc (default, newest first) or asc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 10, up to 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelope",
+        "queryParams": {
+          "query": "$query",
+          "type": "$type",
+          "status": "$status",
+          "templateId": "$template_id",
+          "source": "$source",
+          "hasExpiredRecipients": "$has_expired_recipients",
+          "folderId": "$folder_id",
+          "orderByDirection": "$order_direction",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].recipients[*].token",
+            "data[*].team",
+            "data[*].authOptions"
+          ]
+        }
+      }
+    },
+    {
+      "name": "documenso_get_envelope",
+      "description": "Read one document or template in full: title, status, settings (subject, message, signing order, language, expiry), recipients (id, name, email, role, readStatus, signingStatus, sendStatus, signedAt, token), fields (id, type, recipient, page and position), envelope items (the PDFs, with their ids for downloading) and the template direct link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelope/{envelope_id}"
+      }
+    },
+    {
+      "name": "documenso_get_envelope_audit_log",
+      "description": "Audit trail of an envelope as data, newest first: each event (created, sent, opened, signed, rejected, completed and more) with time, user or recipient, IP address and user agent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          },
+          "order_direction": {
+            "type": "string",
+            "description": "Sort by time: desc (default) or asc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 10, up to 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelope/{envelope_id}/audit-log",
+        "queryParams": {
+          "orderByDirection": "$order_direction",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "documenso_download_document",
+      "description": "Download one PDF of an envelope (an envelope item). version \"signed\" (default for completed documents) is the final PDF with signatures and the audit trail, \"original\" the uploaded file, \"pending\" the current state while signing is in progress. The id is envelopeItems[].id from documenso_get_envelope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_item_id": {
+            "type": "string",
+            "description": "Envelope item id, from envelopeItems[].id of documenso_get_envelope."
+          },
+          "version": {
+            "type": "string",
+            "description": "Which version to download.",
+            "enum": [
+              "signed",
+              "original",
+              "pending"
+            ]
+          }
+        },
+        "required": [
+          "envelope_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelope/item/{envelope_item_id}/download",
+        "queryParams": {
+          "version": "$version"
+        }
+      }
+    },
+    {
+      "name": "documenso_download_audit_log_pdf",
+      "description": "Download the audit log of an envelope as a PDF: every event with time, actor, IP address and user agent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelope/{envelope_id}/audit-log/download"
+      }
+    },
+    {
+      "name": "documenso_download_certificate",
+      "description": "Download the signing certificate of a completed document as a PDF.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelope/{envelope_id}/certificate/download"
+      }
+    },
+    {
+      "name": "documenso_get_recipient",
+      "description": "Read one recipient: name, email, role, signing order, readStatus, signingStatus, sendStatus, signedAt, rejectionReason, link expiry and the fields assigned to them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recipient_id": {
+            "type": "integer",
+            "description": "Recipient id (number), from recipients[].id of documenso_get_envelope."
+          }
+        },
+        "required": [
+          "recipient_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelope/recipient/{recipient_id}"
+      }
+    },
+    {
+      "name": "documenso_get_field",
+      "description": "Read one field: type, recipient, page, position and size (percent of the page), whether it was filled (inserted) and its value (customText) and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_id": {
+            "type": "integer",
+            "description": "Field id (number), from fields[].id of documenso_get_envelope."
+          }
+        },
+        "required": [
+          "field_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelope/field/{field_id}"
+      }
+    },
+    {
+      "name": "documenso_list_folders",
+      "description": "List folders for documents or templates: id, name, parent folder, pinned, visibility. Use the id as folder_id elsewhere.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Only folders whose name contains this text."
+          },
+          "type": {
+            "type": "string",
+            "description": "DOCUMENT or TEMPLATE folders.",
+            "enum": [
+              "DOCUMENT",
+              "TEMPLATE"
+            ]
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Only the subfolders of this folder."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 10, up to 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folder",
+        "queryParams": {
+          "query": "$query",
+          "type": "$type",
+          "parentId": "$parent_id",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "documenso_create_envelope",
+      "description": "Create a draft document (or a template) from a PDF at a public URL, optionally with recipients and their fields. Nothing is sent yet: call documenso_distribute_envelope to send. Returns the new envelope id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title of the document."
+          },
+          "file_url": {
+            "type": "string",
+            "description": "Public https URL of the PDF to upload. AnythingMCP downloads it and sends it as the file.",
+            "format": "uri"
+          },
+          "type": {
+            "type": "string",
+            "description": "DOCUMENT for a document to send, TEMPLATE for a reusable template.",
+            "enum": [
+              "DOCUMENT",
+              "TEMPLATE"
+            ]
+          },
+          "recipients": {
+            "type": "array",
+            "description": "Recipients: [{\"email\", \"name\", \"role\": SIGNER, APPROVER, VIEWER, CC or ASSISTANT, \"signingOrder\"?, \"fields\"?: [{\"type\": \"SIGNATURE\", \"page\": 1, \"positionX\": 10, \"positionY\": 80, \"width\": 30, \"height\": 5}]}]. Positions and sizes are percent of the page; pages start at 1.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "description": "Recipient email."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Recipient name."
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "SIGNER",
+                    "APPROVER",
+                    "VIEWER",
+                    "CC",
+                    "ASSISTANT"
+                  ]
+                },
+                "signingOrder": {
+                  "type": "integer",
+                  "description": "Position in a SEQUENTIAL signing order, from 1."
+                }
+              },
+              "required": [
+                "email",
+                "name",
+                "role"
+              ]
+            }
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own reference for this document."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id, from documenso_list_folders."
+          },
+          "signing_order": {
+            "type": "string",
+            "description": "PARALLEL (default) or SEQUENTIAL by signingOrder.",
+            "enum": [
+              "PARALLEL",
+              "SEQUENTIAL"
+            ]
+          },
+          "form_values": {
+            "type": "object",
+            "description": "Values for PDF form fields of the file, keyed by form field name."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject for the recipients."
+          },
+          "message": {
+            "type": "string",
+            "description": "Email message for the recipients."
+          },
+          "distribution_method": {
+            "type": "string",
+            "description": "EMAIL (default) sends the signing emails; NONE sends nothing and you share the signingUrl yourself.",
+            "enum": [
+              "EMAIL",
+              "NONE"
+            ]
+          },
+          "redirect_url": {
+            "type": "string",
+            "description": "Address the signer is sent to after signing."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the signing page and emails.",
+            "enum": [
+              "de",
+              "en",
+              "fr",
+              "es",
+              "it",
+              "nl",
+              "pl",
+              "pt-BR",
+              "ja",
+              "ko",
+              "zh"
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "type",
+          "file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/create",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "payload": {
+            "__json": {
+              "title": "$title",
+              "type": "$type",
+              "externalId": "$external_id",
+              "folderId": "$folder_id",
+              "recipients": "$recipients",
+              "formValues": "$form_values",
+              "meta": {
+                "subject": "$subject",
+                "message": "$message",
+                "distributionMethod": "$distribution_method",
+                "redirectUrl": "$redirect_url",
+                "language": "$language",
+                "signingOrder": "$signing_order"
+              }
+            }
+          },
+          "files": {
+            "__file": "$file_url"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "documenso_use_template",
+      "description": "Create a document from a template and, with distribute true, send it at once. Map each template recipient (by its recipient id from documenso_get_envelope of the template) to a real person. Returns the new envelope id and each recipient with its signingUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_envelope_id": {
+            "type": "string",
+            "description": "Envelope id of the template (type TEMPLATE), from documenso_list_envelopes with type TEMPLATE."
+          },
+          "recipients": {
+            "type": "array",
+            "description": "One entry per template recipient: [{\"id\": <template recipient id>, \"email\": \"...\", \"name\": \"...\", \"signingOrder\"?}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "signingOrder": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "email"
+              ]
+            }
+          },
+          "distribute": {
+            "type": "boolean",
+            "description": "true sends the document to the recipients right away; false (default) leaves it as a draft."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the new document (default: the template title)."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject (overrides the template)."
+          },
+          "message": {
+            "type": "string",
+            "description": "Email message (overrides the template)."
+          },
+          "distribution_method": {
+            "type": "string",
+            "description": "EMAIL (default) sends the signing emails; NONE sends nothing and you share the signingUrl yourself.",
+            "enum": [
+              "EMAIL",
+              "NONE"
+            ]
+          },
+          "redirect_url": {
+            "type": "string",
+            "description": "Address the signer is sent to after signing."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the signing page and emails.",
+            "enum": [
+              "de",
+              "en",
+              "fr",
+              "es",
+              "it",
+              "nl",
+              "pl",
+              "pt-BR",
+              "ja",
+              "ko",
+              "zh"
+            ]
+          },
+          "prefill_fields": {
+            "type": "array",
+            "description": "Values for template fields before sending: [{\"id\": <field id>, \"type\": \"text\", \"value\": \"...\"}]. Types: text, number, radio, checkbox (value is a list), dropdown, date.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own reference for the new document."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Folder for the new document."
+          },
+          "form_values": {
+            "type": "object",
+            "description": "Values for PDF form fields, keyed by form field name."
+          }
+        },
+        "required": [
+          "template_envelope_id",
+          "recipients"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/use",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "payload": {
+            "__json": {
+              "envelopeId": "$template_envelope_id",
+              "recipients": "$recipients",
+              "distributeDocument": "$distribute",
+              "externalId": "$external_id",
+              "folderId": "$folder_id",
+              "prefillFields": "$prefill_fields",
+              "formValues": "$form_values",
+              "override": {
+                "title": "$title",
+                "subject": "$subject",
+                "message": "$message",
+                "distributionMethod": "$distribution_method",
+                "redirectUrl": "$redirect_url",
+                "language": "$language"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "documenso_distribute_envelope",
+      "description": "Send a draft document to its recipients (status DRAFT becomes PENDING). Every SIGNER needs at least one signature field first. Returns each recipient with its signingUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject for the recipients."
+          },
+          "message": {
+            "type": "string",
+            "description": "Email message for the recipients."
+          },
+          "distribution_method": {
+            "type": "string",
+            "description": "EMAIL (default) sends the signing emails; NONE sends nothing and you share the signingUrl yourself.",
+            "enum": [
+              "EMAIL",
+              "NONE"
+            ]
+          },
+          "redirect_url": {
+            "type": "string",
+            "description": "Address the signer is sent to after signing."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the signing page and emails.",
+            "enum": [
+              "de",
+              "en",
+              "fr",
+              "es",
+              "it",
+              "nl",
+              "pl",
+              "pt-BR",
+              "ja",
+              "ko",
+              "zh"
+            ]
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/distribute",
+        "bodyMapping": {
+          "envelopeId": "$envelope_id",
+          "meta": {
+            "subject": "$subject",
+            "message": "$message",
+            "distributionMethod": "$distribution_method",
+            "redirectUrl": "$redirect_url",
+            "language": "$language"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "documenso_redistribute_envelope",
+      "description": "Send the signing request again (a reminder) to recipients who have not acted yet, and renew their expired signing links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          },
+          "recipient_ids": {
+            "type": "array",
+            "description": "Recipient ids to remind (numbers), from recipients[].id of documenso_get_envelope.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "envelope_id",
+          "recipient_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/redistribute",
+        "bodyMapping": {
+          "envelopeId": "$envelope_id",
+          "recipients": "$recipient_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "documenso_cancel_envelope",
+      "description": "Cancel a pending document: signing stops and recipients can no longer sign. The document stays in the list with status CANCELLED.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the cancellation."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/cancel",
+        "bodyMapping": {
+          "envelopeId": "$envelope_id",
+          "reason": "$reason"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "documenso_delete_envelope",
+      "description": "Delete a document or template. A draft is removed; a pending document is cancelled for the recipients and hidden.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/delete",
+        "bodyMapping": {
+          "envelopeId": "$envelope_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "documenso_update_envelope",
+      "description": "Change a draft document or a template: title, external id, folder, visibility and email or signing settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "New external reference."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Move to this folder."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "Who in the team can see it.",
+            "enum": [
+              "EVERYONE",
+              "MANAGER_AND_ABOVE",
+              "ADMIN"
+            ]
+          },
+          "signing_order": {
+            "type": "string",
+            "description": "PARALLEL or SEQUENTIAL.",
+            "enum": [
+              "PARALLEL",
+              "SEQUENTIAL"
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for dates, e.g. Europe/Berlin."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject for the recipients."
+          },
+          "message": {
+            "type": "string",
+            "description": "Email message for the recipients."
+          },
+          "distribution_method": {
+            "type": "string",
+            "description": "EMAIL (default) sends the signing emails; NONE sends nothing and you share the signingUrl yourself.",
+            "enum": [
+              "EMAIL",
+              "NONE"
+            ]
+          },
+          "redirect_url": {
+            "type": "string",
+            "description": "Address the signer is sent to after signing."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the signing page and emails.",
+            "enum": [
+              "de",
+              "en",
+              "fr",
+              "es",
+              "it",
+              "nl",
+              "pl",
+              "pt-BR",
+              "ja",
+              "ko",
+              "zh"
+            ]
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/update",
+        "bodyMapping": {
+          "envelopeId": "$envelope_id",
+          "data": {
+            "title": "$title",
+            "externalId": "$external_id",
+            "folderId": "$folder_id",
+            "visibility": "$visibility"
+          },
+          "meta": {
+            "subject": "$subject",
+            "message": "$message",
+            "distributionMethod": "$distribution_method",
+            "redirectUrl": "$redirect_url",
+            "language": "$language",
+            "signingOrder": "$signing_order",
+            "timezone": "$timezone"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "documenso_duplicate_envelope",
+      "description": "Copy a document or template with its settings, optionally with recipients and fields. Returns the new envelope id (a draft).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          },
+          "include_recipients": {
+            "type": "boolean",
+            "description": "Copy the recipients too."
+          },
+          "include_fields": {
+            "type": "boolean",
+            "description": "Copy the fields too (needs include_recipients)."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/duplicate",
+        "bodyMapping": {
+          "envelopeId": "$envelope_id",
+          "includeRecipients": "$include_recipients",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "documenso_add_recipients",
+      "description": "Add recipients to a draft document or a template. Returns them with their ids, which documenso_add_fields needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          },
+          "recipients": {
+            "type": "array",
+            "description": "[{\"email\", \"name\", \"role\": SIGNER, APPROVER, VIEWER, CC or ASSISTANT, \"signingOrder\"?}]",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "description": "Recipient email."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Recipient name."
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "SIGNER",
+                    "APPROVER",
+                    "VIEWER",
+                    "CC",
+                    "ASSISTANT"
+                  ]
+                },
+                "signingOrder": {
+                  "type": "integer",
+                  "description": "Position in a SEQUENTIAL signing order, from 1."
+                }
+              },
+              "required": [
+                "email",
+                "name",
+                "role"
+              ]
+            }
+          }
+        },
+        "required": [
+          "envelope_id",
+          "recipients"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/recipient/create-many",
+        "bodyMapping": {
+          "envelopeId": "$envelope_id",
+          "data": "$recipients"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "documenso_update_recipients",
+      "description": "Change recipients of a draft document or a template (name, email, role, signing order).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          },
+          "recipients": {
+            "type": "array",
+            "description": "[{\"id\": <recipient id>, \"email\"?, \"name\"?, \"role\"?, \"signingOrder\"?}]",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "SIGNER",
+                    "APPROVER",
+                    "VIEWER",
+                    "CC",
+                    "ASSISTANT"
+                  ]
+                },
+                "signingOrder": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "envelope_id",
+          "recipients"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/recipient/update-many",
+        "bodyMapping": {
+          "envelopeId": "$envelope_id",
+          "data": "$recipients"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "documenso_delete_recipient",
+      "description": "Remove a recipient (and their fields) from a draft document or a template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recipient_id": {
+            "type": "integer",
+            "description": "Recipient id, from recipients[].id of documenso_get_envelope."
+          }
+        },
+        "required": [
+          "recipient_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/recipient/delete",
+        "bodyMapping": {
+          "recipientId": "$recipient_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "documenso_add_fields",
+      "description": "Place fields (signature, name, date, text and more) for recipients on a draft document or a template, by position or by a placeholder text found in the PDF.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "Envelope id (a string such as \"envelope_abc123\"), from documenso_list_envelopes."
+          },
+          "fields": {
+            "type": "array",
+            "description": "By position: [{\"type\": \"SIGNATURE\", \"recipientId\": 12, \"envelopeItemId\"?: \"...\", \"page\": 1, \"positionX\": 10, \"positionY\": 80, \"width\": 30, \"height\": 5}] (percent of the page, pages from 1). By placeholder: [{\"type\": \"SIGNATURE\", \"recipientId\": 12, \"placeholder\": \"{{signature}}\", \"matchAll\"?: true}]. Types: SIGNATURE, FREE_SIGNATURE, INITIALS, NAME, EMAIL, DATE, TEXT, NUMBER, RADIO, CHECKBOX, DROPDOWN; optional \"fieldMeta\" holds label, required, readOnly and type-specific settings.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "envelope_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/field/create-many",
+        "bodyMapping": {
+          "envelopeId": "$envelope_id",
+          "data": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "documenso_delete_field",
+      "description": "Remove a field (signature, text, date and others) from a draft document or a template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_id": {
+            "type": "integer",
+            "description": "Field id, from fields[].id of documenso_get_envelope."
+          }
+        },
+        "required": [
+          "field_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelope/field/delete",
+        "bodyMapping": {
+          "fieldId": "$field_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

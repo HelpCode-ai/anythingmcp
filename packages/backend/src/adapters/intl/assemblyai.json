@@ -1,0 +1,714 @@
+{
+  "slug": "assemblyai",
+  "name": "AssemblyAI",
+  "aliases": [
+    "Assembly AI",
+    "LeMUR",
+    "Universal-Streaming"
+  ],
+  "description": "Speech to text with AssemblyAI: transcribe audio and video files from a link with speaker labels, language detection, PII redaction, summaries, chapters, entities and sentiment, read transcripts as text, sentences, paragraphs or SRT/VTT subtitles, search words, translate or identify speakers, ask an LLM about a transcript, and create streaming tokens. US or EU data residency. Paid per hour of audio, with free credit for new accounts.",
+  "instructions": "## AssemblyAI\nThis connector uses the **AssemblyAI** speech-to-text API: asynchronous transcription of audio and video files (`api.assemblyai.com/v2`), Speech Understanding and the LLM Gateway for questions about transcripts (`llm-gateway.assemblyai.com/v1`), and temporary tokens for real-time streaming (`streaming.assemblyai.com/v3`). The EU region uses the same hosts with `eu.` in front.\n\n**Setup (2 minutes)**\n1. Sign up at https://www.assemblyai.com/dashboard/signup (new accounts get $50 of free credit for transcription and Speech Understanding).\n2. In the dashboard open **API Keys**, copy a key and paste it into `ASSEMBLYAI_API_KEY`. It is sent as the raw `Authorization` header value (no `Bearer`).\n3. Set `ASSEMBLYAI_DOMAIN` to `assemblyai.com` (US, default) or `eu.assemblyai.com` (EU data residency: audio, transcripts and prompts are processed and stored in the EU). Transcripts made in one region are not visible from the other. On the EU LLM Gateway only Claude and Gemini models are available.\n\n**Costs**: `assemblyai_submit_transcript` is billed per hour of audio, pro-rated to the second: Universal-3.5 Pro $0.21/h, Universal-2 $0.15/h; add-ons speaker labels $0.02/h, keyterms or prompt $0.05/h (Universal-3.5 Pro), medical mode $0.15/h; multichannel bills every channel. `assemblyai_understand_transcript` is billed per task. `assemblyai_ask_transcript` is billed per input and output token at the model's price (see `assemblyai_list_llm_models`, USD per million tokens) and is not covered by the free credit. Failed transcripts are free. Reads, `assemblyai_list_llm_models` and `assemblyai_create_streaming_token` are free (a streaming session itself is billed by connection time). Confirm with the user before transcribing long files.\n\n**Workflow**\n1. `assemblyai_submit_transcript` with `audio_url`, a public direct link to the file (a cloud storage link, a podcast MP3; not a YouTube page). Local files cannot be uploaded through this connector. Turn on what is needed: `speaker_labels` (who said what), `language_detection` or `language_code`, `keyterms_prompt` for names, `redact_pii` with `redact_pii_policies`, `summarization` or `auto_chapters`, `entity_detection`, `sentiment_analysis`, `speech_understanding` for translation or speaker names.\n2. `assemblyai_get_transcript` with the returned id every few seconds until `status` is completed (or error, with the reason in `error`). Processing usually takes a fraction of the audio length.\n3. Read: `text` and `utterances` (speaker, text, start, end) from `assemblyai_get_transcript`; `assemblyai_get_sentences` and `assemblyai_get_paragraphs` for timed segments; `assemblyai_get_subtitles` for SRT or VTT; `assemblyai_search_words` to find when something was said; `assemblyai_get_redacted_audio` for the beeped audio after `redact_pii_audio`.\n4. Analyse: `assemblyai_ask_transcript` with a prompt that contains `{{ transcript }}` (summaries, action items, questions; this replaces the retired LeMUR API); `assemblyai_understand_transcript` to translate or identify speakers on a finished transcript. Pick a model with `assemblyai_list_llm_models`.\n5. Manage: `assemblyai_list_transcripts` (newest first, filter by `status` or `created_on`; for older ones pass `before_id` = the last id of the page) and `assemblyai_delete_transcript` when the user asks to remove one (permanent).\n6. Real time: `assemblyai_create_streaming_token` returns a short-lived `token` for a browser or device to open the streaming WebSocket (`wss://streaming.assemblyai.com/v3/ws?token=...`) without the API key.\n\n**Reading answers**: all times (`start`, `end`, `audio_start_from`, word timestamps) are in **milliseconds**, except `audio_duration`, which is in seconds. `confidence` is 0 to 1. Speakers are labelled A, B, C within one transcript. Dates such as `created` are ISO 8601 UTC. Word-level timestamps are removed from `assemblyai_get_transcript`, `assemblyai_get_sentences` and `assemblyai_get_paragraphs` to keep answers small; very long transcripts are cut at about 600 KB.\n\n**Errors**: 401 \"Authentication error, API token missing/invalid\" (wrong key); 400 with `error` naming a bad parameter (e.g. a feature not available for the language or model); 404 transcript not found (wrong id or other region); a transcript with status error and \"Download error\" means the audio_url could not be fetched (not public, or a web page instead of a file); 429 too many concurrent requests. On the streaming token, an invalid key answers 404 \"Invalid API key\".\n\n**Out of scope**: uploading local files (`/v2/upload` needs a raw binary body), the synchronous Sync and Dictation APIs, text to speech, and saved prompts and tool calling on the LLM Gateway.\n\n**Switched off at install**: `assemblyai_delete_transcript`; they cannot be undone, so an admin switches them on when the team needs them.",
+  "region": "intl",
+  "category": "data",
+  "icon": "assemblyai",
+  "docsUrl": "https://www.assemblyai.com/docs/api-reference/overview",
+  "prerequisites": "An AssemblyAI account and its API key; new accounts get $50 of free transcription credit.",
+  "requiredEnvVars": [
+    "ASSEMBLYAI_API_KEY",
+    "ASSEMBLYAI_DOMAIN"
+  ],
+  "envVarMeta": {
+    "ASSEMBLYAI_API_KEY": {
+      "label": "AssemblyAI API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "In the AssemblyAI dashboard, API Keys: copy a key.",
+      "link": "https://www.assemblyai.com/dashboard/home"
+    },
+    "ASSEMBLYAI_DOMAIN": {
+      "label": "Region",
+      "kind": "setting",
+      "help": "assemblyai.com for the US (default), eu.assemblyai.com for EU data residency (audio and transcripts processed and stored in the EU). Transcripts are only visible through the region that created them.",
+      "example": "assemblyai.com",
+      "pattern": "^(eu\\.)?assemblyai\\.com$",
+      "patternMessage": "Use assemblyai.com (US) or eu.assemblyai.com (EU), without https:// or api."
+    }
+  },
+  "verifyHints": {
+    "401": "AssemblyAI does not accept this API key (\"Authentication error, API token missing/invalid\"). Copy it again from the API Keys page of the dashboard, without quotes or the word Bearer."
+  },
+  "probe": {
+    "tool": "assemblyai_list_transcripts"
+  },
+  "connector": {
+    "name": "AssemblyAI",
+    "type": "REST",
+    "baseUrl": "https://api.{{ASSEMBLYAI_DOMAIN}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{ASSEMBLYAI_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v2/transcript?limit=1"
+  },
+  "tools": [
+    {
+      "name": "assemblyai_list_transcripts",
+      "description": "List the transcripts of the account, newest first, with id, status (queued, processing, completed, error), creation and completion time and audio URL. For older transcripts call again with before_id = the id of the last transcript of the page (page_details.prev_url points to the same page). Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Transcripts per page, 1 to 200 (default 20 here)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "processing",
+              "completed",
+              "error"
+            ],
+            "description": "Only transcripts with this status."
+          },
+          "created_on": {
+            "type": "string",
+            "description": "Only transcripts created on this day, YYYY-MM-DD."
+          },
+          "before_id": {
+            "type": "string",
+            "description": "Transcripts created before this transcript id (next page)."
+          },
+          "after_id": {
+            "type": "string",
+            "description": "Transcripts created after this transcript id."
+          },
+          "throttled_only": {
+            "type": "boolean",
+            "description": "Only throttled transcripts (overrides status)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/transcript",
+        "queryParams": {
+          "limit": "$limit",
+          "status": "$status",
+          "created_on": "$created_on",
+          "before_id": "$before_id",
+          "after_id": "$after_id",
+          "throttled_only": "$throttled_only"
+        }
+      }
+    },
+    {
+      "name": "assemblyai_get_transcript",
+      "description": "Get a transcript by id: status (queued, processing, completed or error with the error text), the full text, utterances by speaker, detected language, audio duration in seconds, confidence and the results of every feature requested (summary, chapters, entities, sentiment, highlights, content safety, translations). Word-level timestamps are left out to keep it readable; use assemblyai_get_sentences or assemblyai_get_paragraphs for timed segments. Poll every few seconds until completed. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Transcript id from assemblyai_submit_transcript or assemblyai_list_transcripts."
+          }
+        },
+        "required": [
+          "transcript_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/transcript/{transcript_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "words",
+            "utterances[*].words",
+            "sentiment_analysis_results[*].words",
+            "auto_highlights_result.results[*].timestamps"
+          ],
+          "maxBytes": 600000
+        }
+      }
+    },
+    {
+      "name": "assemblyai_get_sentences",
+      "description": "The completed transcript split into sentences, each with text, start and end in milliseconds, confidence and speaker. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Transcript id from assemblyai_submit_transcript or assemblyai_list_transcripts."
+          }
+        },
+        "required": [
+          "transcript_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/transcript/{transcript_id}/sentences"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "sentences[*].words"
+          ],
+          "maxBytes": 600000
+        }
+      }
+    },
+    {
+      "name": "assemblyai_get_paragraphs",
+      "description": "The completed transcript split into paragraphs, each with text, start and end in milliseconds and confidence. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Transcript id from assemblyai_submit_transcript or assemblyai_list_transcripts."
+          }
+        },
+        "required": [
+          "transcript_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/transcript/{transcript_id}/paragraphs"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "paragraphs[*].words"
+          ],
+          "maxBytes": 600000
+        }
+      }
+    },
+    {
+      "name": "assemblyai_get_subtitles",
+      "description": "Export a completed transcript as subtitles in SRT or WebVTT format (plain text, ready to save as .srt or .vtt). Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Transcript id from assemblyai_submit_transcript or assemblyai_list_transcripts."
+          },
+          "subtitle_format": {
+            "type": "string",
+            "enum": [
+              "srt",
+              "vtt"
+            ],
+            "description": "srt or vtt."
+          },
+          "chars_per_caption": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum characters per caption, e.g. 32 or 42."
+          }
+        },
+        "required": [
+          "transcript_id",
+          "subtitle_format"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/transcript/{transcript_id}/{subtitle_format}",
+        "queryParams": {
+          "chars_per_caption": "$chars_per_caption"
+        },
+        "headers": {
+          "Accept": "text/plain, */*"
+        }
+      }
+    },
+    {
+      "name": "assemblyai_search_words",
+      "description": "Find where words or phrases are said in a completed transcript: per word, the number of matches and their timestamps in milliseconds. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Transcript id from assemblyai_submit_transcript or assemblyai_list_transcripts."
+          },
+          "words": {
+            "type": "string",
+            "description": "Comma-separated words or phrases (up to 5 words each), e.g. \"budget,next quarter\"."
+          }
+        },
+        "required": [
+          "transcript_id",
+          "words"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/transcript/{transcript_id}/word-search",
+        "queryParams": {
+          "words": "$words"
+        }
+      }
+    },
+    {
+      "name": "assemblyai_get_redacted_audio",
+      "description": "Get the link to the copy of the audio with personal data beeped out, for a transcript submitted with redact_pii_audio. status is redacted_audio_ready when the redacted_audio_url can be downloaded. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Transcript id from assemblyai_submit_transcript or assemblyai_list_transcripts."
+          }
+        },
+        "required": [
+          "transcript_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/transcript/{transcript_id}/redacted-audio"
+      }
+    },
+    {
+      "name": "assemblyai_list_llm_models",
+      "description": "List the language models of AssemblyAI's LLM Gateway (Claude, GPT, Gemini and open models) with id, context length, price per million input (prompt) and output (completions) tokens in USD and the regions (us, eu) where each is available. Use an id with assemblyai_ask_transcript. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://llm-gateway.{{ASSEMBLYAI_DOMAIN}}/v1/models"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "models": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "context_length": "context_length",
+                "pricing": "pricing",
+                "available_regions": "available_regions",
+                "retirement_date": "retirement_date"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "assemblyai_create_streaming_token",
+      "description": "Create a temporary token for AssemblyAI real-time streaming transcription (Universal-Streaming WebSocket), to hand to a browser or device so it can stream audio without the API key. Creating the token is free; the streaming session is billed by the time the connection stays open.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expires_in_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600,
+            "description": "How long the token can be used to open a connection, 1 to 600 seconds."
+          },
+          "max_session_duration_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 10800,
+            "description": "Maximum length of the session, 60 to 10800 seconds (default 10800)."
+          }
+        },
+        "required": [
+          "expires_in_seconds"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://streaming.{{ASSEMBLYAI_DOMAIN}}/v3/token",
+        "queryParams": {
+          "expires_in_seconds": "$expires_in_seconds",
+          "max_session_duration_seconds": "$max_session_duration_seconds"
+        }
+      }
+    },
+    {
+      "name": "assemblyai_submit_transcript",
+      "description": "Start transcribing an audio or video file from a public URL with AssemblyAI, optionally with speaker labels, language detection, PII redaction, summaries, chapters, entities, sentiment and translation. Returns the transcript id with status queued; poll assemblyai_get_transcript until completed (usually a fraction of the audio length). COSTS MONEY per hour of audio, pro-rated to the second: Universal-3.5 Pro $0.21/h, Universal-2 $0.15/h, plus add-ons (speaker labels $0.02/h, keyterms or prompt $0.05/h, medical $0.15/h, understanding features extra). New accounts get $50 of free credit. Tell the user the cost for long files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "audio_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https link to the audio or video file (mp3, wav, m4a, mp4, webm ...; up to 2.2 GB and 10 hours). Links to web pages such as YouTube do not work."
+          },
+          "speech_models": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "universal-3-5-pro",
+                "universal-2"
+              ]
+            },
+            "description": "Models in order of preference, default [\"universal-3-5-pro\", \"universal-2\"]: Universal-3.5 Pro ($0.21/h, 18 languages) falls back to Universal-2 ($0.15/h, 99 languages) for other languages."
+          },
+          "language_code": {
+            "type": "string",
+            "description": "Language of the audio, e.g. en, en_us, de, fr, es, it. Leave empty with language_detection true to detect it."
+          },
+          "language_detection": {
+            "type": "boolean",
+            "description": "Detect the language automatically."
+          },
+          "speaker_labels": {
+            "type": "boolean",
+            "description": "Tell speakers apart (diarization, +$0.02/h): fills utterances with speaker A, B, ..."
+          },
+          "speakers_expected": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Expected number of speakers, with speaker_labels."
+          },
+          "multichannel": {
+            "type": "boolean",
+            "description": "Transcribe each audio channel separately (each channel is billed)."
+          },
+          "keyterms_prompt": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names and terms to recognise correctly, e.g. [\"AnythingMCP\", \"Kubernetes\"] (up to 1,000 with Universal-3.5 Pro, +$0.05/h)."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Plain-language description of the audio (domain, speakers, context) to improve accuracy, Universal-3.5 Pro only (+$0.05/h)."
+          },
+          "punctuate": {
+            "type": "boolean",
+            "description": "Add punctuation, default true."
+          },
+          "format_text": {
+            "type": "boolean",
+            "description": "Format text (casing, numbers), default true."
+          },
+          "disfluencies": {
+            "type": "boolean",
+            "description": "Keep filler words such as \"um\" and \"uh\"."
+          },
+          "filter_profanity": {
+            "type": "boolean",
+            "description": "Replace profanity with asterisks."
+          },
+          "redact_pii": {
+            "type": "boolean",
+            "description": "Redact personal data in the text; set redact_pii_policies too."
+          },
+          "redact_pii_policies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Kinds of personal data to redact, e.g. [\"person_name\", \"phone_number\", \"email_address\", \"credit_card_number\", \"date_of_birth\", \"location\"]."
+          },
+          "redact_pii_sub": {
+            "type": "string",
+            "enum": [
+              "entity_name",
+              "hash"
+            ],
+            "description": "Replace redacted data with its kind, e.g. [PERSON_NAME] (entity_name), or with #### (hash, default)."
+          },
+          "redact_pii_audio": {
+            "type": "boolean",
+            "description": "Also create a copy of the audio with personal data beeped out (assemblyai_get_redacted_audio)."
+          },
+          "summarization": {
+            "type": "boolean",
+            "description": "Add a summary (summary_model and summary_type)."
+          },
+          "summary_model": {
+            "type": "string",
+            "enum": [
+              "informative",
+              "conversational",
+              "catchy"
+            ],
+            "description": "Summary style."
+          },
+          "summary_type": {
+            "type": "string",
+            "enum": [
+              "bullets",
+              "bullets_verbose",
+              "gist",
+              "headline",
+              "paragraph"
+            ],
+            "description": "Summary format."
+          },
+          "auto_chapters": {
+            "type": "boolean",
+            "description": "Split into chapters with summaries (not together with summarization)."
+          },
+          "auto_highlights": {
+            "type": "boolean",
+            "description": "Extract key phrases."
+          },
+          "entity_detection": {
+            "type": "boolean",
+            "description": "Detect names, organisations, locations, dates and more."
+          },
+          "sentiment_analysis": {
+            "type": "boolean",
+            "description": "Sentiment per sentence."
+          },
+          "iab_categories": {
+            "type": "boolean",
+            "description": "Topic detection with IAB categories."
+          },
+          "content_safety": {
+            "type": "boolean",
+            "description": "Flag sensitive content (violence, hate speech ...)."
+          },
+          "speech_understanding": {
+            "type": "object",
+            "description": "Run Speech Understanding during transcription, e.g. {\"request\": {\"translation\": {\"target_languages\": [\"de\", \"es\"]}}} or {\"request\": {\"speaker_identification\": {\"speaker_type\": \"name\", \"known_values\": [\"Anna\", \"Ben\"]}}}. Billed separately."
+          },
+          "audio_start_from": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Start transcribing at this point, in milliseconds."
+          },
+          "audio_end_at": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Stop transcribing at this point, in milliseconds."
+          },
+          "domain": {
+            "type": "string",
+            "enum": [
+              "medical-v1"
+            ],
+            "description": "medical-v1 for Medical Mode (+$0.15/h)."
+          },
+          "webhook_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional URL AssemblyAI calls when the transcript is completed or failed."
+          }
+        },
+        "required": [
+          "audio_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/transcript",
+        "bodyMapping": {
+          "audio_url": "$audio_url",
+          "speech_models": "$speech_models",
+          "language_code": "$language_code",
+          "language_detection": "$language_detection",
+          "speaker_labels": "$speaker_labels",
+          "speakers_expected": "$speakers_expected",
+          "multichannel": "$multichannel",
+          "keyterms_prompt": "$keyterms_prompt",
+          "prompt": "$prompt",
+          "punctuate": "$punctuate",
+          "format_text": "$format_text",
+          "disfluencies": "$disfluencies",
+          "filter_profanity": "$filter_profanity",
+          "redact_pii": "$redact_pii",
+          "redact_pii_policies": "$redact_pii_policies",
+          "redact_pii_sub": "$redact_pii_sub",
+          "redact_pii_audio": "$redact_pii_audio",
+          "summarization": "$summarization",
+          "summary_model": "$summary_model",
+          "summary_type": "$summary_type",
+          "auto_chapters": "$auto_chapters",
+          "auto_highlights": "$auto_highlights",
+          "entity_detection": "$entity_detection",
+          "sentiment_analysis": "$sentiment_analysis",
+          "iab_categories": "$iab_categories",
+          "content_safety": "$content_safety",
+          "speech_understanding": "$speech_understanding",
+          "audio_start_from": "$audio_start_from",
+          "audio_end_at": "$audio_end_at",
+          "domain": "$domain",
+          "webhook_url": "$webhook_url"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "audio_url": "$.audio_url",
+            "speech_models": "$.speech_models",
+            "language_code": "$.language_code",
+            "error": "$.error"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "assemblyai_understand_transcript",
+      "description": "Run a Speech Understanding task on a completed transcript without transcribing again: translation into other languages, speaker identification (replace speaker A/B with names or roles), custom formatting, or summarization. Returns the transcript with the added results. COSTS MONEY (billed per task by AssemblyAI).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Transcript id from assemblyai_submit_transcript or assemblyai_list_transcripts."
+          },
+          "speech_understanding": {
+            "type": "object",
+            "description": "The task, e.g. {\"request\": {\"translation\": {\"target_languages\": [\"de\", \"es\"], \"formal\": true}}}, {\"request\": {\"speaker_identification\": {\"speaker_type\": \"role\", \"known_values\": [\"interviewer\", \"candidate\"]}}}."
+          }
+        },
+        "required": [
+          "transcript_id",
+          "speech_understanding"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://llm-gateway.{{ASSEMBLYAI_DOMAIN}}/v1/understanding",
+        "bodyMapping": {
+          "transcript_id": "$transcript_id",
+          "speech_understanding": "$speech_understanding"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "words",
+            "utterances[*].words",
+            "sentiment_analysis_results[*].words",
+            "auto_highlights_result.results[*].timestamps"
+          ],
+          "maxBytes": 600000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "assemblyai_ask_transcript",
+      "description": "Ask a language model about a transcript through AssemblyAI's LLM Gateway (the successor of LeMUR): summaries, action items, answers to questions, extraction. Write {{ transcript }} in the prompt where the transcript text goes and pass transcript_id. Returns an OpenAI-style chat completion (answer in choices[0].message.content) with token usage. COSTS MONEY per input and output token at the model's price (assemblyai_list_llm_models); not covered by the free credit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Transcript id from assemblyai_submit_transcript or assemblyai_list_transcripts."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "The instruction, containing {{ transcript }} where the transcript is inserted, e.g. \"List the action items with owners in this meeting: {{ transcript }}\"."
+          },
+          "model": {
+            "type": "string",
+            "default": "claude-sonnet-4-6",
+            "description": "Model id from assemblyai_list_llm_models. On the EU endpoint only Claude and Gemini models are available."
+          },
+          "max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum answer length in tokens, default 1000."
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2,
+            "description": "Randomness; low for factual answers."
+          }
+        },
+        "required": [
+          "transcript_id",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://llm-gateway.{{ASSEMBLYAI_DOMAIN}}/v1/chat/completions",
+        "bodyMapping": {
+          "model": "$model",
+          "prompt": "$prompt",
+          "transcript_id": "$transcript_id",
+          "max_tokens": "$max_tokens",
+          "temperature": "$temperature"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "assemblyai_delete_transcript",
+      "description": "Remove a transcript's text and data permanently; the record stays, marked as deleted. Files uploaded to AssemblyAI for it are deleted too. Only on explicit user request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript_id": {
+            "type": "string",
+            "description": "Transcript id from assemblyai_submit_transcript or assemblyai_list_transcripts."
+          }
+        },
+        "required": [
+          "transcript_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/transcript/{transcript_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "text": "$.text",
+            "audio_url": "$.audio_url"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,1571 @@
+{
+  "slug": "smartlead",
+  "name": "Smartlead",
+  "description": "Smartlead cold email outreach from any AI agent: campaigns, sequences and schedules, leads and categories, master inbox replies, campaign and account analytics, sender mailboxes with warmup, and webhooks. REST API with an API key.",
+  "instructions": "## Smartlead\nThis connector uses the Smartlead REST API (`https://server.smartlead.ai/api/v1`) for cold email outreach: campaigns and their sequences, schedules and mailboxes, leads, replies in the master inbox, analytics, sender mailboxes with warmup, and webhooks.\n\n**Setup**\n1. In Smartlead open **Settings** and the **API Keys** section (on some plans under Settings, Integrations). API access needs a paid plan.\n2. Copy the API key into `SMARTLEAD_API_KEY`.\n\nThe key travels as the `api_key` query parameter on every request; the connector adds it. It gives full access to the account, so treat it like a password.\n\n**Campaigns**\n- `smartlead_list_campaigns` first: the `id` of each campaign is the `campaign_id` of every other tool. `smartlead_get_campaign`, `smartlead_get_campaign_sequences` and `smartlead_list_campaign_email_accounts` show its setup.\n- Build a campaign: `smartlead_create_campaign`, `smartlead_save_campaign_sequences`, `smartlead_update_campaign_schedule`, `smartlead_update_campaign_settings`, `smartlead_add_email_accounts_to_campaign`, `smartlead_add_leads_to_campaign`, then `smartlead_update_campaign_status` with `START`.\n- `smartlead_update_campaign_status`: `START` (not ACTIVE), `PAUSED`, `STOPPED` (final) or `ARCHIVED`.\n- `smartlead_save_campaign_sequences` replaces the whole sequence: read it with `smartlead_get_campaign_sequences` first, keep the step ids and send every step. Personalise with `{{first_name}}`, `{{company_name}}` and custom field names.\n\n**Leads**\n- `smartlead_list_campaign_leads` lists a campaign's leads; each row has the campaign lead map id (`id` of the row, used by `smartlead_create_lead_note`) and the lead itself (`lead.id`, used as `lead_id`).\n- `smartlead_get_lead_by_email` finds a lead anywhere; `smartlead_get_lead` reads one by id; `smartlead_get_lead_campaign_overview` shows all its campaigns.\n- Change a lead: `smartlead_update_lead`, `smartlead_update_lead_category` (ids from `smartlead_list_lead_categories`), `smartlead_pause_lead`, `smartlead_resume_lead`.\n- Stop a lead: `smartlead_unsubscribe_lead_from_campaign` (one campaign), `smartlead_unsubscribe_lead_globally` (all campaigns, also blocks future imports), `smartlead_delete_lead_from_campaign`.\n- `smartlead_add_leads_to_campaign` takes at most 400 leads per call.\n\n**Replies**\n- `smartlead_list_inbox_replies` lists replies across campaigns (filters by campaign, mailbox, category, reply time); `smartlead_get_inbox_item` opens one thread.\n- To answer: `smartlead_get_lead_message_history` gives each message's `stats_id`, `message_id` and `time`; pass them as `email_stats_id`, `reply_message_id` and `reply_email_time` to `smartlead_reply_to_lead`. The reply leaves from the mailbox of that thread.\n- `smartlead_create_lead_note` adds an internal note.\n\n**Analytics**\n- Per campaign: `smartlead_get_campaign_analytics` (all-time totals), `smartlead_get_campaign_analytics_by_date`, `smartlead_get_campaign_sequence_analytics` (per step and variant), `smartlead_get_campaign_statistics` (one row per sent email).\n- Whole account: `smartlead_get_overall_analytics`.\n- Counts are numbers of emails or leads; rates are percentages. Dates are `YYYY-MM-DD`; timestamps are ISO 8601 in UTC unless a time zone is passed.\n\n**Mailboxes**: `smartlead_list_email_accounts` (find broken connections with `isSmtpSuccess=false`), `smartlead_get_email_account`, `smartlead_get_warmup_stats`, `smartlead_update_email_account`, `smartlead_update_warmup`.\n\n**Webhooks**: `smartlead_list_campaign_webhooks`, `smartlead_upsert_campaign_webhook` (create, or update when `id` is given), `smartlead_delete_campaign_webhook`. Event types: `EMAIL_SENT`, `EMAIL_OPEN`, `EMAIL_LINK_CLICK`, `EMAIL_REPLY`, `EMAIL_BOUNCE`, `LEAD_UNSUBSCRIBED`, `LEAD_CATEGORY_UPDATED`.\n\n**Agencies and lists**: `smartlead_list_clients` gives the client ids that filter campaigns and mailboxes; `smartlead_list_lead_lists` lists lead lists.\n\n**Paging**: lists take `offset` (default 0) and `limit` (default 100; the inbox defaults to 20). Increase `offset` by `limit` until fewer rows than `limit` come back.\n\n**Limits and errors**: Smartlead throttles bursts (about 10 requests per 2 seconds on standard plans) and answers 429; wait and retry. 401 `Invalid API Key` means a wrong key; 404 a wrong id or an id from another account; 400 names the invalid field.\n\n\n**Switched off at install**: `smartlead_unsubscribe_lead_globally`, `smartlead_delete_lead_from_campaign` and `smartlead_delete_campaign_webhook`; they cannot be undone, so an admin switches them on when the team needs them.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "smartlead",
+  "docsUrl": "https://api.smartlead.ai/introduction",
+  "aliases": [
+    "Smartlead.ai"
+  ],
+  "requiredEnvVars": [
+    "SMARTLEAD_API_KEY"
+  ],
+  "envVarMeta": {
+    "SMARTLEAD_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Smartlead: Settings, API Keys. Copy the key; API access needs a paid plan.",
+      "link": "https://app.smartlead.ai/app/settings/profile",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste only the API key, without spaces or ?api_key=."
+    }
+  },
+  "verifyHints": {
+    "401": "Smartlead refused the API key. Copy it again from Settings, API Keys.",
+    "rate_limited": "Smartlead throttles bursts of requests. Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "smartlead_list_campaigns"
+  },
+  "connector": {
+    "name": "Smartlead",
+    "type": "REST",
+    "baseUrl": "https://server.smartlead.ai/api/v1",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "api_key": "{{SMARTLEAD_API_KEY}}"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/campaigns/"
+  },
+  "tools": [
+    {
+      "name": "smartlead_list_campaigns",
+      "description": "List all email campaigns, newest first, with status (DRAFTED, ACTIVE, PAUSED, STOPPED, ARCHIVED), schedule, sending limits and tracking settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "description": "Only campaigns of this client (agency accounts), from smartlead_list_clients."
+          },
+          "include_tags": {
+            "type": "boolean",
+            "description": "Also return the campaign tags."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/",
+        "queryParams": {
+          "client_id": "$client_id",
+          "include_tags": "$include_tags"
+        }
+      }
+    },
+    {
+      "name": "smartlead_get_campaign",
+      "description": "Get one campaign: status, schedule, sending limits, stop-lead setting, tracking settings and client.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "include_tags": {
+            "type": "boolean",
+            "description": "Also return the campaign tags."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}",
+        "queryParams": {
+          "include_tags": "$include_tags"
+        }
+      }
+    },
+    {
+      "name": "smartlead_get_campaign_sequences",
+      "description": "Get the email sequence of a campaign: steps with delays, subjects, bodies and A/B variants.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/sequences"
+      }
+    },
+    {
+      "name": "smartlead_list_campaign_email_accounts",
+      "description": "List the sender mailboxes attached to a campaign, with their sending limits and warmup state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/email-accounts"
+      }
+    },
+    {
+      "name": "smartlead_create_campaign",
+      "description": "Create an empty campaign in DRAFTED status. Then add sequences, a schedule, mailboxes and leads, and start it with smartlead_update_campaign_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Campaign name."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Client to assign the campaign to (agency accounts)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/create",
+        "bodyMapping": {
+          "name": "$name",
+          "client_id": "$client_id"
+        }
+      }
+    },
+    {
+      "name": "smartlead_update_campaign_status",
+      "description": "Start, pause, stop or archive a campaign. STOPPED ends the campaign for good; use PAUSED to halt sending temporarily.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status. START launches or resumes the campaign (not ACTIVE).",
+            "enum": [
+              "START",
+              "PAUSED",
+              "STOPPED",
+              "ARCHIVED"
+            ]
+          }
+        },
+        "required": [
+          "campaign_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/status",
+        "bodyMapping": {
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "smartlead_update_campaign_settings",
+      "description": "Change campaign settings: name, open and click tracking, when to stop emailing a lead, plain text, follow-up percentage, AI mailbox matching, unsubscribe text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "name": {
+            "type": "string",
+            "description": "New campaign name."
+          },
+          "track_settings": {
+            "type": "array",
+            "description": "Tracking to switch off: DONT_TRACK_EMAIL_OPEN, DONT_TRACK_LINK_CLICK, DONT_TRACK_REPLY_TO_AN_EMAIL. [] tracks everything.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "stop_lead_settings": {
+            "type": "string",
+            "description": "When to stop emailing a lead.",
+            "enum": [
+              "REPLY_TO_AN_EMAIL",
+              "OPENED_EMAIL",
+              "CLICKED_LINK",
+              "NEVER"
+            ]
+          },
+          "unsubscribe_text": {
+            "type": "string",
+            "description": "Unsubscribe link text."
+          },
+          "send_as_plain_text": {
+            "type": "boolean",
+            "description": "Send emails as plain text."
+          },
+          "follow_up_percentage": {
+            "type": "integer",
+            "description": "Share of daily volume reserved for follow-ups, 0-100."
+          },
+          "enable_ai_esp_matching": {
+            "type": "boolean",
+            "description": "Match each lead with a mailbox of the same email provider."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Client id (agency accounts)."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/settings",
+        "bodyMapping": {
+          "name": "$name",
+          "track_settings": "$track_settings",
+          "stop_lead_settings": "$stop_lead_settings",
+          "unsubscribe_text": "$unsubscribe_text",
+          "send_as_plain_text": "$send_as_plain_text",
+          "follow_up_percentage": "$follow_up_percentage",
+          "enable_ai_esp_matching": "$enable_ai_esp_matching",
+          "client_id": "$client_id"
+        }
+      }
+    },
+    {
+      "name": "smartlead_update_campaign_schedule",
+      "description": "Set when a campaign sends: time zone, weekdays, sending window, minutes between emails, new leads per day and start time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone, e.g. Europe/Berlin."
+          },
+          "days_of_the_week": {
+            "type": "array",
+            "description": "Sending days, 0 = Sunday to 6 = Saturday, e.g. [1,2,3,4,5].",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "start_hour": {
+            "type": "string",
+            "description": "Start of the sending window, HH:MM (24 h)."
+          },
+          "end_hour": {
+            "type": "string",
+            "description": "End of the sending window, HH:MM (24 h)."
+          },
+          "min_time_btw_emails": {
+            "type": "integer",
+            "description": "Minimum minutes between two emails of a mailbox."
+          },
+          "max_new_leads_per_day": {
+            "type": "integer",
+            "description": "Maximum new leads contacted per day."
+          },
+          "schedule_start_time": {
+            "type": "string",
+            "description": "Campaign start, ISO 8601 (UTC); omit to start as soon as the campaign is started."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "timezone",
+          "days_of_the_week",
+          "start_hour",
+          "end_hour"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/schedule",
+        "bodyMapping": {
+          "timezone": "$timezone",
+          "days_of_the_week": "$days_of_the_week",
+          "start_hour": "$start_hour",
+          "end_hour": "$end_hour",
+          "min_time_btw_emails": "$min_time_btw_emails",
+          "max_new_leads_per_day": "$max_new_leads_per_day",
+          "schedule_start_time": "$schedule_start_time"
+        }
+      }
+    },
+    {
+      "name": "smartlead_save_campaign_sequences",
+      "description": "Replace the email sequence of a campaign. Send every step: steps left out are removed. Keep the id of existing steps to update them in place.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "sequences": {
+            "type": "array",
+            "description": "Steps: [{\"id\": 123 (existing step, optional), \"seq_number\": 1, \"seq_delay_details\": {\"delay_in_days\": 0}, \"subject\": \"Quick question, {{first_name}}\", \"email_body\": \"<p>Hi {{first_name}}</p>\"}]. A/B variants go in \"seq_variants\": [{\"subject\", \"email_body\", \"variant_label\": \"A\"}]; follow-ups with an empty subject stay in the same thread.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "campaign_id",
+          "sequences"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/sequences",
+        "bodyMapping": {
+          "sequences": "$sequences"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "smartlead_add_email_accounts_to_campaign",
+      "description": "Attach sender mailboxes to a campaign so it can send from them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "email_account_ids": {
+            "type": "array",
+            "description": "Email account ids from smartlead_list_email_accounts.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "campaign_id",
+          "email_account_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/email-accounts",
+        "bodyMapping": {
+          "email_account_ids": "$email_account_ids"
+        }
+      }
+    },
+    {
+      "name": "smartlead_list_campaign_leads",
+      "description": "List the leads of a campaign with their status, category and lead fields. Paged with offset and limit; the answer carries total_leads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size (default 100)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Lead status filter, e.g. STARTED, INPROGRESS, COMPLETED, PAUSED, STOPPED."
+          },
+          "lead_category_id": {
+            "type": "integer",
+            "description": "Only leads in this category (smartlead_list_lead_categories)."
+          },
+          "emailStatus": {
+            "type": "string",
+            "description": "Email status filter, e.g. is_opened, is_clicked, is_replied, is_bounced, is_unsubscribed."
+          },
+          "created_at_gt": {
+            "type": "string",
+            "description": "Only leads added after this ISO 8601 timestamp."
+          },
+          "last_sent_time_gt": {
+            "type": "string",
+            "description": "Only leads emailed after this ISO 8601 timestamp."
+          },
+          "event_time_gt": {
+            "type": "string",
+            "description": "Only leads with an event (open, click, reply) after this ISO 8601 timestamp."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/leads",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "status": "$status",
+          "lead_category_id": "$lead_category_id",
+          "emailStatus": "$emailStatus",
+          "created_at_gt": "$created_at_gt",
+          "last_sent_time_gt": "$last_sent_time_gt",
+          "event_time_gt": "$event_time_gt"
+        }
+      }
+    },
+    {
+      "name": "smartlead_get_lead_by_email",
+      "description": "Find a lead by email address across all campaigns. Returns the lead id and fields, and the campaigns it is in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Lead email address."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads/",
+        "queryParams": {
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "smartlead_get_lead",
+      "description": "Get one lead by its id: contact fields, custom fields and global status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id (the lead.id from smartlead_list_campaign_leads or smartlead_get_lead_by_email)."
+          }
+        },
+        "required": [
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads/{lead_id}"
+      }
+    },
+    {
+      "name": "smartlead_get_lead_campaign_overview",
+      "description": "Show every campaign a lead is in, with its status and progress in each.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id (the lead.id from smartlead_list_campaign_leads or smartlead_get_lead_by_email)."
+          }
+        },
+        "required": [
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads/{lead_id}/campaign-overview"
+      }
+    },
+    {
+      "name": "smartlead_get_lead_message_history",
+      "description": "Get the full email thread between a campaign and a lead: sent emails and replies with times, subjects, bodies and the stats_id and message_id needed to reply.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id (the lead.id from smartlead_list_campaign_leads or smartlead_get_lead_by_email)."
+          },
+          "show_plain_text_response": {
+            "type": "boolean",
+            "description": "Return bodies as plain text instead of HTML."
+          },
+          "event_time_gt": {
+            "type": "string",
+            "description": "Only messages after this ISO 8601 timestamp."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/leads/{lead_id}/message-history",
+        "queryParams": {
+          "show_plain_text_response": "$show_plain_text_response",
+          "event_time_gt": "$event_time_gt"
+        }
+      }
+    },
+    {
+      "name": "smartlead_add_leads_to_campaign",
+      "description": "Add up to 400 leads to a campaign. Leads on the global block list, unsubscribed, or already in other campaigns are skipped unless the settings say otherwise. Returns counts of uploaded, duplicate and blocked leads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "lead_list": {
+            "type": "array",
+            "description": "Leads: [{\"email\": \"jane@example.com\", \"first_name\": \"Jane\", \"last_name\": \"Doe\", \"company_name\": \"Acme\", \"custom_fields\": {\"role\": \"CTO\"}}]. email is required; also phone_number, website, location, linkedin_profile, company_url.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "settings": {
+            "type": "object",
+            "description": "Import options: {\"ignore_global_block_list\": false, \"ignore_unsubscribe_list\": false, \"ignore_duplicate_leads_in_other_campaign\": false, \"return_lead_ids\": true}."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "lead_list"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/leads",
+        "bodyMapping": {
+          "lead_list": "$lead_list",
+          "settings": "$settings"
+        }
+      }
+    },
+    {
+      "name": "smartlead_update_lead",
+      "description": "Update the fields of a lead in a campaign (email is required by the API even when unchanged).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id (the lead.id from smartlead_list_campaign_leads or smartlead_get_lead_by_email)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Lead email address."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location."
+          },
+          "linkedin_profile": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          },
+          "company_url": {
+            "type": "string",
+            "description": "Company URL."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom fields used as {{variables}} in the sequence, e.g. {\"role\": \"CTO\"}. At most 200 fields."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "lead_id",
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/leads/{lead_id}/",
+        "bodyMapping": {
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "company_name": "$company_name",
+          "phone_number": "$phone_number",
+          "website": "$website",
+          "location": "$location",
+          "linkedin_profile": "$linkedin_profile",
+          "company_url": "$company_url",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "smartlead_update_lead_category",
+      "description": "Set the category of a lead in a campaign (Interested, Meeting Request, Not Interested, Out Of Office...), optionally pausing it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id (the lead.id from smartlead_list_campaign_leads or smartlead_get_lead_by_email)."
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Category id from smartlead_list_lead_categories."
+          },
+          "pause_lead": {
+            "type": "boolean",
+            "description": "Also pause the lead in this campaign."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "lead_id",
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/leads/{lead_id}/category",
+        "bodyMapping": {
+          "category_id": "$category_id",
+          "pause_lead": "$pause_lead"
+        }
+      }
+    },
+    {
+      "name": "smartlead_pause_lead",
+      "description": "Pause a lead in a campaign: no further sequence emails go out until it is resumed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id (the lead.id from smartlead_list_campaign_leads or smartlead_get_lead_by_email)."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/leads/{lead_id}/pause",
+        "bodyMapping": {}
+      }
+    },
+    {
+      "name": "smartlead_resume_lead",
+      "description": "Resume a paused lead in a campaign, now or after a delay in days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id (the lead.id from smartlead_list_campaign_leads or smartlead_get_lead_by_email)."
+          },
+          "resume_lead_with_delay_days": {
+            "type": "integer",
+            "description": "Days to wait before the next email (0 or omitted: right away)."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/leads/{lead_id}/resume",
+        "bodyMapping": {
+          "resume_lead_with_delay_days": "$resume_lead_with_delay_days"
+        }
+      }
+    },
+    {
+      "name": "smartlead_unsubscribe_lead_from_campaign",
+      "description": "Unsubscribe a lead from one campaign. It receives no further emails from that campaign.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id (the lead.id from smartlead_list_campaign_leads or smartlead_get_lead_by_email)."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/leads/{lead_id}/unsubscribe",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "smartlead_unsubscribe_lead_globally",
+      "description": "Unsubscribe a lead from every campaign of the account and block future imports of the address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id (the lead.id from smartlead_list_campaign_leads or smartlead_get_lead_by_email)."
+          }
+        },
+        "required": [
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/leads/{lead_id}/unsubscribe",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "smartlead_delete_lead_from_campaign",
+      "description": "Remove a lead from a campaign, with its progress in that campaign. The lead stays in other campaigns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id (the lead.id from smartlead_list_campaign_leads or smartlead_get_lead_by_email)."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/campaigns/{campaign_id}/leads/{lead_id}"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "smartlead_list_lead_categories",
+      "description": "List the lead categories (global and custom) with ids, e.g. Interested, Meeting Request, Not Interested, Do Not Contact, Out Of Office.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads/fetch-categories"
+      }
+    },
+    {
+      "name": "smartlead_list_inbox_replies",
+      "description": "List lead replies from the master inbox across campaigns, newest first, with filters for campaign, mailbox, category and reply time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size (default 20)."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters, e.g. {\"campaignId\": [123], \"emailAccountId\": [45], \"leadCategories\": {\"categoryIdsIn\": [1]}, \"replyTimeBetween\": [\"2026-10-01T00:00:00Z\", \"2026-10-31T23:59:59Z\"], \"search\": \"acme\"}."
+          },
+          "sortBy": {
+            "type": "string",
+            "description": "Sort order, REPLY_TIME_DESC (default) or REPLY_TIME_ASC."
+          },
+          "fetch_message_history": {
+            "type": "boolean",
+            "description": "Also return the message history of each thread."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/master-inbox/inbox-replies",
+        "queryParams": {
+          "fetch_message_history": "$fetch_message_history"
+        },
+        "bodyMapping": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "filters": "$filters",
+          "sortBy": "$sortBy"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "smartlead_get_inbox_item",
+      "description": "Get one master inbox thread by its id, with lead, campaign and messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbox_item_id": {
+            "type": "integer",
+            "description": "Inbox item id from smartlead_list_inbox_replies."
+          }
+        },
+        "required": [
+          "inbox_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/master-inbox/{inbox_item_id}"
+      }
+    },
+    {
+      "name": "smartlead_reply_to_lead",
+      "description": "Send a reply to a lead in an existing campaign thread, from the mailbox of that thread. Takes the stats_id and message_id of the email being answered from smartlead_get_lead_message_history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "email_stats_id": {
+            "type": "string",
+            "description": "stats_id of the message being answered."
+          },
+          "email_body": {
+            "type": "string",
+            "description": "Reply body, HTML allowed."
+          },
+          "reply_message_id": {
+            "type": "string",
+            "description": "message_id of the message being answered."
+          },
+          "reply_email_time": {
+            "type": "string",
+            "description": "time of the message being answered, ISO 8601."
+          },
+          "reply_email_body": {
+            "type": "string",
+            "description": "Body of the message being answered, quoted below the reply."
+          },
+          "cc": {
+            "type": "string",
+            "description": "Comma-separated CC addresses."
+          },
+          "bcc": {
+            "type": "string",
+            "description": "Comma-separated BCC addresses."
+          },
+          "add_signature": {
+            "type": "boolean",
+            "description": "Append the mailbox signature."
+          },
+          "to_email": {
+            "type": "string",
+            "description": "Recipient, when different from the lead."
+          },
+          "scheduled_time": {
+            "type": "string",
+            "description": "Send later, ISO 8601."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "email_stats_id",
+          "email_body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/reply-email-thread",
+        "bodyMapping": {
+          "email_stats_id": "$email_stats_id",
+          "email_body": "$email_body",
+          "reply_message_id": "$reply_message_id",
+          "reply_email_time": "$reply_email_time",
+          "reply_email_body": "$reply_email_body",
+          "cc": "$cc",
+          "bcc": "$bcc",
+          "add_signature": "$add_signature",
+          "to_email": "$to_email",
+          "scheduled_time": "$scheduled_time"
+        }
+      }
+    },
+    {
+      "name": "smartlead_create_lead_note",
+      "description": "Add an internal note to a lead in a campaign (shown in the master inbox).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_lead_map_id": {
+            "type": "integer",
+            "description": "Campaign lead map id (the id of the lead row in smartlead_list_campaign_leads, also called lead_map_id)."
+          },
+          "note_message": {
+            "type": "string",
+            "description": "Note text."
+          }
+        },
+        "required": [
+          "email_lead_map_id",
+          "note_message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/master-inbox/create-note",
+        "bodyMapping": {
+          "email_lead_map_id": "$email_lead_map_id",
+          "note_message": "$note_message"
+        }
+      }
+    },
+    {
+      "name": "smartlead_get_campaign_analytics",
+      "description": "Get the totals of a campaign: sent, opened, clicked, replied, bounced, unsubscribed, plus lead progress counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/analytics"
+      }
+    },
+    {
+      "name": "smartlead_get_campaign_analytics_by_date",
+      "description": "Get campaign totals (sent, opens, clicks, replies, bounces, unsubscribes) for a date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date, YYYY-MM-DD."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "IANA time zone for the day boundaries (default UTC)."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/analytics-by-date",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "time_zone": "$time_zone"
+        }
+      }
+    },
+    {
+      "name": "smartlead_get_campaign_sequence_analytics",
+      "description": "Get per-step and per-variant results of a campaign sequence for a date range: sent, opens, clicks, replies, positive replies, bounces.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date, YYYY-MM-DD."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "IANA time zone (default UTC)."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/sequence-analytics",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "time_zone": "$time_zone"
+        }
+      }
+    },
+    {
+      "name": "smartlead_get_campaign_statistics",
+      "description": "List the individual sent emails of a campaign with lead, step, sent time, open, click, reply and bounce state. Paged with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size (default 100)."
+          },
+          "email_sequence_number": {
+            "type": "integer",
+            "description": "Only this sequence step (1, 2, ...)."
+          },
+          "email_status": {
+            "type": "string",
+            "description": "Only emails in this state: opened, clicked, replied, unsubscribed, bounced."
+          },
+          "sent_time_start_date": {
+            "type": "string",
+            "description": "Sent after this ISO 8601 timestamp."
+          },
+          "sent_time_end_date": {
+            "type": "string",
+            "description": "Sent before this ISO 8601 timestamp."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/statistics",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "email_sequence_number": "$email_sequence_number",
+          "email_status": "$email_status",
+          "sent_time_start_date": "$sent_time_start_date",
+          "sent_time_end_date": "$sent_time_end_date"
+        }
+      }
+    },
+    {
+      "name": "smartlead_get_overall_analytics",
+      "description": "Get account-wide sending results for a date range: sent, opens, clicks, replies, positive replies, bounces and rates, optionally limited to campaigns or clients.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date, YYYY-MM-DD."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone (default UTC)."
+          },
+          "campaign_ids": {
+            "type": "string",
+            "description": "Comma-separated campaign ids."
+          },
+          "client_ids": {
+            "type": "string",
+            "description": "Comma-separated client ids."
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/analytics/overall-stats-v2",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "timezone": "$timezone",
+          "campaign_ids": "$campaign_ids",
+          "client_ids": "$client_ids"
+        }
+      }
+    },
+    {
+      "name": "smartlead_list_email_accounts",
+      "description": "List the sender mailboxes of the account: address, provider, daily limits, SMTP/IMAP health, warmup status and campaigns in use.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size (default 100)."
+          },
+          "username": {
+            "type": "string",
+            "description": "Filter by mailbox address."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Only mailboxes of this client."
+          },
+          "isInUse": {
+            "type": "string",
+            "description": "true for mailboxes attached to a campaign, false for unused ones."
+          },
+          "emailWarmupStatus": {
+            "type": "string",
+            "description": "Warmup status filter, ACTIVE or INACTIVE."
+          },
+          "isSmtpSuccess": {
+            "type": "string",
+            "description": "false to find mailboxes with a broken SMTP connection."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/email-accounts/",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "username": "$username",
+          "client_id": "$client_id",
+          "isInUse": "$isInUse",
+          "emailWarmupStatus": "$emailWarmupStatus",
+          "isSmtpSuccess": "$isSmtpSuccess"
+        }
+      }
+    },
+    {
+      "name": "smartlead_get_email_account",
+      "description": "Get one sender mailbox with its limits, signature, connection health and warmup details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_account_id": {
+            "type": "integer",
+            "description": "Email account id from smartlead_list_email_accounts."
+          },
+          "fetch_campaigns": {
+            "type": "boolean",
+            "description": "Also list the campaigns using the mailbox."
+          }
+        },
+        "required": [
+          "email_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/email-accounts/{email_account_id}/",
+        "queryParams": {
+          "fetch_campaigns": "$fetch_campaigns"
+        }
+      }
+    },
+    {
+      "name": "smartlead_get_warmup_stats",
+      "description": "Get the warmup results of a mailbox for the last 7 days: warmup emails sent, landed in inbox, landed in spam, replies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_account_id": {
+            "type": "integer",
+            "description": "Email account id from smartlead_list_email_accounts."
+          }
+        },
+        "required": [
+          "email_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/email-accounts/{email_account_id}/warmup-stats"
+      }
+    },
+    {
+      "name": "smartlead_update_email_account",
+      "description": "Change a mailbox: daily sending limit, sender name, signature, BCC, custom tracking domain, minutes between emails.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_account_id": {
+            "type": "integer",
+            "description": "Email account id from smartlead_list_email_accounts."
+          },
+          "max_email_per_day": {
+            "type": "integer",
+            "description": "Daily sending limit."
+          },
+          "from_name": {
+            "type": "string",
+            "description": "Sender name."
+          },
+          "signature": {
+            "type": "string",
+            "description": "HTML signature."
+          },
+          "bcc": {
+            "type": "string",
+            "description": "BCC address for every email."
+          },
+          "custom_tracking_url": {
+            "type": "string",
+            "description": "Custom tracking domain."
+          },
+          "time_to_wait_in_mins": {
+            "type": "integer",
+            "description": "Minutes between two emails."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Client the mailbox belongs to."
+          }
+        },
+        "required": [
+          "email_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/email-accounts/{email_account_id}",
+        "bodyMapping": {
+          "max_email_per_day": "$max_email_per_day",
+          "from_name": "$from_name",
+          "signature": "$signature",
+          "bcc": "$bcc",
+          "custom_tracking_url": "$custom_tracking_url",
+          "time_to_wait_in_mins": "$time_to_wait_in_mins",
+          "client_id": "$client_id"
+        }
+      }
+    },
+    {
+      "name": "smartlead_update_warmup",
+      "description": "Turn warmup on or off for a mailbox and set its daily warmup volume, ramp-up and reply rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_account_id": {
+            "type": "integer",
+            "description": "Email account id from smartlead_list_email_accounts."
+          },
+          "warmup_enabled": {
+            "type": "boolean",
+            "description": "true to warm up, false to stop."
+          },
+          "total_warmup_per_day": {
+            "type": "integer",
+            "description": "Warmup emails per day."
+          },
+          "daily_rampup": {
+            "type": "integer",
+            "description": "Daily increase of warmup emails."
+          },
+          "reply_rate_percentage": {
+            "type": "integer",
+            "description": "Share of warmup emails that get a reply, in percent."
+          }
+        },
+        "required": [
+          "email_account_id",
+          "warmup_enabled"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/email-accounts/{email_account_id}/warmup",
+        "bodyMapping": {
+          "warmup_enabled": "$warmup_enabled",
+          "total_warmup_per_day": "$total_warmup_per_day",
+          "daily_rampup": "$daily_rampup",
+          "reply_rate_percentage": "$reply_rate_percentage"
+        }
+      }
+    },
+    {
+      "name": "smartlead_list_campaign_webhooks",
+      "description": "List the webhooks of a campaign with their URL and event types.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/webhooks"
+      }
+    },
+    {
+      "name": "smartlead_upsert_campaign_webhook",
+      "description": "Create a campaign webhook, or update one when its id is passed. Smartlead POSTs the chosen events to the URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Webhook id to update; omit to create a new one."
+          },
+          "name": {
+            "type": "string",
+            "description": "Webhook name."
+          },
+          "webhook_url": {
+            "type": "string",
+            "description": "HTTPS URL that receives the events."
+          },
+          "event_types": {
+            "type": "array",
+            "description": "Events: EMAIL_SENT, EMAIL_OPEN, EMAIL_LINK_CLICK, EMAIL_REPLY, EMAIL_BOUNCE, LEAD_UNSUBSCRIBED, LEAD_CATEGORY_UPDATED.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "categories": {
+            "type": "array",
+            "description": "For LEAD_CATEGORY_UPDATED: category names that trigger it, e.g. [\"Interested\"].",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "campaign_id",
+          "name",
+          "webhook_url",
+          "event_types"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaign_id}/webhooks",
+        "bodyMapping": {
+          "id": "$id",
+          "name": "$name",
+          "webhook_url": "$webhook_url",
+          "event_types": "$event_types",
+          "categories": "$categories"
+        }
+      }
+    },
+    {
+      "name": "smartlead_delete_campaign_webhook",
+      "description": "Delete a webhook of a campaign. Events stop being delivered to its URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from smartlead_list_campaigns."
+          },
+          "webhook_id": {
+            "type": "integer",
+            "description": "Webhook id from smartlead_list_campaign_webhooks."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "webhook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/campaigns/{campaign_id}/webhooks/{webhook_id}"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "smartlead_list_clients",
+      "description": "List the clients of an agency (white-label) account with their ids, names and emails.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/client/"
+      }
+    },
+    {
+      "name": "smartlead_list_lead_lists",
+      "description": "List the lead lists (lead pools outside campaigns) with ids, names and lead counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listName": {
+            "type": "string",
+            "description": "Filter by list name."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lead-list/",
+        "queryParams": {
+          "listName": "$listName",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1782 @@
+{
+  "slug": "boldsign",
+  "name": "BoldSign",
+  "description": "Let your AI work with BoldSign e-signatures (US, EU, CA or AU region): find documents and check who has signed, download signed PDFs and audit trails, send files or templates for signature, remind, revoke, extend or change signers, and browse templates, sender identities, contacts, teams, users and brands.",
+  "region": "intl",
+  "category": "e-signature",
+  "icon": "boldsign",
+  "docsUrl": "https://developers.boldsign.com/api-overview/getting-started",
+  "prerequisites": "A BoldSign plan that includes the API (or a free Sandbox account) and an API key from API, API Key in the BoldSign app.",
+  "instructions": "## BoldSign\nThis connector works with **BoldSign**, the e-signature service by Syncfusion, through its REST API v1 on your account's region: US `https://api.boldsign.com`, EU `https://api-eu.boldsign.com`, Canada `https://api-ca.boldsign.com` or Australia `https://api-au.boldsign.com`. It lists and reads documents (mine, my team's, sent on behalf), templates, sender identities, contacts, teams, users and brands, downloads signed PDFs and audit trails, sends documents and templates for signature, reminds, revokes, extends, changes signers, prefills fields and manages contacts and sender identities.\n\n**Setup (2 minutes)**\n1. Sign in to BoldSign (`https://app.boldsign.com`, EU accounts `https://app-eu.boldsign.com`) and open **API** in the left menu, then **API Key**. The API must be part of your plan.\n2. Click **Generate API Key**, choose **Sandbox** (free, watermarked documents, 50 requests an hour) or **Live**, optionally set a validity date, and copy the key into `BOLDSIGN_API_KEY`. It is sent in the `X-API-KEY` header and has every scope.\n3. Set `BOLDSIGN_API_URL` to the API address of your region (see above); the browser address after sign-in tells the region (`app-eu` is EU, `app-ca` Canada, `app-au` Australia, `app` US). No trailing slash.\n4. Run `boldsign_list_documents` to check.\n\n**Workflow**\n- Status of documents: `boldsign_list_documents` (filter `status`, `search`, dates, `recipients`), `boldsign_list_team_documents`, `boldsign_list_behalf_documents`, then `boldsign_get_document` for each signer's status and the event history.\n- Signed files: `boldsign_download_document` (PDF, or ZIP with format Individually) and `boldsign_download_audit_log`.\n- Send from a template: `boldsign_list_templates`, `boldsign_get_template` for the role indexes and field ids, then `boldsign_send_from_template` with one `roles` entry per role.\n- Send a file: `boldsign_send_document` with `file_urls` (or Base64 `files`) and `signers` with their `formFields`, or `use_text_tags` / `auto_detect_fields`. `boldsign_send_draft` sends a document saved as draft.\n- Follow up: `boldsign_remind_document`, `boldsign_extend_expiry`, `boldsign_change_recipient`, `boldsign_prefill_fields`, `boldsign_get_embedded_sign_link` (a direct signing link), `boldsign_revoke_document`, `boldsign_delete_document`.\n- Account: `boldsign_list_sender_identities`, `boldsign_get_sender_identity`, `boldsign_create_sender_identity`, `boldsign_list_contacts`, `boldsign_get_contact`, `boldsign_create_contacts`, `boldsign_update_contact`, `boldsign_list_teams`, `boldsign_get_team`, `boldsign_list_users`, `boldsign_get_user`, `boldsign_list_brands`, `boldsign_get_brand`, `boldsign_get_api_credits`.\n\n**Sending is real: confirm first.** Sending, reminding, changing a signer and creating a sender identity email real people; a Live document is legally binding and may use API credits. Show the user the file or template, the signers and the message, and send only after a clear yes. Revoke and permanent delete cannot be undone.\n\n**Reading the answers**: ids are GUID strings (`documentId`, `templateId`). Dates such as `createdDate`, `activityDate` and `expiryDate` are Unix timestamps in seconds; filters take ISO 8601. Document `status`: InProgress, Completed, Declined, Expired, Revoked, Draft, Scheduled. Signer `status`: NotCompleted, Completed, Declined, Revoked, Expired. Template roles are numbered from 1 (`roleIndex`). Form field `bounds` (x, y, width, height) are measured from the top left of the page. Sending is asynchronous: the answer carries the `documentId` at once; check `boldsign_get_document` a moment later (a failed send shows in its history).\n\n**Paging**: lists take `page` (from 1) and `page_size` (up to 100) and return `pageDetails` (`page`, `pageSize`, `totalRecordsCount`, `totalPages`) with `result` (`results` for teams). Beyond 10,000 documents pass `next_cursor` = the `cursor` of the last document.\n\n**Limits and errors**: 2,000 requests an hour per account on Live, 50 on Sandbox, for API key and OAuth together; 429 means wait (`X-RateLimit-Reset`). 401 for a wrong or expired key, or a key used against another region's host; 403 when the plan lacks the API or the user may not see the item; 400 with an error message for invalid input (unknown role index, missing signer email, file not readable).\n\n\n**Switched off at install**: `boldsign_revoke_document` and `boldsign_delete_document`; they cannot be undone, so an admin switches them on when the team needs them.",
+  "requiredEnvVars": [
+    "BOLDSIGN_API_URL",
+    "BOLDSIGN_API_KEY"
+  ],
+  "envVarMeta": {
+    "BOLDSIGN_API_URL": {
+      "label": "API address (region)",
+      "kind": "address",
+      "help": "https://api.boldsign.com (US), https://api-eu.boldsign.com (EU), https://api-ca.boldsign.com (Canada) or https://api-au.boldsign.com (Australia).",
+      "example": "https://api.boldsign.com",
+      "pattern": "^https://api(-eu|-ca|-au)?\\.boldsign\\.com$",
+      "patternMessage": "Use https://api.boldsign.com, https://api-eu.boldsign.com, https://api-ca.boldsign.com or https://api-au.boldsign.com, without a trailing slash."
+    },
+    "BOLDSIGN_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "BoldSign app, API, API Key, Generate API Key (Sandbox or Live). Sent as the X-API-KEY header.",
+      "link": "https://developers.boldsign.com/authentication/api-key/",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "BoldSign refused the API key. Copy it again from API, API Key (it may have expired or been deleted), and check that BOLDSIGN_API_URL is the API address of the region the account lives in.",
+    "403": "The key works but the plan or user may not use this API call. Check that the API is part of the BoldSign plan.",
+    "rate_limited": "BoldSign allows 2,000 requests an hour on Live and 50 on Sandbox per account. Wait until X-RateLimit-Reset and try again."
+  },
+  "probe": {
+    "tool": "boldsign_list_documents",
+    "params": {
+      "page": 1,
+      "page_size": 1
+    }
+  },
+  "connector": {
+    "name": "BoldSign API",
+    "type": "REST",
+    "baseUrl": "{{BOLDSIGN_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{BOLDSIGN_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/document/list?Page=1&PageSize=1"
+  },
+  "tools": [
+    {
+      "name": "boldsign_list_documents",
+      "description": "List documents I sent or received, newest first: documentId, messageTitle, status, sender, signers with their status, cc, created, activity and expiry dates (Unix seconds), labels. Filter by text, status, date range, sender or signer email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the title, document id, sender or recipient names."
+          },
+          "status": {
+            "type": "array",
+            "description": "Only documents in these states: WaitingForMe, WaitingForOthers, NeedAttention, Completed, Declined, Revoked, Expired, Draft, Scheduled.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "None",
+                "WaitingForMe",
+                "WaitingForOthers",
+                "NeedAttention",
+                "Completed",
+                "Declined",
+                "Revoked",
+                "Expired",
+                "Draft",
+                "Scheduled"
+              ]
+            }
+          },
+          "transmit_type": {
+            "type": "string",
+            "description": "Sent (by me), Received (to sign by me) or Both (default).",
+            "enum": [
+              "Sent",
+              "Received",
+              "Both"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the date range, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the date range, ISO 8601."
+          },
+          "date_filter_type": {
+            "type": "string",
+            "description": "What the date range applies to: SentBetween (sent date) or Expiring (expiry date).",
+            "enum": [
+              "SentBetween",
+              "Expiring"
+            ]
+          },
+          "labels": {
+            "type": "array",
+            "description": "Only documents with these labels.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "brand_ids": {
+            "type": "array",
+            "description": "Only documents of these brands (ids from boldsign_list_brands).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_cursor": {
+            "type": "integer",
+            "description": "Paging beyond 10,000 documents: the cursor of the last document of the previous page."
+          },
+          "sent_by": {
+            "type": "array",
+            "description": "Only documents sent by these emails.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recipients": {
+            "type": "array",
+            "description": "Only documents with these signer emails.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/document/list",
+        "queryParams": {
+          "Page": "$page",
+          "PageSize": "$page_size",
+          "SearchKey": "$search",
+          "Status": "$status",
+          "TransmitType": "$transmit_type",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date",
+          "DateFilterType": "$date_filter_type",
+          "Labels": "$labels",
+          "BrandIds": "$brand_ids",
+          "NextCursor": "$next_cursor",
+          "SentBy": "$sent_by",
+          "Recipients": "$recipients"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "result[*].signerDetails[*].formFields",
+            "result[*].signerDetails[*].authenticationSettings",
+            "result[*].signerDetails[*].recipientNotificationSettings"
+          ]
+        }
+      }
+    },
+    {
+      "name": "boldsign_list_team_documents",
+      "description": "List the documents of my team (team admins: of the teams they manage), with the same fields and filters as boldsign_list_documents plus filters by team and user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the title, document id, sender or recipient names."
+          },
+          "status": {
+            "type": "array",
+            "description": "Only documents in these states: WaitingForMe, WaitingForOthers, NeedAttention, Completed, Declined, Revoked, Expired, Draft, Scheduled.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "None",
+                "WaitingForMe",
+                "WaitingForOthers",
+                "NeedAttention",
+                "Completed",
+                "Declined",
+                "Revoked",
+                "Expired",
+                "Draft",
+                "Scheduled"
+              ]
+            }
+          },
+          "transmit_type": {
+            "type": "string",
+            "description": "Sent (by me), Received (to sign by me) or Both (default).",
+            "enum": [
+              "Sent",
+              "Received",
+              "Both"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the date range, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the date range, ISO 8601."
+          },
+          "date_filter_type": {
+            "type": "string",
+            "description": "What the date range applies to: SentBetween (sent date) or Expiring (expiry date).",
+            "enum": [
+              "SentBetween",
+              "Expiring"
+            ]
+          },
+          "labels": {
+            "type": "array",
+            "description": "Only documents with these labels.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "brand_ids": {
+            "type": "array",
+            "description": "Only documents of these brands (ids from boldsign_list_brands).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_cursor": {
+            "type": "integer",
+            "description": "Paging beyond 10,000 documents: the cursor of the last document of the previous page."
+          },
+          "team_ids": {
+            "type": "array",
+            "description": "Only documents of these teams (ids from boldsign_list_teams).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "user_ids": {
+            "type": "array",
+            "description": "Only documents of these users (ids from boldsign_list_users).",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/document/teamlist",
+        "queryParams": {
+          "Page": "$page",
+          "PageSize": "$page_size",
+          "SearchKey": "$search",
+          "Status": "$status",
+          "TransmitType": "$transmit_type",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date",
+          "DateFilterType": "$date_filter_type",
+          "Labels": "$labels",
+          "BrandIds": "$brand_ids",
+          "NextCursor": "$next_cursor",
+          "TeamId": "$team_ids",
+          "UserId": "$user_ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "result[*].signerDetails[*].formFields",
+            "result[*].signerDetails[*].authenticationSettings",
+            "result[*].signerDetails[*].recipientNotificationSettings"
+          ]
+        }
+      }
+    },
+    {
+      "name": "boldsign_list_behalf_documents",
+      "description": "List documents sent on behalf of others (through a sender identity), or sent on my behalf by others, with their status and signers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_type": {
+            "type": "string",
+            "description": "BehalfOfOthers (default: documents I sent for others) or BehalfOfMe (documents others sent for me).",
+            "enum": [
+              "BehalfOfOthers",
+              "BehalfOfMe"
+            ]
+          },
+          "sender_emails": {
+            "type": "array",
+            "description": "Only documents sent on behalf of these sender identity emails.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "signers": {
+            "type": "array",
+            "description": "Only documents with these signer emails.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the title, document id, sender or recipient names."
+          },
+          "status": {
+            "type": "array",
+            "description": "Only documents in these states: WaitingForMe, WaitingForOthers, NeedAttention, Completed, Declined, Revoked, Expired, Draft, Scheduled.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "None",
+                "WaitingForMe",
+                "WaitingForOthers",
+                "NeedAttention",
+                "Completed",
+                "Declined",
+                "Revoked",
+                "Expired",
+                "Draft",
+                "Scheduled"
+              ]
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the date range, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the date range, ISO 8601."
+          },
+          "labels": {
+            "type": "array",
+            "description": "Only documents with these labels.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "brand_ids": {
+            "type": "array",
+            "description": "Only documents of these brands (ids from boldsign_list_brands).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_cursor": {
+            "type": "integer",
+            "description": "Paging beyond 10,000 documents: the cursor of the last document of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/document/behalfList",
+        "queryParams": {
+          "Page": "$page",
+          "PageSize": "$page_size",
+          "PageType": "$page_type",
+          "EmailAddress": "$sender_emails",
+          "Signers": "$signers",
+          "SearchKey": "$search",
+          "Status": "$status",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date",
+          "Labels": "$labels",
+          "BrandIds": "$brand_ids",
+          "NextCursor": "$next_cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "result[*].signerDetails[*].formFields",
+            "result[*].signerDetails[*].authenticationSettings",
+            "result[*].signerDetails[*].recipientNotificationSettings"
+          ]
+        }
+      }
+    },
+    {
+      "name": "boldsign_get_document",
+      "description": "Read one document in full: title, status, files, sender, each signer (name, email, order, status, viewed, authentication, form fields with values), cc, history of events, expiry, reminder settings, labels, revoke or decline message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/document/properties",
+        "queryParams": {
+          "documentId": "$document_id"
+        }
+      }
+    },
+    {
+      "name": "boldsign_download_document",
+      "description": "Download the document PDF: the signed PDF once completed, otherwise the current state. Several files come as one combined PDF or, with format Individually, as a ZIP.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          },
+          "format": {
+            "type": "string",
+            "description": "Combined (one PDF) or Individually (a ZIP with one PDF per file).",
+            "enum": [
+              "Combined",
+              "Individually"
+            ]
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Email of the sender identity when the document was sent on behalf of someone (behalfOf in the document)."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/document/download",
+        "queryParams": {
+          "documentId": "$document_id",
+          "format": "$format",
+          "onBehalfOf": "$on_behalf_of"
+        }
+      }
+    },
+    {
+      "name": "boldsign_download_audit_log",
+      "description": "Download the audit trail PDF of a document: every event (sent, viewed, signed, declined) with time, email and IP address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Email of the sender identity when the document was sent on behalf of someone (behalfOf in the document)."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/document/downloadAuditLog",
+        "queryParams": {
+          "documentId": "$document_id",
+          "onBehalfOf": "$on_behalf_of"
+        }
+      }
+    },
+    {
+      "name": "boldsign_get_embedded_sign_link",
+      "description": "Get a signing link for one signer of a document, to open the signing page directly (for example in your own app or to hand over in person). Set sign_link_valid_till to limit how long the link works.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          },
+          "signer_email": {
+            "type": "string",
+            "description": "Email of the signer."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Country calling code of the signer phone, for SMS signers (e.g. +49)."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number of the signer, for SMS signers."
+          },
+          "sign_link_valid_till": {
+            "type": "string",
+            "description": "Expiry of the link, ISO 8601 date-time."
+          },
+          "redirect_url": {
+            "type": "string",
+            "description": "Address to open after signing."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/document/getEmbeddedSignLink",
+        "queryParams": {
+          "DocumentId": "$document_id",
+          "SignerEmail": "$signer_email",
+          "CountryCode": "$country_code",
+          "PhoneNumber": "$phone_number",
+          "SignLinkValidTill": "$sign_link_valid_till",
+          "RedirectUrl": "$redirect_url"
+        }
+      }
+    },
+    {
+      "name": "boldsign_list_templates",
+      "description": "List templates: templateId, title, description, roles (index, name, default signer), created by, labels, sharing. Filter by text, type (mine, shared, all), creator, labels or dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the template title or id."
+          },
+          "template_type": {
+            "type": "string",
+            "description": "mytemplates, sharedtemplate or all (default).",
+            "enum": [
+              "mytemplates",
+              "sharedtemplate",
+              "all"
+            ]
+          },
+          "created_by": {
+            "type": "array",
+            "description": "Only templates created by these emails.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "template_labels": {
+            "type": "array",
+            "description": "Only templates with these labels.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "on_behalf_of": {
+            "type": "array",
+            "description": "Only templates of these sender identity emails.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Created from, ISO 8601."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Created until, ISO 8601."
+          },
+          "brand_ids": {
+            "type": "array",
+            "description": "Only templates of these brands.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "shared_with_team_ids": {
+            "type": "array",
+            "description": "Only templates shared with these teams.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/template/list",
+        "queryParams": {
+          "Page": "$page",
+          "PageSize": "$page_size",
+          "SearchKey": "$search",
+          "TemplateType": "$template_type",
+          "CreatedBy": "$created_by",
+          "TemplateLabels": "$template_labels",
+          "OnBehalfOf": "$on_behalf_of",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date",
+          "BrandIds": "$brand_ids",
+          "SharedWithTeamId": "$shared_with_team_ids"
+        }
+      }
+    },
+    {
+      "name": "boldsign_get_template",
+      "description": "Read one template: title, message, files, roles (index, name, default signer, signer type) with their form fields (id, type, page, required), cc, brand, labels, settings. Role indexes and field ids are what boldsign_send_from_template needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "Template id (GUID), from boldsign_list_templates."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/template/properties",
+        "queryParams": {
+          "templateId": "$template_id"
+        }
+      }
+    },
+    {
+      "name": "boldsign_list_sender_identities",
+      "description": "List sender identities (people you may send documents on behalf of): id, name, email, status (Pending, Verified, Denied), approval date, brand and notification settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the name or email."
+          },
+          "brand_ids": {
+            "type": "array",
+            "description": "Only identities linked to these brands.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/senderIdentities/list",
+        "queryParams": {
+          "Page": "$page",
+          "PageSize": "$page_size",
+          "Search": "$search",
+          "BrandIds": "$brand_ids"
+        }
+      }
+    },
+    {
+      "name": "boldsign_get_sender_identity",
+      "description": "Read one sender identity by id or by email: name, email, status, brand, redirect URL and notification settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Sender identity id."
+          },
+          "email": {
+            "type": "string",
+            "description": "Sender identity email (instead of id)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/senderIdentities/properties",
+        "queryParams": {
+          "id": "$id",
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "boldsign_list_contacts",
+      "description": "List contacts in the address book: id, name, email, phone, job title and company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the name or email."
+          },
+          "contact_type": {
+            "type": "string",
+            "description": "MyContacts or AllContacts (default).",
+            "enum": [
+              "MyContacts",
+              "AllContacts"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts/list",
+        "queryParams": {
+          "Page": "$page",
+          "PageSize": "$page_size",
+          "SearchKey": "$search",
+          "ContactType": "$contact_type"
+        }
+      }
+    },
+    {
+      "name": "boldsign_get_contact",
+      "description": "Read one contact of the address book: name, email, phone number, job title and company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id, from boldsign_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts/get",
+        "queryParams": {
+          "id": "$contact_id"
+        }
+      }
+    },
+    {
+      "name": "boldsign_list_teams",
+      "description": "List the teams of the organization: teamId, name, number of users and created date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the team name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams/list",
+        "queryParams": {
+          "Page": "$page",
+          "PageSize": "$page_size",
+          "SearchKey": "$search"
+        }
+      }
+    },
+    {
+      "name": "boldsign_get_team",
+      "description": "Read one team: name, users with their roles and status, created and modified dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id, from boldsign_list_teams."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams/get",
+        "queryParams": {
+          "teamId": "$team_id"
+        }
+      }
+    },
+    {
+      "name": "boldsign_list_users",
+      "description": "List the users of the organization: userId, name, email, team, role (Admin, TeamAdmin, Member) and status (Active, Invited).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the user name, email or id."
+          },
+          "user_ids": {
+            "type": "array",
+            "description": "Only these user ids.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users/list",
+        "queryParams": {
+          "Page": "$page",
+          "PageSize": "$page_size",
+          "Search": "$search",
+          "UserId": "$user_ids"
+        }
+      }
+    },
+    {
+      "name": "boldsign_get_user",
+      "description": "Read one user: name, email, team, role, status, created and modified dates and metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id, from boldsign_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users/get",
+        "queryParams": {
+          "userId": "$user_id"
+        }
+      }
+    },
+    {
+      "name": "boldsign_list_brands",
+      "description": "List the brands of the account (logo, colours, email display name, signing page settings): brandId, brandName, isDefault. Use a brandId when sending to apply that branding.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/brand/list"
+      }
+    },
+    {
+      "name": "boldsign_get_brand",
+      "description": "Read one brand in full: name, logo, colours, email display name, redirect URL, disclaimer, document time zone and other signing settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "description": "Brand id, from boldsign_list_brands."
+          }
+        },
+        "required": [
+          "brand_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/brand/get",
+        "queryParams": {
+          "brandId": "$brand_id"
+        }
+      }
+    },
+    {
+      "name": "boldsign_get_api_credits",
+      "description": "Show the API credits of the plan: credits balance and how many are used. Each document sent through the API uses credits on credit-based plans.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/plan/apiCreditsCount"
+      }
+    },
+    {
+      "name": "boldsign_send_document",
+      "description": "Send one or more PDF or Office files for signature. Give the files as public URLs (file_urls) or Base64 data URIs (files), the signers, and either form fields per signer, text tags in the document (use_text_tags) or auto_detect_fields. Returns the documentId; sending finishes in the background.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title of the document, shown to signers."
+          },
+          "message": {
+            "type": "string",
+            "description": "Message in the signing request email."
+          },
+          "cc": {
+            "type": "array",
+            "description": "Copy recipients: [{\"emailAddress\": \"...\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emailAddress": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "emailAddress"
+              ]
+            }
+          },
+          "enable_signing_order": {
+            "type": "boolean",
+            "description": "true makes signers sign one after another in signerOrder."
+          },
+          "expiry_date_type": {
+            "type": "string",
+            "description": "Unit of expiry_value: Days (default), Hours or SpecificDateTime.",
+            "enum": [
+              "Days",
+              "Hours",
+              "SpecificDateTime"
+            ]
+          },
+          "expiry_value": {
+            "type": "integer",
+            "description": "When the request expires, in the unit of expiry_date_type (default 60 days)."
+          },
+          "reminder_settings": {
+            "type": "object",
+            "description": "Automatic reminders: {\"enableAutoReminder\": true, \"reminderDays\": 3, \"reminderCount\": 3}."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand to apply (id from boldsign_list_brands)."
+          },
+          "labels": {
+            "type": "array",
+            "description": "Labels to tag the document with.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disable_emails": {
+            "type": "boolean",
+            "description": "true sends no emails (use boldsign_get_embedded_sign_link to hand out signing links)."
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Send on behalf of this sender identity email (it must be Verified in boldsign_list_sender_identities)."
+          },
+          "signers": {
+            "type": "array",
+            "description": "Signers: [{\"name\", \"emailAddress\", \"signerOrder\"?, \"signerType\"?: Signer, Reviewer or InPersonSigner, \"privateMessage\"?, \"formFields\"?: [{\"fieldType\": \"Signature\", \"pageNumber\": 1, \"bounds\": {\"x\": 100, \"y\": 600, \"width\": 200, \"height\": 40}, \"isRequired\": true}]}]. Field types include Signature, Initial, CheckBox, TextBox, DateSigned, RadioButton, Dropdown, Name, Email; bounds {x, y, width, height} are measured from the top left of the page; field ids may use letters, digits and underscores only.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "emailAddress": {
+                  "type": "string"
+                },
+                "signerOrder": {
+                  "type": "integer"
+                },
+                "signerType": {
+                  "type": "string",
+                  "enum": [
+                    "Signer",
+                    "Reviewer",
+                    "InPersonSigner"
+                  ]
+                },
+                "privateMessage": {
+                  "type": "string"
+                },
+                "formFields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "file_urls": {
+            "type": "array",
+            "description": "Public URLs of the files to send (PDF, Word, images). BoldSign downloads them. Not together with files.",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "files": {
+            "type": "array",
+            "description": "Files as Base64 data URIs, e.g. \"data:application/pdf;base64,JVBERi0...\". Not together with file_urls.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "use_text_tags": {
+            "type": "boolean",
+            "description": "true places fields from text tags written in the document."
+          },
+          "text_tag_definitions": {
+            "type": "array",
+            "description": "Definitions for short text tags: [{\"definitionId\", \"type\", \"signerIndex\", \"isRequired\"?}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "auto_detect_fields": {
+            "type": "boolean",
+            "description": "true turns form fields and blank lines found in the file into fields."
+          },
+          "meta_data": {
+            "type": "object",
+            "description": "Your own key/value data stored with the document."
+          }
+        },
+        "required": [
+          "title",
+          "signers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/document/send",
+        "bodyMapping": {
+          "title": "$title",
+          "message": "$message",
+          "cc": "$cc",
+          "enableSigningOrder": "$enable_signing_order",
+          "expiryDateType": "$expiry_date_type",
+          "expiryValue": "$expiry_value",
+          "reminderSettings": "$reminder_settings",
+          "brandId": "$brand_id",
+          "labels": "$labels",
+          "disableEmails": "$disable_emails",
+          "onBehalfOf": "$on_behalf_of",
+          "signers": "$signers",
+          "fileUrls": "$file_urls",
+          "files": "$files",
+          "useTextTags": "$use_text_tags",
+          "textTagDefinitions": "$text_tag_definitions",
+          "AutoDetectFields": "$auto_detect_fields",
+          "metaData": "$meta_data"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "boldsign_send_from_template",
+      "description": "Send a document for signature from a template. Fill each template role (by roleIndex from boldsign_get_template) with a real signer and optionally prefill its fields. Returns the documentId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "Template id, from boldsign_list_templates."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the document, shown to signers."
+          },
+          "message": {
+            "type": "string",
+            "description": "Message in the signing request email."
+          },
+          "cc": {
+            "type": "array",
+            "description": "Copy recipients: [{\"emailAddress\": \"...\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emailAddress": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "emailAddress"
+              ]
+            }
+          },
+          "enable_signing_order": {
+            "type": "boolean",
+            "description": "true makes signers sign one after another in signerOrder."
+          },
+          "expiry_date_type": {
+            "type": "string",
+            "description": "Unit of expiry_value: Days (default), Hours or SpecificDateTime.",
+            "enum": [
+              "Days",
+              "Hours",
+              "SpecificDateTime"
+            ]
+          },
+          "expiry_value": {
+            "type": "integer",
+            "description": "When the request expires, in the unit of expiry_date_type (default 60 days)."
+          },
+          "reminder_settings": {
+            "type": "object",
+            "description": "Automatic reminders: {\"enableAutoReminder\": true, \"reminderDays\": 3, \"reminderCount\": 3}."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand to apply (id from boldsign_list_brands)."
+          },
+          "labels": {
+            "type": "array",
+            "description": "Labels to tag the document with.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disable_emails": {
+            "type": "boolean",
+            "description": "true sends no emails (use boldsign_get_embedded_sign_link to hand out signing links)."
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Send on behalf of this sender identity email (it must be Verified in boldsign_list_sender_identities)."
+          },
+          "roles": {
+            "type": "array",
+            "description": "One entry per role to fill: [{\"roleIndex\": 1, \"signerName\", \"signerEmail\", \"signerOrder\"?, \"privateMessage\"?, \"existingFormFields\"?: [{\"id\": \"<field id>\", \"value\": \"...\"}]}]. Roles left out keep the template default signer.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "roleIndex": {
+                  "type": "integer"
+                },
+                "signerName": {
+                  "type": "string"
+                },
+                "signerEmail": {
+                  "type": "string"
+                },
+                "signerOrder": {
+                  "type": "integer"
+                },
+                "privateMessage": {
+                  "type": "string"
+                },
+                "existingFormFields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "required": [
+                "roleIndex"
+              ]
+            }
+          },
+          "role_removal_indices": {
+            "type": "array",
+            "description": "Role indexes to drop from this document.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/template/send",
+        "queryParams": {
+          "templateId": "$template_id"
+        },
+        "bodyMapping": {
+          "title": "$title",
+          "message": "$message",
+          "cc": "$cc",
+          "enableSigningOrder": "$enable_signing_order",
+          "expiryDateType": "$expiry_date_type",
+          "expiryValue": "$expiry_value",
+          "reminderSettings": "$reminder_settings",
+          "brandId": "$brand_id",
+          "labels": "$labels",
+          "disableEmails": "$disable_emails",
+          "onBehalfOf": "$on_behalf_of",
+          "roles": "$roles",
+          "roleRemovalIndices": "$role_removal_indices"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "boldsign_send_draft",
+      "description": "Send a document that is still a draft (status Draft) to its signers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/document/draftSend",
+        "queryParams": {
+          "documentId": "$document_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "boldsign_remind_document",
+      "description": "Email a reminder to signers who have not signed yet: all pending signers, or only the given emails.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          },
+          "receiver_emails": {
+            "type": "array",
+            "description": "Only remind these signers.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "message": {
+            "type": "string",
+            "description": "Message in the reminder email."
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Email of the sender identity when the document was sent on behalf of someone (behalfOf in the document)."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/document/remind",
+        "queryParams": {
+          "documentId": "$document_id",
+          "receiverEmails": "$receiver_emails"
+        },
+        "bodyMapping": {
+          "message": "$message",
+          "onBehalfOf": "$on_behalf_of"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "boldsign_revoke_document",
+      "description": "Revoke (cancel) a document that is in progress: signing stops and the signers are told why. It cannot be resumed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          },
+          "message": {
+            "type": "string",
+            "description": "Reason shown to the signers."
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Email of the sender identity when the document was sent on behalf of someone (behalfOf in the document)."
+          }
+        },
+        "required": [
+          "document_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/document/revoke",
+        "queryParams": {
+          "documentId": "$document_id"
+        },
+        "bodyMapping": {
+          "message": "$message",
+          "onBehalfOf": "$on_behalf_of"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "boldsign_delete_document",
+      "description": "Delete a document: it moves to the trash, or is erased for good with delete_permanently.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          },
+          "delete_permanently": {
+            "type": "boolean",
+            "description": "true erases it for good instead of moving it to the trash."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/document/delete",
+        "queryParams": {
+          "documentId": "$document_id",
+          "deletePermanently": "$delete_permanently"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "boldsign_extend_expiry",
+      "description": "Extend the expiry date of a document that is still in progress, optionally warning the signers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          },
+          "new_expiry_value": {
+            "type": "string",
+            "description": "New expiry: a date yyyy-MM-dd for documents with expiry in days, a number of hours for expiry in hours, an ISO 8601 date-time for a specific date-time expiry."
+          },
+          "warn_prior": {
+            "type": "boolean",
+            "description": "true warns the signers before the new expiry date."
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Email of the sender identity when the document was sent on behalf of someone (behalfOf in the document)."
+          }
+        },
+        "required": [
+          "document_id",
+          "new_expiry_value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/document/extendExpiry",
+        "queryParams": {
+          "documentId": "$document_id"
+        },
+        "bodyMapping": {
+          "newExpiryValue": "$new_expiry_value",
+          "warnPrior": "$warn_prior",
+          "onBehalfOf": "$on_behalf_of"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "boldsign_change_recipient",
+      "description": "Replace a signer who has not signed yet with another person (new name and email); the new signer gets the request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          },
+          "old_signer_email": {
+            "type": "string",
+            "description": "Email of the signer to replace."
+          },
+          "new_signer_name": {
+            "type": "string",
+            "description": "Name of the new signer."
+          },
+          "new_signer_email": {
+            "type": "string",
+            "description": "Email of the new signer."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the change, shown in the audit trail."
+          },
+          "order": {
+            "type": "integer",
+            "description": "Signing order of the signer to replace, when the same email signs more than once."
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Email of the sender identity when the document was sent on behalf of someone (behalfOf in the document)."
+          }
+        },
+        "required": [
+          "document_id",
+          "new_signer_name",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/document/changeRecipient",
+        "queryParams": {
+          "documentId": "$document_id"
+        },
+        "bodyMapping": {
+          "oldSignerEmail": "$old_signer_email",
+          "newSignerName": "$new_signer_name",
+          "newSignerEmail": "$new_signer_email",
+          "reason": "$reason",
+          "order": "$order",
+          "onBehalfOf": "$on_behalf_of"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "boldsign_prefill_fields",
+      "description": "Set the values of form fields of a document in progress before the signers fill them (field ids from boldsign_get_document).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (GUID), from boldsign_list_documents."
+          },
+          "fields": {
+            "type": "array",
+            "description": "[{\"id\": \"<form field id>\", \"value\": \"...\"}]",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "value"
+              ]
+            }
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Email of the sender identity when the document was sent on behalf of someone (behalfOf in the document)."
+          }
+        },
+        "required": [
+          "document_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/document/prefillFields",
+        "queryParams": {
+          "documentId": "$document_id"
+        },
+        "bodyMapping": {
+          "fields": "$fields",
+          "onBehalfOf": "$on_behalf_of"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "boldsign_create_contacts",
+      "description": "Add one or more contacts (name, email, phone, job title, company) to the address book.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contacts": {
+            "type": "array",
+            "description": "[{\"name\", \"email\", \"jobTitle\"?, \"companyName\"?, \"phoneNumber\"?: {\"countryCode\": \"+49\", \"number\": \"...\"}}]",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "jobTitle": {
+                  "type": "string"
+                },
+                "companyName": {
+                  "type": "string"
+                },
+                "phoneNumber": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "name",
+                "email"
+              ]
+            }
+          }
+        },
+        "required": [
+          "contacts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/contacts/create",
+        "bodyMapping": {
+          "__raw": "$contacts"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "boldsign_update_contact",
+      "description": "Change a contact of the address book: name, email, phone, job title, company (name and email are required).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id, from boldsign_list_contacts."
+          },
+          "name": {
+            "type": "string",
+            "description": "Contact name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Contact email."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company."
+          },
+          "phone_number": {
+            "type": "object",
+            "description": "{\"countryCode\": \"+49\", \"number\": \"...\"}"
+          }
+        },
+        "required": [
+          "contact_id",
+          "name",
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/contacts/update",
+        "queryParams": {
+          "id": "$contact_id"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "jobTitle": "$job_title",
+          "companyName": "$company_name",
+          "phoneNumber": "$phone_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "boldsign_create_sender_identity",
+      "description": "Ask a person to let you send documents on their behalf: BoldSign emails them an approval request; the identity is usable once its status is Verified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email of the person."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the person."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand to use for their documents."
+          },
+          "redirect_url": {
+            "type": "string",
+            "description": "Address to open after they approve."
+          },
+          "notification_settings": {
+            "type": "object",
+            "description": "Which emails they get: {\"sent\", \"viewed\", \"signed\", \"completed\", \"declined\", \"revoked\", \"expired\", \"reminders\", \"attachSignedDocument\", ...} as booleans."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the approval email, e.g. EN, DE, FR."
+          }
+        },
+        "required": [
+          "email",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/senderIdentities/create",
+        "bodyMapping": {
+          "email": "$email",
+          "name": "$name",
+          "brandId": "$brand_id",
+          "redirectUrl": "$redirect_url",
+          "notificationSettings": "$notification_settings",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,1996 @@
+{
+  "slug": "stability-ai",
+  "name": "Stability AI",
+  "aliases": [
+    "Stable Diffusion",
+    "Stable Image",
+    "Stable Audio",
+    "DreamStudio"
+  ],
+  "description": "Create and edit pictures with Stability AI: generate images with Stable Image Ultra, Core and Stable Diffusion 3.5, upscale, remove or replace backgrounds, erase, inpaint, outpaint, search and replace objects, control generation with sketches, structure and style references, and create music with Stable Audio 3. Pictures come back as images; also reads the credit balance. Paid per generation in credits.",
+  "instructions": "## Stability AI\nThis connector uses the **Stability AI REST API** (`https://api.stability.ai`) to create and edit pictures with the Stable Image services (Ultra, Core, Stable Diffusion 3.5, upscale, edit, control) and to create music with Stable Audio 3. Finished pictures are attached to the tool result as images the user can see; audio is attached as a file.\n\n**Setup (3 minutes)**\n1. Create an account at https://platform.stability.ai (new accounts get 25 free credits) and buy credits under **Billing** if needed.\n2. Open **API keys** (https://platform.stability.ai/dashboard/api-keys), copy a key (it starts with `sk-`) and paste it into `STABILITY_API_KEY`. It is sent as `Authorization: Bearer`.\n3. The key acts for the default organization of its user; credits are taken from that organization.\n\n**Costs**: every generation, edit, upscale and audio tool COSTS CREDITS (1 credit = $0.01): Core 3, Ultra 8, SD 3.5 Large 6.5, Large Turbo 4, Medium 3.5, Flash 2.5, fast upscale 2, conservative upscale 40, creative upscale 60, erase, inpaint, search and replace, search and recolor, remove background 5 each, outpaint 4, replace background and relight 8, sketch, structure and style 5 each, style transfer 8, Stable Audio 3 8. Failed generations are free. Tell the user the cost and confirm before every paid call; check `stability_ai_get_balance` first when in doubt. Reads (`stability_ai_get_balance`, `stability_ai_get_account`, `stability_ai_list_engines`, `stability_ai_get_result`, `stability_ai_get_audio_result`) are free.\n\n**Which tool**\n- Create from text: `stability_ai_generate_image_core` (fast, cheapest, good default), `stability_ai_generate_image_ultra` (best quality, photorealism, also from a starting picture with `strength`), `stability_ai_generate_image_sd3` (Stable Diffusion 3.5 models; `mode` image-to-image with `image_url` and `strength`).\n- Improve resolution: `stability_ai_upscale_fast` (4x, cheap), `stability_ai_upscale_conservative` (to about 4 megapixels, faithful), `stability_ai_upscale_creative` (adds detail, asynchronous).\n- Edit: `stability_ai_remove_background`, `stability_ai_erase` (remove objects with a mask), `stability_ai_inpaint` (repaint a masked area), `stability_ai_outpaint` (extend the canvas), `stability_ai_search_and_replace` and `stability_ai_search_and_recolor` (find an object by words, no mask), `stability_ai_replace_background_and_relight` (asynchronous).\n- Guide with a picture: `stability_ai_control_sketch` (drawing to picture), `stability_ai_control_structure` (keep composition), `stability_ai_control_style` (copy a style), `stability_ai_control_style_transfer` (style of one picture onto another).\n- Audio: `stability_ai_generate_audio` (music and sound effects, asynchronous), then `stability_ai_get_audio_result`.\n- Account: `stability_ai_get_balance`, `stability_ai_get_account`, `stability_ai_list_engines` (legacy v1 engines only).\n\n**Input pictures**: every `*_url` parameter is a public https link to a JPEG, PNG or WebP file (up to 10 MB). AnythingMCP downloads it and uploads it to Stability AI as a file; a picture the user only pasted into the chat has to be put online first. Masks are pictures where white marks the area to change; without a mask the picture's transparent areas are used.\n\n**Asynchronous jobs**: `stability_ai_upscale_creative`, `stability_ai_replace_background_and_relight` and `stability_ai_generate_audio` return `{ \"id\": \"...\" }` (64 characters) at once. Call `stability_ai_get_result` (pictures) or `stability_ai_get_audio_result` (audio) with that id after about 10 seconds; `status: in-progress` means call again later. Results stay available for 24 hours and only for the same key.\n\n**Reading results**: picture tools return `finish_reason` and `seed` with the attached image. `finish_reason` CONTENT_FILTERED means the output broke the content policy and was blurred; rephrase the prompt. Reuse `seed` with the same prompt to reproduce a picture. Pictures default to JPEG to stay small; ask for png or webp when transparency is needed.\n\n**Prompts**: write in English, describe subject, setting, style, colours and lighting; put what to avoid in `negative_prompt`. `style_preset` (photographic, cinematic, anime, digital-art, 3d-model ...) nudges the look.\n\n**Errors**: 400 lists the wrong parameters in `errors`; 401 bad key; 402 not enough credits; 403 the prompt or picture was flagged by content moderation; 413 the upload is too large; 422 the input cannot be processed (e.g. picture size out of range or unsupported language); 429 rate limit (150 requests per 10 seconds, then a 60-second block). Every error carries an `id` to quote to Stability support.\n\n**Out of scope**: 3D model generation (Stable Fast 3D, SPAR3D), audio-to-audio and audio inpainting, the Stable Audio 2 endpoints and legacy v1 SDXL generation are not part of this connector.",
+  "region": "intl",
+  "category": "data",
+  "icon": "stability-ai",
+  "docsUrl": "https://docs.stability.ai/api-reference",
+  "prerequisites": "A Stability AI account with credits (new accounts get 25 free credits) and an API key.",
+  "requiredEnvVars": [
+    "STABILITY_API_KEY"
+  ],
+  "envVarMeta": {
+    "STABILITY_API_KEY": {
+      "label": "Stability AI API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "platform.stability.ai, Dashboard, API keys. Starts with sk-.",
+      "link": "https://platform.stability.ai/dashboard/api-keys",
+      "pattern": "^sk-[A-Za-z0-9]{20,}$",
+      "patternMessage": "Paste the whole key, starting with sk-."
+    }
+  },
+  "verifyHints": {
+    "401": "Stability AI does not accept this API key. Copy it again from https://platform.stability.ai/dashboard/api-keys (it starts with sk-).",
+    "402": "The Stability AI account has no credits left. Buy credits at https://platform.stability.ai/dashboard/billing.",
+    "429": "Rate limit reached (150 requests in 10 seconds): requests are blocked for 60 seconds."
+  },
+  "probe": {
+    "tool": "stability_ai_get_balance"
+  },
+  "connector": {
+    "name": "Stability AI",
+    "type": "REST",
+    "baseUrl": "https://api.stability.ai",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{STABILITY_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP",
+      "stability-client-id": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/user/balance"
+  },
+  "tools": [
+    {
+      "name": "stability_ai_get_balance",
+      "description": "Credit balance of the Stability AI account or organization of the API key (1 credit = $0.01). Check it before paid generations. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/balance"
+      }
+    },
+    {
+      "name": "stability_ai_get_account",
+      "description": "The Stability AI user of the API key: id, email and the organizations it belongs to (id, name, role, default). Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/account"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "profile_picture"
+          ]
+        }
+      }
+    },
+    {
+      "name": "stability_ai_list_engines",
+      "description": "List the legacy v1 engines (SDXL and older models) available to the account, with id, name, type and description. The current services (Ultra, Core, SD 3.5, edit, upscale, control, audio) are not engines and are not listed. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/engines/list"
+      }
+    },
+    {
+      "name": "stability_ai_get_result",
+      "description": "Fetch the result of an asynchronous image job (stability_ai_upscale_creative, stability_ai_replace_background_and_relight) by its id. While it runs the answer is status in-progress (HTTP 202): wait about 10 seconds and call again. When done the picture is attached as an image with finish_reason and seed. Results are kept 24 hours and only for the same API key. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "The 64-character id returned when the job was started."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2beta/results/{id}",
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_get_audio_result",
+      "description": "Fetch the result of a stability_ai_generate_audio job by its id. While it runs the answer is status in-progress (HTTP 202): wait about 10 seconds and call again. When done the audio file (MP3 or WAV) is attached to the result as an embedded resource. Results are kept 24 hours and only for the same API key. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "The 64-character id returned by stability_ai_generate_audio."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2beta/audio/results/{id}",
+        "headers": {
+          "Accept": "audio/*"
+        }
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    },
+    {
+      "name": "stability_ai_generate_image_core",
+      "description": "Create a picture from a text description with Stable Image Core, the fast and cheap model, and return it as an image the user can see. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 3 credits per picture. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture should show: subject, setting, style, colours, lighting, in English (up to 10,000 characters)."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "21:9",
+              "16:9",
+              "3:2",
+              "5:4",
+              "1:1",
+              "4:5",
+              "2:3",
+              "9:16",
+              "9:21"
+            ],
+            "description": "Aspect ratio, default 1:1."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/generate/core",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "negative_prompt": "$negative_prompt",
+          "aspect_ratio": "$aspect_ratio",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_generate_image_ultra",
+      "description": "Create a high-quality, photorealistic or detailed picture with Stable Image Ultra (the best model, about 1 megapixel), optionally starting from a picture, and return it as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 8 credits per picture. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture should show: subject, setting, style, colours, lighting, in English (up to 10,000 characters)."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "21:9",
+              "16:9",
+              "3:2",
+              "5:4",
+              "1:1",
+              "4:5",
+              "2:3",
+              "9:16",
+              "9:21"
+            ],
+            "description": "Aspect ratio, default 1:1."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          },
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional starting picture for image-to-image; then strength is required. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "strength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "With image_url: how much the starting picture is changed, 0 keeps it, 1 ignores it."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/generate/ultra",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "negative_prompt": "$negative_prompt",
+          "aspect_ratio": "$aspect_ratio",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "strength": "$strength",
+          "image": {
+            "__file": "$image_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_generate_image_sd3",
+      "description": "Create a picture with Stable Diffusion 3.5 (Large, Large Turbo, Medium or Flash), from text or from a starting picture, and return it as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 2.5 to 6.5 credits per picture depending on model. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture should show: subject, setting, style, colours, lighting, in English (up to 10,000 characters)."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "sd3.5-large",
+              "sd3.5-large-turbo",
+              "sd3.5-medium",
+              "sd3.5-flash"
+            ],
+            "default": "sd3.5-large-turbo",
+            "description": "sd3.5-large (6.5 credits, best), sd3.5-large-turbo (4 credits, default here), sd3.5-medium (3.5 credits), sd3.5-flash (2.5 credits, fastest)."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "text-to-image",
+              "image-to-image"
+            ],
+            "description": "text-to-image (default) or image-to-image, which needs image_url and strength."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "21:9",
+              "16:9",
+              "3:2",
+              "5:4",
+              "1:1",
+              "4:5",
+              "2:3",
+              "9:16",
+              "9:21"
+            ],
+            "description": "Aspect ratio for text-to-image, default 1:1."
+          },
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Starting picture for mode image-to-image. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "strength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "image-to-image only: how much the starting picture is changed, 0 keeps it, 1 ignores it."
+          },
+          "cfg_scale": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "How strictly to follow the prompt, 1 to 10 (defaults 4 for Large and Medium, 1 for Turbo and Flash)."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/generate/sd3",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "negative_prompt": "$negative_prompt",
+          "model": "$model",
+          "mode": "$mode",
+          "aspect_ratio": "$aspect_ratio",
+          "strength": "$strength",
+          "cfg_scale": "$cfg_scale",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "image": {
+            "__file": "$image_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_upscale_fast",
+      "description": "Enlarge a picture 4 times with the fast upscaler (sharper detail, no reinterpretation) and return it as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 2 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture to enlarge, 32 to 1,536 pixels per side and 1,024 to 1,048,576 pixels in total. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/upscale/fast",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "image": {
+            "__file": "$image_url"
+          },
+          "output_format": "$output_format"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_upscale_conservative",
+      "description": "Upscale a picture to about 4 megapixels while keeping it faithful to the original (prompt describes the picture), and return it as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 40 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture to upscale, at least 64 pixels per side, up to 9,437,184 pixels. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture should show: subject, setting, style, colours, lighting, in English (up to 10,000 characters)."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "creativity": {
+            "type": "number",
+            "minimum": 0.2,
+            "maximum": 0.5,
+            "description": "How much new detail may be added, 0.2 to 0.5, default 0.35."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/upscale/conservative",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "negative_prompt": "$negative_prompt",
+          "creativity": "$creativity",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "image": {
+            "__file": "$image_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_upscale_creative",
+      "description": "Upscale a low-resolution or poor picture to 4K with added detail guided by a prompt. Runs in the background: returns an id; fetch the picture with stability_ai_get_result. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 60 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture to upscale, at least 64 pixels per side, up to 1,048,576 pixels. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture should show: subject, setting, style, colours, lighting, in English (up to 10,000 characters)."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "creativity": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 0.5,
+            "description": "How much new detail may be added, 0.1 to 0.5, default 0.3."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/upscale/creative",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "negative_prompt": "$negative_prompt",
+          "creativity": "$creativity",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "image": {
+            "__file": "$image_url"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "stability_ai_remove_background",
+      "description": "Remove the background of a picture, keeping the subject on a transparent background, and return it as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 5 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture whose background is removed. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "png",
+              "webp"
+            ],
+            "default": "png",
+            "description": "File format, default png (both keep transparency)."
+          }
+        },
+        "required": [
+          "image_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/edit/remove-background",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "image": {
+            "__file": "$image_url"
+          },
+          "output_format": "$output_format"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_erase",
+      "description": "Erase unwanted objects or blemishes from a picture using a mask, filling the area naturally, and return it as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 5 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture to clean up. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "mask_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional mask: white areas are erased. Without it the alpha channel of the picture is used. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "grow_mask": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "Pixels to grow the mask edges by, default 5."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/edit/erase",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "image": {
+            "__file": "$image_url"
+          },
+          "mask": {
+            "__file": "$mask_url"
+          },
+          "grow_mask": "$grow_mask",
+          "seed": "$seed",
+          "output_format": "$output_format"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_inpaint",
+      "description": "Repaint the masked part of a picture following a prompt (inpainting) and return it as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 5 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture to change. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture should show: subject, setting, style, colours, lighting, in English (up to 10,000 characters)."
+          },
+          "mask_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional mask: white areas are repainted. Without it the alpha channel of the picture is used. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "grow_mask": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Pixels to grow the mask edges by, default 5."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/edit/inpaint",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "negative_prompt": "$negative_prompt",
+          "grow_mask": "$grow_mask",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "image": {
+            "__file": "$image_url"
+          },
+          "mask": {
+            "__file": "$mask_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_outpaint",
+      "description": "Extend a picture beyond its borders (outpainting) in any direction and return it as an image. Set at least one of left, right, up, down. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 4 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture to extend. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "left": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000,
+            "description": "Pixels to add on the left."
+          },
+          "right": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000,
+            "description": "Pixels to add on the right."
+          },
+          "up": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000,
+            "description": "Pixels to add at the top."
+          },
+          "down": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000,
+            "description": "Pixels to add at the bottom."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "Optional description of what to add."
+          },
+          "creativity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "How creative the added area is, 0 to 1, default 0.5."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/edit/outpaint",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "left": "$left",
+          "right": "$right",
+          "up": "$up",
+          "down": "$down",
+          "prompt": "$prompt",
+          "creativity": "$creativity",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "image": {
+            "__file": "$image_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_search_and_replace",
+      "description": "Find an object in a picture by description and replace it with something else, no mask needed, and return the picture as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 5 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture to change. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "search_prompt": {
+            "type": "string",
+            "description": "Short description of the object to replace, e.g. \"the red car\"."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What to put in its place, e.g. \"a blue bicycle\"."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "grow_mask": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "Pixels to grow the detected area by, default 3."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url",
+          "search_prompt",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/edit/search-and-replace",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "search_prompt": "$search_prompt",
+          "prompt": "$prompt",
+          "negative_prompt": "$negative_prompt",
+          "grow_mask": "$grow_mask",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "image": {
+            "__file": "$image_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_search_and_recolor",
+      "description": "Find an object in a picture by description and change its colour, no mask needed, and return the picture as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 5 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture to change. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "select_prompt": {
+            "type": "string",
+            "description": "Short description of the object to recolour, e.g. \"the jacket\"."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "The new look, e.g. \"a bright yellow jacket\"."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "grow_mask": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "Pixels to grow the detected area by, default 3."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url",
+          "select_prompt",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/edit/search-and-recolor",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "select_prompt": "$select_prompt",
+          "prompt": "$prompt",
+          "negative_prompt": "$negative_prompt",
+          "grow_mask": "$grow_mask",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "image": {
+            "__file": "$image_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_replace_background_and_relight",
+      "description": "Put the subject of a picture on a new background and relight it to match (product shots, portraits). Runs in the background: returns an id; fetch the picture with stability_ai_get_result. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 8 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject_image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Picture with the subject to keep. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "background_prompt": {
+            "type": "string",
+            "description": "The new background or lighting, e.g. \"a sunny beach at golden hour\". background_prompt or background_reference_url is required."
+          },
+          "background_reference_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional picture whose style is used for the new background. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "foreground_prompt": {
+            "type": "string",
+            "description": "Optional description of the subject, to keep background colours from bleeding into it."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "preserve_original_subject": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "1 keeps the subject pixel-exact, 0 relights it fully; default 0.6."
+          },
+          "original_background_depth": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "How closely the new background follows the original depth, default 0.5."
+          },
+          "keep_original_background": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "true keeps the original background and only relights it."
+          },
+          "light_source_direction": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right",
+              "above",
+              "below"
+            ],
+            "description": "Direction of the light."
+          },
+          "light_reference_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional picture whose bright areas set the lighting. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "light_source_strength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Strength of the light with light_source_direction or light_reference_url, default 0.3."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "subject_image_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/edit/replace-background-and-relight",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "background_prompt": "$background_prompt",
+          "foreground_prompt": "$foreground_prompt",
+          "negative_prompt": "$negative_prompt",
+          "preserve_original_subject": "$preserve_original_subject",
+          "original_background_depth": "$original_background_depth",
+          "keep_original_background": "$keep_original_background",
+          "light_source_direction": "$light_source_direction",
+          "light_source_strength": "$light_source_strength",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "subject_image": {
+            "__file": "$subject_image_url"
+          },
+          "background_reference": {
+            "__file": "$background_reference_url"
+          },
+          "light_reference": {
+            "__file": "$light_reference_url"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "stability_ai_control_sketch",
+      "description": "Turn a sketch or line drawing into a finished picture that follows its outlines, guided by a prompt, and return it as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 5 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The sketch or picture that guides the composition. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture should show: subject, setting, style, colours, lighting, in English (up to 10,000 characters)."
+          },
+          "control_strength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "How strongly the input picture guides the result, 0 to 1, default 0.7."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/control/sketch",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "control_strength": "$control_strength",
+          "negative_prompt": "$negative_prompt",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "image": {
+            "__file": "$image_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_control_structure",
+      "description": "Create a new picture that keeps the structure and composition of an input picture, guided by a prompt, and return it as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 5 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The sketch or picture that guides the composition. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture should show: subject, setting, style, colours, lighting, in English (up to 10,000 characters)."
+          },
+          "control_strength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "How strongly the input picture guides the result, 0 to 1, default 0.7."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/control/structure",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "control_strength": "$control_strength",
+          "negative_prompt": "$negative_prompt",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "image": {
+            "__file": "$image_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_control_style",
+      "description": "Create a new picture from a prompt in the visual style of a reference picture and return it as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 5 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture whose style is copied. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture should show: subject, setting, style, colours, lighting, in English (up to 10,000 characters)."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "21:9",
+              "16:9",
+              "3:2",
+              "5:4",
+              "1:1",
+              "4:5",
+              "2:3",
+              "9:16",
+              "9:21"
+            ],
+            "description": "Aspect ratio, default 1:1."
+          },
+          "fidelity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "How closely the style follows the input picture, default 0.5."
+          },
+          "style_preset": {
+            "type": "string",
+            "enum": [
+              "enhance",
+              "anime",
+              "photographic",
+              "digital-art",
+              "comic-book",
+              "fantasy-art",
+              "line-art",
+              "analog-film",
+              "neon-punk",
+              "isometric",
+              "low-poly",
+              "origami",
+              "modeling-compound",
+              "cinematic",
+              "3d-model",
+              "pixel-art",
+              "tile-texture"
+            ],
+            "description": "Optional style preset."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "image_url",
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/control/style",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "negative_prompt": "$negative_prompt",
+          "aspect_ratio": "$aspect_ratio",
+          "fidelity": "$fidelity",
+          "style_preset": "$style_preset",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "image": {
+            "__file": "$image_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_control_style_transfer",
+      "description": "Apply the style of one picture to the content of another (style transfer) and return the result as an image. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 8 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "init_image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture with the subject to restyle. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "style_image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The picture with the style to apply. Pass a public https link (JPEG, PNG or WebP, up to 10 MB); AnythingMCP downloads it and uploads it as a file."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "Optional guidance for the result."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "What the picture must not show, e.g. \"blurry, text, watermark\"."
+          },
+          "style_strength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Influence of the style picture, default 1."
+          },
+          "composition_fidelity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "How closely the composition of the subject picture is kept, default 0.9."
+          },
+          "change_strength": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 1,
+            "description": "How much the subject picture may change, default 0.9."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "jpeg",
+              "png",
+              "webp"
+            ],
+            "default": "jpeg",
+            "description": "File format, default jpeg. png pictures are much larger."
+          }
+        },
+        "required": [
+          "init_image_url",
+          "style_image_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/stable-image/control/style-transfer",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "negative_prompt": "$negative_prompt",
+          "style_strength": "$style_strength",
+          "composition_fidelity": "$composition_fidelity",
+          "change_strength": "$change_strength",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "init_image": {
+            "__file": "$init_image_url"
+          },
+          "style_image": {
+            "__file": "$style_image_url"
+          }
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "images": {
+          "paths": [
+            "image"
+          ],
+          "maxImages": 1,
+          "maxBytes": 8388608
+        }
+      }
+    },
+    {
+      "name": "stability_ai_generate_audio",
+      "description": "Create music or sound effects from a text description with Stable Audio 3 (up to about 6 minutes). Runs in the background: returns an id; fetch the audio file with stability_ai_get_audio_result. COSTS CREDITS, billed to the Stability AI account (1 credit = $0.01; failed generations are free): 8 credits. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "The music or sound to create: genre, instruments, mood, tempo (BPM), structure."
+          },
+          "duration": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 380,
+            "description": "Length in seconds, 1 to 380 (default 190)."
+          },
+          "steps": {
+            "type": "integer",
+            "minimum": 4,
+            "maximum": 8,
+            "description": "Sampling steps, 4 to 8 (default 8)."
+          },
+          "cfg_scale": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 25,
+            "description": "How strictly to follow the prompt, default 1."
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967294,
+            "description": "Seed for reproducible results; 0 or empty for a random one. The seed used is returned."
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "mp3",
+              "wav"
+            ],
+            "default": "mp3",
+            "description": "mp3 (default, smaller) or wav."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2beta/audio/stable-audio/text-to-audio",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "duration": "$duration",
+          "steps": "$steps",
+          "cfg_scale": "$cfg_scale",
+          "seed": "$seed",
+          "output_format": "$output_format",
+          "model": "stable-audio-3"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

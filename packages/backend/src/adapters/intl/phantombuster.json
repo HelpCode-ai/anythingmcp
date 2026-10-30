@@ -1,0 +1,1055 @@
+{
+  "slug": "phantombuster",
+  "name": "PhantomBuster",
+  "aliases": [
+    "Phantom Buster",
+    "PhantomBuster API"
+  ],
+  "description": "PhantomBuster lead extraction and outreach automation: list, launch, schedule and stop agents (Phantoms), follow their runs and read the results, leads lists and stored leads, and plan usage. API v2 with an API key.",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "phantombuster",
+  "docsUrl": "https://hub.phantombuster.com/reference",
+  "instructions": "## PhantomBuster\nThis connector drives **PhantomBuster** through its API v2 (`https://api.phantombuster.com/api/v2`): the agents (Phantoms set up in your workspace) that extract and enrich leads from LinkedIn, Sales Navigator, Google Maps, Instagram and other sites, and automate outreach. It lists and reads agents, launches and stops them, follows their runs (containers) and reads the results, edits an agent's settings and schedule, works with the leads lists and stored leads of the workspace storage, and reports plan usage.\n\n**Setup (2 minutes)**\n1. In PhantomBuster open **Workspace settings** (https://phantombuster.com/workspace-settings, also in the navbar menu) and add an API key. It is shown only once: copy it.\n2. Paste it into `PHANTOMBUSTER_API_KEY`. It is sent in the `X-Phantombuster-Key` header and gives full access to that one workspace.\n3. Run `phantombuster_get_org` to check the key.\n\nPhantomBuster also runs its own MCP server (`https://mcp.phantombuster.com`, OAuth sign-in) with a similar set of tools; this connector uses the API key instead.\n\n**Workflow**\n- Workspace and usage: `phantombuster_get_org` (id, plan, time zone, s3Folder), `phantombuster_get_org_resources` (execution time, email and AI credits used and left), `phantombuster_list_running_containers`, the CSV exports `phantombuster_export_agent_usage` and `phantombuster_export_container_usage`, dashboard folders with `phantombuster_list_agent_groups`.\n- Find an agent: `phantombuster_list_agents` (filter with `agent_ids`, `input_types`, `output_types`), then `phantombuster_get_agent` for its settings; `with_manifest: \"true\"` shows the input fields its script accepts. Deleted ones: `phantombuster_list_deleted_agents`. Scripts: `phantombuster_list_scripts`, `phantombuster_get_script`. Always work with agent ids, never names: two agents can share a name.\n- Run an agent: `phantombuster_launch_agent` (returns the containerId), `phantombuster_launch_agent_soon` for a delayed run, `phantombuster_abort_agent` to stop it. Then poll `phantombuster_get_agent_output` every minute or so (status, progress, new log lines with `from_output_pos` and `prev_container_id`) until `status` is finished; do not poll in a tight loop.\n- Results: `phantombuster_list_containers` (runs of an agent), `phantombuster_get_container`, `phantombuster_get_container_output` (log) and `phantombuster_get_container_result` (the data of a run). Result files are also at `https://phantombuster.s3.amazonaws.com/<orgS3Folder>/<s3Folder>/result.csv` (and `result.json`), with both folders from `phantombuster_get_agent`.\n- Configure: `phantombuster_save_agent` changes the name, saved argument (input), schedule (`launch_type`, `repeated_launch_preset`), time limit and notifications, or creates an agent from a script. Saving never launches a run.\n- Leads storage (beta API): `phantombuster_list_lead_lists`, `phantombuster_get_lead_list`, `phantombuster_list_leads_in_list`; create or change a list with `phantombuster_save_lead_list`, add or update one lead with `phantombuster_save_lead`. Installed switched off: `phantombuster_delete_leads`, `phantombuster_delete_lead_list`, `phantombuster_delete_agent` and `phantombuster_unschedule_all_agents` (stops every schedule).\n\n**Launching is real: confirm first.** A launch acts on the connected social accounts (visits profiles, sends connection requests or messages) and uses execution time of the plan. Show the user the agent, its input and the volume, and launch only after a clear yes. Too many actions per day can get a LinkedIn account restricted; keep the daily limits the Phantom suggests.\n\n**Launch argument**: `argument` replaces the saved input settings for that run (and is saved too with `save_argument`); `bonus_argument` merges a few fields over the saved ones for one run. The field names are those of the script manifest, e.g. `spreadsheetUrl`, `numberOfProfiles`, `sessionCookie` (never ask the user to paste a cookie into the chat; connected accounts are set up in PhantomBuster).\n\n**Leads list filters**: a list is a saved filter. Top level `{\"and\": [ ... ]}` of clauses `{\"filter\": {\"<field>\": {\"entity\": \"lead\", \"operator\": \"contains\", \"valueToCompare\": \"CTO\"}}}`, nested `and` / `or`, or `{\"__global_search__\": \"text\"}`. Lead fields are snake_case (`linkedin_job_title`, `location`, `professional_emails`), company fields camelCase with `\"entity\": \"company\"` (`industriesV2`, `employeeCount`). Operators: `equals`, `notEquals`, `contains`, `notContains`, `in`, `notIn`, `greaterThan`, `lowerThan`, `greaterOrEquals`, `lowerOrEquals`, `beforeDateTime`, `afterDateTime` (ISO 8601), `beforeNowPlusOffset` / `afterNowPlusOffset` (milliseconds), `isSet`, `isNotSet`, `include`, `some`, `every`. Check a new list with `phantombuster_list_leads_in_list` and `include_total_count`.\n\n**Reading the answers**: ids are strings of digits. Dates are Unix timestamps in **milliseconds**. Run `status`: starting, running, finished, launch error, never launched; `exitCode` 0 and `endType` finished mean success. Usage values in `phantombuster_get_org_resources` are seconds of execution time and counts of credits.\n\n**Paging**: `phantombuster_list_containers` returns `limit` runs; for older ones pass the `endedAt` of the last run as `before_ended_at`. `phantombuster_list_leads_in_list` pages with `page_size` and `offset`. The other lists return everything at once.\n\n**Errors**: 401 \"API key not found\" for a wrong or revoked key, 400 for a missing or wrong parameter (or a launch argument that is too big), 404 for an unknown id. A launch fails when the plan's execution time is used up or too many runs are in parallel (`maxParallelism`).",
+  "prerequisites": "A PhantomBuster workspace and an API key from Workspace settings, API Keys.",
+  "requiredEnvVars": [
+    "PHANTOMBUSTER_API_KEY"
+  ],
+  "envVarMeta": {
+    "PHANTOMBUSTER_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "PhantomBuster, Workspace settings, API Keys: add a key and copy it (it is shown once). It gives access to that workspace only.",
+      "link": "https://phantombuster.com/workspace-settings",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "PhantomBuster did not find this API key. Create a new key under Workspace settings, API Keys, and paste it exactly."
+  },
+  "probe": {
+    "tool": "phantombuster_get_org"
+  },
+  "connector": {
+    "name": "PhantomBuster API v2",
+    "type": "REST",
+    "baseUrl": "https://api.phantombuster.com/api/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Phantombuster-Key",
+      "apiKey": "{{PHANTOMBUSTER_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/orgs/fetch"
+  },
+  "tools": [
+    {
+      "name": "phantombuster_get_org",
+      "description": "The workspace (org) the API key belongs to: id, name, plan, time zone, s3Folder (needed to build result file URLs) and the daily limits of the plan. Needs no ids; checks the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/fetch"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "identityTokens",
+            "proxies",
+            "globalObject",
+            "billingAddress",
+            "billingMail",
+            "billingFirstName",
+            "billingLastName",
+            "vatId",
+            "additionalInvoiceInformation",
+            "customPromptOrg",
+            "crmIntegrations"
+          ]
+        }
+      }
+    },
+    {
+      "name": "phantombuster_get_org_resources",
+      "description": "Plan usage of the workspace: execution time, email credits, AI credits, captcha, SERP credits and storage used today and this month, with the plan limits and the next reset times.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/fetch-resources"
+      }
+    },
+    {
+      "name": "phantombuster_list_running_containers",
+      "description": "Runs (containers) that are executing right now in the workspace, across all agents.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/fetch-running-containers"
+      }
+    },
+    {
+      "name": "phantombuster_export_agent_usage",
+      "description": "CSV export of execution time and resource use per agent over the last N days (at most about 6 months). Returns CSV text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "string",
+            "description": "Number of days to export, e.g. \"30\". At most 6 months."
+          }
+        },
+        "required": [
+          "days"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/export-agent-usage",
+        "queryParams": {
+          "days": "$days"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_export_container_usage",
+      "description": "CSV export of every run (container) over the last N days with its duration and resource use, optionally for one agent only. Returns CSV text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "string",
+            "description": "Number of days to export, e.g. \"7\". At most 6 months."
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "Only export the runs of this agent."
+          }
+        },
+        "required": [
+          "days"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/export-container-usage",
+        "queryParams": {
+          "days": "$days",
+          "agentId": "$agent_id"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_list_agent_groups",
+      "description": "Folders (agent groups) of the dashboard and the order of the agents inside them.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/fetch-agent-groups"
+      }
+    },
+    {
+      "name": "phantombuster_list_agents",
+      "description": "All agents (Phantoms set up in the workspace) with id, name, script, launch type and schedule, last run end type and exit code, running count and s3Folder. Filter by ids or by the input and output types the agents handle.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_ids": {
+            "type": "string",
+            "description": "Only these agents: one id, or several comma-separated."
+          },
+          "input_types": {
+            "type": "string",
+            "description": "Only agents that consume this input type, e.g. profileUrl or companyUrl."
+          },
+          "output_types": {
+            "type": "string",
+            "description": "Only agents that produce this output type, e.g. fullName, job or company."
+          },
+          "with_argument": {
+            "type": "string",
+            "description": "Set to \"true\" to include each agent's saved launch argument (its input settings).",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/fetch-all",
+        "queryParams": {
+          "agentIds": "$agent_ids",
+          "inputTypes": "$input_types",
+          "outputTypes": "$output_types",
+          "withArgument": "$with_argument"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "[*].manifest"
+          ]
+        }
+      }
+    },
+    {
+      "name": "phantombuster_get_agent",
+      "description": "One agent with its full settings: script, saved argument (input), schedule (launchType, repeatedLaunchTimes), notifications, limits, s3Folder and orgS3Folder, number of launches. Proxy credentials are removed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Agent (Phantom) id, as returned by phantombuster_list_agents."
+          },
+          "with_manifest": {
+            "type": "string",
+            "description": "Set to \"true\" to include the script manifest, which describes the argument fields the Phantom accepts.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/fetch",
+        "queryParams": {
+          "id": "$agent_id",
+          "withManifest": "$with_manifest"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "proxyPassword",
+            "proxyUsername",
+            "code"
+          ]
+        }
+      }
+    },
+    {
+      "name": "phantombuster_get_agent_output",
+      "description": "Status and console output of the most recent run of an agent: containerId, status (starting, running, finished, launch error, never launched), progress, output text and outputPos. Pass from_output_pos and prev_container_id to read only what is new since the last call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Agent (Phantom) id, as returned by phantombuster_list_agents."
+          },
+          "from_output_pos": {
+            "type": "number",
+            "description": "Return the output from this character position on (the outputPos of the previous answer)."
+          },
+          "prev_container_id": {
+            "type": "string",
+            "description": "The containerId of the previous answer, so the output continues from that run."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/fetch-output",
+        "queryParams": {
+          "id": "$agent_id",
+          "fromOutputPos": "$from_output_pos",
+          "prevContainerId": "$prev_container_id"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_list_deleted_agents",
+      "description": "Agents that were deleted from the workspace, with their former ids and names.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/fetch-deleted"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "[*].manifest",
+            "[*].argument"
+          ]
+        }
+      }
+    },
+    {
+      "name": "phantombuster_list_containers",
+      "description": "Runs (containers) of one agent, newest first: id, status, launch type, start and end time, exit code and end type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Agent (Phantom) id, as returned by phantombuster_list_agents."
+          },
+          "limit": {
+            "type": "string",
+            "description": "Maximum number of runs to return, e.g. \"10\"."
+          },
+          "mode": {
+            "type": "string",
+            "description": "all (default) or finalized (only runs that ended).",
+            "enum": [
+              "all",
+              "finalized"
+            ]
+          },
+          "before_ended_at": {
+            "type": "string",
+            "description": "Only runs that ended before this time (Unix milliseconds), for the next page: the endedAt of the oldest run of the previous answer."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/containers/fetch-all",
+        "queryParams": {
+          "agentId": "$agent_id",
+          "limit": "$limit",
+          "mode": "$mode",
+          "beforeEndedAt": "$before_ended_at"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_get_container",
+      "description": "One run (container): status, launch and end time, exit code, end type and retry number; optionally its output and result object.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "container_id": {
+            "type": "string",
+            "description": "Container (run) id, from phantombuster_list_containers, phantombuster_get_agent_output (containerId) or phantombuster_launch_agent."
+          },
+          "with_output": {
+            "type": "string",
+            "description": "Set to \"true\" to include the console output.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "with_result_object": {
+            "type": "string",
+            "description": "Set to \"true\" to include the result object (the data the run produced).",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "with_runtime_events": {
+            "type": "string",
+            "description": "Set to \"true\" to include the runtime events (progress steps and warnings).",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [
+          "container_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/containers/fetch",
+        "queryParams": {
+          "id": "$container_id",
+          "withOutput": "$with_output",
+          "withResultObject": "$with_result_object",
+          "withRuntimeEvents": "$with_runtime_events"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_get_container_output",
+      "description": "Console output (log) of one run of an agent, as JSON or as plain text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "container_id": {
+            "type": "string",
+            "description": "Container (run) id, from phantombuster_list_containers, phantombuster_get_agent_output (containerId) or phantombuster_launch_agent."
+          },
+          "mode": {
+            "type": "string",
+            "description": "json (default) or raw (plain text).",
+            "enum": [
+              "json",
+              "raw"
+            ]
+          }
+        },
+        "required": [
+          "container_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/containers/fetch-output",
+        "queryParams": {
+          "id": "$container_id",
+          "mode": "$mode"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_get_container_result",
+      "description": "The result object of one run: the data the Phantom produced (often a JSON string of rows, or links to the result CSV and JSON files).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "container_id": {
+            "type": "string",
+            "description": "Container (run) id, from phantombuster_list_containers, phantombuster_get_agent_output (containerId) or phantombuster_launch_agent."
+          }
+        },
+        "required": [
+          "container_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/containers/fetch-result-object",
+        "queryParams": {
+          "id": "$container_id"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_list_scripts",
+      "description": "Scripts (Phantom code) the workspace owns: id, name, default branch and dates. The Phantoms of the PhantomBuster store belong to the org \"phantombuster\"; that list is several MB, so filter it with script_ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Org whose scripts to list; leave empty for the workspace's own scripts. \"phantombuster\" lists the public store (large)."
+          },
+          "script_ids": {
+            "type": "string",
+            "description": "Only these script ids, comma-separated."
+          },
+          "exclude": {
+            "type": "string",
+            "description": "modules: leave module scripts out; non-modules: return only modules.",
+            "enum": [
+              "modules",
+              "non-modules"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scripts/fetch-all",
+        "queryParams": {
+          "org": "$org",
+          "scriptIds": "$script_ids",
+          "exclude": "$exclude"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_get_script",
+      "description": "One script by id: name, org, branches and manifest (the argument fields an agent of this script accepts). The scriptId of an agent comes from phantombuster_get_agent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "script_id": {
+            "type": "string",
+            "description": "Script id, e.g. the scriptId of an agent."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch to read, default the script's default branch."
+          },
+          "environment": {
+            "type": "string",
+            "description": "staging or release (default).",
+            "enum": [
+              "staging",
+              "release"
+            ]
+          }
+        },
+        "required": [
+          "script_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scripts/fetch",
+        "queryParams": {
+          "id": "$script_id",
+          "branch": "$branch",
+          "environment": "$environment"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "code"
+          ]
+        }
+      }
+    },
+    {
+      "name": "phantombuster_list_lead_lists",
+      "description": "Leads lists of the workspace storage (beta API): id, name, description, the saved filter that defines the list, tags and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/org-storage/lists/fetch-all"
+      }
+    },
+    {
+      "name": "phantombuster_get_lead_list",
+      "description": "One leads list of the workspace storage by id: name, description, tags and the saved filter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Leads list id from phantombuster_list_lead_lists."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/org-storage/lists/fetch",
+        "queryParams": {
+          "id": "$list_id"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_list_leads_in_list",
+      "description": "Leads that match a leads list (beta API), page by page: name, LinkedIn profile and company, job title, location, emails and the rest of the stored lead fields. Read-only, although the API takes it as a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Leads list id from phantombuster_list_lead_lists."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Leads per page, e.g. 50."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of leads to skip (page_size times the page number), default 0."
+          },
+          "order": {
+            "type": "string",
+            "description": "ASC or DESC by creation date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "include_total_count": {
+            "type": "boolean",
+            "description": "Also return the total number of leads in the list."
+          },
+          "with_companies": {
+            "type": "boolean",
+            "description": "Also return the company each lead works for."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/org-storage/leads/by-list/{list_id}",
+        "bodyMapping": {
+          "paginationOptions": {
+            "paginationSize": "$page_size",
+            "paginationOffset": "$offset",
+            "paginationOrder": "$order",
+            "includeTotalCount": "$include_total_count"
+          },
+          "withCompanies": "$with_companies"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "phantombuster_launch_agent",
+      "description": "Starts a run of an agent now (adds it to the launch queue) and returns the containerId of the new run. The Phantom acts on the connected accounts (LinkedIn, Sales Navigator, ...) with its saved settings, unless argument replaces them. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Agent (Phantom) id, as returned by phantombuster_list_agents."
+          },
+          "argument": {
+            "type": "object",
+            "description": "Launch argument (the Phantom's input settings) as an object, replacing the saved one for this run. Leave it out to use the saved settings. Field names come from the script manifest (phantombuster_get_agent with with_manifest)."
+          },
+          "bonus_argument": {
+            "type": "object",
+            "description": "Fields merged over the saved argument for this run only, e.g. {\"numberOfProfiles\": 10}."
+          },
+          "save_argument": {
+            "type": "boolean",
+            "description": "Also save argument as the agent's default settings."
+          },
+          "max_instance_count": {
+            "type": "integer",
+            "description": "Only launch when fewer than this many runs of the agent are already running (1 avoids parallel runs)."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/agents/launch",
+        "bodyMapping": {
+          "id": "$agent_id",
+          "argument": "$argument",
+          "bonusArgument": "$bonus_argument",
+          "saveArgument": "$save_argument",
+          "maxInstanceCount": "$max_instance_count"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_launch_agent_soon",
+      "description": "Schedules one run of an agent within the next N minutes (a one-time delayed launch).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Agent (Phantom) id, as returned by phantombuster_list_agents."
+          },
+          "minutes": {
+            "type": "integer",
+            "description": "Launch within this many minutes."
+          },
+          "argument": {
+            "type": "object",
+            "description": "Launch argument for that run, as in phantombuster_launch_agent. Leave it out to use the saved settings."
+          }
+        },
+        "required": [
+          "agent_id",
+          "minutes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/agents/launch-soon",
+        "bodyMapping": {
+          "id": "$agent_id",
+          "minutes": "$minutes",
+          "argument": "$argument"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_abort_agent",
+      "description": "Stops the running run(s) of an agent. soft_abort lets the Phantom finish its current step and save what it has.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Agent (Phantom) id, as returned by phantombuster_list_agents."
+          },
+          "soft_abort": {
+            "type": "boolean",
+            "description": "Ask the Phantom to stop cleanly instead of killing the run."
+          },
+          "switch_to_manual_launch": {
+            "type": "boolean",
+            "description": "Also turn off the agent's schedule (launch type becomes manual)."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/agents/stop",
+        "bodyMapping": {
+          "id": "$agent_id",
+          "softAbort": "$soft_abort",
+          "switchToManualLaunch": "$switch_to_manual_launch"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "phantombuster_save_agent",
+      "description": "Updates an agent's settings (with agent_id) or creates a new agent from a script (without agent_id, with script_id): name, saved argument, schedule, time limit and notifications. Fields left out keep their value. Saving never launches a run.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Agent to update. Leave it out to create a new agent."
+          },
+          "script_id": {
+            "type": "string",
+            "description": "Script the new agent runs (an id from phantombuster_list_scripts or the store). Required when creating."
+          },
+          "name": {
+            "type": "string",
+            "description": "Agent name."
+          },
+          "argument": {
+            "type": "object",
+            "description": "Default launch argument (input settings) as an object; see the script manifest for the fields."
+          },
+          "launch_type": {
+            "type": "string",
+            "description": "manually, repeatedly (needs repeated_launch_preset or repeated_launch_times), once (needs launch_once_at) or after agent (needs launch_after_agent_id).",
+            "enum": [
+              "manually",
+              "repeatedly",
+              "once",
+              "after agent"
+            ]
+          },
+          "repeated_launch_preset": {
+            "type": "string",
+            "description": "Schedule preset when launch_type is repeatedly, e.g. \"Once per day\", \"Twice per day\", \"Once per week\"."
+          },
+          "repeated_launch_times": {
+            "type": "object",
+            "description": "Custom schedule when launch_type is repeatedly: {\"timezone\": \"Europe/Berlin\", \"minute\": [0], \"hour\": [9], \"day\": [1..31], \"dow\": [\"mon\",...], \"month\": [\"jan\",...]}."
+          },
+          "launch_once_at": {
+            "type": "number",
+            "description": "Launch time (Unix milliseconds) when launch_type is once."
+          },
+          "launch_after_agent_id": {
+            "type": "string",
+            "description": "Agent whose end triggers this one, when launch_type is after agent."
+          },
+          "execution_time_limit": {
+            "type": "number",
+            "description": "Stop each run after this many seconds."
+          },
+          "max_retry_number": {
+            "type": "integer",
+            "description": "How often a failed run is retried."
+          },
+          "notifications": {
+            "type": "object",
+            "description": "Notification settings, e.g. {\"mailAutomaticExitError\": true, \"webhook\": \"https://...\"}."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/agents/save",
+        "bodyMapping": {
+          "id": "$agent_id",
+          "script": "$script_id",
+          "name": "$name",
+          "argument": "$argument",
+          "launchType": "$launch_type",
+          "repeatedLaunchPreset": "$repeated_launch_preset",
+          "repeatedLaunchTimes": "$repeated_launch_times",
+          "launchOnceAt": "$launch_once_at",
+          "launchAfterAgentId": "$launch_after_agent_id",
+          "executionTimeLimit": "$execution_time_limit",
+          "maxRetryNumber": "$max_retry_number",
+          "notifications": "$notifications"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "phantombuster_save_lead_list",
+      "description": "Creates a leads list (without list_id) or replaces the filter, name and description of one (with list_id). A list is a saved filter over the stored leads, so it updates itself as Phantoms store new leads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List to update. Leave it out to create a new list."
+          },
+          "name": {
+            "type": "string",
+            "description": "List name."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Filter object, e.g. {\"and\": [{\"filter\": {\"location\": {\"entity\": \"lead\", \"operator\": \"contains\", \"valueToCompare\": \"Berlin\"}}}]} or {\"__global_search__\": \"text\"}. See the instructions for the operators."
+          },
+          "description": {
+            "type": "string",
+            "description": "What the list contains, in words."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags of the list."
+          }
+        },
+        "required": [
+          "name",
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/org-storage/lists/save",
+        "bodyMapping": {
+          "id": "$list_id",
+          "name": "$name",
+          "filter": "$filter",
+          "description": "$description",
+          "tags": "$tags"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "phantombuster_save_lead",
+      "description": "Stores one lead in the workspace storage (beta API), or updates the lead with the same LinkedIn profile URL. Fields left out are not changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "linkedin_profile_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL of the lead (the key that identifies it)."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Current company."
+          },
+          "company_website": {
+            "type": "string",
+            "description": "Website of the company."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Current job title."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location (city, country)."
+          },
+          "professional_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Work email addresses."
+          },
+          "personal_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Personal email addresses."
+          },
+          "phone_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Phone numbers."
+          }
+        },
+        "required": [
+          "linkedin_profile_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/org-storage/leads/save",
+        "bodyMapping": {
+          "linkedinProfileUrl": "$linkedin_profile_url",
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "companyName": "$company_name",
+          "companyWebsite": "$company_website",
+          "linkedinJobTitle": "$job_title",
+          "location": "$location",
+          "professionalEmails": "$professional_emails",
+          "personalEmails": "$personal_emails",
+          "phoneNumbers": "$phone_numbers"
+        }
+      }
+    },
+    {
+      "name": "phantombuster_delete_leads",
+      "description": "Deletes leads from the workspace storage by id. Cannot be undone. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the leads to delete (the id field of the leads from phantombuster_list_leads_in_list)."
+          }
+        },
+        "required": [
+          "lead_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/org-storage/leads/delete-many",
+        "bodyMapping": {
+          "ids": "$lead_ids"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "phantombuster_delete_lead_list",
+      "description": "Deletes a leads list (the saved filter; the leads stay in storage). Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Leads list id."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/org-storage/lists/delete",
+        "bodyMapping": {
+          "id": "$list_id"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "phantombuster_delete_agent",
+      "description": "Deletes an agent with its schedule; its past runs and result files are no longer shown. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Agent (Phantom) id, as returned by phantombuster_list_agents."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/agents/delete",
+        "bodyMapping": {
+          "id": "$agent_id"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "phantombuster_unschedule_all_agents",
+      "description": "Emergency stop: turns off the automatic launch of every agent in the workspace (all become manual). Running runs continue. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/agents/unschedule-all",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

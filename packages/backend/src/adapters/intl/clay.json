@@ -1,0 +1,355 @@
+{
+  "slug": "clay",
+  "name": "Clay",
+  "description": "Clay GTM data from any AI agent: search Clay's people and company database, run Clay enrichment and custom functions, query Clay tables, search Workflow runs and check credits. Clay Public API with a personal API key.",
+  "instructions": "## Clay\nThis connector uses the Clay Public API (`https://api.clay.com/public/v0`): searches of Clay's people and company database, runs of Clay functions (enrichment and research), queries of Clay tables, Workflow run search, credit balance and privacy deletion.\n\nWhat it cannot do: the Public API has no endpoints to list tables or functions, create tables or write rows. Rows are still written to tables through a table's inbound webhook, and function and table ids are copied from the Clay app.\n\n**Setup**\n1. In Clay open **API and CLI**, tab **API keys** (`https://app.clay.com/workspaces/~/api-and-cli?tab=api-keys`) and create a key. The key acts as your user, with your workspace access.\n2. Paste it into `CLAY_API_KEY`. It is sent in the `clay-api-key` header.\n3. For custom functions, open the function in Clay, **Details**, and enable **API** access; copy its `t_...` id.\n\n**Check the key**: `clay_get_me` returns the user and workspace; `clay_get_credit_balance` shows the credits left.\n\n**Search the GTM database**\n1. `clay_get_search_query_reference` once per session to learn the fields and grammar.\n2. `clay_create_search` with a query such as `select from companies where people.exists(is_current = true and job_title is_similar_to (\"VP Sales\"))`; keep the `search_id`.\n3. `clay_get_search_results` with that id; it is a stateful iterator: each call returns the next page, call again while `has_more` is true.\nSearch results count against the plan's result limits (free: 50 per search and 100 per 30 days; paid: 500 per request). Over a limit Clay answers 402 naming the limit.\n\n**Enrich with a function**\n1. `clay_run_routine` with the routine id (`function:t_...`) and up to 100 items `{\"id\": \"...\", \"inputs\": {...}}`. It spends credits.\n2. `clay_get_run_results` with the `routine_run_id`: HTTP 202 and `status: in_progress` while running, then 200 with `status: complete` and `data`. Match results to inputs by `id`, not by order; a complete run can contain failed items. `total` and `finished` count the whole run, `finished` includes failures. Poll every few seconds, not in a tight loop.\n3. `clay_get_batch_run_results` reads batch runs started from the Clay CLI; a finished batch returns `result_url`.\n\n**Tables (Enterprise)**: `clay_query_tables` with the table id from the table's URL (`.../tables/t_...`). Cells come back with a `status`: `success` (with `value`), `empty`, `error` (with `error`), or a pending state (`running`, `queued`, `retry`, `rate_limited`, `awaiting_callback`). Pass `cursor` back to page; a scan can return a row twice when it changes mid-scan, so deduplicate by id.\n\n**Workflows (beta)**: `clay_get_runs_query_reference`, then `clay_query_workflow_runs` to find runs and their status.\n\n**Privacy**: `clay_privacy_delete_people` (installed switched off) deletes people from Audiences; try `dry_run: true` first, then follow the job with `clay_get_privacy_deletion_status`.\n\n**Paging**: collections return `data` and a `cursor` while more pages exist; search iterators return `data` and `has_more`.\n\n**Errors**: errors carry a `message`. 401/403: wrong key or no access; 402: search result limit reached; 404: unknown id, or a function without API access; 409/422: invalid request state or input; 429: workspace rate limit, wait for `Retry-After` seconds.\n",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "clay",
+  "docsUrl": "https://developers.clay.com/",
+  "aliases": [
+    "Clay.com"
+  ],
+  "requiredEnvVars": [
+    "CLAY_API_KEY"
+  ],
+  "envVarMeta": {
+    "CLAY_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Clay: API and CLI, API keys, create a key. It acts with your user and workspace access.",
+      "link": "https://app.clay.com/workspaces/~/api-and-cli?tab=api-keys",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Clay refused the API key. Create a new one under API and CLI, API keys.",
+    "rate_limited": "Clay limits requests per workspace. Wait for the time in Retry-After and try again."
+  },
+  "probe": {
+    "tool": "clay_get_me"
+  },
+  "connector": {
+    "name": "Clay Public API",
+    "type": "REST",
+    "baseUrl": "https://api.clay.com/public/v0",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "clay-api-key",
+      "apiKey": "{{CLAY_API_KEY}}"
+    },
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/me"
+  },
+  "tools": [
+    {
+      "name": "clay_get_me",
+      "description": "Get the Clay user and workspace the API key belongs to. Use it to check the key and to learn the workspace id.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      }
+    },
+    {
+      "name": "clay_get_credit_balance",
+      "description": "Get the current credit balances of the workspace. Reading balances costs no credits.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credits/balance"
+      }
+    },
+    {
+      "name": "clay_get_search_query_reference",
+      "description": "Get the reference of the Clay search query language (markdown): the queryable people and company fields, operators and grammar. Read it before writing a query for clay_create_search.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/query-mode/reference"
+      }
+    },
+    {
+      "name": "clay_create_search",
+      "description": "Start a search of Clay's people or company database with a Clay search query, e.g. select from people where experiences.any(is_current = true and job_title is_similar_to (\"VP Sales\")). Returns a search_id; fetch the records with clay_get_search_results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Clay search query, starting with \"select from people\" or \"select from companies\". Count queries and job searches are not supported."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/query-mode",
+        "bodyMapping": {
+          "query": "$query"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "clay_get_search_results",
+      "description": "Fetch the next page of records of a search. Each call advances the search; call again while has_more is true. People come with name, location and matched experiences; companies with domain, industry, size, revenue and LinkedIn URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_id": {
+            "type": "string",
+            "description": "search_id from clay_create_search."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records in this page (default 20, at most 500 on paid plans, 50 on free and trial)."
+          }
+        },
+        "required": [
+          "search_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/query-mode/{search_id}/run",
+        "bodyMapping": {
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "clay_query_tables",
+      "description": "Read rows of known Clay tables (Enterprise plans) with selected fields, filters, ordering, grouping and joins. Returns rows with each cell's status and value, and a cursor for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "description": "Structured query: {\"tables\": [{\"id\": \"t_0te9i4tZEHwc9hihBXu\"}], \"select\": [{\"field\": \"Company Name\", \"as\": \"company_name\"}, {\"field\": \"Domain\"}], \"filter\": {\"field\": \"Domain\", \"op\": \"is_not_empty\"}, \"order_by\": [{\"field\": \"Domain\", \"direction\": \"asc\"}], \"field_mode\": \"names\"}. Filter ops: =, !=, >, >=, <, <=, contains, not_contains, starts_with, ends_with, in, not_in, is_empty, is_not_empty; combine with {\"and\": [...]}, {\"or\": [...]}, {\"not\": {...}}. Up to 5 tables, 20 selected fields, 3 order_by entries (order_by disables cursor paging)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page (default 50, at most 100)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tables/query",
+        "bodyMapping": {
+          "query": "$query",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "clay_run_routine",
+      "description": "Run a Clay function (Clay-managed or a custom function with API access enabled) on 1 to 100 input items, for example to find work emails or enrich companies. Runs are asynchronous and spend Clay credits; poll clay_get_run_results with the returned routine_run_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "routine_id": {
+            "type": "string",
+            "description": "Routine id, e.g. function:t_abc123 for a custom function (the t_... id from the function details in Clay, prefixed with function:)."
+          },
+          "items": {
+            "type": "array",
+            "description": "Inputs: [{\"id\": \"row-1\", \"inputs\": {\"domain\": \"clay.com\"}}]. id (at most 64 characters) is yours and comes back with the result; inputs are the function's input names.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "webhook_id": {
+            "type": "string",
+            "description": "Id of a registered Clay webhook to notify when the run finishes."
+          }
+        },
+        "required": [
+          "routine_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/routines/{routine_id}/run",
+        "bodyMapping": {
+          "items": "$items",
+          "webhook_id": "$webhook_id"
+        }
+      }
+    },
+    {
+      "name": "clay_get_run_results",
+      "description": "Get the progress and results of a routine run. While it runs: HTTP 202 with total and finished counts. When done: status complete and data with one entry per input id, each complete with result or failed with error. Paged with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "routine_run_id": {
+            "type": "string",
+            "description": "routine_run_id from clay_run_routine."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, at most 100)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous page."
+          }
+        },
+        "required": [
+          "routine_run_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/routines/run/{routine_run_id}/results",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "clay_get_batch_run_results",
+      "description": "Get the progress of a batch routine run started from the Clay CLI or API, and when complete the download URL of its results file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "routine_run_id": {
+            "type": "string",
+            "description": "Batch routine_run_id."
+          }
+        },
+        "required": [
+          "routine_run_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/routines/run-batch/{routine_run_id}/results"
+      }
+    },
+    {
+      "name": "clay_get_runs_query_reference",
+      "description": "Get the reference of the workflow-run query language (markdown): queryable run fields, node predicates, content search and grammar. Read it before clay_query_workflow_runs. Beta.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workflows/runs/query/reference"
+      }
+    },
+    {
+      "name": "clay_query_workflow_runs",
+      "description": "Search Clay Workflow runs with a run query: a select query returns matching runs newest first with a cursor, a count query returns the number of runs. Beta; data can lag a few seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Run query in the grammar from clay_get_runs_query_reference (at most 2000 characters)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Runs per page (1-100)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workflows/runs/query",
+        "bodyMapping": {
+          "query": "$query",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "clay_get_privacy_deletion_status",
+      "description": "Check a privacy deletion job from clay_privacy_delete_people, including its cascading cleanup. Status stays available up to five days after the job ends.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Job id returned by clay_privacy_delete_people."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/audiences/privacy-delete/{job_id}"
+      }
+    },
+    {
+      "name": "clay_privacy_delete_people",
+      "description": "Delete people from Clay Audiences for a privacy request (for example a GDPR erasure), matched by email, LinkedIn slug or phone. Run with dry_run true first to see how many people match. Switched off by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_identifiers": {
+            "type": "array",
+            "description": "1-100 identifiers; people matching any are deleted: {\"type\": \"email\", \"value\": \"jane@example.com\"}, {\"type\": \"linkedin\", \"value\": \"jane-doe\"} (the slug after /in/, not the URL) or {\"type\": \"phone\", \"value\": \"+4915112345678\"}.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "true only counts the matching people without deleting (default false)."
+          }
+        },
+        "required": [
+          "person_identifiers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/audiences/privacy-delete",
+        "bodyMapping": {
+          "person_identifiers": "$person_identifiers",
+          "dry_run": "$dry_run"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}
