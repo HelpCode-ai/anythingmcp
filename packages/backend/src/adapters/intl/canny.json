@@ -1,0 +1,1394 @@
+{
+  "slug": "canny",
+  "name": "Canny",
+  "aliases": [
+    "Canny.io",
+    "Canny feedback"
+  ],
+  "description": "Canny customer feedback: boards, posts and feature requests, votes, comments, status changes, users and companies with MRR, categories, tags and the public changelog. Canny REST API with the secret API key.",
+  "region": "intl",
+  "category": "support",
+  "icon": "canny",
+  "docsUrl": "https://developers.canny.io/api-reference",
+  "instructions": "## Canny\nThis connector works with the **Canny API** (`https://canny.io/api`): feedback boards, posts (ideas and feature requests), comments, votes, users and companies, categories, tags, status changes and the changelog. Every Canny call is a `POST` with a JSON body, the reads included: the read tools are marked read-only.\n\n**Setup (1 minute)**\n1. In Canny open **Settings > API & Webhooks** (the company settings) and copy the **secret API key**.\n2. Paste it into `CANNY_API_KEY`. Canny takes it as the `apiKey` field of every request body; the connector adds it for you.\n3. Run `canny_list_boards` to check the key.\n\n**Workflow**\n- Explore: `canny_list_boards`, then `canny_get_board`, `canny_list_categories` and `canny_list_tags` for a board.\n- Read feedback: `canny_list_posts` (filter by board, status, tags, author, company or search; `sort: score` or `trending` for the most wanted), `canny_get_post` for the full post, `canny_list_comments` and `canny_get_comment` for the discussion, `canny_list_votes` for who voted, `canny_list_status_changes` for the history of status updates.\n- People: `canny_list_users` and `canny_get_user` (by Canny id, email or your app's user id), `canny_list_companies` for customer accounts with their MRR. `canny_create_or_update_user` creates a user (or updates the matching one) and returns the Canny id you need as author or voter; with `companies` it also links and creates companies. `canny_update_company` changes name, domain, monthly spend or custom fields.\n- Capture feedback: look up or create the user, then `canny_create_post`, or `canny_create_vote` on an existing post when someone asks for something that is already there. `canny_create_comment` adds a comment or reply (`internal: true` for team-only notes).\n- Triage: `canny_change_post_status` (open, under review, planned, in progress, complete, closed or a custom status; needs an admin's Canny id as `changer_id`; `should_notify_voters` emails the voters), `canny_update_post` for title, details, ETA, owner or custom fields, `canny_change_post_category`, `canny_add_post_tag` and `canny_remove_post_tag`; `canny_create_category` and `canny_create_tag` to extend a board.\n- Changelog: `canny_list_changelog_entries`, `canny_create_changelog_entry` (draft by default, `published: true` or `scheduled_for` to release, `post_ids` to link shipped posts), `canny_update_changelog_entry`, `canny_change_changelog_entry_status` to publish, schedule or unpublish.\n\n**Ids**: all ids are 24-character hex strings. `company_id` filters take the company identifier as returned by `canny_list_companies` (the id from your app when companies are synced). An admin's Canny id (for `changer_id`, `by_id`, `owner_id`) comes from `canny_list_users` (entries with `isAdmin: true`) or `canny_get_user` with the admin's email.\n\n**Reading the answers**: posts carry `score` (vote count), `commentCount`, `status`, `eta` and `url` (the admin link). Times are ISO 8601 UTC. Changelog details are markdown.\n\n**Paging**: two styles. `canny_list_posts`, `canny_list_categories`, `canny_list_tags` and `canny_list_changelog_entries` use `limit` and `skip` and answer `hasMore`. `canny_list_comments`, `canny_list_votes`, `canny_list_users`, `canny_list_companies` and `canny_list_status_changes` use `limit` (up to 100) and `cursor`: pass the returned `cursor` while `hasNextPage` is true.\n\n**Limits and errors**: per key 5 requests per second and 1,000 per hour on Free, 10 and 5,000 on paid plans, 20 and 15,000 on Business; 429 comes with `Retry-After`. Errors arrive as `{\"error\": \"...\"}`, e.g. `invalid post id`. There are no delete tools.",
+  "prerequisites": "A Canny workspace and its secret API key from Settings > API & Webhooks.",
+  "requiredEnvVars": [
+    "CANNY_API_KEY"
+  ],
+  "envVarMeta": {
+    "CANNY_API_KEY": {
+      "label": "Secret API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Canny > Settings > API & Webhooks: the secret API key of your company. It is sent as the apiKey field in the JSON body of every request.",
+      "link": "https://developers.canny.io/api-reference#authentication",
+      "pattern": "^[A-Za-z0-9-]{20,}$",
+      "patternMessage": "Paste only the secret API key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Canny refused the API key. Copy the secret key again from Settings > API & Webhooks.",
+    "403": "Canny refused the API key. Copy the secret key again from Settings > API & Webhooks.",
+    "rate_limited": "Canny allows 5 to 20 requests per second depending on the plan. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "canny_list_boards"
+  },
+  "connector": {
+    "name": "Canny API",
+    "type": "REST",
+    "baseUrl": "https://canny.io",
+    "authType": "NONE",
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP (https://anythingmcp.com)"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error",
+          "messagePath": "error",
+          "messageMatches": "api ?key|unauthori",
+          "status": 401
+        },
+        {
+          "path": "error",
+          "messagePath": "error",
+          "messageMatches": "slow down|rate",
+          "status": 429
+        },
+        {
+          "path": "error",
+          "messagePath": "error",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "canny_list_boards",
+      "description": "All feedback boards of the Canny company with id, name, postCount, isPrivate and url. Start here: most other tools take a board id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/boards/list",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_get_board",
+      "description": "One feedback board by id: name, postCount, isPrivate, created date and admin url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Board id from canny_list_boards."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/boards/retrieve",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "id": "$id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_list_posts",
+      "description": "List feedback posts (ideas and feature requests) with title, details, status, score (votes), commentCount, author, board, category, tags, owner, eta and url. Filter by board, author, company, tags, status or a search text; sort by newest, oldest, score, trending, statusChanged or relevance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Only posts on this board."
+          },
+          "author_id": {
+            "type": "string",
+            "description": "Only posts by this Canny user id."
+          },
+          "company_id": {
+            "type": "string",
+            "description": "Only posts by users of the company with this identifier (the company id from canny_list_companies)."
+          },
+          "tag_ids": {
+            "type": "array",
+            "description": "Only posts with at least one of these tag ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "search": {
+            "type": "string",
+            "description": "Only posts matching this search text."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses, e.g. open,under review,planned,in progress,complete,closed or a custom status."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Order of the posts.",
+            "enum": [
+              "newest",
+              "oldest",
+              "relevance",
+              "score",
+              "statusChanged",
+              "trending"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 10)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Results to skip, for paging (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/posts/list",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "boardID": "$board_id",
+          "authorID": "$author_id",
+          "companyID": "$company_id",
+          "tagIDs": "$tag_ids",
+          "search": "$search",
+          "status": "$status",
+          "sort": "$sort",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_get_post",
+      "description": "One post with its details, status, score, author, owner, category, tags, custom fields, eta, linked Jira or Linear issues, merge history and url. Pass the post id, or its urlName together with the board id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "url_name": {
+            "type": "string",
+            "description": "The urlName of the post (the last part of its URL); needs board_id."
+          },
+          "board_id": {
+            "type": "string",
+            "description": "Board id, only needed with url_name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/posts/retrieve",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "id": "$id",
+          "urlName": "$url_name",
+          "boardID": "$board_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_create_post",
+      "description": "Create a post (idea or feature request) on a board for a user. Create or look up the author first with canny_create_or_update_user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id."
+          },
+          "author_id": {
+            "type": "string",
+            "description": "Canny user id of the author (from canny_create_or_update_user or canny_get_user)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Post title, up to 400 characters."
+          },
+          "details": {
+            "type": "string",
+            "description": "Post details, up to 10,000 characters."
+          },
+          "by_id": {
+            "type": "string",
+            "description": "Canny admin id that creates the post on behalf of the author."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Category or subcategory id."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Admin id responsible for the work."
+          },
+          "eta": {
+            "type": "string",
+            "description": "Estimated completion month as MM/YYYY, e.g. 06/2027."
+          },
+          "eta_public": {
+            "type": "boolean",
+            "description": "Show the ETA to all users."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom field values keyed by field name; include every field the board requires."
+          },
+          "image_urls": {
+            "type": "array",
+            "description": "URLs of images to attach.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Original creation time in ISO 8601 when importing from another tool."
+          }
+        },
+        "required": [
+          "board_id",
+          "author_id",
+          "title",
+          "details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/posts/create",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "boardID": "$board_id",
+          "authorID": "$author_id",
+          "title": "$title",
+          "details": "$details",
+          "byID": "$by_id",
+          "categoryID": "$category_id",
+          "ownerID": "$owner_id",
+          "eta": "$eta",
+          "etaPublic": "$eta_public",
+          "customFields": "$custom_fields",
+          "imageURLs": "$image_urls",
+          "createdAt": "$created_at"
+        }
+      }
+    },
+    {
+      "name": "canny_update_post",
+      "description": "Update a post's title, details, ETA, images, custom fields or owner. Only the fields given change. Changing the owner needs changer_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title, up to 400 characters."
+          },
+          "details": {
+            "type": "string",
+            "description": "New details, up to 10,000 characters."
+          },
+          "eta": {
+            "type": "string",
+            "description": "Estimated completion month as MM/YYYY."
+          },
+          "eta_public": {
+            "type": "boolean",
+            "description": "Show the ETA to all users."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom field values keyed by field name."
+          },
+          "image_urls": {
+            "type": "array",
+            "description": "Replaces all images; an empty list removes them.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Admin id to make the owner."
+          },
+          "changer_id": {
+            "type": "string",
+            "description": "Admin id making the change; required with owner_id."
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/posts/update",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "postID": "$post_id",
+          "title": "$title",
+          "details": "$details",
+          "eta": "$eta",
+          "etaPublic": "$eta_public",
+          "customFields": "$custom_fields",
+          "imageURLs": "$image_urls",
+          "ownerID": "$owner_id",
+          "changerID": "$changer_id"
+        }
+      }
+    },
+    {
+      "name": "canny_change_post_status",
+      "description": "Change a post's status (open, under review, planned, in progress, complete, closed or a custom status), recorded under an admin, optionally with a comment and an email to the voters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status, e.g. planned, in progress or complete."
+          },
+          "changer_id": {
+            "type": "string",
+            "description": "Canny admin id recorded as having changed the status."
+          },
+          "should_notify_voters": {
+            "type": "boolean",
+            "description": "Email the non-admin voters about the change."
+          },
+          "comment_value": {
+            "type": "string",
+            "description": "Comment attached to the status change."
+          },
+          "comment_image_urls": {
+            "type": "array",
+            "description": "Image URLs for that comment.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "post_id",
+          "status",
+          "changer_id",
+          "should_notify_voters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/posts/change_status",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "postID": "$post_id",
+          "status": "$status",
+          "changerID": "$changer_id",
+          "shouldNotifyVoters": "$should_notify_voters",
+          "commentValue": "$comment_value",
+          "commentImageURLs": "$comment_image_urls"
+        }
+      }
+    },
+    {
+      "name": "canny_change_post_category",
+      "description": "Move a post to another category of its board, or remove its category with the text null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Category id, or null to remove the category."
+          }
+        },
+        "required": [
+          "post_id",
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/posts/change_category",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "postID": "$post_id",
+          "categoryID": "$category_id"
+        }
+      }
+    },
+    {
+      "name": "canny_add_post_tag",
+      "description": "Add a tag to a post. Tags come from canny_list_tags or canny_create_tag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id."
+          }
+        },
+        "required": [
+          "post_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/posts/add_tag",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "postID": "$post_id",
+          "tagID": "$tag_id"
+        }
+      }
+    },
+    {
+      "name": "canny_remove_post_tag",
+      "description": "Remove a tag from a post. Removing a tag the post does not have changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id."
+          }
+        },
+        "required": [
+          "post_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/posts/remove_tag",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "postID": "$post_id",
+          "tagID": "$tag_id"
+        }
+      }
+    },
+    {
+      "name": "canny_list_comments",
+      "description": "List portal comments, newest first, with value, author, post, parent, internal flag and likes. Filter by post, board, author or company. Paged with a cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Only comments on this post."
+          },
+          "board_id": {
+            "type": "string",
+            "description": "Only comments on this board."
+          },
+          "author_id": {
+            "type": "string",
+            "description": "Only comments by this user id."
+          },
+          "company_id": {
+            "type": "string",
+            "description": "Only comments by users of this company identifier."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor value of the previous answer, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/comments/list",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "postID": "$post_id",
+          "boardID": "$board_id",
+          "authorID": "$author_id",
+          "companyID": "$company_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_get_comment",
+      "description": "One portal comment by id with its value, author, post, images and internal flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Comment id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/comments/retrieve",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "id": "$id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_create_comment",
+      "description": "Add a comment to a post, as a reply when parent_id is set. internal comments are visible to the team only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "author_id": {
+            "type": "string",
+            "description": "Canny user id of the author."
+          },
+          "value": {
+            "type": "string",
+            "description": "Comment text, under 2,500 characters."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Comment id to reply to."
+          },
+          "internal": {
+            "type": "boolean",
+            "description": "Team-only comment (the author must be a team member)."
+          },
+          "should_notify_voters": {
+            "type": "boolean",
+            "description": "Allow the comment to trigger email notifications (default false)."
+          },
+          "image_urls": {
+            "type": "array",
+            "description": "Image URLs to attach.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Original creation time in ISO 8601 when importing."
+          }
+        },
+        "required": [
+          "post_id",
+          "author_id",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/comments/create",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "postID": "$post_id",
+          "authorID": "$author_id",
+          "value": "$value",
+          "parentID": "$parent_id",
+          "internal": "$internal",
+          "shouldNotifyVoters": "$should_notify_voters",
+          "imageURLs": "$image_urls",
+          "createdAt": "$created_at"
+        }
+      }
+    },
+    {
+      "name": "canny_list_votes",
+      "description": "List votes, newest first, with the voter, post, priority and time. Filter by post, board, user or company. Paged with a cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Only votes on this post."
+          },
+          "board_id": {
+            "type": "string",
+            "description": "Only votes on this board."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Only votes by this Canny user id."
+          },
+          "company_id": {
+            "type": "string",
+            "description": "Only votes by users of this company identifier."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor value of the previous answer, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/votes/list",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "postID": "$post_id",
+          "boardID": "$board_id",
+          "userID": "$user_id",
+          "companyID": "$company_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_create_vote",
+      "description": "Record a vote by a user on a post, optionally with a priority, for example when a customer asks for a feature in a call or ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "voter_id": {
+            "type": "string",
+            "description": "Canny user id of the voter."
+          },
+          "by_id": {
+            "type": "string",
+            "description": "Canny admin id casting the vote on the voter's behalf."
+          },
+          "vote_priority": {
+            "type": "integer",
+            "description": "0 nice to have, 10 important, 20 must have.",
+            "enum": [
+              0,
+              10,
+              20
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Original vote time in ISO 8601 when importing."
+          }
+        },
+        "required": [
+          "post_id",
+          "voter_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/votes/create",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "postID": "$post_id",
+          "voterID": "$voter_id",
+          "byID": "$by_id",
+          "votePriority": "$vote_priority",
+          "createdAt": "$created_at"
+        }
+      }
+    },
+    {
+      "name": "canny_list_users",
+      "description": "List the end users of the workspace with id, name, email, userID (the id in your app), companies and admin flag. Paged with a cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor value of the previous answer, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/users/list",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_get_user",
+      "description": "Find one user by exactly one of: Canny id, email, or the user id in your application.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Canny user id."
+          },
+          "email": {
+            "type": "string",
+            "description": "User email."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user's id in your application (SSO or API created users)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/users/retrieve",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "id": "$id",
+          "email": "$email",
+          "userID": "$user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_create_or_update_user",
+      "description": "Create a user, or update the one matching email, user_id or id, and return its Canny id for use as author or voter. Can also link the user to companies, which creates the companies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "User name, up to 50 characters, without : or /."
+          },
+          "email": {
+            "type": "string",
+            "description": "User email."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user's id in your application."
+          },
+          "id": {
+            "type": "string",
+            "description": "Canny user id, to update an existing user."
+          },
+          "alias": {
+            "type": "string",
+            "description": "Alias shown instead of the name."
+          },
+          "avatar_url": {
+            "type": "string",
+            "description": "Avatar image URL."
+          },
+          "companies": {
+            "type": "array",
+            "description": "Companies, e.g. [{\"id\": \"acme-1\", \"name\": \"Acme\", \"domain\": \"acme.com\", \"monthlySpend\": 500}]. Needs user_id.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom user fields; names under 30 characters, text values under 200."
+          },
+          "created": {
+            "type": "string",
+            "description": "When the user was created in your system, ISO 8601."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/users/create_or_update",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "name": "$name",
+          "email": "$email",
+          "userID": "$user_id",
+          "id": "$id",
+          "alias": "$alias",
+          "avatarURL": "$avatar_url",
+          "companies": "$companies",
+          "customFields": "$custom_fields",
+          "created": "$created"
+        }
+      }
+    },
+    {
+      "name": "canny_list_companies",
+      "description": "List companies (customer accounts) with id, name, domain, monthlySpend, memberCount and custom fields, ordered by creation. Search by name or filter by segment. Paged with a cursor except when searching.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to search in company names."
+          },
+          "segment": {
+            "type": "string",
+            "description": "URL name of a segment to filter by."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor value of the previous answer, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/companies/list",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "search": "$search",
+          "segment": "$segment",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_update_company",
+      "description": "Update a company's name, domain, monthly spend (MRR in dollars), creation date or custom fields. Synced CRMs may overwrite these values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Company identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Company name, up to 100 characters."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Bare domain, e.g. acme.com."
+          },
+          "monthly_spend": {
+            "type": "number",
+            "description": "Monthly recurring revenue in dollars."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom company fields."
+          },
+          "created": {
+            "type": "string",
+            "description": "When the company was created in your system, ISO 8601."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/companies/update",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "id": "$id",
+          "name": "$name",
+          "domain": "$domain",
+          "monthlySpend": "$monthly_spend",
+          "customFields": "$custom_fields",
+          "created": "$created"
+        }
+      }
+    },
+    {
+      "name": "canny_list_categories",
+      "description": "List post categories (and subcategories with parentID), newest first, with name, postCount and board. Filter by board.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Only categories of this board."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 10)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Results to skip, for paging (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/categories/list",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "boardID": "$board_id",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_create_category",
+      "description": "Create a category, or a subcategory with parent_id, on a board.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Category name, 1 to 30 characters."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Parent category id for a subcategory."
+          },
+          "subscribe_admins": {
+            "type": "boolean",
+            "description": "Subscribe all admins to new posts in this category."
+          }
+        },
+        "required": [
+          "board_id",
+          "name",
+          "subscribe_admins"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/categories/create",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "boardID": "$board_id",
+          "name": "$name",
+          "parentID": "$parent_id",
+          "subscribeAdmins": "$subscribe_admins"
+        }
+      }
+    },
+    {
+      "name": "canny_list_tags",
+      "description": "List tags, newest first, with id, name, postCount and board. Filter by board.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Only tags of this board."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 10)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Results to skip, for paging (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/tags/list",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "boardID": "$board_id",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_create_tag",
+      "description": "Create a tag on a board, or return the existing tag with that name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Tag name, 1 to 30 characters."
+          }
+        },
+        "required": [
+          "board_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/tags/create",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "boardID": "$board_id",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "canny_list_status_changes",
+      "description": "History of post status changes, newest first: post, old and new status, changer and the attached comment. Filter by board. Paged with a cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Only status changes on this board."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor value of the previous answer, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/status_changes/list",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "boardID": "$board_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_list_changelog_entries",
+      "description": "List changelog entries, drafts and scheduled ones included, with title, markdown details, status, types, labels, linked posts, publishedAt and url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "label_ids": {
+            "type": "array",
+            "description": "Only entries with at least one of these label ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "description": "Only entries of this type.",
+            "enum": [
+              "new",
+              "improved",
+              "fixed"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Order: created, lastSaved, publishedAt (most recent first) or nonPublishedFirst (default).",
+            "enum": [
+              "created",
+              "lastSaved",
+              "publishedAt",
+              "nonPublishedFirst"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 10)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Entries to skip, up to 1,000 (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/entries/list",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "labelIDs": "$label_ids",
+          "type": "$type",
+          "sort": "$sort",
+          "limit": "$limit",
+          "skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "canny_create_changelog_entry",
+      "description": "Write a changelog entry as a draft (default), publish it now or schedule it, and link the posts it ships. notify emails users once it is published.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Entry title."
+          },
+          "details": {
+            "type": "string",
+            "description": "Entry text in markdown."
+          },
+          "type": {
+            "type": "string",
+            "description": "Entry type.",
+            "enum": [
+              "new",
+              "improved",
+              "fixed"
+            ]
+          },
+          "published": {
+            "type": "boolean",
+            "description": "Publish immediately (default false: draft)."
+          },
+          "published_on": {
+            "type": "string",
+            "description": "Published date in the past, ISO 8601, with published true."
+          },
+          "scheduled_for": {
+            "type": "string",
+            "description": "Future publish time in ISO 8601; published must be false."
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "Email users when it is published (default false)."
+          },
+          "label_ids": {
+            "type": "array",
+            "description": "Label ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "post_ids": {
+            "type": "array",
+            "description": "Post ids shipped by this entry.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/entries/create",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "title": "$title",
+          "details": "$details",
+          "type": "$type",
+          "published": "$published",
+          "publishedOn": "$published_on",
+          "scheduledFor": "$scheduled_for",
+          "notify": "$notify",
+          "labelIDs": "$label_ids",
+          "postIDs": "$post_ids"
+        }
+      }
+    },
+    {
+      "name": "canny_update_changelog_entry",
+      "description": "Change the title, details, types, labels, linked posts or notify flag of a changelog entry. Lists given replace the old ones. Publishing state is not changed here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "Changelog entry id."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "details": {
+            "type": "string",
+            "description": "New text in markdown."
+          },
+          "types": {
+            "type": "array",
+            "description": "Replaces the types: new, improved, fixed.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "label_ids": {
+            "type": "array",
+            "description": "Replaces the labels.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "post_ids": {
+            "type": "array",
+            "description": "Replaces the linked posts.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "Email users when it is published."
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/entries/update",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "entryID": "$entry_id",
+          "title": "$title",
+          "details": "$details",
+          "types": "$types",
+          "labelIDs": "$label_ids",
+          "postIDs": "$post_ids",
+          "notify": "$notify"
+        }
+      }
+    },
+    {
+      "name": "canny_change_changelog_entry_status",
+      "description": "Publish a changelog entry now, schedule it for a future time, or set it back to draft (unpublish or unschedule). Publishing emails users when the entry has notify on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "Changelog entry id."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "published",
+              "scheduled",
+              "draft"
+            ]
+          },
+          "published_on": {
+            "type": "string",
+            "description": "Published date in the past, ISO 8601, with status published."
+          },
+          "scheduled_for": {
+            "type": "string",
+            "description": "Future publish time in ISO 8601; required with status scheduled."
+          }
+        },
+        "required": [
+          "entry_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/entries/change_status",
+        "bodyMapping": {
+          "apiKey": "{{CANNY_API_KEY}}",
+          "entryID": "$entry_id",
+          "status": "$status",
+          "publishedOn": "$published_on",
+          "scheduledFor": "$scheduled_for"
+        }
+      }
+    }
+  ]
+}

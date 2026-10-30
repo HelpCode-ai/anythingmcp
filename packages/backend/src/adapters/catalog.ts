@@ -98,6 +98,7 @@ import * as algolia from './intl/algolia.json';
 import * as aliexpressAffiliate from './intl/aliexpress-affiliate.json';
 import * as aliexpressDropshipping from './intl/aliexpress-dropshipping.json';
 import * as allegro from './intl/allegro.json';
+import * as alphaVantage from './intl/alpha-vantage.json';
 import * as amazonAds from './intl/amazon-ads.json';
 import * as amazonSeller from './intl/amazon-seller.json';
 import * as amocrm from './intl/amocrm.json';
@@ -142,14 +143,17 @@ import * as braveSearch from './intl/brave-search.json';
 import * as braze from './intl/braze.json';
 import * as brevo from './intl/brevo.json';
 import * as brex from './intl/brex.json';
+import * as brightData from './intl/bright-data.json';
 import * as browserUse from './intl/browser-use.json';
 import * as browserbase from './intl/browserbase.json';
+import * as browserless from './intl/browserless.json';
 import * as bubble from './intl/bubble.json';
 import * as buffer from './intl/buffer.json';
 import * as bugsnag from './intl/bugsnag.json';
 import * as buildkite from './intl/buildkite.json';
 import * as calcom from './intl/calcom.json';
 import * as calendly from './intl/calendly.json';
+import * as canny from './intl/canny.json';
 import * as canva from './intl/canva.json';
 import * as chargebee from './intl/chargebee.json';
 import * as chatwoot from './intl/chatwoot.json';
@@ -167,9 +171,11 @@ import * as cloudflare from './intl/cloudflare.json';
 import * as cloudinary from './intl/cloudinary.json';
 import * as clover from './intl/clover.json';
 import * as coda from './intl/coda.json';
+import * as cohere from './intl/cohere.json';
 import * as coinbase from './intl/coinbase.json';
 import * as coingecko from './intl/coingecko.json';
 import * as coinglass from './intl/coinglass.json';
+import * as coinmarketcap from './intl/coinmarketcap.json';
 import * as conductorMonitoring from './intl/conductor-monitoring.json';
 import * as connecteam from './intl/connecteam.json';
 import * as constantContact from './intl/constant-contact.json';
@@ -177,6 +183,7 @@ import * as contentful from './intl/contentful.json';
 import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
 import * as crisp from './intl/crisp.json';
+import * as crowdin from './intl/crowdin.json';
 import * as customerIo from './intl/customer-io.json';
 import * as customily from './intl/customily.json';
 import * as dadata from './intl/dadata.json';
@@ -191,6 +198,7 @@ import * as deepgram from './intl/deepgram.json';
 import * as deputy from './intl/deputy.json';
 import * as deribit from './intl/deribit.json';
 import * as dialpad from './intl/dialpad.json';
+import * as diffbot from './intl/diffbot.json';
 import * as digitalocean from './intl/digitalocean.json';
 import * as directus from './intl/directus.json';
 import * as discordBot from './intl/discord-bot.json';
@@ -205,6 +213,7 @@ import * as dropboxSign from './intl/dropbox-sign.json';
 import * as dynamics365BusinessCentral from './intl/dynamics365-business-central.json';
 import * as dynamics365Sales from './intl/dynamics365-sales.json';
 import * as dynatrace from './intl/dynatrace.json';
+import * as e2b from './intl/e2b.json';
 import * as easypost from './intl/easypost.json';
 import * as ebayBrowse from './intl/ebay-browse.json';
 import * as ebaySell from './intl/ebay-sell.json';
@@ -285,6 +294,7 @@ import * as googleTasks from './intl/google-tasks.json';
 import * as gorgias from './intl/gorgias.json';
 import * as grafana from './intl/grafana.json';
 import * as greenhouse from './intl/greenhouse.json';
+import * as groq from './intl/groq.json';
 import * as gtinLookup from './intl/gtin-lookup.json';
 import * as gumroad from './intl/gumroad.json';
 import * as gusto from './intl/gusto.json';
@@ -318,6 +328,7 @@ import * as intercom from './intl/intercom.json';
 import * as invoiceNinja from './intl/invoice-ninja.json';
 import * as invoice123 from './intl/invoice123.json';
 import * as invoiced from './intl/invoiced.json';
+import * as ipinfo from './intl/ipinfo.json';
 import * as iterable from './intl/iterable.json';
 import * as jev from './intl/jev.json';
 import * as jobber from './intl/jobber.json';
@@ -331,6 +342,7 @@ import * as klaviyo from './intl/klaviyo.json';
 import * as kommo from './intl/kommo.json';
 import * as koreaLaw from './intl/korea-law.json';
 import * as kustomer from './intl/kustomer.json';
+import * as langfuse from './intl/langfuse.json';
 import * as launchdarkly from './intl/launchdarkly.json';
 import * as lemlist from './intl/lemlist.json';
 import * as lemonsqueezy from './intl/lemonsqueezy.json';
@@ -341,6 +353,7 @@ import * as linear from './intl/linear.json';
 import * as linkedin from './intl/linkedin.json';
 import * as linkedinAds from './intl/linkedin-ads.json';
 import * as lodgify from './intl/lodgify.json';
+import * as lokalise from './intl/lokalise.json';
 import * as loops from './intl/loops.json';
 import * as loyverse from './intl/loyverse.json';
 import * as lusha from './intl/lusha.json';
@@ -353,11 +366,13 @@ import * as make from './intl/make.json';
 import * as mangools from './intl/mangools.json';
 import * as manychat from './intl/manychat.json';
 import * as mapbox from './intl/mapbox.json';
+import * as massive from './intl/massive.json';
 import * as mastodon from './intl/mastodon.json';
 import * as matomo from './intl/matomo.json';
 import * as mautic from './intl/mautic.json';
 import * as medium from './intl/medium.json';
 import * as medmis from './intl/medmis.json';
+import * as mem0 from './intl/mem0.json';
 import * as mercury from './intl/mercury.json';
 import * as messagebird from './intl/messagebird.json';
 import * as metaAds from './intl/meta-ads.json';
@@ -422,6 +437,7 @@ import * as onepasswordConnect from './intl/onepassword-connect.json';
 import * as onepasswordEvents from './intl/onepassword-events.json';
 import * as onesignal from './intl/onesignal.json';
 import * as openai from './intl/openai.json';
+import * as openalex from './intl/openalex.json';
 import * as openrouter from './intl/openrouter.json';
 import * as openrouteservice from './intl/openrouteservice.json';
 import * as opentable from './intl/opentable.json';
@@ -462,7 +478,9 @@ import * as powerBi from './intl/power-bi.json';
 import * as prestashop from './intl/prestashop.json';
 import * as printful from './intl/printful.json';
 import * as printify from './intl/printify.json';
+import * as prismic from './intl/prismic.json';
 import * as procore from './intl/procore.json';
+import * as productboard from './intl/productboard.json';
 import * as promUa from './intl/prom-ua.json';
 import * as proxmox from './intl/proxmox.json';
 import * as quaderno from './intl/quaderno.json';
@@ -500,11 +518,14 @@ import * as sapS4hanaOdata from './intl/sap-s4hana-odata.json';
 import * as sapSignavio from './intl/sap-signavio.json';
 import * as sapSuccessfactors from './intl/sap-successfactors.json';
 import * as savvycal from './intl/savvycal.json';
+import * as scrapingbee from './intl/scrapingbee.json';
 import * as sealSubscriptions from './intl/seal-subscriptions.json';
 import * as seamlessAi from './intl/seamless-ai.json';
+import * as secEdgar from './intl/sec-edgar.json';
 import * as segment from './intl/segment.json';
 import * as sellauth from './intl/sellauth.json';
 import * as sellercloud from './intl/sellercloud.json';
+import * as semanticScholar from './intl/semantic-scholar.json';
 import * as semrush from './intl/semrush.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
@@ -540,6 +561,7 @@ import * as square from './intl/square.json';
 import * as stabilityAi from './intl/stability-ai.json';
 import * as statsig from './intl/statsig.json';
 import * as statuspage from './intl/statuspage.json';
+import * as storyblok from './intl/storyblok.json';
 import * as strapi from './intl/strapi.json';
 import * as streak from './intl/streak.json';
 import * as stripe from './intl/stripe.json';
@@ -584,6 +606,7 @@ import * as vercelAnalytics from './intl/vercel-analytics.json';
 import * as viber from './intl/viber.json';
 import * as vimeo from './intl/vimeo.json';
 import * as vinted from './intl/vinted.json';
+import * as virustotal from './intl/virustotal.json';
 import * as vk from './intl/vk.json';
 import * as wanotifier from './intl/wanotifier.json';
 import * as wassenger from './intl/wassenger.json';
@@ -1019,6 +1042,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   aliexpressAffiliate as unknown as AdapterDefinition,
   aliexpressDropshipping as unknown as AdapterDefinition,
   allegro as unknown as AdapterDefinition,
+  alphaVantage as unknown as AdapterDefinition,
   amazonAds as unknown as AdapterDefinition,
   amazonSeller as unknown as AdapterDefinition,
   amocrm as unknown as AdapterDefinition,
@@ -1063,14 +1087,17 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   braze as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
   brex as unknown as AdapterDefinition,
+  brightData as unknown as AdapterDefinition,
   browserUse as unknown as AdapterDefinition,
   browserbase as unknown as AdapterDefinition,
+  browserless as unknown as AdapterDefinition,
   bubble as unknown as AdapterDefinition,
   buffer as unknown as AdapterDefinition,
   bugsnag as unknown as AdapterDefinition,
   buildkite as unknown as AdapterDefinition,
   calcom as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
+  canny as unknown as AdapterDefinition,
   canva as unknown as AdapterDefinition,
   chargebee as unknown as AdapterDefinition,
   chatwoot as unknown as AdapterDefinition,
@@ -1088,9 +1115,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   cloudinary as unknown as AdapterDefinition,
   clover as unknown as AdapterDefinition,
   coda as unknown as AdapterDefinition,
+  cohere as unknown as AdapterDefinition,
   coinbase as unknown as AdapterDefinition,
   coingecko as unknown as AdapterDefinition,
   coinglass as unknown as AdapterDefinition,
+  coinmarketcap as unknown as AdapterDefinition,
   conductorMonitoring as unknown as AdapterDefinition,
   connecteam as unknown as AdapterDefinition,
   constantContact as unknown as AdapterDefinition,
@@ -1098,6 +1127,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   convertkit as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
   crisp as unknown as AdapterDefinition,
+  crowdin as unknown as AdapterDefinition,
   customerIo as unknown as AdapterDefinition,
   customily as unknown as AdapterDefinition,
   dadata as unknown as AdapterDefinition,
@@ -1112,6 +1142,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   deputy as unknown as AdapterDefinition,
   deribit as unknown as AdapterDefinition,
   dialpad as unknown as AdapterDefinition,
+  diffbot as unknown as AdapterDefinition,
   digitalocean as unknown as AdapterDefinition,
   directus as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
@@ -1126,6 +1157,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   dynamics365BusinessCentral as unknown as AdapterDefinition,
   dynamics365Sales as unknown as AdapterDefinition,
   dynatrace as unknown as AdapterDefinition,
+  e2b as unknown as AdapterDefinition,
   easypost as unknown as AdapterDefinition,
   ebayBrowse as unknown as AdapterDefinition,
   ebaySell as unknown as AdapterDefinition,
@@ -1206,6 +1238,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   gorgias as unknown as AdapterDefinition,
   grafana as unknown as AdapterDefinition,
   greenhouse as unknown as AdapterDefinition,
+  groq as unknown as AdapterDefinition,
   gtinLookup as unknown as AdapterDefinition,
   gumroad as unknown as AdapterDefinition,
   gusto as unknown as AdapterDefinition,
@@ -1239,6 +1272,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   invoiceNinja as unknown as AdapterDefinition,
   invoice123 as unknown as AdapterDefinition,
   invoiced as unknown as AdapterDefinition,
+  ipinfo as unknown as AdapterDefinition,
   iterable as unknown as AdapterDefinition,
   jev as unknown as AdapterDefinition,
   jobber as unknown as AdapterDefinition,
@@ -1252,6 +1286,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   kommo as unknown as AdapterDefinition,
   koreaLaw as unknown as AdapterDefinition,
   kustomer as unknown as AdapterDefinition,
+  langfuse as unknown as AdapterDefinition,
   launchdarkly as unknown as AdapterDefinition,
   lemlist as unknown as AdapterDefinition,
   lemonsqueezy as unknown as AdapterDefinition,
@@ -1262,6 +1297,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   linkedin as unknown as AdapterDefinition,
   linkedinAds as unknown as AdapterDefinition,
   lodgify as unknown as AdapterDefinition,
+  lokalise as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
   loyverse as unknown as AdapterDefinition,
   lusha as unknown as AdapterDefinition,
@@ -1274,11 +1310,13 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mangools as unknown as AdapterDefinition,
   manychat as unknown as AdapterDefinition,
   mapbox as unknown as AdapterDefinition,
+  massive as unknown as AdapterDefinition,
   mastodon as unknown as AdapterDefinition,
   matomo as unknown as AdapterDefinition,
   mautic as unknown as AdapterDefinition,
   medium as unknown as AdapterDefinition,
   medmis as unknown as AdapterDefinition,
+  mem0 as unknown as AdapterDefinition,
   mercury as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
   metaAds as unknown as AdapterDefinition,
@@ -1343,6 +1381,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   onepasswordEvents as unknown as AdapterDefinition,
   onesignal as unknown as AdapterDefinition,
   openai as unknown as AdapterDefinition,
+  openalex as unknown as AdapterDefinition,
   openrouter as unknown as AdapterDefinition,
   openrouteservice as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
@@ -1383,7 +1422,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   prestashop as unknown as AdapterDefinition,
   printful as unknown as AdapterDefinition,
   printify as unknown as AdapterDefinition,
+  prismic as unknown as AdapterDefinition,
   procore as unknown as AdapterDefinition,
+  productboard as unknown as AdapterDefinition,
   promUa as unknown as AdapterDefinition,
   proxmox as unknown as AdapterDefinition,
   quaderno as unknown as AdapterDefinition,
@@ -1421,11 +1462,14 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sapSignavio as unknown as AdapterDefinition,
   sapSuccessfactors as unknown as AdapterDefinition,
   savvycal as unknown as AdapterDefinition,
+  scrapingbee as unknown as AdapterDefinition,
   sealSubscriptions as unknown as AdapterDefinition,
   seamlessAi as unknown as AdapterDefinition,
+  secEdgar as unknown as AdapterDefinition,
   segment as unknown as AdapterDefinition,
   sellauth as unknown as AdapterDefinition,
   sellercloud as unknown as AdapterDefinition,
+  semanticScholar as unknown as AdapterDefinition,
   semrush as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sentry as unknown as AdapterDefinition,
@@ -1461,6 +1505,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   stabilityAi as unknown as AdapterDefinition,
   statsig as unknown as AdapterDefinition,
   statuspage as unknown as AdapterDefinition,
+  storyblok as unknown as AdapterDefinition,
   strapi as unknown as AdapterDefinition,
   streak as unknown as AdapterDefinition,
   stripe as unknown as AdapterDefinition,
@@ -1505,6 +1550,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   viber as unknown as AdapterDefinition,
   vimeo as unknown as AdapterDefinition,
   vinted as unknown as AdapterDefinition,
+  virustotal as unknown as AdapterDefinition,
   vk as unknown as AdapterDefinition,
   wanotifier as unknown as AdapterDefinition,
   wassenger as unknown as AdapterDefinition,

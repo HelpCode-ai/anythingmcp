@@ -1,0 +1,1948 @@
+{
+  "slug": "crowdin",
+  "name": "Crowdin",
+  "aliases": [
+    "Crowdin Enterprise",
+    "Crowdin API"
+  ],
+  "description": "Crowdin localization on crowdin.com and Crowdin Enterprise: projects and progress, files, source strings, translations and approvals, comments, tasks, reports, translation builds and exports, translation memories, glossaries and members. Crowdin API v2 with a personal access token.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "crowdin",
+  "docsUrl": "https://support.crowdin.com/developer/api/v2/",
+  "instructions": "## Crowdin\nThis connector works with the **Crowdin API v2** on crowdin.com (`https://api.crowdin.com/api/v2`) and on **Crowdin Enterprise** (`https://<organization>.api.crowdin.com/api/v2`): projects and progress, files, source strings, translations and approvals, comments and issues, tasks, reports, translation builds and exports, translation memories, glossaries and project members. Crowdin also runs an official MCP server (`https://mcp.crowdin.com/v2/mcp`, Enterprise `https://<organization>.mcp.crowdin.com/v2/mcp`, personal access token as Bearer).\n\n**Setup (2 minutes)**\n1. crowdin.com: **Account Settings > API > New Token**. Crowdin Enterprise: **profile > Settings > API > New Token** inside your organization. Pick the scopes you need (Projects, Source files and strings, Translations, Tasks, Reports, Translation memory, Glossaries; read-only scopes for a read-only setup). Copy the token: it is shown once.\n2. Paste it into `CROWDIN_PERSONAL_ACCESS_TOKEN`; it is sent as `Authorization: Bearer <token>`.\n3. `CROWDIN_API_HOST`: `api.crowdin.com` for crowdin.com, or `<organization>.api.crowdin.com` for Enterprise (the organization domain from your Enterprise URL `https://<organization>.crowdin.com`).\n4. Run `crowdin_get_authenticated_user` to check both.\n\n**Workflow**\n- Overview: `crowdin_list_projects`, `crowdin_get_project`, `crowdin_get_project_progress` (per language), `crowdin_get_file_progress`, `crowdin_list_supported_languages` for language ids.\n- Structure: `crowdin_list_branches`, `crowdin_list_directories`, `crowdin_list_files`, `crowdin_get_file`, `crowdin_download_file` (link to the source file).\n- Strings: `crowdin_list_strings` (by file, label, task, text or CroQL), `crowdin_get_string`, `crowdin_add_string`, `crowdin_edit_string` (JSON Patch on `/text`, `/context`, `/identifier`, ...).\n- Translations: `crowdin_list_translations` (one language at a time), `crowdin_get_translation`, `crowdin_add_translation`, `crowdin_list_approvals`, `crowdin_approve_translation`.\n- Discussion: `crowdin_list_comments` (comments and issues, e.g. unresolved context requests), `crowdin_add_comment`.\n- Tasks: `crowdin_list_tasks`, `crowdin_get_task`, `crowdin_create_task` (translate or proofread for files and a language; on Enterprise use `workflow_step_id`), `crowdin_edit_task` (JSON Patch, e.g. `/status` to `done`).\n- Reports (asynchronous): `crowdin_generate_report` returns `data.identifier`; poll `crowdin_get_report_status` until `status` is `finished`, then `crowdin_download_report` for the link.\n- Translated files: `crowdin_export_project_translation` gives one language as one file at once; `crowdin_build_project_translations` builds every file and language as a zip: poll `crowdin_get_build_status`, then `crowdin_download_build`. Download links expire after a short time (`expireIn`): hand them to the user rather than storing them.\n- Translation memory: `crowdin_list_tms`, `crowdin_get_tm`, `crowdin_list_tm_segments`, `crowdin_search_tm` (how a phrase was translated before), `crowdin_add_tm_segment`.\n- Glossaries: `crowdin_list_glossaries`, `crowdin_get_glossary`, `crowdin_list_glossary_terms`, `crowdin_add_glossary_term`.\n- People: `crowdin_list_members`, `crowdin_get_member`.\n\n**Ids and values**: project, file, string, translation, task and user ids are numbers; report identifiers are strings. Languages use Crowdin ids such as `de`, `fr`, `es-ES`, `pt-BR`, `zh-CN`. Times are ISO 8601 with offset. PATCH tools take JSON Patch lists: `[{\"op\": \"replace\", \"path\": \"/status\", \"value\": \"done\"}]`.\n\n**Reading the answers**: lists come as `{\"data\": [{\"data\": {...}}, ...], \"pagination\": {\"offset\": 0, \"limit\": 25}}`; single items as `{\"data\": {...}}`. Progress numbers are in `words` and `phrases` with `translationProgress` and `approvalProgress` in percent.\n\n**Paging**: `limit` (25 by default, 500 at most) and `offset`. When a page holds `limit` items, ask for the next with `offset + limit`.\n\n**Limits and errors**: 20 simultaneous requests per account, across all its tokens, on crowdin.com and Enterprise; 429 means wait. 401 is a wrong or expired token or the wrong host, 403 a token without the scope or project rights, 404 an unknown id, 400 and 422 a validation error naming the field. There are no delete tools.",
+  "prerequisites": "A crowdin.com or Crowdin Enterprise account and a personal access token with the scopes you need.",
+  "requiredEnvVars": [
+    "CROWDIN_PERSONAL_ACCESS_TOKEN",
+    "CROWDIN_API_HOST"
+  ],
+  "envVarMeta": {
+    "CROWDIN_PERSONAL_ACCESS_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "crowdin.com: Account Settings > API > New Token. Enterprise: profile > Settings > API > New Token. Pick the scopes the connector needs; the token is shown once.",
+      "link": "https://crowdin.com/settings#api-key",
+      "pattern": "^[A-Za-z0-9._-]{40,}$",
+      "patternMessage": "Paste only the token, without spaces, quotes or a Bearer prefix."
+    },
+    "CROWDIN_API_HOST": {
+      "label": "API host",
+      "kind": "address",
+      "help": "api.crowdin.com for crowdin.com; <organization>.api.crowdin.com for Crowdin Enterprise (the organization from https://<organization>.crowdin.com).",
+      "example": "api.crowdin.com",
+      "link": "https://support.crowdin.com/developer/api/v2/",
+      "pattern": "^([a-z0-9][a-z0-9-]*\\.)?api\\.crowdin\\.com$",
+      "patternMessage": "Enter only the host: api.crowdin.com, or <organization>.api.crowdin.com for Enterprise."
+    }
+  },
+  "verifyHints": {
+    "401": "Crowdin refused the token. Check it, and that CROWDIN_API_HOST matches: api.crowdin.com for crowdin.com, <organization>.api.crowdin.com for Enterprise.",
+    "403": "The token lacks a scope or the account lacks rights in this project. Create a token with the scopes the tools need.",
+    "rate_limited": "Crowdin limits simultaneous requests per account. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "crowdin_get_authenticated_user"
+  },
+  "connector": {
+    "name": "Crowdin API v2",
+    "type": "REST",
+    "baseUrl": "https://{{CROWDIN_API_HOST}}/api/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{CROWDIN_PERSONAL_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP (https://anythingmcp.com)"
+    },
+    "healthcheckPath": "/user"
+  },
+  "tools": [
+    {
+      "name": "crowdin_get_authenticated_user",
+      "description": "The user the token belongs to: id, username, email, name and time zone. Use it to check the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user"
+      }
+    },
+    {
+      "name": "crowdin_list_projects",
+      "description": "Projects the token can reach, with id, name, identifier, source language, target language ids, type (file-based or string-based) and last activity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Text to match in the project name or identifier."
+          },
+          "has_manager_access": {
+            "type": "integer",
+            "description": "1 for projects you manage only.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "type": {
+            "type": "integer",
+            "description": "0 file-based, 1 string-based (crowdin.com).",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. name asc or lastActivity desc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "filter": "$filter",
+          "hasManagerAccess": "$has_manager_access",
+          "type": "$type",
+          "orderBy": "$order_by",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_get_project",
+      "description": "One project with its settings: source language, target languages, workflow, QA checks, machine translation and translation memory settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}"
+      }
+    },
+    {
+      "name": "crowdin_get_project_progress",
+      "description": "Translation and approval progress per target language: words and phrases total, translated, approved, and the percentages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "language_ids": {
+            "type": "string",
+            "description": "Comma-separated language ids to limit the answer."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/languages/progress",
+        "queryParams": {
+          "languageIds": "$language_ids",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_get_file_progress",
+      "description": "Translation and approval progress of one file per target language.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "Numeric file id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/files/{file_id}/languages/progress",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_list_supported_languages",
+      "description": "Every language Crowdin supports with its id (used everywhere else), name, locale, ISO codes and plural categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/languages",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_list_branches",
+      "description": "Branches of a project (file-based projects) with id, name, title and export pattern.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only the branch with this name."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/branches",
+        "queryParams": {
+          "name": "$name",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_list_directories",
+      "description": "Directories of a project with id, name, path, branch and parent directory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "branch_id": {
+            "type": "integer",
+            "description": "Only in this branch."
+          },
+          "directory_id": {
+            "type": "integer",
+            "description": "Only inside this directory."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Text to match in names."
+          },
+          "recursion": {
+            "type": "integer",
+            "description": "1 to include nested directories.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/directories",
+        "queryParams": {
+          "branchId": "$branch_id",
+          "directoryId": "$directory_id",
+          "filter": "$filter",
+          "recursion": "$recursion",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_list_files",
+      "description": "Source files of a project with id, name, path, type, status, branch, directory and revision.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "branch_id": {
+            "type": "integer",
+            "description": "Only in this branch."
+          },
+          "directory_id": {
+            "type": "integer",
+            "description": "Only in this directory."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Text to match in file names."
+          },
+          "recursion": {
+            "type": "integer",
+            "description": "1 to include files in nested directories.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/files",
+        "queryParams": {
+          "branchId": "$branch_id",
+          "directoryId": "$directory_id",
+          "filter": "$filter",
+          "recursion": "$recursion",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_get_file",
+      "description": "One source file with its path, type, parser settings, export options, revision and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "Numeric file id."
+          }
+        },
+        "required": [
+          "project_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/files/{file_id}"
+      }
+    },
+    {
+      "name": "crowdin_download_file",
+      "description": "A short-lived download link (data.url, data.expireIn) for the source version of a file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "Numeric file id."
+          }
+        },
+        "required": [
+          "project_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/files/{file_id}/download"
+      }
+    },
+    {
+      "name": "crowdin_list_strings",
+      "description": "Source strings of a project with id, identifier (key), text, context, file, max length, labels, plural forms and hidden flag. Filter by file, branch, directory, label, task, a text match or a CroQL expression.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "Only strings of this file."
+          },
+          "branch_id": {
+            "type": "integer",
+            "description": "Only strings of this branch."
+          },
+          "directory_id": {
+            "type": "integer",
+            "description": "Only strings of this directory."
+          },
+          "label_ids": {
+            "type": "string",
+            "description": "Comma-separated label ids."
+          },
+          "task_id": {
+            "type": "integer",
+            "description": "Only strings of this task."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Text to match in identifier, text or context."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Where filter looks, comma-separated: identifier, text, context."
+          },
+          "croql": {
+            "type": "string",
+            "description": "CroQL filter, e.g. count of translations where (language = @language:\"de\") = 0. Combines only with order_by, offset and limit."
+          },
+          "denormalize_placeholders": {
+            "type": "integer",
+            "description": "1 to show placeholders in their original format.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. createdAt desc or identifier asc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/strings",
+        "queryParams": {
+          "fileId": "$file_id",
+          "branchId": "$branch_id",
+          "directoryId": "$directory_id",
+          "labelIds": "$label_ids",
+          "taskId": "$task_id",
+          "filter": "$filter",
+          "scope": "$scope",
+          "croql": "$croql",
+          "denormalizePlaceholders": "$denormalize_placeholders",
+          "orderBy": "$order_by",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_get_string",
+      "description": "One source string with identifier, text, context, plural forms, labels, max length and file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "string_id": {
+            "type": "integer",
+            "description": "Numeric string id."
+          }
+        },
+        "required": [
+          "project_id",
+          "string_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/strings/{string_id}"
+      }
+    },
+    {
+      "name": "crowdin_add_string",
+      "description": "Add a source string to a file (file-based projects) with its text, key and context for translators.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "File id to add the string to."
+          },
+          "text": {
+            "type": "string",
+            "description": "Source text."
+          },
+          "identifier": {
+            "type": "string",
+            "description": "String key, e.g. checkout.title."
+          },
+          "context": {
+            "type": "string",
+            "description": "Context for translators."
+          },
+          "max_length": {
+            "type": "integer",
+            "description": "Maximum length of translations."
+          },
+          "is_hidden": {
+            "type": "boolean",
+            "description": "Hide the string from translators."
+          },
+          "label_ids": {
+            "type": "array",
+            "description": "Label ids.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "file_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/strings",
+        "bodyMapping": {
+          "fileId": "$file_id",
+          "text": "$text",
+          "identifier": "$identifier",
+          "context": "$context",
+          "maxLength": "$max_length",
+          "isHidden": "$is_hidden",
+          "labelIds": "$label_ids"
+        }
+      }
+    },
+    {
+      "name": "crowdin_edit_string",
+      "description": "Change a source string with JSON Patch operations on /text, /identifier, /context, /isHidden, /maxLength or /labelIds. update_option says what happens to existing translations when the text changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "string_id": {
+            "type": "integer",
+            "description": "Numeric string id."
+          },
+          "operations": {
+            "type": "array",
+            "description": "JSON Patch operations, e.g. [{\"op\": \"replace\", \"path\": \"/context\", \"value\": \"Button on the cart page\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "update_option": {
+            "type": "string",
+            "description": "For a text change: keep translations and approvals, keep translations only, or clear both.",
+            "enum": [
+              "keep_translations_and_approvals",
+              "keep_translations",
+              "clear_translations_and_approvals"
+            ]
+          }
+        },
+        "required": [
+          "project_id",
+          "string_id",
+          "operations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/projects/{project_id}/strings/{string_id}",
+        "queryParams": {
+          "updateOption": "$update_option"
+        },
+        "bodyMapping": {
+          "__raw": "$operations"
+        }
+      }
+    },
+    {
+      "name": "crowdin_list_translations",
+      "description": "All translations (suggestions) of strings into one language, with text, author, rating, plural category and time. Filter by string or file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Crowdin language id, e.g. de, fr, es-ES, pt-BR (from crowdin_list_supported_languages or the project's targetLanguageIds)."
+          },
+          "string_id": {
+            "type": "integer",
+            "description": "Only translations of this string."
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "Only translations of strings in this file."
+          },
+          "denormalize_placeholders": {
+            "type": "integer",
+            "description": "1 to show placeholders in their original format.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. rating desc or createdAt desc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id",
+          "language_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/translations",
+        "queryParams": {
+          "languageId": "$language_id",
+          "stringId": "$string_id",
+          "fileId": "$file_id",
+          "denormalizePlaceholders": "$denormalize_placeholders",
+          "orderBy": "$order_by",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_get_translation",
+      "description": "One translation with its text, string, language, author, rating and provider.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "translation_id": {
+            "type": "integer",
+            "description": "Numeric translation id."
+          }
+        },
+        "required": [
+          "project_id",
+          "translation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/translations/{translation_id}"
+      }
+    },
+    {
+      "name": "crowdin_add_translation",
+      "description": "Add a translation (suggestion) for a string in one language. A proofreader or crowdin_approve_translation then approves it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "string_id": {
+            "type": "integer",
+            "description": "Numeric string id."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Crowdin language id, e.g. de, fr, es-ES, pt-BR (from crowdin_list_supported_languages or the project's targetLanguageIds)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Translated text."
+          },
+          "plural_category_name": {
+            "type": "string",
+            "description": "For plural strings: zero, one, two, few, many or other."
+          },
+          "add_to_tm": {
+            "type": "boolean",
+            "description": "Also save it to the translation memory (default true)."
+          }
+        },
+        "required": [
+          "project_id",
+          "string_id",
+          "language_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/translations",
+        "bodyMapping": {
+          "stringId": "$string_id",
+          "languageId": "$language_id",
+          "text": "$text",
+          "pluralCategoryName": "$plural_category_name",
+          "addToTm": "$add_to_tm"
+        }
+      }
+    },
+    {
+      "name": "crowdin_list_approvals",
+      "description": "Approvals of translations, filtered by string, file, language, label or translation, with the approver and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "string_id": {
+            "type": "integer",
+            "description": "Only approvals of this string."
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "Only approvals in this file."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Crowdin language id, e.g. de, fr, es-ES, pt-BR (from crowdin_list_supported_languages or the project's targetLanguageIds)."
+          },
+          "translation_id": {
+            "type": "integer",
+            "description": "Only approvals of this translation."
+          },
+          "label_ids": {
+            "type": "string",
+            "description": "Comma-separated label ids."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/approvals",
+        "queryParams": {
+          "stringId": "$string_id",
+          "fileId": "$file_id",
+          "languageId": "$language_id",
+          "translationId": "$translation_id",
+          "labelIds": "$label_ids",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_approve_translation",
+      "description": "Approve a translation, making it the one that goes into the exported files. Needs proofreader rights for its language.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "translation_id": {
+            "type": "integer",
+            "description": "Numeric translation id."
+          }
+        },
+        "required": [
+          "project_id",
+          "translation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/approvals",
+        "bodyMapping": {
+          "translationId": "$translation_id"
+        }
+      }
+    },
+    {
+      "name": "crowdin_list_comments",
+      "description": "Comments and issues on strings: text, type (comment or issue), issue type and status, language, author and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "string_id": {
+            "type": "integer",
+            "description": "Only comments on this string."
+          },
+          "type": {
+            "type": "string",
+            "description": "comment or issue.",
+            "enum": [
+              "comment",
+              "issue"
+            ]
+          },
+          "issue_type": {
+            "type": "string",
+            "description": "Kind of issue.",
+            "enum": [
+              "general_question",
+              "translation_mistake",
+              "context_request",
+              "source_mistake"
+            ]
+          },
+          "issue_status": {
+            "type": "string",
+            "description": "resolved or unresolved.",
+            "enum": [
+              "resolved",
+              "unresolved"
+            ]
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. createdAt desc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/comments",
+        "queryParams": {
+          "stringId": "$string_id",
+          "type": "$type",
+          "issueType": "$issue_type",
+          "issueStatus": "$issue_status",
+          "orderBy": "$order_by",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_add_comment",
+      "description": "Comment on a string, or report an issue (a question, a translation or source mistake, a request for context).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "string_id": {
+            "type": "integer",
+            "description": "Numeric string id."
+          },
+          "text": {
+            "type": "string",
+            "description": "Comment text."
+          },
+          "type": {
+            "type": "string",
+            "description": "comment or issue.",
+            "enum": [
+              "comment",
+              "issue"
+            ]
+          },
+          "target_language_id": {
+            "type": "string",
+            "description": "Language id the comment is about, e.g. de."
+          },
+          "issue_type": {
+            "type": "string",
+            "description": "For an issue: its kind.",
+            "enum": [
+              "general_question",
+              "translation_mistake",
+              "context_request",
+              "source_mistake"
+            ]
+          }
+        },
+        "required": [
+          "project_id",
+          "string_id",
+          "text",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/comments",
+        "bodyMapping": {
+          "stringId": "$string_id",
+          "text": "$text",
+          "type": "$type",
+          "targetLanguageId": "$target_language_id",
+          "issueType": "$issue_type"
+        }
+      }
+    },
+    {
+      "name": "crowdin_list_tasks",
+      "description": "Tasks of a project with title, type (translate or proofread), status, language, assignees, progress, deadline and words count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: todo, in_progress, done, closed (Enterprise also review)."
+          },
+          "assignee_id": {
+            "type": "integer",
+            "description": "Only tasks assigned to this user id (crowdin.com)."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. deadline asc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/tasks",
+        "queryParams": {
+          "status": "$status",
+          "assigneeId": "$assignee_id",
+          "orderBy": "$order_by",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_get_task",
+      "description": "One task with its files or strings, language, assignees, progress, deadline, cost estimate and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "task_id": {
+            "type": "integer",
+            "description": "Numeric task id."
+          }
+        },
+        "required": [
+          "project_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/tasks/{task_id}"
+      }
+    },
+    {
+      "name": "crowdin_create_task",
+      "description": "Create a translate or proofread task for files (or, in string-based projects, strings) in one language, assigned to people, with a deadline. In Crowdin Enterprise pass workflow_step_id instead of type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Crowdin language id, e.g. de, fr, es-ES, pt-BR (from crowdin_list_supported_languages or the project's targetLanguageIds)."
+          },
+          "type": {
+            "type": "integer",
+            "description": "0 translate, 1 proofread (crowdin.com).",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "workflow_step_id": {
+            "type": "integer",
+            "description": "Crowdin Enterprise: the workflow step id."
+          },
+          "file_ids": {
+            "type": "array",
+            "description": "File ids to include (file-based projects).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "string_ids": {
+            "type": "array",
+            "description": "String ids to include (string-based projects).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "assignees": {
+            "type": "array",
+            "description": "Assignees, e.g. [{\"id\": 12345}] or with wordsCount to split the work.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "description": {
+            "type": "string",
+            "description": "Instructions for the assignees."
+          },
+          "deadline": {
+            "type": "string",
+            "description": "Deadline in ISO 8601, e.g. 2026-12-01T18:00:00+00:00."
+          },
+          "status": {
+            "type": "string",
+            "description": "Initial status.",
+            "enum": [
+              "todo",
+              "in_progress"
+            ]
+          },
+          "skip_assigned_strings": {
+            "type": "boolean",
+            "description": "Leave out strings already in other tasks."
+          },
+          "label_ids": {
+            "type": "array",
+            "description": "Only strings with these labels.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "title",
+          "language_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/tasks",
+        "bodyMapping": {
+          "title": "$title",
+          "languageId": "$language_id",
+          "type": "$type",
+          "workflowStepId": "$workflow_step_id",
+          "fileIds": "$file_ids",
+          "stringIds": "$string_ids",
+          "assignees": "$assignees",
+          "description": "$description",
+          "deadline": "$deadline",
+          "status": "$status",
+          "skipAssignedStrings": "$skip_assigned_strings",
+          "labelIds": "$label_ids"
+        }
+      }
+    },
+    {
+      "name": "crowdin_edit_task",
+      "description": "Change a task with JSON Patch operations, e.g. its status (todo, in_progress, done, closed), title, description, deadline or assignees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "task_id": {
+            "type": "integer",
+            "description": "Numeric task id."
+          },
+          "operations": {
+            "type": "array",
+            "description": "JSON Patch operations, e.g. [{\"op\": \"replace\", \"path\": \"/status\", \"value\": \"done\"}, {\"op\": \"replace\", \"path\": \"/deadline\", \"value\": \"2026-12-15T18:00:00+00:00\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "task_id",
+          "operations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/projects/{project_id}/tasks/{task_id}",
+        "bodyMapping": {
+          "__raw": "$operations"
+        }
+      }
+    },
+    {
+      "name": "crowdin_generate_report",
+      "description": "Start a project report: costs estimate, translation costs, top members, contribution raw data, translator accuracy, QA issues, translation activity and more. Returns an identifier: check crowdin_get_report_status until finished, then crowdin_download_report. Read-only for the project, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "name": {
+            "type": "string",
+            "description": "Report type.",
+            "enum": [
+              "pre-translate-efficiency",
+              "pre-translate-accuracy",
+              "translator-accuracy",
+              "costs-estimation-pe",
+              "translation-costs-pe",
+              "top-members",
+              "contribution-raw-data",
+              "source-content-updates",
+              "project-members",
+              "editor-issues",
+              "qa-check-issues",
+              "saving-activity",
+              "translation-activity",
+              "time-spent"
+            ]
+          },
+          "schema": {
+            "type": "object",
+            "description": "Report settings, e.g. {\"unit\": \"words\", \"format\": \"xlsx\", \"dateFrom\": \"2026-10-01T00:00:00+00:00\", \"dateTo\": \"2026-10-31T23:59:59+00:00\", \"languageId\": \"de\"}. Formats: xlsx, csv, json. Cost reports also take currency and baseRates."
+          }
+        },
+        "required": [
+          "project_id",
+          "name",
+          "schema"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/reports",
+        "bodyMapping": {
+          "name": "$name",
+          "schema": "$schema"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "crowdin_get_report_status",
+      "description": "Progress of a report being generated: status (created, inProgress, finished, failed) and progress percent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "report_id": {
+            "type": "string",
+            "description": "Report identifier from crowdin_generate_report."
+          }
+        },
+        "required": [
+          "project_id",
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/reports/{report_id}"
+      }
+    },
+    {
+      "name": "crowdin_download_report",
+      "description": "A short-lived download link (data.url) for a finished report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "report_id": {
+            "type": "string",
+            "description": "Report identifier from crowdin_generate_report."
+          }
+        },
+        "required": [
+          "project_id",
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/reports/{report_id}/download"
+      }
+    },
+    {
+      "name": "crowdin_build_project_translations",
+      "description": "Start a build of the translated files of a project (all or some languages, optionally a branch) as a zip. Returns a build id: poll crowdin_get_build_status, then crowdin_download_build. Read-only for the content, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "target_language_ids": {
+            "type": "array",
+            "description": "Only these language ids; empty for all.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "branch_id": {
+            "type": "integer",
+            "description": "Build only this branch."
+          },
+          "skip_untranslated_strings": {
+            "type": "boolean",
+            "description": "Leave untranslated strings out."
+          },
+          "skip_untranslated_files": {
+            "type": "boolean",
+            "description": "Leave files that are not fully translated out."
+          },
+          "export_approved_only": {
+            "type": "boolean",
+            "description": "Only approved translations (crowdin.com; Enterprise exports by workflow)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/translations/builds",
+        "bodyMapping": {
+          "targetLanguageIds": "$target_language_ids",
+          "branchId": "$branch_id",
+          "skipUntranslatedStrings": "$skip_untranslated_strings",
+          "skipUntranslatedFiles": "$skip_untranslated_files",
+          "exportApprovedOnly": "$export_approved_only"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "crowdin_get_build_status",
+      "description": "Status and progress of a translations build (created, inProgress, finished, failed, canceled).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "build_id": {
+            "type": "integer",
+            "description": "Numeric build id."
+          }
+        },
+        "required": [
+          "project_id",
+          "build_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/translations/builds/{build_id}"
+      }
+    },
+    {
+      "name": "crowdin_download_build",
+      "description": "A short-lived download link (data.url) for the zip of a finished build.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "build_id": {
+            "type": "integer",
+            "description": "Numeric build id."
+          }
+        },
+        "required": [
+          "project_id",
+          "build_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/translations/builds/{build_id}/download"
+      }
+    },
+    {
+      "name": "crowdin_export_project_translation",
+      "description": "Export the translations of one language right away, as one file in a chosen format (e.g. xliff, json, android, macosx), for all or some files. Returns a short-lived download link. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "target_language_id": {
+            "type": "string",
+            "description": "Crowdin language id, e.g. de, fr, es-ES, pt-BR (from crowdin_list_supported_languages or the project's targetLanguageIds)."
+          },
+          "format": {
+            "type": "string",
+            "description": "Export format, e.g. xliff, crowdin-json, android, macosx, gettext, yaml."
+          },
+          "file_ids": {
+            "type": "array",
+            "description": "Only these files.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "branch_ids": {
+            "type": "array",
+            "description": "Only these branches.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "label_ids": {
+            "type": "array",
+            "description": "Only strings with these labels.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "skip_untranslated_strings": {
+            "type": "boolean",
+            "description": "Leave untranslated strings out."
+          },
+          "export_approved_only": {
+            "type": "boolean",
+            "description": "Only approved translations (crowdin.com; Enterprise exports by workflow)."
+          }
+        },
+        "required": [
+          "project_id",
+          "target_language_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/translations/exports",
+        "bodyMapping": {
+          "targetLanguageId": "$target_language_id",
+          "format": "$format",
+          "fileIds": "$file_ids",
+          "branchIds": "$branch_ids",
+          "labelIds": "$label_ids",
+          "skipUntranslatedStrings": "$skip_untranslated_strings",
+          "exportApprovedOnly": "$export_approved_only"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "crowdin_list_tms",
+      "description": "Translation memories with id, name, languages, segments count and the projects using them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Text to match in the name."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tms",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_get_tm",
+      "description": "One translation memory with its languages, segments count and default project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tm_id": {
+            "type": "integer",
+            "description": "Numeric TM id."
+          }
+        },
+        "required": [
+          "tm_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tms/{tm_id}"
+      }
+    },
+    {
+      "name": "crowdin_list_tm_segments",
+      "description": "Segments of a translation memory, each with its records (language id and text). Filter with CroQL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tm_id": {
+            "type": "integer",
+            "description": "Numeric TM id."
+          },
+          "croql": {
+            "type": "string",
+            "description": "CroQL filter on the segments."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "tm_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tms/{tm_id}/segments",
+        "queryParams": {
+          "croql": "$croql",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_search_tm",
+      "description": "Concordance search: find how phrases were translated before in the translation memories of a project. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "source_language_id": {
+            "type": "string",
+            "description": "Source language id, e.g. en."
+          },
+          "target_language_id": {
+            "type": "string",
+            "description": "Crowdin language id, e.g. de, fr, es-ES, pt-BR (from crowdin_list_supported_languages or the project's targetLanguageIds)."
+          },
+          "expressions": {
+            "type": "array",
+            "description": "Phrases to look up.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "min_relevant": {
+            "type": "integer",
+            "description": "Minimum match percentage, e.g. 60."
+          },
+          "auto_substitution": {
+            "type": "boolean",
+            "description": "Substitute tags and numbers automatically."
+          }
+        },
+        "required": [
+          "project_id",
+          "source_language_id",
+          "target_language_id",
+          "expressions",
+          "min_relevant",
+          "auto_substitution"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/tms/concordance",
+        "bodyMapping": {
+          "sourceLanguageId": "$source_language_id",
+          "targetLanguageId": "$target_language_id",
+          "expressions": "$expressions",
+          "minRelevant": "$min_relevant",
+          "autoSubstitution": "$auto_substitution"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "crowdin_add_tm_segment",
+      "description": "Add a segment to a translation memory: the same sentence in several languages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tm_id": {
+            "type": "integer",
+            "description": "Numeric TM id."
+          },
+          "records": {
+            "type": "array",
+            "description": "Records, e.g. [{\"languageId\": \"en\", \"text\": \"Add to cart\"}, {\"languageId\": \"de\", \"text\": \"In den Warenkorb\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "tm_id",
+          "records"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tms/{tm_id}/segments",
+        "bodyMapping": {
+          "records": "$records"
+        }
+      }
+    },
+    {
+      "name": "crowdin_list_glossaries",
+      "description": "Glossaries with id, name, languages, terms count and the projects using them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Text to match in the name."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/glossaries",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_get_glossary",
+      "description": "One glossary with its languages, terms count and default project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "glossary_id": {
+            "type": "integer",
+            "description": "Numeric glossary id."
+          }
+        },
+        "required": [
+          "glossary_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/glossaries/{glossary_id}"
+      }
+    },
+    {
+      "name": "crowdin_list_glossary_terms",
+      "description": "Terms of a glossary with text, language, description, part of speech, status, type, note and concept id (terms of one concept are translations of each other).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "glossary_id": {
+            "type": "integer",
+            "description": "Numeric glossary id."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Only terms in this language."
+          },
+          "concept_id": {
+            "type": "integer",
+            "description": "Only terms of this concept."
+          },
+          "croql": {
+            "type": "string",
+            "description": "CroQL filter on the terms."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "glossary_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/glossaries/{glossary_id}/terms",
+        "queryParams": {
+          "languageId": "$language_id",
+          "conceptId": "$concept_id",
+          "croql": "$croql",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_add_glossary_term",
+      "description": "Add a term to a glossary, optionally as the translation of an existing term (translation_of_term_id) or into a concept.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "glossary_id": {
+            "type": "integer",
+            "description": "Numeric glossary id."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id of the term."
+          },
+          "text": {
+            "type": "string",
+            "description": "The term."
+          },
+          "description": {
+            "type": "string",
+            "description": "Definition or usage note."
+          },
+          "part_of_speech": {
+            "type": "string",
+            "description": "Part of speech, e.g. noun, verb, adjective, proper noun."
+          },
+          "status": {
+            "type": "string",
+            "description": "Term status.",
+            "enum": [
+              "preferred",
+              "admitted",
+              "not recommended",
+              "obsolete",
+              "draft"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Term type.",
+            "enum": [
+              "full form",
+              "acronym",
+              "abbreviation",
+              "short form",
+              "phrase",
+              "variant"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Extra note."
+          },
+          "translation_of_term_id": {
+            "type": "integer",
+            "description": "Id of the term this one translates."
+          },
+          "concept_id": {
+            "type": "integer",
+            "description": "Concept to add the term to."
+          }
+        },
+        "required": [
+          "glossary_id",
+          "language_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/glossaries/{glossary_id}/terms",
+        "bodyMapping": {
+          "languageId": "$language_id",
+          "text": "$text",
+          "description": "$description",
+          "partOfSpeech": "$part_of_speech",
+          "status": "$status",
+          "type": "$type",
+          "note": "$note",
+          "translationOfTermId": "$translation_of_term_id",
+          "conceptId": "$concept_id"
+        }
+      }
+    },
+    {
+      "name": "crowdin_list_members",
+      "description": "Members of a project with id, username, full name, role (manager, proofreader, translator, ...) and their languages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to match in username or name."
+          },
+          "role": {
+            "type": "string",
+            "description": "Only this role (crowdin.com).",
+            "enum": [
+              "all",
+              "manager",
+              "developer",
+              "language_coordinator",
+              "proofreader",
+              "translator",
+              "blocked",
+              "pending"
+            ]
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Only members working on this language."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/members",
+        "queryParams": {
+          "search": "$search",
+          "role": "$role",
+          "languageId": "$language_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "crowdin_get_member",
+      "description": "One project member with role, permissions per language and join date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric project id from crowdin_list_projects."
+          },
+          "member_id": {
+            "type": "integer",
+            "description": "Numeric member (user) id."
+          }
+        },
+        "required": [
+          "project_id",
+          "member_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/members/{member_id}"
+      }
+    }
+  ]
+}

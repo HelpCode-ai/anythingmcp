@@ -1,0 +1,242 @@
+{
+  "slug": "e2b",
+  "name": "E2B",
+  "aliases": ["E2B Sandbox", "E2B Code Interpreter", "e2b.dev"],
+  "description": "Manage E2B cloud sandboxes for AI agents: list, start, inspect, pause, resume and extend sandboxes, read their logs and CPU, memory and disk metrics, and browse the team's templates, builds and snapshots.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "e2b",
+  "docsUrl": "https://e2b.dev/docs/api-reference",
+  "prerequisites": "An E2B account (e2b.dev) and a team API key from the dashboard. Running sandboxes are billed per second to the team (the Hobby plan starts with free credits). About 2 minutes.",
+  "requiredEnvVars": ["E2B_API_KEY"],
+  "envVarMeta": {
+    "E2B_API_KEY": {
+      "label": "E2B API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "e2b.dev/dashboard, Keys (team API keys). The key acts for the whole team: it can start sandboxes billed to it.",
+      "link": "https://e2b.dev/dashboard?tab=keys",
+      "pattern": "^e2b_[A-Za-z0-9]{20,}$",
+      "patternMessage": "Paste the API key as E2B shows it, starting with e2b_, without spaces. An access token (sk_e2b_...) does not work here."
+    }
+  },
+  "verifyHints": {
+    "401": "E2B refused the API key. Copy a team API key (e2b_...) again from https://e2b.dev/dashboard?tab=keys; personal access tokens do not work here.",
+    "rate_limited": "E2B rate limited the key or the team reached its limit of concurrent sandboxes. Wait, or kill sandboxes that are no longer needed."
+  },
+  "probe": { "tool": "e2b_list_sandboxes" },
+  "connector": {
+    "name": "E2B API",
+    "type": "REST",
+    "baseUrl": "https://api.e2b.app",
+    "authType": "API_KEY",
+    "authConfig": { "headerName": "X-API-Key", "apiKey": "{{E2B_API_KEY}}" },
+    "headers": { "Accept": "application/json", "User-Agent": "AnythingMCP" },
+    "healthcheckPath": "/v2/sandboxes"
+  },
+  "instructions": "## E2B\nThis connector uses the **E2B control-plane API** (`https://api.e2b.app`): it manages the team's cloud sandboxes (small isolated Linux VMs that AI agents use to run code), reads their logs and resource metrics, and lists templates, builds and snapshots.\n\n**Paid calls**: `e2b_create_sandbox` starts a sandbox and `e2b_resume_sandbox` restarts a paused one; a running sandbox is billed per second for its CPU and memory until it times out, is paused or is killed. `e2b_set_sandbox_timeout` extends that time. Confirm with the user before starting sandboxes or extending them, keep `timeout` short, and pause or let them expire when done. Reads cost nothing.\n\n**Setup (2 minutes)**\n1. Sign in at https://e2b.dev/dashboard.\n2. Open **Keys** (https://e2b.dev/dashboard?tab=keys) and copy a team API key (it starts with `e2b_`).\n3. Paste it into `E2B_API_KEY`. It is sent in the `X-API-Key` header.\n4. Run `e2b_list_sandboxes` to check it.\n\n**Workflow**\n- Templates: `e2b_list_default_templates` shows E2B's ready-made templates (e.g. `base`, `code-interpreter-v1`, `desktop`) with CPU, memory and disk; `e2b_list_templates` the team's own templates with aliases, build status and spawn counts; `e2b_list_template_builds` the builds of one template.\n- Start: `e2b_create_sandbox` with `template_id` (template id or alias, default `base`), a `timeout` in seconds (default 300), optional `metadata` (string key-value pairs to find it again), `env_vars`, `auto_pause` and `allow_internet_access`. The answer has the `sandboxID` and `domain`.\n- Inspect: `e2b_list_sandboxes` (filter by `state` running or paused, `template`, `metadata` such as `user=abc&app=prod`, `started_after`); `e2b_get_sandbox` for one sandbox's template, resources, start and end time, state and network settings; `e2b_get_sandbox_logs` for its system and process logs; `e2b_get_sandbox_metrics` for CPU, memory and disk use over time.\n- Lifecycle: `e2b_set_sandbox_timeout` sets a new end time counted from now (the plan caps it: 1 hour on Hobby, 24 hours on Pro); `e2b_pause_sandbox` freezes it with its memory and files (paused sandboxes are not billed for compute); `e2b_resume_sandbox` resumes a paused sandbox (or just extends a running one); `e2b_list_snapshots` lists saved snapshots.\n\n**Switched off at install**: `e2b_kill_sandbox`; it cannot be undone (the sandbox and its files are gone), so an admin switches it on when the team needs it.\n\n**Running code inside a sandbox is not part of this connector.** Commands, files and the code interpreter are served by the sandbox itself (its envd agent on `https://<port>-<sandboxID>.e2b.app`), not by this API: every sandbox has its own host and its own access token, process output is streamed, and the team API key must not be sent into a sandbox where generated code runs. Use the E2B SDKs (`e2b`, `@e2b/code-interpreter`) for that, or point the agent at a tool that wraps them.\n\n**Reading answers**: times are ISO 8601, UTC; metric timestamps and log `cursor` values are Unix (metrics `start` and `end` in seconds, log cursors in milliseconds). `cpuCount` is vCPUs, `memoryMB` and `diskSizeMB` megabytes. The sandbox access tokens are removed from answers.\n\n**Paging**: `e2b_list_sandboxes`, `e2b_list_templates`, `e2b_list_template_builds` and `e2b_list_snapshots` return the next page token in `_headers.x-next-token` (the list itself is under `data` when the answer is a list); pass it as `next_token` until it is missing. `e2b_list_sandboxes` also returns `_headers.x-total-running`.\n\n**Errors**: 400 bad parameter (e.g. a timeout over the plan's maximum); 401 invalid key; 403 the team may not use the template; 404 unknown sandbox or template (a sandbox that timed out is gone); 409 the sandbox is already paused or being paused; 429 too many concurrent sandboxes or requests, wait and do not loop; 500 and 503 E2B-side errors.",
+  "tools": [
+    {
+      "name": "e2b_list_sandboxes",
+      "description": "List the E2B sandboxes of the team, newest first: sandbox id, template, alias, state (running or paused), start and end time, CPU, memory, disk and metadata. Free. Next page token in _headers.x-next-token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": { "type": "string", "enum": ["running", "paused", "running,paused"], "description": "Only sandboxes in this state; default both." },
+          "template": { "type": "string", "description": "Only sandboxes of this template id or alias." },
+          "metadata": { "type": "string", "description": "Metadata filter as key=value pairs joined by &, e.g. user=abc&app=prod." },
+          "started_after": { "type": "string", "description": "Only sandboxes started at or after this ISO 8601 time." },
+          "order": { "type": "string", "enum": ["desc", "asc"], "description": "Sort by start time, default desc (newest first)." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Sandboxes per page, default 50." },
+          "next_token": { "type": "string", "description": "_headers.x-next-token of the previous page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/sandboxes",
+        "queryParams": { "state": "$state", "template": "$template", "metadata": "$metadata", "startedAfter": "$started_after", "order": "$order", "limit": "$limit", "nextToken": "$next_token" },
+        "exposeHeaders": ["x-next-token", "x-total-running"]
+      }
+    },
+    {
+      "name": "e2b_get_sandbox",
+      "description": "Read one E2B sandbox: template and alias, state, start and end time, CPU, memory and disk, envd version, domain, internet access, network rules, lifecycle settings and metadata. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": { "type": "string", "description": "Sandbox id from e2b_list_sandboxes or e2b_create_sandbox." }
+        },
+        "required": ["sandbox_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/sandboxes/{sandbox_id}" },
+      "responseMapping": { "transform": { "mode": "select", "exclude": ["envdAccessToken", "trafficAccessToken"] } }
+    },
+    {
+      "name": "e2b_create_sandbox",
+      "description": "Start a new E2B sandbox from a template. COSTS MONEY: the team is billed per second of CPU and memory while it runs, until the timeout (default 300 seconds), a pause or a kill. Confirm with the user before starting one and keep the timeout short.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": { "type": "string", "default": "base", "description": "Template id or alias, default base; e.g. code-interpreter-v1 or a team template from e2b_list_templates." },
+          "timeout": { "type": "integer", "minimum": 1, "maximum": 86400, "default": 300, "description": "Lifetime in seconds, default 300. Hobby allows up to 3600, Pro up to 86400." },
+          "auto_pause": { "type": "boolean", "description": "true pauses the sandbox at the timeout instead of killing it." },
+          "allow_internet_access": { "type": "boolean", "description": "false blocks all outgoing internet traffic. Default true." },
+          "metadata": { "type": "object", "description": "String key-value pairs to find the sandbox again, e.g. {\"user\": \"abc\"}." },
+          "env_vars": { "type": "object", "description": "Environment variables for processes in the sandbox, as string key-value pairs. Do not pass secrets the user has not approved." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/sandboxes",
+        "bodyMapping": {
+          "templateID": "$template_id",
+          "timeout": "$timeout",
+          "autoPause": "$auto_pause",
+          "allow_internet_access": "$allow_internet_access",
+          "metadata": "$metadata",
+          "envVars": "$env_vars"
+        }
+      },
+      "responseMapping": { "transform": { "mode": "select", "exclude": ["envdAccessToken", "trafficAccessToken"] } },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true }
+    },
+    {
+      "name": "e2b_set_sandbox_timeout",
+      "description": "Set when an E2B sandbox ends: timeout seconds counted from now, replacing the previous end time (a shorter value ends it sooner). Extending it keeps the sandbox billed for longer: confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": { "type": "string", "description": "Sandbox id." },
+          "timeout": { "type": "integer", "minimum": 1, "maximum": 86400, "description": "Seconds from now until the sandbox ends." }
+        },
+        "required": ["sandbox_id", "timeout"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/sandboxes/{sandbox_id}/timeout", "bodyMapping": { "timeout": "$timeout" } },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true }
+    },
+    {
+      "name": "e2b_pause_sandbox",
+      "description": "Pause a running E2B sandbox, saving its files and, by default, its memory, so it can be resumed later with e2b_resume_sandbox. A paused sandbox is not billed for compute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": { "type": "string", "description": "Sandbox id of a running sandbox." },
+          "memory": { "type": "boolean", "description": "false saves only the file system; resuming then reboots the sandbox. Default true." }
+        },
+        "required": ["sandbox_id"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/sandboxes/{sandbox_id}/pause", "bodyMapping": { "memory": "$memory" } },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true }
+    },
+    {
+      "name": "e2b_resume_sandbox",
+      "description": "Resume a paused E2B sandbox (or extend a running one) and return its details. COSTS MONEY: the resumed sandbox is billed per second again until the timeout. Confirm with the user before resuming.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": { "type": "string", "description": "Sandbox id." },
+          "timeout": { "type": "integer", "minimum": 1, "maximum": 86400, "default": 300, "description": "Seconds from now until it ends again, default 300. A running sandbox's end time is only extended, never shortened." },
+          "memory": { "type": "boolean", "description": "false resumes from the saved files only (cold boot). Default true." }
+        },
+        "required": ["sandbox_id"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/v2/sandboxes/{sandbox_id}/connect", "bodyMapping": { "timeout": "$timeout", "memory": "$memory" } },
+      "responseMapping": { "transform": { "mode": "select", "exclude": ["envdAccessToken", "trafficAccessToken"] } },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "e2b_kill_sandbox",
+      "description": "Kill an E2B sandbox immediately. Its processes, memory and files are gone and cannot be restored. Installed switched off. Confirm the sandbox id with the user before calling.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": { "type": "string", "description": "Sandbox id to kill." }
+        },
+        "required": ["sandbox_id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/sandboxes/{sandbox_id}" },
+      "annotations": { "destructiveHint": true }
+    },
+    {
+      "name": "e2b_get_sandbox_logs",
+      "description": "Read the logs of one E2B sandbox (system and process output) with timestamp, level and message; filter by minimum level or a search string. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": { "type": "string", "description": "Sandbox id." },
+          "level": { "type": "string", "enum": ["debug", "info", "warn", "error"], "description": "Minimum level to return." },
+          "search": { "type": "string", "description": "Case-sensitive text the message must contain." },
+          "direction": { "type": "string", "enum": ["forward", "backward"], "description": "forward (oldest first) or backward (newest first) from the cursor." },
+          "cursor": { "type": "integer", "description": "Start at this Unix timestamp in milliseconds." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 100, "description": "Log lines to return, default 100." }
+        },
+        "required": ["sandbox_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/sandboxes/{sandbox_id}/logs",
+        "queryParams": { "level": "$level", "search": "$search", "direction": "$direction", "cursor": "$cursor", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "e2b_get_sandbox_metrics",
+      "description": "Read the resource use of one E2B sandbox over time: CPU count and usage percent, memory and disk used and total, per timestamp. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": { "type": "string", "description": "Sandbox id." },
+          "start": { "type": "integer", "description": "Start of the interval, Unix seconds." },
+          "end": { "type": "integer", "description": "End of the interval, Unix seconds." }
+        },
+        "required": ["sandbox_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/sandboxes/{sandbox_id}/metrics", "queryParams": { "start": "$start", "end": "$end" } }
+    },
+    {
+      "name": "e2b_list_templates",
+      "description": "List the team's E2B templates: template id, aliases and names, build id and status, CPU, memory and disk, public flag, spawn count, last spawn and dates. Free. Next page token in _headers.x-next-token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Templates per page, default 50." },
+          "next_token": { "type": "string", "description": "_headers.x-next-token of the previous page." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/v2/templates", "queryParams": { "limit": "$limit", "nextToken": "$next_token" }, "exposeHeaders": ["x-next-token"] }
+    },
+    {
+      "name": "e2b_list_template_builds",
+      "description": "List the builds of one E2B template with build id, status, CPU, memory, disk, envd version and dates. Free. Next page token in _headers.x-next-token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": { "type": "string", "description": "Template id from e2b_list_templates." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Builds per page, default 50." },
+          "next_token": { "type": "string", "description": "_headers.x-next-token of the previous page." }
+        },
+        "required": ["template_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/templates/{template_id}", "queryParams": { "limit": "$limit", "nextToken": "$next_token" }, "exposeHeaders": ["x-next-token"] }
+    },
+    {
+      "name": "e2b_list_default_templates",
+      "description": "List E2B's ready-made default templates (such as base, code-interpreter-v1 and desktop) with their aliases, CPU, memory, disk and envd version. Free.",
+      "endpointMapping": { "method": "GET", "path": "/default-templates" }
+    },
+    {
+      "name": "e2b_list_snapshots",
+      "description": "List the team's E2B sandbox snapshots with id, name, the sandbox they came from and dates; filter by sandbox or name. Free. Next page token in _headers.x-next-token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": { "type": "string", "description": "Only snapshots of this sandbox." },
+          "name": { "type": "string", "description": "Snapshot name or id, optionally tag-qualified (my-team/my-snapshot)." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Snapshots per page, default 50." },
+          "next_token": { "type": "string", "description": "_headers.x-next-token of the previous page." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/snapshots", "queryParams": { "sandboxID": "$sandbox_id", "name": "$name", "limit": "$limit", "nextToken": "$next_token" }, "exposeHeaders": ["x-next-token"] }
+    }
+  ]
+}

@@ -1,0 +1,1410 @@
+{
+  "slug": "alpha-vantage",
+  "name": "Alpha Vantage",
+  "aliases": [
+    "AlphaVantage"
+  ],
+  "description": "Market data from Alpha Vantage: stock quotes and daily or intraday price history for global exchanges, company fundamentals and earnings, dividends, insider and institutional holdings, ETF profiles, options, indices, forex, crypto, commodities, US economic indicators, technical indicators and news sentiment. Read-only, free API key (25 requests a day).",
+  "instructions": "## Alpha Vantage\nThis connector reads **Alpha Vantage** (`https://www.alphavantage.co/query`), a market data API: stock quotes and price history for global exchanges, company fundamentals (overview, income statement, balance sheet, cash flow, earnings, estimates, dividends, splits, insider and institutional holdings, earnings call transcripts), ETF profiles, options, indices, forex, crypto, commodities, US economic indicators, 50+ technical indicators and news with sentiment. Everything is read-only.\n\n**Setup (1 minute, free)**\n1. Claim a free key at https://www.alphavantage.co/support/#api-key (e-mail address only).\n2. Paste it into `ALPHA_VANTAGE_API_KEY`. It is sent as the `apikey` query parameter.\n3. The free key allows **25 requests per day**. Premium plans (https://www.alphavantage.co/premium/) raise this to 75 or more requests per minute and unlock realtime US data, intraday history, adjusted daily series, options and bulk quotes.\n\n**Workflow**\n- Unknown symbol: `alpha_vantage_search_symbols` first. US symbols are plain (IBM); other exchanges carry a suffix (TSCO.LON, SAP.DEX, RELIANCE.BSE, SHOP.TRT).\n- Price now: `alpha_vantage_get_quote`; many US symbols at once (premium): `alpha_vantage_get_bulk_quotes`. Market open or closed: `alpha_vantage_get_market_status`. Day's movers: `alpha_vantage_get_top_movers`.\n- Price history: `alpha_vantage_get_time_series` (daily, weekly, monthly; `_ADJUSTED` for dividend and split adjusted closes), `alpha_vantage_get_intraday` for minute bars.\n- Company analysis: `alpha_vantage_get_company_overview` (sector, valuation ratios, margins, analyst target), then `alpha_vantage_get_income_statement`, `alpha_vantage_get_balance_sheet`, `alpha_vantage_get_cash_flow`, `alpha_vantage_get_earnings`, `alpha_vantage_get_earnings_estimates`, `alpha_vantage_get_shares_outstanding`, `alpha_vantage_get_corporate_actions` (dividends or splits). Ownership: `alpha_vantage_get_insider_transactions`, `alpha_vantage_get_institutional_holdings`. Management commentary: `alpha_vantage_get_earnings_call_transcript`.\n- Funds and indices: `alpha_vantage_get_etf_profile`; `alpha_vantage_list_indices` and `alpha_vantage_get_index_data`.\n- Options (premium): `alpha_vantage_get_options` with an `expiration` to keep the chain small.\n- News: `alpha_vantage_get_news_sentiment` by tickers or topics.\n- Currencies and crypto: `alpha_vantage_get_exchange_rate` (any pair, physical or crypto), `alpha_vantage_get_fx_time_series`, `alpha_vantage_get_crypto_time_series`.\n- Macro: `alpha_vantage_get_economic_indicator` (GDP, treasury yields, fed funds, CPI, inflation, unemployment, payrolls, retail sales, durables), `alpha_vantage_get_commodity`, `alpha_vantage_get_precious_metals`.\n- Technical analysis: `alpha_vantage_get_technical_indicator` with `function`, `interval`, and usually `time_period` and `series_type`.\n\n**Reading the answers**: numbers come as strings, often with numbered keys (`\"05. price\"`). Time series are objects keyed by date (YYYY-MM-DD) or timestamp, newest first; intraday timestamps are US Eastern time. Fundamentals are in the reported currency (`reportedCurrency`), in full units, and `\"None\"` means not reported. Daily data is end of day unless a premium `entitlement` is set. Sentiment scores run from -1 (bearish) to 1 (bullish).\n\n**Data volume**: `outputsize` compact (the default here) returns the latest 100 points; `full` can return 20 years. Technical indicators always cover the whole history of the interval: use weekly or monthly for long views.\n\n**Limits and errors**: Alpha Vantage answers HTTP 200 even on errors; the connector turns these into failed calls. A message about the rate limit means the daily (25 free) or per-minute quota is used up, or calls came faster than about one per second: wait or upgrade. A premium message means the function or option needs a paid plan. \"Invalid API call\" means a wrong symbol or parameter.\n\n**Out of scope**: CSV-only endpoints (listing status, earnings calendar, IPO calendar) and the advanced analytics endpoints are not part of this connector. Alpha Vantage also runs an official MCP server at https://mcp.alphavantage.co.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "alpha-vantage",
+  "docsUrl": "https://www.alphavantage.co/documentation/",
+  "requiredEnvVars": [
+    "ALPHA_VANTAGE_API_KEY"
+  ],
+  "envVarMeta": {
+    "ALPHA_VANTAGE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Free at alphavantage.co/support/#api-key (only an e-mail address). A free key allows 25 requests a day; premium plans more.",
+      "link": "https://www.alphavantage.co/support/#api-key",
+      "pattern": "^[A-Za-z0-9]{8,32}$",
+      "patternMessage": "Paste only the key (letters and digits), without apikey= or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Alpha Vantage refused the API key. Claim or copy it again at https://www.alphavantage.co/support/#api-key.",
+    "403": "Alpha Vantage answered that this data needs a premium plan, or the key is the public demo key.",
+    "429": "The Alpha Vantage quota is used up: 25 requests a day on a free key, or the per-minute limit of a premium plan. Wait and verify again."
+  },
+  "probe": {
+    "tool": "alpha_vantage_get_market_status"
+  },
+  "connector": {
+    "name": "Alpha Vantage",
+    "type": "REST",
+    "baseUrl": "https://www.alphavantage.co",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "apikey": "{{ALPHA_VANTAGE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "Error Message",
+          "messageMatches": "apikey",
+          "status": 401
+        },
+        {
+          "path": "Error Message",
+          "status": 400
+        },
+        {
+          "path": "Information",
+          "messageMatches": "rate limit|requests per",
+          "status": 429
+        },
+        {
+          "path": "Information",
+          "status": 403
+        },
+        {
+          "path": "Note",
+          "status": 429
+        },
+        {
+          "path": "message",
+          "matches": "premium endpoint",
+          "status": 403
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "alpha_vantage_get_quote",
+      "description": "Get the latest quote of one stock or ETF (GLOBAL_QUOTE): price, open, high, low, volume, latest trading day, previous close, change and change percent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          },
+          "entitlement": {
+            "type": "string",
+            "enum": [
+              "realtime",
+              "delayed"
+            ],
+            "description": "Premium plans only: realtime or delayed (15-minute) US data. Leave empty for the default end-of-day or historical data."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "GLOBAL_QUOTE",
+          "symbol": "$symbol",
+          "entitlement": "$entitlement"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_bulk_quotes",
+      "description": "Get realtime quotes for up to 100 US symbols in one call (REALTIME_BULK_QUOTES), including extended hours. Premium: on a free key the answer is sample data marked as such and the call fails.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Up to 100 comma-separated US symbols, e.g. MSFT,AAPL,IBM."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "REALTIME_BULK_QUOTES",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_time_series",
+      "description": "Get the daily, weekly or monthly price history (open, high, low, close, volume) of a stock or ETF, raw or adjusted for splits and dividends (adjusted close, dividend, split coefficient). 20+ years of history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "string",
+            "enum": [
+              "TIME_SERIES_DAILY",
+              "TIME_SERIES_DAILY_ADJUSTED",
+              "TIME_SERIES_WEEKLY",
+              "TIME_SERIES_WEEKLY_ADJUSTED",
+              "TIME_SERIES_MONTHLY",
+              "TIME_SERIES_MONTHLY_ADJUSTED"
+            ],
+            "default": "TIME_SERIES_DAILY",
+            "description": "Which series: TIME_SERIES_DAILY (default, as traded), TIME_SERIES_DAILY_ADJUSTED (premium), TIME_SERIES_WEEKLY, TIME_SERIES_WEEKLY_ADJUSTED, TIME_SERIES_MONTHLY or TIME_SERIES_MONTHLY_ADJUSTED."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          },
+          "outputsize": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "full"
+            ],
+            "default": "compact",
+            "description": "Daily series only: compact (default) returns the latest 100 days, full the whole history (premium)."
+          },
+          "entitlement": {
+            "type": "string",
+            "enum": [
+              "realtime",
+              "delayed"
+            ],
+            "description": "Premium plans only: realtime or delayed (15-minute) US data. Leave empty for the default end-of-day or historical data."
+          }
+        },
+        "required": [
+          "function",
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "$function",
+          "symbol": "$symbol",
+          "outputsize": "$outputsize",
+          "entitlement": "$entitlement"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_intraday",
+      "description": "Get intraday price bars (open, high, low, close, volume) of a US stock at 1 to 60 minute intervals, for the latest days or a given month in the last 20 years, with or without extended hours. Premium for realtime data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "US-listed ticker symbol, e.g. IBM, AAPL, MSFT."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "60min"
+            ],
+            "description": "Bar length: 1min, 5min, 15min, 30min or 60min."
+          },
+          "adjusted": {
+            "type": "boolean",
+            "description": "false for raw as-traded prices; default true (adjusted for splits and dividends)."
+          },
+          "extended_hours": {
+            "type": "boolean",
+            "description": "false for regular trading hours only; default true (4:00 to 20:00 Eastern time)."
+          },
+          "month": {
+            "type": "string",
+            "description": "A month in history, YYYY-MM (since 2000-01). Leave empty for the latest days."
+          },
+          "outputsize": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "full"
+            ],
+            "default": "compact",
+            "description": "compact (default) returns the latest 100 data points; full returns the whole history (premium for daily data, and can be large)."
+          },
+          "entitlement": {
+            "type": "string",
+            "enum": [
+              "realtime",
+              "delayed"
+            ],
+            "description": "Premium plans only: realtime or delayed (15-minute) US data. Leave empty for the default end-of-day or historical data."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "TIME_SERIES_INTRADAY",
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "adjusted": "$adjusted",
+          "extended_hours": "$extended_hours",
+          "month": "$month",
+          "outputsize": "$outputsize",
+          "entitlement": "$entitlement"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_search_symbols",
+      "description": "Find ticker symbols by company name or partial symbol (SYMBOL_SEARCH): symbol, name, type, region, market hours, time zone, currency and match score. Use it before any other tool when the exact symbol is unknown.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "Company name or symbol fragment, e.g. microsoft, tesco, BA."
+          }
+        },
+        "required": [
+          "keywords"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "SYMBOL_SEARCH",
+          "keywords": "$keywords"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_market_status",
+      "description": "Get whether the major stock, forex and crypto markets worldwide are open or closed right now, with their local opening and closing times. No parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "MARKET_STATUS"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_top_movers",
+      "description": "Get the top 20 gainers, top 20 losers and 20 most actively traded US tickers of the latest trading day, with price, change and volume.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entitlement": {
+            "type": "string",
+            "enum": [
+              "realtime",
+              "delayed"
+            ],
+            "description": "Premium plans only: realtime or delayed (15-minute) US data. Leave empty for the default end-of-day or historical data."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "TOP_GAINERS_LOSERS",
+          "entitlement": "$entitlement"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_news_sentiment",
+      "description": "Get market news with AI sentiment scores (NEWS_SENTIMENT): articles from major outlets about given tickers (stocks, crypto CRYPTO:BTC, forex FOREX:USD) or topics, with title, URL, time, summary, source, overall sentiment and per-ticker relevance and sentiment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tickers": {
+            "type": "string",
+            "description": "Comma-separated tickers the articles must all mention, e.g. AAPL or COIN,CRYPTO:BTC,FOREX:USD."
+          },
+          "topics": {
+            "type": "string",
+            "description": "Comma-separated topics: blockchain, earnings, ipo, mergers_and_acquisitions, financial_markets, economy_fiscal, economy_monetary, economy_macro, energy_transportation, finance, life_sciences, manufacturing, real_estate, retail_wholesale, technology."
+          },
+          "time_from": {
+            "type": "string",
+            "description": "Earliest publication time, YYYYMMDDTHHMM, e.g. 20260401T0130."
+          },
+          "time_to": {
+            "type": "string",
+            "description": "Latest publication time, YYYYMMDDTHHMM."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "LATEST",
+              "EARLIEST",
+              "RELEVANCE"
+            ],
+            "description": "LATEST (default), EARLIEST or RELEVANCE."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Number of articles, 1 to 1000."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "NEWS_SENTIMENT",
+          "tickers": "$tickers",
+          "topics": "$topics",
+          "time_from": "$time_from",
+          "time_to": "$time_to",
+          "sort": "$sort",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_company_overview",
+      "description": "Get the profile and key metrics of a company (OVERVIEW): description, exchange, sector, industry, market capitalisation, EBITDA, P/E, PEG, book value, dividend per share and yield, EPS, margins, ROA, ROE, revenue, analyst target price and ratings, beta, 52-week range, moving averages, shares outstanding.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "OVERVIEW",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_etf_profile",
+      "description": "Get an ETF profile and holdings (ETF_PROFILE): net assets, expense ratio, turnover, dividend yield, inception date, leverage, sector allocation and the constituent holdings with weights.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "ETF symbol, e.g. QQQ, SPY, VTI."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "ETF_PROFILE",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_income_statement",
+      "description": "Get the annual and quarterly income statements (revenue, cost of revenue, gross profit, operating income, EBIT, EBITDA, interest, taxes, net income) of a company (INCOME_STATEMENT), mapped to US GAAP and IFRS. Values are strings in the reported currency, \"None\" when not reported.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "INCOME_STATEMENT",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_balance_sheet",
+      "description": "Get the annual and quarterly balance sheets (assets, current assets, cash, inventory, liabilities, debt, shareholder equity, shares outstanding) of a company (BALANCE_SHEET), mapped to US GAAP and IFRS. Values are strings in the reported currency, \"None\" when not reported.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "BALANCE_SHEET",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_cash_flow",
+      "description": "Get the annual and quarterly cash flow statements (operating cash flow, capital expenditures, dividends paid, buybacks, financing and investing cash flows) of a company (CASH_FLOW), mapped to US GAAP and IFRS. Values are strings in the reported currency, \"None\" when not reported.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "CASH_FLOW",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_earnings",
+      "description": "Get a company's annual and quarterly earnings per share (EARNINGS): reported EPS, estimated EPS, surprise and surprise percent, report date and time of day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "EARNINGS",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_earnings_estimates",
+      "description": "Get analyst EPS and revenue estimates for upcoming fiscal quarters and years (EARNINGS_ESTIMATES): average, high and low estimates, number of analysts and estimate revisions over the last 7 to 90 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "EARNINGS_ESTIMATES",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_corporate_actions",
+      "description": "Get the dividend history and declared future dividends (DIVIDENDS: ex-dividend, declaration, record and payment dates and amount) or the stock split history (SPLITS: effective date and split factor) of a company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "string",
+            "enum": [
+              "DIVIDENDS",
+              "SPLITS"
+            ],
+            "default": "DIVIDENDS",
+            "description": "DIVIDENDS (default) or SPLITS."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          }
+        },
+        "required": [
+          "function",
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "$function",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_shares_outstanding",
+      "description": "Get the quarterly number of basic and diluted shares outstanding of a company (SHARES_OUTSTANDING).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "SHARES_OUTSTANDING",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_insider_transactions",
+      "description": "Get insider transactions of a company's executives, directors and major holders (INSIDER_TRANSACTIONS): date, insider name and title, acquisition or disposal, security type, shares and price. Codes P (open market purchase) and S (sale) matter most.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "US-listed ticker symbol, e.g. IBM, AAPL, MSFT."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only transactions on or after this date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "INSIDER_TRANSACTIONS",
+          "symbol": "$symbol",
+          "from": "$from"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_institutional_holdings",
+      "description": "Get the institutional ownership of a stock (INSTITUTIONAL_HOLDINGS): the funds and institutions holding it, with shares held, value and change per reporting period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "US-listed ticker symbol, e.g. IBM, AAPL, MSFT."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "INSTITUTIONAL_HOLDINGS",
+          "symbol": "$symbol"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_earnings_call_transcript",
+      "description": "Get the transcript of a company's earnings call for one fiscal quarter (EARNINGS_CALL_TRANSCRIPT), turn by turn with speaker, title and a sentiment score. Quarters since 2010Q1.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "US-listed ticker symbol, e.g. IBM, AAPL, MSFT."
+          },
+          "quarter": {
+            "type": "string",
+            "pattern": "^\\d{4}Q[1-4]$",
+            "description": "Fiscal quarter, YYYYQN, e.g. 2026Q2."
+          }
+        },
+        "required": [
+          "symbol",
+          "quarter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "EARNINGS_CALL_TRANSCRIPT",
+          "symbol": "$symbol",
+          "quarter": "$quarter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_options",
+      "description": "Get a US option chain (premium): REALTIME_OPTIONS for the live chain with optional greeks and implied volatility, or HISTORICAL_OPTIONS for the chain of a past trading day (since 2008) with IV and greeks. Filter by expiration or one contract; a full chain is large.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "string",
+            "enum": [
+              "HISTORICAL_OPTIONS",
+              "REALTIME_OPTIONS"
+            ],
+            "default": "HISTORICAL_OPTIONS",
+            "description": "HISTORICAL_OPTIONS (default; previous session unless date is set) or REALTIME_OPTIONS."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "US-listed ticker symbol, e.g. IBM, AAPL, MSFT."
+          },
+          "date": {
+            "type": "string",
+            "description": "HISTORICAL_OPTIONS only: trading day, YYYY-MM-DD (after 2008-01-01). Default: the previous session."
+          },
+          "expiration": {
+            "type": "string",
+            "description": "Only contracts expiring on this date, YYYY-MM-DD."
+          },
+          "contract": {
+            "type": "string",
+            "description": "One contract id, e.g. IBM270115C00390000."
+          },
+          "require_greeks": {
+            "type": "boolean",
+            "description": "REALTIME_OPTIONS only: true adds greeks and implied volatility."
+          }
+        },
+        "required": [
+          "function",
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "$function",
+          "symbol": "$symbol",
+          "date": "$date",
+          "expiration": "$expiration",
+          "contract": "$contract",
+          "require_greeks": "$require_greeks"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_index_data",
+      "description": "Get the daily, weekly or monthly open, high, low and close history of a market index (INDEX_DATA), e.g. DJI, SPX, COMP, NDX, VIX, RUT or one of 200+ indices from alpha_vantage_list_indices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Index symbol, e.g. SPX (S&P 500), DJI, COMP (Nasdaq Composite), NDX, VIX, RUT."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "description": "daily, weekly or monthly."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "INDEX_DATA",
+          "symbol": "$symbol",
+          "interval": "$interval"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_list_indices",
+      "description": "List the market index symbols supported by alpha_vantage_get_index_data with their full names (INDEX_CATALOG). No parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "INDEX_CATALOG"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_exchange_rate",
+      "description": "Get the realtime exchange rate between two currencies, physical or crypto (CURRENCY_EXCHANGE_RATE): rate, bid, ask and last refresh time, e.g. EUR to USD or BTC to EUR.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_currency": {
+            "type": "string",
+            "description": "Currency to convert from, e.g. EUR, USD, BTC, ETH."
+          },
+          "to_currency": {
+            "type": "string",
+            "description": "Currency to convert to, e.g. USD, JPY, EUR."
+          }
+        },
+        "required": [
+          "from_currency",
+          "to_currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "CURRENCY_EXCHANGE_RATE",
+          "from_currency": "$from_currency",
+          "to_currency": "$to_currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_fx_time_series",
+      "description": "Get the price history (open, high, low, close) of a currency pair: FX_DAILY, FX_WEEKLY, FX_MONTHLY, or FX_INTRADAY bars (premium).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "string",
+            "enum": [
+              "FX_DAILY",
+              "FX_WEEKLY",
+              "FX_MONTHLY",
+              "FX_INTRADAY"
+            ],
+            "default": "FX_DAILY",
+            "description": "FX_DAILY (default), FX_WEEKLY, FX_MONTHLY or FX_INTRADAY (premium, needs interval)."
+          },
+          "from_symbol": {
+            "type": "string",
+            "description": "Three-letter base currency, e.g. EUR."
+          },
+          "to_symbol": {
+            "type": "string",
+            "description": "Three-letter quote currency, e.g. USD."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "60min"
+            ],
+            "description": "FX_INTRADAY only: 1min, 5min, 15min, 30min or 60min."
+          },
+          "outputsize": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "full"
+            ],
+            "default": "compact",
+            "description": "FX_DAILY and FX_INTRADAY: compact (default, latest 100 points) or full."
+          }
+        },
+        "required": [
+          "function",
+          "from_symbol",
+          "to_symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "$function",
+          "from_symbol": "$from_symbol",
+          "to_symbol": "$to_symbol",
+          "interval": "$interval",
+          "outputsize": "$outputsize"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_crypto_time_series",
+      "description": "Get the price and volume history of a cryptocurrency in a market currency: DIGITAL_CURRENCY_DAILY, DIGITAL_CURRENCY_WEEKLY, DIGITAL_CURRENCY_MONTHLY (refreshed at midnight UTC), or CRYPTO_INTRADAY bars (premium).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "string",
+            "enum": [
+              "DIGITAL_CURRENCY_DAILY",
+              "DIGITAL_CURRENCY_WEEKLY",
+              "DIGITAL_CURRENCY_MONTHLY",
+              "CRYPTO_INTRADAY"
+            ],
+            "default": "DIGITAL_CURRENCY_DAILY",
+            "description": "DIGITAL_CURRENCY_DAILY (default), DIGITAL_CURRENCY_WEEKLY, DIGITAL_CURRENCY_MONTHLY or CRYPTO_INTRADAY (premium, needs interval)."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Cryptocurrency, e.g. BTC, ETH, SOL."
+          },
+          "market": {
+            "type": "string",
+            "description": "Market currency, e.g. USD, EUR."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "60min"
+            ],
+            "description": "CRYPTO_INTRADAY only: 1min, 5min, 15min, 30min or 60min."
+          },
+          "outputsize": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "full"
+            ],
+            "default": "compact",
+            "description": "CRYPTO_INTRADAY only: compact (default, latest 100 points) or full."
+          }
+        },
+        "required": [
+          "function",
+          "symbol",
+          "market"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "$function",
+          "symbol": "$symbol",
+          "market": "$market",
+          "interval": "$interval",
+          "outputsize": "$outputsize"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_commodity",
+      "description": "Get the price history of a commodity: crude oil WTI and Brent, natural gas (daily, weekly or monthly), copper, aluminum, wheat, corn, cotton, sugar, coffee or the global commodity price index (monthly, quarterly or annual). Sourced from FRED and the IMF.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "string",
+            "enum": [
+              "WTI",
+              "BRENT",
+              "NATURAL_GAS",
+              "COPPER",
+              "ALUMINUM",
+              "WHEAT",
+              "CORN",
+              "COTTON",
+              "SUGAR",
+              "COFFEE",
+              "ALL_COMMODITIES"
+            ],
+            "default": "WTI",
+            "description": "The commodity: WTI (default), BRENT, NATURAL_GAS, COPPER, ALUMINUM, WHEAT, CORN, COTTON, SUGAR, COFFEE or ALL_COMMODITIES (index)."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly",
+              "quarterly",
+              "annual"
+            ],
+            "description": "WTI, BRENT and NATURAL_GAS: daily, weekly or monthly (default). The others: monthly (default), quarterly or annual."
+          }
+        },
+        "required": [
+          "function"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "$function",
+          "interval": "$interval"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_precious_metals",
+      "description": "Get the live spot price of gold or silver (GOLD_SILVER_SPOT) or their daily, weekly or monthly price history (GOLD_SILVER_HISTORY).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "string",
+            "enum": [
+              "GOLD_SILVER_SPOT",
+              "GOLD_SILVER_HISTORY"
+            ],
+            "default": "GOLD_SILVER_SPOT",
+            "description": "GOLD_SILVER_SPOT (default) or GOLD_SILVER_HISTORY (needs interval)."
+          },
+          "symbol": {
+            "type": "string",
+            "enum": [
+              "GOLD",
+              "XAU",
+              "SILVER",
+              "XAG"
+            ],
+            "description": "GOLD or XAU for gold, SILVER or XAG for silver."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "description": "GOLD_SILVER_HISTORY only: daily, weekly or monthly."
+          }
+        },
+        "required": [
+          "function",
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "$function",
+          "symbol": "$symbol",
+          "interval": "$interval"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_economic_indicator",
+      "description": "Get a US economic indicator series: real GDP and GDP per capita, treasury yields by maturity, federal funds rate, CPI, inflation, retail sales, durable goods orders, unemployment rate or nonfarm payrolls. Sourced from FRED; values are strings with a unit field.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "string",
+            "enum": [
+              "REAL_GDP",
+              "REAL_GDP_PER_CAPITA",
+              "TREASURY_YIELD",
+              "FEDERAL_FUNDS_RATE",
+              "CPI",
+              "INFLATION",
+              "RETAIL_SALES",
+              "DURABLES",
+              "UNEMPLOYMENT",
+              "NONFARM_PAYROLL"
+            ],
+            "default": "REAL_GDP",
+            "description": "The indicator: REAL_GDP (default), REAL_GDP_PER_CAPITA (quarterly), TREASURY_YIELD, FEDERAL_FUNDS_RATE, CPI, INFLATION (annual), RETAIL_SALES, DURABLES, UNEMPLOYMENT or NONFARM_PAYROLL (monthly)."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly",
+              "quarterly",
+              "semiannual",
+              "annual"
+            ],
+            "description": "REAL_GDP: quarterly or annual (default). TREASURY_YIELD and FEDERAL_FUNDS_RATE: daily, weekly or monthly (default). CPI: monthly (default) or semiannual. The others have one fixed frequency: leave empty."
+          },
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "3month",
+              "2year",
+              "5year",
+              "7year",
+              "10year",
+              "30year"
+            ],
+            "description": "TREASURY_YIELD only: 3month, 2year, 5year, 7year, 10year (default) or 30year."
+          }
+        },
+        "required": [
+          "function"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "$function",
+          "interval": "$interval",
+          "maturity": "$maturity"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "alpha_vantage_get_technical_indicator",
+      "description": "Compute a technical indicator over a stock's price history: moving averages (SMA, EMA, WMA, DEMA, TEMA, KAMA, MAMA, T3, VWAP), momentum and oscillators (RSI, MACD, STOCH, STOCHRSI, WILLR, MOM, ROC, CCI, CMO, MFI, ULTOSC, APO, PPO), trend (ADX, AROON, SAR, DX), volatility (BBANDS, ATR, NATR, TRANGE), volume (OBV, AD, ADOSC) and Hilbert transform indicators. Returns one value set per date, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "string",
+            "enum": [
+              "SMA",
+              "EMA",
+              "WMA",
+              "DEMA",
+              "TEMA",
+              "TRIMA",
+              "KAMA",
+              "MAMA",
+              "VWAP",
+              "T3",
+              "MACD",
+              "MACDEXT",
+              "STOCH",
+              "STOCHF",
+              "RSI",
+              "STOCHRSI",
+              "WILLR",
+              "ADX",
+              "ADXR",
+              "APO",
+              "PPO",
+              "MOM",
+              "BOP",
+              "CCI",
+              "CMO",
+              "ROC",
+              "ROCR",
+              "AROON",
+              "AROONOSC",
+              "MFI",
+              "TRIX",
+              "ULTOSC",
+              "DX",
+              "MINUS_DI",
+              "PLUS_DI",
+              "MINUS_DM",
+              "PLUS_DM",
+              "BBANDS",
+              "MIDPOINT",
+              "MIDPRICE",
+              "SAR",
+              "TRANGE",
+              "ATR",
+              "NATR",
+              "AD",
+              "ADOSC",
+              "OBV",
+              "HT_TRENDLINE",
+              "HT_SINE",
+              "HT_TRENDMODE",
+              "HT_DCPERIOD",
+              "HT_DCPHASE",
+              "HT_PHASOR"
+            ],
+            "default": "SMA",
+            "description": "The indicator, e.g. SMA (default), EMA, RSI, MACD, BBANDS, STOCH, ADX, ATR, OBV, VWAP (intraday only). MACD and VWAP are premium."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. IBM, AAPL, MSFT; for other exchanges add the suffix from alpha_vantage_search_symbols, e.g. TSCO.LON, SHOP.TRT, RELIANCE.BSE."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "60min",
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "default": "daily",
+            "description": "1min, 5min, 15min, 30min, 60min, daily (default), weekly or monthly. Weekly or monthly keep long histories small."
+          },
+          "time_period": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Data points per calculation, e.g. 14 for RSI, 20 for BBANDS, 50 or 200 for moving averages. Required by most indicators."
+          },
+          "series_type": {
+            "type": "string",
+            "enum": [
+              "close",
+              "open",
+              "high",
+              "low"
+            ],
+            "description": "Price used: close, open, high or low. Required by moving averages, RSI, MACD, BBANDS and others."
+          },
+          "month": {
+            "type": "string",
+            "description": "Intraday intervals only: a month in history, YYYY-MM."
+          },
+          "fastperiod": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "MACD, MACDEXT, APO, PPO, ADOSC, STOCHRSI: fast period (MACD default 12)."
+          },
+          "slowperiod": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "MACD, MACDEXT, APO, PPO, ADOSC: slow period (MACD default 26)."
+          },
+          "signalperiod": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "MACD, MACDEXT: signal period (default 9)."
+          },
+          "matype": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8,
+            "description": "BBANDS, APO, PPO: moving average type, 0 SMA (default), 1 EMA, 2 WMA, 3 DEMA, 4 TEMA, 5 TRIMA, 6 T3, 7 KAMA, 8 MAMA."
+          },
+          "nbdevup": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "BBANDS: standard deviations for the upper band (default 2)."
+          },
+          "nbdevdn": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "BBANDS: standard deviations for the lower band (default 2)."
+          },
+          "fastkperiod": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "STOCH, STOCHF, STOCHRSI: fast K period (default 5)."
+          },
+          "slowkperiod": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "STOCH: slow K period (default 3)."
+          },
+          "slowdperiod": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "STOCH: slow D period (default 3)."
+          },
+          "fastdperiod": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "STOCHF, STOCHRSI: fast D period (default 3)."
+          },
+          "acceleration": {
+            "type": "number",
+            "description": "SAR: acceleration factor (default 0.01)."
+          },
+          "maximum": {
+            "type": "number",
+            "description": "SAR: maximum acceleration (default 0.20)."
+          },
+          "entitlement": {
+            "type": "string",
+            "enum": [
+              "realtime",
+              "delayed"
+            ],
+            "description": "Premium plans only: realtime or delayed (15-minute) US data. Leave empty for the default end-of-day or historical data."
+          }
+        },
+        "required": [
+          "function",
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "function": "$function",
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "time_period": "$time_period",
+          "series_type": "$series_type",
+          "month": "$month",
+          "fastperiod": "$fastperiod",
+          "slowperiod": "$slowperiod",
+          "signalperiod": "$signalperiod",
+          "matype": "$matype",
+          "nbdevup": "$nbdevup",
+          "nbdevdn": "$nbdevdn",
+          "fastkperiod": "$fastkperiod",
+          "slowkperiod": "$slowkperiod",
+          "slowdperiod": "$slowdperiod",
+          "fastdperiod": "$fastdperiod",
+          "acceleration": "$acceleration",
+          "maximum": "$maximum",
+          "entitlement": "$entitlement"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
