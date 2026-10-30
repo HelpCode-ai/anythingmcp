@@ -1,0 +1,347 @@
+{
+  "slug": "whoop",
+  "name": "WHOOP",
+  "aliases": [
+    "WHOOP API",
+    "WHOOP strap"
+  ],
+  "description": "Read a WHOOP member's recovery, HRV, resting heart rate, sleep and naps with stages, day strain per cycle, workouts with heart rate zones, profile and body measurements through the WHOOP Developer API v2 with OAuth. Read-only.",
+  "region": "intl",
+  "category": "sports",
+  "icon": "whoop",
+  "docsUrl": "https://developer.whoop.com/api",
+  "instructions": "## WHOOP\nThis connector reads a member's data from the **WHOOP Developer API v2** (`https://api.prod.whoop.com/developer`), as the WHOOP member who authorizes it: profile, body measurements, physiological cycles with day strain, recovery (HRV, resting heart rate, SpO2, skin temperature), sleep and naps with stages, and workouts with heart rate zones. Everything is read-only: the WHOOP API offers no way to write data, and journal entries, the stress monitor, heart rate streams and the WHOOP Coach are not part of the public API.\n\n**Setup (one-time, about 10 minutes)**\n1. Open the WHOOP Developer Dashboard at https://developer-dashboard.whoop.com and sign in with a WHOOP account. Create a team when asked (a team can hold up to 5 apps).\n2. Click **Create App**. Under **Scopes** tick `read:profile`, `read:body_measurement`, `read:cycles`, `read:recovery`, `read:sleep` and `read:workout`. The connector also asks for `offline`, which WHOOP needs to issue a refresh token.\n3. Under **Redirect URIs** add `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself.\n4. Save, copy the **Client ID** and **Client Secret** into `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET`, install the connector, click **Authorize with Provider** and allow access with the WHOOP account whose data the AI should read. Access tokens last about an hour and are renewed automatically; WHOOP replaces the refresh token on every renewal.\n5. Run `whoop_get_profile` to check the connection.\n\n**Workflow**\n- Who is connected: `whoop_get_profile`; height, weight and max heart rate: `whoop_get_body_measurement`.\n- Today and recent days: `whoop_list_cycles` (a cycle is one WHOOP day, from waking up to waking up the next day; the newest cycle has no `end` while it is running). For one day go from the cycle `id` to `whoop_get_cycle`, `whoop_get_cycle_recovery` and `whoop_get_cycle_sleep`.\n- Recovery trend: `whoop_list_recoveries` with `start` and `end` (each recovery carries `cycle_id` and `sleep_id`).\n- Sleep: `whoop_list_sleeps` for nights and naps (`nap: true`), `whoop_get_sleep` for one by id.\n- Training: `whoop_list_workouts`, then `whoop_get_workout` for one by id.\n\n**Reading the answers**\n- Only records with `score_state: SCORED` carry a `score`. `PENDING_SCORE` means WHOOP is still computing it (try again later), `UNSCORABLE` means it never will be (for example the strap was not worn).\n- Times (`start`, `end`, `created_at`) are UTC in ISO 8601; `timezone_offset` (e.g. `-05:00`) is the member's local offset at that time. Convert before naming a local time or a calendar day.\n- Durations end in `_milli` and are milliseconds: divide by 3,600,000 for hours. `hrv_rmssd_milli` is the heart rate variability in milliseconds.\n- Strain is WHOOP's 0 to 21 scale; `kilojoule` is energy (divide by 4.184 for kilocalories). Percentages are 0 to 100. Heart rates are beats per minute.\n- Ids: cycles have integer ids; sleeps and workouts have UUIDs.\n\n**Paging**: list tools return up to `limit` records (at most 25, default 10) in `records`, newest first, and a `next_token` while more exist. Pass it as `next_token` with the same `start` and `end`; stop when it is missing. Narrow long histories with `start` and `end` instead of paging through everything.\n\n**Limits**: 100 requests per minute and 10,000 per day per app by default; over that WHOOP answers 429.\n\n**Errors**: 401 means the authorization expired or was revoked (click **Authorize with Provider** again), 403 or an empty answer for one kind of data usually means its scope was not granted, 404 an unknown id.",
+  "prerequisites": "A WHOOP account and an app in the WHOOP Developer Dashboard with the read scopes and the redirect URL from the setup. About 10 minutes.",
+  "requiredEnvVars": [
+    "WHOOP_CLIENT_ID",
+    "WHOOP_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://developer-dashboard.whoop.com",
+  "envVarMeta": {
+    "WHOOP_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "WHOOP Developer Dashboard, Apps, your app: Client ID.",
+      "link": "https://developer-dashboard.whoop.com",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the Client ID without spaces."
+    },
+    "WHOOP_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page: Client Secret. Keep it private.",
+      "link": "https://developer-dashboard.whoop.com",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "WHOOP refused the access token. Click Authorize with Provider again; if the client secret changed, update WHOOP_CLIENT_SECRET first.",
+    "403": "The authorization lacks a scope. Tick the read scopes for the app in the WHOOP Developer Dashboard, then authorize again.",
+    "rate_limited": "WHOOP allows 100 requests per minute and 10,000 per day per app. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "whoop_get_profile"
+  },
+  "connector": {
+    "name": "WHOOP Developer API v2",
+    "type": "REST",
+    "baseUrl": "https://api.prod.whoop.com/developer",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{WHOOP_CLIENT_ID}}",
+      "clientSecret": "{{WHOOP_CLIENT_SECRET}}",
+      "authorizationUrl": "https://api.prod.whoop.com/oauth/oauth2/auth",
+      "tokenUrl": "https://api.prod.whoop.com/oauth/oauth2/token",
+      "tokenAuthMethod": "client_secret_post",
+      "scopes": "read:recovery read:cycles read:workout read:sleep read:profile read:body_measurement offline"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v2/user/profile/basic"
+  },
+  "tools": [
+    {
+      "name": "whoop_get_profile",
+      "description": "The signed-in WHOOP member: user_id, email, first and last name. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/user/profile/basic"
+      }
+    },
+    {
+      "name": "whoop_get_body_measurement",
+      "description": "The member's body measurements as stored in WHOOP: height_meter, weight_kilogram and the max_heart_rate WHOOP calculated.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/user/measurement/body"
+      }
+    },
+    {
+      "name": "whoop_list_cycles",
+      "description": "Physiological cycles (one WHOOP day, from waking to waking), newest first: id, start, end (missing for the current cycle), timezone_offset, score_state and score with day strain (0 to 21), kilojoule, average and max heart rate, plus step_count when the strap reports steps. Paged with next_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only cycles that started at or after this time (ISO 8601 with time zone, e.g. 2026-10-01T00:00:00Z). Without it there is no lower bound."
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only cycles before this time (ISO 8601, exclusive). Defaults to now."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "description": "Records per page, 1 to 25 (default 10)."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "The next_token of the previous page, to read the next one. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/cycle",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start",
+          "end": "$end",
+          "nextToken": "$next_token"
+        }
+      }
+    },
+    {
+      "name": "whoop_get_cycle",
+      "description": "One physiological cycle by id: start, end, score_state and score (strain, kilojoule, average and max heart rate).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cycle_id": {
+            "type": "integer",
+            "description": "Cycle id (an integer) from whoop_list_cycles, or cycle_id on a sleep or recovery."
+          }
+        },
+        "required": [
+          "cycle_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/cycle/{cycle_id}"
+      }
+    },
+    {
+      "name": "whoop_get_cycle_sleep",
+      "description": "The main sleep that belongs to a cycle (the sleep before that WHOOP day), with stages, sleep need, performance, consistency and efficiency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cycle_id": {
+            "type": "integer",
+            "description": "Cycle id (an integer) from whoop_list_cycles, or cycle_id on a sleep or recovery."
+          }
+        },
+        "required": [
+          "cycle_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/cycle/{cycle_id}/sleep"
+      }
+    },
+    {
+      "name": "whoop_get_cycle_recovery",
+      "description": "The recovery of a cycle: recovery_score (0 to 100 %), resting_heart_rate, hrv_rmssd_milli, and on WHOOP 4.0 or newer spo2_percentage and skin_temp_celsius; sleep_id links the sleep it was computed from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cycle_id": {
+            "type": "integer",
+            "description": "Cycle id (an integer) from whoop_list_cycles, or cycle_id on a sleep or recovery."
+          }
+        },
+        "required": [
+          "cycle_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/cycle/{cycle_id}/recovery"
+      }
+    },
+    {
+      "name": "whoop_list_recoveries",
+      "description": "Recoveries, newest first (by the start of their cycle): cycle_id, sleep_id, score_state and score with recovery_score (0 to 100 %), resting_heart_rate, hrv_rmssd_milli, user_calibrating, spo2_percentage and skin_temp_celsius. Paged with next_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only recoveries whose cycle that started at or after this time (ISO 8601 with time zone, e.g. 2026-10-01T00:00:00Z). Without it there is no lower bound."
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only recoveries whose cycle before this time (ISO 8601, exclusive). Defaults to now."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "description": "Records per page, 1 to 25 (default 10)."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "The next_token of the previous page, to read the next one. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/recovery",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start",
+          "end": "$end",
+          "nextToken": "$next_token"
+        }
+      }
+    },
+    {
+      "name": "whoop_list_sleeps",
+      "description": "Sleeps and naps, newest first: id (UUID), cycle_id, start, end, nap, score_state and score with time in bed and per stage (light, slow wave, REM, awake) in milliseconds, sleep cycles, disturbances, respiratory rate, sleep need, and performance, consistency and efficiency percentages. Paged with next_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only sleeps that started at or after this time (ISO 8601 with time zone, e.g. 2026-10-01T00:00:00Z). Without it there is no lower bound."
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only sleeps before this time (ISO 8601, exclusive). Defaults to now."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "description": "Records per page, 1 to 25 (default 10)."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "The next_token of the previous page, to read the next one. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/activity/sleep",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start",
+          "end": "$end",
+          "nextToken": "$next_token"
+        }
+      }
+    },
+    {
+      "name": "whoop_get_sleep",
+      "description": "One sleep or nap by its UUID, with the full score (stage summary, sleep need, performance, consistency, efficiency, respiratory rate).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sleep_id": {
+            "type": "string",
+            "description": "Sleep id (a UUID) from whoop_list_sleeps, or sleep_id on a recovery."
+          }
+        },
+        "required": [
+          "sleep_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/activity/sleep/{sleep_id}"
+      }
+    },
+    {
+      "name": "whoop_list_workouts",
+      "description": "Workouts, newest first: id (UUID), sport_name, start, end, score_state and score with strain, average and max heart rate, kilojoule, percent_recorded, distance_meter and altitude when recorded, and time per heart rate zone (zone_zero_milli to zone_five_milli). Paged with next_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only workouts that started at or after this time (ISO 8601 with time zone, e.g. 2026-10-01T00:00:00Z). Without it there is no lower bound."
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only workouts before this time (ISO 8601, exclusive). Defaults to now."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "description": "Records per page, 1 to 25 (default 10)."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "The next_token of the previous page, to read the next one. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/activity/workout",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start",
+          "end": "$end",
+          "nextToken": "$next_token"
+        }
+      }
+    },
+    {
+      "name": "whoop_get_workout",
+      "description": "One workout by its UUID: sport, times, strain, heart rate, kilojoule, distance, altitude and heart rate zone durations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workout_id": {
+            "type": "string",
+            "description": "Workout id (a UUID) from whoop_list_workouts."
+          }
+        },
+        "required": [
+          "workout_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/activity/workout/{workout_id}"
+      }
+    }
+  ]
+}
