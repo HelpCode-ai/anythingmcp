@@ -1,0 +1,649 @@
+{
+  "slug": "conductor-monitoring",
+  "name": "Conductor Website Monitoring",
+  "aliases": [
+    "ContentKing",
+    "Conductor Monitoring",
+    "Conductor ContentKing"
+  ],
+  "description": "Real-time SEO auditing data from Conductor Website Monitoring (formerly ContentKing): monitored websites and segments, health scores and issue statistics, tracked pages with their SEO data, SEO issues with affected pages, broken and redirected links, alerts and log file crawler visits, plus re-auditing a page on demand through the CMS API.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "conductor-monitoring",
+  "docsUrl": "https://www.conductor.com/docs/other-apis/monitoring/reporting/playground",
+  "instructions": "## Conductor Website Monitoring\nThis connector reads **Conductor Website Monitoring** (formerly ContentKing), the real-time SEO auditing and change tracking service, through its **Reporting API v2** (`https://api.cm.conductor.com`): monitored websites and segments, health and issue statistics, every tracked page with its SEO data, SEO issues and the pages they affect, broken, redirected and canonicalized links per page, alerts, and log file crawler visits. With a CMS API token it can also queue a page for immediate re-auditing.\n\n**Setup (2 minutes)**\n1. In Conductor Website Monitoring open **Account**, the **Account** tab, **Integration Tokens** (an account admin can see them).\n2. Copy the **Reporting API** token into `CONDUCTOR_REPORTING_API_TOKEN`. It is read-only and is sent as `Authorization: token <token>`.\n3. Optional: copy the **CMS API** token into `CONDUCTOR_CMS_API_TOKEN` to use `conductor_monitoring_trigger_page_crawl`. Without it that tool answers 401.\n4. Run `conductor_monitoring_list_websites` to check the token.\n\n**Workflow**\n- Start with `conductor_monitoring_list_websites`: the `id` is the `website_id` every other tool needs. `conductor_monitoring_list_segments` gives segment ids and labels for the `scope` filter.\n- Site health: `conductor_monitoring_get_statistics` (scope `website`, `segment:<id>` or `segment_label:<label>`; `captured_at` for a past date) and, as a daily series, `conductor_monitoring_get_metrics`.\n- Issues: `conductor_monitoring_list_issues` lists issue types with counts; `conductor_monitoring_list_affected_pages` with an issue name such as `title/missing` lists the pages.\n- Pages: `conductor_monitoring_list_pages` for all tracked URLs; `conductor_monitoring_get_page` and `conductor_monitoring_get_page_issues` for one URL; `conductor_monitoring_list_page_broken_links`, `conductor_monitoring_list_page_redirected_links`, `conductor_monitoring_list_page_canonicalized_links` for its links; `conductor_monitoring_inspect_url` finds a URL without a website id.\n- Alerts: `conductor_monitoring_list_alerts`, then `conductor_monitoring_list_alert_pages` for the pages that entered or left an alert.\n- Crawlers: `conductor_monitoring_get_log_file_analysis` for daily visits of search and AI bots (needs Log File Analysis).\n- After a fix is published: `conductor_monitoring_trigger_page_crawl` to re-audit the page now, then `conductor_monitoring_get_page_issues` a little later.\n\n**Reading the answers**: URLs must be full and absolute (`https://www.example.com/page`). Dates are ISO 8601; date ranges take `YYYY-MM-DD`. Health is a score from 0 to 1000. Issue names have the form `<group>/<issue>`, e.g. `meta_description/duplicate`, `h1/too_many`, `links/broken`, `lighthouse/lcp`.\n\n**Paging**: `per_page` is 1 to 1000 results. `conductor_monitoring_list_pages` and the link tools return `next_page_cursor`: pass it as `page_cursor` until it is missing (faster than `page` on sites with more than 10,000 pages). `conductor_monitoring_list_affected_pages` and `conductor_monitoring_list_alert_pages` page with `page` from 1.\n\n**Limits and errors**: 6 requests per second per IP address; above that the API answers 429 and blocks for a minute, so do not loop over pages faster than needed. 401 means a wrong or missing token, 422 a malformed Authorization header, 400 or 404 an unknown website id or a URL that is not tracked. `conductor_monitoring_get_metrics` and `conductor_monitoring_inspect_url` use the Reporting API v1, which Conductor no longer develops and plans to retire.",
+  "prerequisites": "A Conductor Website Monitoring (ContentKing) account and its Reporting API token from Account, Account tab, Integration Tokens; the CMS API token from the same page for re-auditing pages.",
+  "requiredEnvVars": [
+    "CONDUCTOR_REPORTING_API_TOKEN"
+  ],
+  "optionalEnvVars": [
+    "CONDUCTOR_CMS_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "CONDUCTOR_REPORTING_API_TOKEN": {
+      "label": "Reporting API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Conductor Website Monitoring, Account, Account tab, Integration Tokens: the Reporting API token. Paste the token only, without the word token.",
+      "link": "https://www.conductor.com/docs/other-apis/monitoring/reporting/playground",
+      "pattern": "^(?!token )\\S{16,}$",
+      "patternMessage": "Paste only the token itself, without the word token, spaces or quotes."
+    },
+    "CONDUCTOR_CMS_API_TOKEN": {
+      "label": "CMS API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Optional. Same page: the CMS API token, needed only to queue pages for immediate re-auditing.",
+      "link": "https://www.conductor.com/docs/other-apis/monitoring/cms/playground",
+      "pattern": "^(?!token )\\S{16,}$",
+      "patternMessage": "Paste only the token itself, without the word token, spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Conductor Website Monitoring refused the token. Copy the Reporting API token again from Account, Account tab, Integration Tokens; paste the token only.",
+    "422": "The Authorization header was malformed. Paste only the token, without the word token or quotes.",
+    "rate_limited": "The Reporting API allows 6 requests per second per IP address and blocks for a minute beyond that. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "conductor_monitoring_list_websites"
+  },
+  "connector": {
+    "name": "Conductor Website Monitoring Reporting API",
+    "type": "REST",
+    "baseUrl": "https://api.cm.conductor.com",
+    "authType": "NONE",
+    "headers": {
+      "Authorization": "token {{CONDUCTOR_REPORTING_API_TOKEN}}",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v2/entities/websites"
+  },
+  "tools": [
+    {
+      "name": "conductor_monitoring_list_websites",
+      "description": "All websites monitored in the account: id (the website_id every other tool needs), name, domain, page capacity and the link to the website in the app.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/entities/websites"
+      }
+    },
+    {
+      "name": "conductor_monitoring_list_segments",
+      "description": "Segments of a website (groups of pages such as blog or product pages): id, label, shortcode, color. Use segment:<id> or segment_label:<label> as scope in statistics and issues.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          }
+        },
+        "required": [
+          "website_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/entities/segments",
+        "queryParams": {
+          "website_id": "$website_id"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_get_statistics",
+      "description": "Aggregate statistics of a website or segment: health score, number of issues, URL counts by type and status code, indexability, title, meta description and H1 distributions, Lighthouse scores. Pass captured_at for a past date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "scope": {
+            "type": "string",
+            "description": "website for the whole site, segment:<id> or segment_label:<label> for a segment from conductor_monitoring_list_segments.",
+            "default": "website"
+          },
+          "captured_at": {
+            "type": "string",
+            "description": "Optional point in time for historical data, ISO 8601 (e.g. 2026-10-01T00:00:00Z). Default: now."
+          }
+        },
+        "required": [
+          "website_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data/statistics",
+        "queryParams": {
+          "website_id": "$website_id",
+          "scope": "$scope",
+          "captured_at": "$captured_at"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_list_pages",
+      "description": "Tracked URLs of a website with their SEO data (status code, type, indexability, title, meta description, H1, canonical, health, importance, Lighthouse, and more). Page with page_cursor (next_page_cursor) on big sites, or page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per request, 1 to 1000.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, from 1 (ignored when page_cursor is sent).",
+            "minimum": 1
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "next_page_cursor from the previous answer; faster than page on big sites. Do not send together with page."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Field to sort by, e.g. url."
+          },
+          "direction": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        },
+        "required": [
+          "website_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data/pages",
+        "queryParams": {
+          "website_id": "$website_id",
+          "per_page": "$per_page",
+          "page": "$page",
+          "page_cursor": "$page_cursor",
+          "sort": "$sort",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_get_page",
+      "description": "Everything known about one page: SEO fields, status, indexability, Lighthouse scores, open issues, Schema.org data, content, log file crawl frequency and Enrichment Fields. A redirect answers with its target, a missing page with what is known.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Full absolute URL of the page, with https://, exactly as Conductor Monitoring tracks it."
+          }
+        },
+        "required": [
+          "website_id",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data/page",
+        "queryParams": {
+          "website_id": "$website_id",
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_get_log_file_analysis",
+      "description": "Daily visits of search engine and AI crawlers (Googlebot, Bingbot, OpenAI, Anthropic, Perplexity, Meta) to up to 50 URLs, from the server logs. Needs the Log File Analysis feature. Default range: the last 30 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "urls": {
+            "type": "array",
+            "description": "Full URLs, at most 50.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD (send end_date too)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "website_id",
+          "urls"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data/page_lfa",
+        "queryParams": {
+          "website_id": "$website_id",
+          "urls[]": "$urls",
+          "date_range[start_date]": "$start_date",
+          "date_range[end_date]": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_list_issues",
+      "description": "All SEO issue types of a website or segment with how many pages are open, closed, ignored or not applicable, and percentages. The name field (e.g. title/missing) is the issue for conductor_monitoring_list_affected_pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "scope": {
+            "type": "string",
+            "description": "website for the whole site, segment:<id> or segment_label:<label> for a segment from conductor_monitoring_list_segments.",
+            "default": "website"
+          },
+          "captured_at": {
+            "type": "string",
+            "description": "Optional point in time for historical data, ISO 8601 (e.g. 2026-10-01T00:00:00Z). Default: now."
+          }
+        },
+        "required": [
+          "website_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data/issues",
+        "queryParams": {
+          "website_id": "$website_id",
+          "scope": "$scope",
+          "captured_at": "$captured_at"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_list_affected_pages",
+      "description": "Pages affected by one SEO issue, e.g. title/missing, meta_description/duplicate, h1/missing, canonical_link/points_to_unindexable, links/broken, lighthouse/lcp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "issue": {
+            "type": "string",
+            "description": "Issue name from conductor_monitoring_list_issues, e.g. title/missing."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, from 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per request, 1 to 1000.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "website_id",
+          "issue"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data/affected_pages",
+        "queryParams": {
+          "website_id": "$website_id",
+          "issue": "$issue",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_get_page_issues",
+      "description": "Every open SEO issue of one page, with the issue name, its details and since when it is open.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Full absolute URL of the page, with https://, exactly as Conductor Monitoring tracks it."
+          }
+        },
+        "required": [
+          "website_id",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data/page/issues",
+        "queryParams": {
+          "website_id": "$website_id",
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_list_page_broken_links",
+      "description": "Broken links found on one page: target URL, anchor text, internal or external, status code. Page with page_cursor (next_page_cursor); total is the count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Full absolute URL of the page, with https://, exactly as Conductor Monitoring tracks it."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per request, 1 to 1000.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "next_page_cursor from the previous answer; faster than page on big sites. Do not send together with page."
+          }
+        },
+        "required": [
+          "website_id",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data/page/issues/broken_links",
+        "queryParams": {
+          "website_id": "$website_id",
+          "url": "$url",
+          "per_page": "$per_page",
+          "page_cursor": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_list_page_redirected_links",
+      "description": "Redirected links found on one page: target URL, anchor text, internal or external, status code and redirect target. Page with page_cursor (next_page_cursor); total is the count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Full absolute URL of the page, with https://, exactly as Conductor Monitoring tracks it."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per request, 1 to 1000.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "next_page_cursor from the previous answer; faster than page on big sites. Do not send together with page."
+          }
+        },
+        "required": [
+          "website_id",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data/page/issues/redirected_links",
+        "queryParams": {
+          "website_id": "$website_id",
+          "url": "$url",
+          "per_page": "$per_page",
+          "page_cursor": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_list_page_canonicalized_links",
+      "description": "Links pointing to canonicalized URLs found on one page: target URL, anchor text, internal or external. Page with page_cursor (next_page_cursor); total is the count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Full absolute URL of the page, with https://, exactly as Conductor Monitoring tracks it."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per request, 1 to 1000.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "next_page_cursor from the previous answer; faster than page on big sites. Do not send together with page."
+          }
+        },
+        "required": [
+          "website_id",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data/page/issues/canonicalized_links",
+        "queryParams": {
+          "website_id": "$website_id",
+          "url": "$url",
+          "per_page": "$per_page",
+          "page_cursor": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_list_alerts",
+      "description": "Active alerts of a website (sudden changes such as pages becoming non-indexable, titles changing, robots.txt changes, 5xx errors): id, type, scope, opened and last updated dates, link in the app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          }
+        },
+        "required": [
+          "website_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/alerts",
+        "queryParams": {
+          "website_id": "$website_id"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_list_alert_pages",
+      "description": "Pages of one alert, each with whether it entered or exited the alert, its relevance and segments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "alert_id": {
+            "type": "string",
+            "description": "Alert id from conductor_monitoring_list_alerts."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, from 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per request, 1 to 1000.",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "website_id",
+          "alert_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/alerts/alert_pages",
+        "queryParams": {
+          "website_id": "$website_id",
+          "alert_id": "$alert_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_get_metrics",
+      "description": "Daily time series of a website over a date range (health, issues, page counts and more). Reporting API v1, which Conductor no longer develops: it has no v2 equivalent and may be switched off later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "website_id": {
+            "type": "string",
+            "description": "Website id, from conductor_monitoring_list_websites (e.g. 1-234)."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "website_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/websites/{website_id}/metrics",
+        "encodePathParams": true,
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_inspect_url",
+      "description": "Look up a URL across all websites of the account and get its page data without knowing the website id. Reporting API v1, which Conductor no longer develops: it has no v2 equivalent and may be switched off later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Full absolute URL of the page, with https://, exactly as Conductor Monitoring tracks it."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/inspect_url",
+        "queryParams": {
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "conductor_monitoring_trigger_page_crawl",
+      "description": "Queue one URL for immediate crawling (CMS API), so a change that was just published is audited right away instead of at the next scheduled visit. The URL must belong to a website in the account. Needs CONDUCTOR_CMS_API_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Full absolute URL of the page, with https://, exactly as Conductor Monitoring tracks it."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/check_url",
+        "bodyMapping": {
+          "url": "$url"
+        },
+        "headers": {
+          "Authorization": "token ${CONDUCTOR_CMS_API_TOKEN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

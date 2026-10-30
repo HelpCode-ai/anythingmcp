@@ -1,0 +1,1672 @@
+{
+  "slug": "smartsheet",
+  "name": "Smartsheet",
+  "description": "Let your AI work in Smartsheet: search and read sheets, rows, columns, sheet summaries and cell history, comments and attachments, browse workspaces, folders, reports and dashboards, list users and shares, and add, update or delete rows, add columns, comment, create sheets, share and send update requests. Smartsheet API 2.0 with a personal access token (US, EU, AU or Gov).",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "smartsheet",
+  "docsUrl": "https://developers.smartsheet.com/api/smartsheet/introduction",
+  "instructions": "## Smartsheet\nThis connector works with **Smartsheet** through its REST API 2.0 (`https://api.smartsheet.com/2.0`, or the EU, AU and Gov hosts): sheets with their rows, columns and cells, sheet summaries, cell history, comments, attachments, workspaces and folders, reports, dashboards, users and sharing. It can add, change and delete rows, add and change columns, comment, create sheets, share and send update requests. Every call runs as the user who owns the access token, with that user's access to each sheet.\n\n**Setup (2 minutes)**\n1. Sign in to Smartsheet, click your account icon (bottom left) and open **Apps & Integrations** (or Personal Settings), then **API Access**.\n2. Click **Generate new access token**, name it (e.g. AnythingMCP) and copy the token: it is shown only once.\n3. Paste it into `SMARTSHEET_ACCESS_TOKEN`.\n4. Set `SMARTSHEET_API_URL` to the host of your account's region: `https://api.smartsheet.com/2.0` (app.smartsheet.com, US), `https://api.smartsheet.eu/2.0` (app.smartsheet.eu), `https://api.smartsheet.au/2.0` (app.smartsheet.au) or `https://api.smartsheetgov.com/2.0` (Smartsheet Gov). A token only works on its own region's host; elsewhere Smartsheet answers 401 \"invalid access token\".\n5. Run `smartsheet_get_current_user` to check.\n\nAPI access needs a paid plan (Pro, Business, Enterprise or Advanced Work Management). A token can do what its user can do in Smartsheet; use a dedicated user with access only to the sheets the AI should see when that matters.\n\n**Ids**: sheets, rows, columns, workspaces, folders, reports and users have long numeric ids (up to 16 digits). Pass them as text exactly as returned. Dashboards are called **sights** in the API.\n\n**Workflow**\n- Find things: `smartsheet_search` (names and content of everything; `scopes` such as `sheetNames` narrows it), `smartsheet_list_sheets`, `smartsheet_list_reports`, `smartsheet_list_dashboards`.\n- Browse the structure: `smartsheet_list_workspaces` → `smartsheet_get_workspace` and `smartsheet_list_workspace_children` → `smartsheet_get_folder` and `smartsheet_list_folder_children`.\n- Read a sheet: `smartsheet_list_columns` for column ids and types, then `smartsheet_get_sheet` (rows with cells; filter with `row_numbers`, `row_ids`, `column_ids`, `rows_modified_since` or a page of rows), `smartsheet_get_row` for one row, `smartsheet_search_sheet` to find rows by text, `smartsheet_get_sheet_summary` for the summary fields, `smartsheet_get_cell_history` for who changed a cell and when.\n- Comments: `smartsheet_list_discussions` and `smartsheet_list_row_discussions` (with `include=comments`), `smartsheet_create_discussion`, `smartsheet_create_row_discussion`, `smartsheet_add_comment`.\n- Attachments: `smartsheet_list_attachments`, `smartsheet_list_row_attachments`, `smartsheet_get_attachment` for a short-lived download URL. Uploading files is not part of this connector.\n- Reports and dashboards: `smartsheet_get_report` (rows from several sheets, cells keyed by `virtualColumnId`), `smartsheet_get_dashboard` (widgets).\n- People and sharing: `smartsheet_list_users`, `smartsheet_get_user`, `smartsheet_list_shares`, `smartsheet_share_asset`.\n- Change data: `smartsheet_add_rows`, `smartsheet_update_rows`, `smartsheet_delete_rows`, `smartsheet_add_columns`, `smartsheet_update_column`, `smartsheet_create_sheet_in_workspace`, `smartsheet_create_sheet_in_folder`, `smartsheet_create_update_request`.\n\n**Writing cells**: a cell is `{\"columnId\": <id>, \"value\": <value>}`. Read the column types first: DATE takes `YYYY-MM-DD`, CHECKBOX `true`/`false`, PICKLIST one of its options (others are refused unless `strict` is false), CONTACT_LIST an email address, numbers as numbers. Use `\"formula\": \"=...\"` instead of `value` for a formula. New rows need a location (`toBottom`, `toTop`, `parentId` or `siblingId`). Columns with a column formula, system columns (auto number, created date, modified by) and locked columns cannot be written. `smartsheet_update_rows` changes only the cells given.\n\n**Confirm before changing**: deleting rows (`smartsheet_delete_rows`) cannot be undone through the API, sharing gives people access, update requests and shares with `send_email` send emails. Ask the user before calling them.\n\n**Reading the answers**: dates and times are ISO 8601 in UTC (`2026-10-30T14:05:00Z`); date cells are `YYYY-MM-DD`. `value` is the raw value, `displayValue` what Smartsheet shows (formatted numbers, contact names). Multi-contact and multi-picklist cells come back as text unless you pass `level` (2 or 3) and `include=objectValue`. `accessLevel` is VIEWER, COMMENTER, EDITOR, EDITOR_SHARE, ADMIN or OWNER. Write calls answer `{\"message\": \"SUCCESS\", \"resultCode\": 0, \"result\": ...}`; resultCode 3 means partial success.\n\n**Paging**: sheets, columns, discussions, attachments, users and cell history page with `page` and `page_size` (100 by default; the answer has `totalPages` and `totalCount`) or `include_all`. Workspaces, workspace and folder children, dashboards and shares page with a token: pass `lastKey` from the answer as `last_key` until it is missing. Read big sheets in pages of rows or with filters.\n\n**Limits**: 300 requests per minute per token (cell history: 30 per minute). A 429 answer (error code 4003) means wait a minute. Bulk row calls count as one request; keep them under a few hundred rows.\n\n**Errors**: 401 (1002/1003/1004) invalid or expired token, or the wrong region host; 403 (1004) the user lacks access to that item; 404 (1006) the id does not exist or is not visible; 400 with an `errorCode` and `message` naming the problem (for example a value not in the dropdown list, a missing location for a new row, or writing a column that holds a column formula).\n\n**Switched off at install**: `smartsheet_delete_rows`, because deleted rows cannot be restored through the API; an admin switches it on when the team needs it.",
+  "prerequisites": "A Smartsheet plan with API access (Pro or above) and a personal API access token generated under Apps & Integrations, API Access.",
+  "requiredEnvVars": [
+    "SMARTSHEET_API_URL",
+    "SMARTSHEET_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "SMARTSHEET_API_URL": {
+      "label": "API host (region)",
+      "kind": "address",
+      "help": "https://api.smartsheet.com/2.0 for accounts on app.smartsheet.com, https://api.smartsheet.eu/2.0 for app.smartsheet.eu, https://api.smartsheet.au/2.0 for app.smartsheet.au, https://api.smartsheetgov.com/2.0 for Smartsheet Gov.",
+      "example": "https://api.smartsheet.com/2.0",
+      "pattern": "^https://api\\.(smartsheet\\.(com|eu|au)|smartsheetgov\\.com)/2\\.0$",
+      "patternMessage": "Use https://api.smartsheet.com/2.0, https://api.smartsheet.eu/2.0, https://api.smartsheet.au/2.0 or https://api.smartsheetgov.com/2.0, without a trailing slash."
+    },
+    "SMARTSHEET_ACCESS_TOKEN": {
+      "label": "API access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Smartsheet, account icon, Apps & Integrations (or Personal Settings), API Access, Generate new access token. Shown only once.",
+      "link": "https://app.smartsheet.com",
+      "pattern": "^(?!Bearer\\s)[A-Za-z0-9]{20,}$",
+      "patternMessage": "Paste only the token (letters and digits), without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Smartsheet refused the access token. Check that it was copied whole and not revoked, and that SMARTSHEET_API_URL is the host of your account's region (a .eu or .au account needs its own host).",
+    "403": "The token works but its user may not open this item. Share the sheet or workspace with that user, or use a token of a user who has access.",
+    "rate_limited": "Smartsheet allows 300 requests per minute per token. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "smartsheet_get_current_user"
+  },
+  "connector": {
+    "name": "Smartsheet API 2.0",
+    "type": "REST",
+    "baseUrl": "{{SMARTSHEET_API_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SMARTSHEET_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users/me"
+  },
+  "tools": [
+    {
+      "name": "smartsheet_get_current_user",
+      "description": "The user the access token belongs to: id, email, name, account (organisation) id and name, admin flags, locale and time zone. Use it to check the token and to know who \"me\" is.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "groups adds the groups the user belongs to.",
+            "enum": [
+              "groups"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_list_sheets",
+      "description": "List the sheets the user can open: id, name, access level, permalink, created and modified dates. Paged with page and page_size; filter by modified_since to find recently changed sheets. To find a sheet by name use smartsheet_search with scopes sheetNames.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "modified_since": {
+            "type": "string",
+            "description": "Only sheets modified on or after this ISO 8601 date-time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). The answer carries totalPages and totalCount.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100).",
+            "minimum": 1
+          },
+          "include_all": {
+            "type": "boolean",
+            "description": "true returns every item in one answer and ignores page and page_size. Use it only for small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets",
+        "queryParams": {
+          "modifiedSince": "$modified_since",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeAll": "$include_all"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_get_sheet",
+      "description": "Read a sheet: its columns (id, title, type, options, primary) and rows, each row with id, rowNumber, parentId (for hierarchy) and cells as columnId, value and displayValue. Big sheets: ask for a page of rows (page, page_size), only some rows (row_numbers or row_ids), only some columns (column_ids) or only rows changed since a date. Add include=discussions,attachments to get those too.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "column_ids": {
+            "type": "string",
+            "description": "Only these columns, comma-separated column ids."
+          },
+          "row_ids": {
+            "type": "string",
+            "description": "Only these rows, comma-separated row ids."
+          },
+          "row_numbers": {
+            "type": "string",
+            "description": "Only these rows, comma-separated row numbers (1-based, as shown in Smartsheet). Missing numbers are ignored."
+          },
+          "rows_modified_since": {
+            "type": "string",
+            "description": "Only rows modified since this ISO 8601 date-time."
+          },
+          "filter_id": {
+            "type": "string",
+            "description": "Apply this saved sheet filter: rows it hides are marked filteredOut (use exclude=filteredOutRows to drop them)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: attachments, discussions, columnType, filters, filterDefinitions, format, objectValue, ownerInfo, rowPermalink, source, writerInfo, crossSheetReferences, proofs, ganttConfig."
+          },
+          "exclude": {
+            "type": "string",
+            "description": "Comma-separated elements to leave out: filteredOutRows, nonexistentCells (empty cells), linkInFromCellDetails, linksOutToCellsDetails."
+          },
+          "level": {
+            "type": "integer",
+            "description": "Data format level: 0 (default) returns multi-contact and multi-picklist cells as text; 2 returns multi-contact cells as objects, 3 also multi-picklist cells. Use 3 with include=objectValue to read them as lists."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of rows, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default: all rows).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "sheet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets/{sheet_id}",
+        "queryParams": {
+          "columnIds": "$column_ids",
+          "rowIds": "$row_ids",
+          "rowNumbers": "$row_numbers",
+          "rowsModifiedSince": "$rows_modified_since",
+          "filterId": "$filter_id",
+          "include": "$include",
+          "exclude": "$exclude",
+          "level": "$level",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_get_row",
+      "description": "Read one row of a sheet with its cells (columnId, value, displayValue), parent and sibling ids and modification date. include=columns adds the column definitions, include=discussions,attachments their lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "row_id": {
+            "type": "string",
+            "description": "Row id, from smartsheet_get_sheet (rows[].id)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: attachments, columns, columnType, discussions, filters, format, objectValue, proofs, rowPermalink, writerInfo."
+          },
+          "exclude": {
+            "type": "string",
+            "description": "Comma-separated elements to leave out: nonexistentCells, filteredOutRows, linkInFromCellDetails, linksOutToCellsDetails."
+          },
+          "level": {
+            "type": "integer",
+            "description": "Data format level: 0 (default) returns multi-contact and multi-picklist cells as text; 2 returns multi-contact cells as objects, 3 also multi-picklist cells. Use 3 with include=objectValue to read them as lists."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "row_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets/{sheet_id}/rows/{row_id}",
+        "queryParams": {
+          "include": "$include",
+          "exclude": "$exclude",
+          "level": "$level"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_search_sheet",
+      "description": "Search the text of one sheet: returns the matching rows (objectId is the row id, text shows the match, contextData the row content). Wrap the query in double quotes for an exact phrase. Newly changed data can take a while to become searchable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "query": {
+            "type": "string",
+            "description": "Text to look for. Wrap it in double quotes for an exact match."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/sheets/{sheet_id}",
+        "queryParams": {
+          "query": "$query"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_search",
+      "description": "Search everything the user can access: sheet, report, dashboard, folder, workspace and template names, cell data, comments, attachments and summary fields. Each result has objectType, objectId, text, contextData and parentObjectId/parentObjectName. Use scopes to search only names, e.g. sheetNames to find a sheet by name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to look for. Wrap it in double quotes for an exact match."
+          },
+          "scopes": {
+            "type": "string",
+            "description": "Comma-separated scopes: attachments, cellData, comments, folderNames, reportNames, sheetNames, sightNames (dashboards), summaryFields, templateNames, workspaceNames. Default: all."
+          },
+          "modified_since": {
+            "type": "string",
+            "description": "Only objects modified on or after this ISO 8601 date-time."
+          },
+          "include": {
+            "type": "string",
+            "description": "favoriteFlag marks results that are in the user's favorites.",
+            "enum": [
+              "favoriteFlag"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "query": "$query",
+          "scopes": "$scopes",
+          "modifiedSince": "$modified_since",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_list_columns",
+      "description": "List the columns of a sheet: id, index, title, type (TEXT_NUMBER, DATE, DATETIME, CHECKBOX, PICKLIST, MULTI_PICKLIST, CONTACT_LIST, MULTI_CONTACT_LIST, DURATION, PREDECESSOR, ABSTRACT_DATETIME), primary flag, options of dropdown columns, validation and system column type. Use the ids when writing cells.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "level": {
+            "type": "integer",
+            "description": "Data format level: 0 (default) returns multi-contact and multi-picklist cells as text; 2 returns multi-contact cells as objects, 3 also multi-picklist cells. Use 3 with include=objectValue to read them as lists."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). The answer carries totalPages and totalCount.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100).",
+            "minimum": 1
+          },
+          "include_all": {
+            "type": "boolean",
+            "description": "true returns every item in one answer and ignores page and page_size. Use it only for small lists."
+          }
+        },
+        "required": [
+          "sheet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets/{sheet_id}/columns",
+        "queryParams": {
+          "level": "$level",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeAll": "$include_all"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_get_cell_history",
+      "description": "The change history of one cell: every earlier value with modifiedAt and modifiedBy, newest first. Limited by Smartsheet to 30 calls per minute per token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "row_id": {
+            "type": "string",
+            "description": "Row id, from smartsheet_get_sheet (rows[].id)."
+          },
+          "column_id": {
+            "type": "string",
+            "description": "Column id, from smartsheet_list_columns or smartsheet_get_sheet (columns[].id)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: columnType, objectValue."
+          },
+          "level": {
+            "type": "integer",
+            "description": "Data format level: 0 (default) returns multi-contact and multi-picklist cells as text; 2 returns multi-contact cells as objects, 3 also multi-picklist cells. Use 3 with include=objectValue to read them as lists."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "sheet_id",
+          "row_id",
+          "column_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets/{sheet_id}/rows/{row_id}/columns/{column_id}/history",
+        "queryParams": {
+          "include": "$include",
+          "level": "$level",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_get_sheet_summary",
+      "description": "Read the sheet summary fields of a sheet (the key-value fields shown in the Summary panel, often totals and project status): id, title, type, value, displayValue and formula of each field.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: format, writerInfo."
+          },
+          "exclude": {
+            "type": "string",
+            "description": "Comma-separated elements to leave out: displayValue, image, imageAltText."
+          }
+        },
+        "required": [
+          "sheet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets/{sheet_id}/summary",
+        "queryParams": {
+          "include": "$include",
+          "exclude": "$exclude"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_list_discussions",
+      "description": "List the discussions (comment threads) of a sheet, on the sheet itself and on its rows: id, title, parentType (SHEET or ROW), parentId, commentCount, last comment date and author. Set include=comments to get the comments of each thread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: comments (the comments of each thread), attachments (only together with comments)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). The answer carries totalPages and totalCount.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100).",
+            "minimum": 1
+          },
+          "include_all": {
+            "type": "boolean",
+            "description": "true returns every item in one answer and ignores page and page_size. Use it only for small lists."
+          }
+        },
+        "required": [
+          "sheet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets/{sheet_id}/discussions",
+        "queryParams": {
+          "include": "$include",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeAll": "$include_all"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_list_row_discussions",
+      "description": "List the discussions (comment threads) of one row. Set include=comments to get the comments themselves.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "row_id": {
+            "type": "string",
+            "description": "Row id, from smartsheet_get_sheet (rows[].id)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: comments, attachments (only together with comments)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). The answer carries totalPages and totalCount.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100).",
+            "minimum": 1
+          },
+          "include_all": {
+            "type": "boolean",
+            "description": "true returns every item in one answer and ignores page and page_size. Use it only for small lists."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "row_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets/{sheet_id}/rows/{row_id}/discussions",
+        "queryParams": {
+          "include": "$include",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeAll": "$include_all"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_list_attachments",
+      "description": "List every attachment of a sheet (sheet, row and comment attachments): id, name, attachmentType (FILE, LINK, GOOGLE_DRIVE, ...), mimeType, sizeInKb, parentType and parentId, created date and author. Use smartsheet_get_attachment for a download link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). The answer carries totalPages and totalCount.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100).",
+            "minimum": 1
+          },
+          "include_all": {
+            "type": "boolean",
+            "description": "true returns every item in one answer and ignores page and page_size. Use it only for small lists."
+          }
+        },
+        "required": [
+          "sheet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets/{sheet_id}/attachments",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeAll": "$include_all"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_list_row_attachments",
+      "description": "List the attachments of one row, including those on its comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "row_id": {
+            "type": "string",
+            "description": "Row id, from smartsheet_get_sheet (rows[].id)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). The answer carries totalPages and totalCount.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100).",
+            "minimum": 1
+          },
+          "include_all": {
+            "type": "boolean",
+            "description": "true returns every item in one answer and ignores page and page_size. Use it only for small lists."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "row_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets/{sheet_id}/rows/{row_id}/attachments",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeAll": "$include_all"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_get_attachment",
+      "description": "Get one attachment with a temporary download URL (url, valid for urlExpiresInMillis milliseconds, usually 2 minutes) for files, or the link for LINK and cloud attachments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "attachment_id": {
+            "type": "string",
+            "description": "Attachment id, from smartsheet_list_attachments."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "attachment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sheets/{sheet_id}/attachments/{attachment_id}"
+      }
+    },
+    {
+      "name": "smartsheet_list_workspaces",
+      "description": "List the workspaces the user can access: id, name, access level and permalink. Paged with a token: pass lastKey of the answer as last_key for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_items": {
+            "type": "integer",
+            "description": "Items per page, at least 100 (default 100).",
+            "minimum": 100
+          },
+          "last_key": {
+            "type": "string",
+            "description": "Paging token: the lastKey value of the previous answer. Leave it out for the first page; when lastKey is missing from an answer, there is nothing more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces",
+        "queryParams": {
+          "maxItems": "$max_items",
+          "lastKey": "$last_key"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_get_workspace",
+      "description": "Read a workspace's metadata: id, name, access level, permalink, created and modified dates. Use smartsheet_list_workspace_children for its content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id, from smartsheet_list_workspaces."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/metadata"
+      }
+    },
+    {
+      "name": "smartsheet_list_workspace_children",
+      "description": "List what is directly inside a workspace: sheets, reports, dashboards (sights), folders and templates, each with id, name, resourceType and permalink. Open folders with smartsheet_list_folder_children. Paged with a token (last_key).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id, from smartsheet_list_workspaces."
+          },
+          "children_resource_types": {
+            "type": "string",
+            "description": "Comma-separated child types to list: sheets, reports, sights (dashboards), folders, templates (templates needs sheets too). Default: all of them."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: source, ownerInfo."
+          },
+          "max_items": {
+            "type": "integer",
+            "description": "Items per page, at least 100 (default 100).",
+            "minimum": 100
+          },
+          "last_key": {
+            "type": "string",
+            "description": "Paging token: the lastKey value of the previous answer. Leave it out for the first page; when lastKey is missing from an answer, there is nothing more."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/children",
+        "queryParams": {
+          "childrenResourceTypes": "$children_resource_types",
+          "include": "$include",
+          "maxItems": "$max_items",
+          "lastKey": "$last_key"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_get_folder",
+      "description": "Read a folder's metadata: id, name, permalink, created and modified dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id, from smartsheet_list_workspace_children or smartsheet_list_folder_children."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folders/{folder_id}/metadata"
+      }
+    },
+    {
+      "name": "smartsheet_list_folder_children",
+      "description": "List what is directly inside a folder: sheets, reports, dashboards, subfolders and templates. Paged with a token (last_key).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id, from smartsheet_list_workspace_children or smartsheet_list_folder_children."
+          },
+          "children_resource_types": {
+            "type": "string",
+            "description": "Comma-separated child types to list: sheets, reports, sights (dashboards), folders, templates (templates needs sheets too). Default: all of them."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: source, ownerInfo."
+          },
+          "max_items": {
+            "type": "integer",
+            "description": "Items per page, at least 100 (default 100).",
+            "minimum": 100
+          },
+          "last_key": {
+            "type": "string",
+            "description": "Paging token: the lastKey value of the previous answer. Leave it out for the first page; when lastKey is missing from an answer, there is nothing more."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folders/{folder_id}/children",
+        "queryParams": {
+          "childrenResourceTypes": "$children_resource_types",
+          "include": "$include",
+          "maxItems": "$max_items",
+          "lastKey": "$last_key"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_list_reports",
+      "description": "List the reports the user can open: id, name, access level, permalink and whether it is a sheet summary report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "modified_since": {
+            "type": "string",
+            "description": "Only reports modified on or after this ISO 8601 date-time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports",
+        "queryParams": {
+          "modifiedSince": "$modified_since"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_get_report",
+      "description": "Read a report: its columns (virtualId, title, type) and rows gathered from the source sheets, each row with sheetId and cells keyed by virtualColumnId. include=sourceSheets lists the sheets it reads; include=scope shows which sheets and workspaces it covers. Paged (100 rows by default).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "description": "Report id, from smartsheet_list_reports or smartsheet_search."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: attachments, discussions, proofs, format, objectValue, scope, source, sourceSheets."
+          },
+          "exclude": {
+            "type": "string",
+            "description": "Comma-separated elements to leave out: linkInFromCellDetails, linksOutToCellsDetails."
+          },
+          "level": {
+            "type": "integer",
+            "description": "Data format level: 0 (default) returns multi-contact and multi-picklist cells as text; 2 returns multi-contact cells as objects, 3 also multi-picklist cells. Use 3 with include=objectValue to read them as lists."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of rows, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 100).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/{report_id}",
+        "queryParams": {
+          "include": "$include",
+          "exclude": "$exclude",
+          "level": "$level",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_list_dashboards",
+      "description": "List the dashboards (called sights in the API) the user can open: id, name, access level and permalink. Paged with a token (last_key).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_items": {
+            "type": "integer",
+            "description": "Items per page, at least 100 (default 100).",
+            "minimum": 100
+          },
+          "last_key": {
+            "type": "string",
+            "description": "Paging token: the lastKey value of the previous answer. Leave it out for the first page; when lastKey is missing from an answer, there is nothing more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sights",
+        "queryParams": {
+          "maxItems": "$max_items",
+          "lastKey": "$last_key"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_get_dashboard",
+      "description": "Read a dashboard: its widgets (type, title, position and content such as the sheet or report a chart or metric reads, rich text, shortcuts, images).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sight_id": {
+            "type": "string",
+            "description": "Dashboard (sight) id, from smartsheet_list_dashboards or smartsheet_search."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: objectValue, source."
+          },
+          "level": {
+            "type": "integer",
+            "description": "Data format level for widget content: 0 text (default), 2 multi-contact, 3 multi-picklist, 4 metric widgets with sheet summary fields."
+          }
+        },
+        "required": [
+          "sight_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sights/{sight_id}",
+        "queryParams": {
+          "include": "$include",
+          "level": "$level"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_list_users",
+      "description": "List the users of the organisation account: id, email, name, status, admin and licensed-sheet-creator flags, seat type. System admins see every user; other users get a limited view. Filter by email to look someone up.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Only these users, comma-separated email addresses."
+          },
+          "include": {
+            "type": "string",
+            "description": "lastLogin adds the last login time (system admins only).",
+            "enum": [
+              "lastLogin"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). The answer carries totalPages and totalCount.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100).",
+            "minimum": 1
+          },
+          "include_all": {
+            "type": "boolean",
+            "description": "true returns every item in one answer and ignores page and page_size. Use it only for small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "email": "$email",
+          "include": "$include",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeAll": "$include_all"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_get_user",
+      "description": "Read one user of the organisation: email, name, admin flags, status, title, department, sheet count. Some fields are shown to system admins only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id, from smartsheet_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "smartsheet_list_shares",
+      "description": "List who a sheet, report, dashboard or workspace is shared with: each share with id, type (USER or GROUP), email or groupId, name, accessLevel (VIEWER, COMMENTER, EDITOR, EDITOR_SHARE, ADMIN, OWNER) and scope (ITEM or WORKSPACE). Paged with a token (last_key).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_type": {
+            "type": "string",
+            "description": "Kind of asset.",
+            "enum": [
+              "sheet",
+              "report",
+              "sight",
+              "workspace"
+            ]
+          },
+          "asset_id": {
+            "type": "string",
+            "description": "Id of the sheet, report, dashboard (sight) or workspace."
+          },
+          "sharing_include": {
+            "type": "string",
+            "description": "ITEM lists only shares made on the item itself, WORKSPACE also those inherited from its workspace.",
+            "enum": [
+              "ITEM",
+              "WORKSPACE"
+            ]
+          },
+          "max_items": {
+            "type": "integer",
+            "description": "Items per page, at least 100 (default 100).",
+            "minimum": 100
+          },
+          "last_key": {
+            "type": "string",
+            "description": "Paging token: the lastKey value of the previous answer. Leave it out for the first page; when lastKey is missing from an answer, there is nothing more."
+          }
+        },
+        "required": [
+          "asset_type",
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shares",
+        "queryParams": {
+          "assetType": "$asset_type",
+          "assetId": "$asset_id",
+          "sharingInclude": "$sharing_include",
+          "maxItems": "$max_items",
+          "lastKey": "$last_key"
+        }
+      }
+    },
+    {
+      "name": "smartsheet_add_rows",
+      "description": "Add rows to a sheet. Each row gives its cells as {\"columnId\": <id>, \"value\": <value>} and where it goes: \"toBottom\": true (or \"toTop\": true), \"parentId\": <row id> to indent it under a row, \"siblingId\": <row id> to place it after that row. Dates are YYYY-MM-DD, checkboxes true or false, contact cells an email; \"formula\": \"=SUM([Cost]1:[Cost]5)\" instead of value sets a formula. Returns the new rows with their ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "rows": {
+            "type": "array",
+            "description": "Rows to add, e.g. [{\"toBottom\": true, \"cells\": [{\"columnId\": 7960873114331012, \"value\": \"New task\"}, {\"columnId\": 642523719853956, \"value\": \"2026-11-15\"}]}]. Up to 500 rows per call is a safe size.",
+            "items": {
+              "type": "object",
+              "description": "One row: cells (array of {columnId, value} or {columnId, formula}) and one location: toBottom, toTop, parentId, siblingId (with above)."
+            },
+            "minItems": 1
+          },
+          "allow_partial_success": {
+            "type": "boolean",
+            "description": "true adds the valid rows even when others fail (default false: all or nothing)."
+          },
+          "override_validation": {
+            "type": "boolean",
+            "description": "true accepts values outside a column's validation (cells must then set \"strict\": false)."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "rows"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sheets/{sheet_id}/rows",
+        "queryParams": {
+          "allowPartialSuccess": "$allow_partial_success",
+          "overrideValidation": "$override_validation"
+        },
+        "bodyMapping": {
+          "__raw": "$rows"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "smartsheet_update_rows",
+      "description": "Change cells of existing rows, or move rows. Each row needs its \"id\" and the cells to change as {\"columnId\": <id>, \"value\": <value>}; other cells stay as they are. A location field (toTop, toBottom, parentId, siblingId) moves the row; \"expanded\" and \"locked\" can be set too. Set a cell value to \"\" to clear it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "rows": {
+            "type": "array",
+            "description": "Rows to update, e.g. [{\"id\": 2361756178769796, \"cells\": [{\"columnId\": 7960873114331012, \"value\": \"Done\"}]}].",
+            "items": {
+              "type": "object",
+              "description": "One row: id (required), cells, optional location (toTop, toBottom, parentId, siblingId), expanded, locked."
+            },
+            "minItems": 1
+          },
+          "allow_partial_success": {
+            "type": "boolean",
+            "description": "true updates the valid rows even when others fail (default false: all or nothing)."
+          },
+          "override_validation": {
+            "type": "boolean",
+            "description": "true accepts values outside a column's validation (cells must then set \"strict\": false)."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "rows"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sheets/{sheet_id}/rows",
+        "queryParams": {
+          "allowPartialSuccess": "$allow_partial_success",
+          "overrideValidation": "$override_validation"
+        },
+        "bodyMapping": {
+          "__raw": "$rows"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "smartsheet_delete_rows",
+      "description": "Delete rows from a sheet, with their child rows, attachments and comments. It cannot be undone through the API: confirm the rows with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "row_ids": {
+            "type": "string",
+            "description": "Comma-separated ids of the rows to delete. Keep it to a few hundred ids per call."
+          },
+          "ignore_rows_not_found": {
+            "type": "boolean",
+            "description": "true deletes the rows that exist and skips unknown ids; false (default) deletes nothing when an id is unknown."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "row_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/sheets/{sheet_id}/rows",
+        "queryParams": {
+          "ids": "$row_ids",
+          "ignoreRowsNotFound": "$ignore_rows_not_found"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "smartsheet_add_columns",
+      "description": "Add columns to a sheet. Each column needs \"title\", \"type\" and \"index\" (0-based position); dropdown columns (PICKLIST, MULTI_PICKLIST) take \"options\", e.g. [{\"title\": \"Status\", \"type\": \"PICKLIST\", \"options\": [\"Open\", \"Done\"], \"index\": 3}]. Types: TEXT_NUMBER, DATE, DATETIME, CHECKBOX, PICKLIST, MULTI_PICKLIST, CONTACT_LIST, MULTI_CONTACT_LIST, DURATION, PREDECESSOR.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "columns": {
+            "type": "array",
+            "description": "Columns to add, each with title, type and index, optionally options, description, width, hidden, locked, validation, formula.",
+            "items": {
+              "type": "object",
+              "description": "One column definition."
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "sheet_id",
+          "columns"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sheets/{sheet_id}/columns",
+        "bodyMapping": {
+          "__raw": "$columns"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "smartsheet_update_column",
+      "description": "Change a column: rename it, change its type or dropdown options, move it (index), hide or lock it, set a description, width, validation or column formula. Only the fields given change. Changing the type can convert or drop cell values: confirm first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "column_id": {
+            "type": "string",
+            "description": "Column id, from smartsheet_list_columns or smartsheet_get_sheet (columns[].id)."
+          },
+          "title": {
+            "type": "string",
+            "description": "New column title."
+          },
+          "type": {
+            "type": "string",
+            "description": "New column type.",
+            "enum": [
+              "TEXT_NUMBER",
+              "DATE",
+              "DATETIME",
+              "CHECKBOX",
+              "PICKLIST",
+              "MULTI_PICKLIST",
+              "CONTACT_LIST",
+              "MULTI_CONTACT_LIST",
+              "DURATION",
+              "PREDECESSOR",
+              "ABSTRACT_DATETIME"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "description": "New 0-based position of the column.",
+            "minimum": 0
+          },
+          "options": {
+            "type": "array",
+            "description": "Dropdown options for PICKLIST and MULTI_PICKLIST columns; replaces the current list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string",
+            "description": "Column description."
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Hide (true) or show (false) the column."
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "Lock (true) or unlock (false) the column (needs admin access to the sheet)."
+          },
+          "width": {
+            "type": "integer",
+            "description": "Display width in pixels.",
+            "minimum": 1
+          },
+          "validation": {
+            "type": "boolean",
+            "description": "Turn the column's value validation on or off."
+          },
+          "formula": {
+            "type": "string",
+            "description": "Column formula applied to every row, e.g. =[Cost]@row * [Quantity]@row."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "column_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sheets/{sheet_id}/columns/{column_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "type": "$type",
+          "index": "$index",
+          "options": "$options",
+          "description": "$description",
+          "hidden": "$hidden",
+          "locked": "$locked",
+          "width": "$width",
+          "validation": "$validation",
+          "formula": "$formula"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "smartsheet_create_discussion",
+      "description": "Start a comment thread on a sheet with a first comment. To comment on a row use smartsheet_create_row_discussion; to answer an existing thread use smartsheet_add_comment. People following the sheet may be notified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "text": {
+            "type": "string",
+            "description": "The comment text. @mentions are not resolved through the API."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sheets/{sheet_id}/discussions",
+        "bodyMapping": {
+          "comment": {
+            "text": "$text"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "smartsheet_create_row_discussion",
+      "description": "Start a comment thread on one row of a sheet, with its first comment. Followers of the sheet may be notified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "row_id": {
+            "type": "string",
+            "description": "Row id, from smartsheet_get_sheet (rows[].id)."
+          },
+          "text": {
+            "type": "string",
+            "description": "The comment text."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "row_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sheets/{sheet_id}/rows/{row_id}/discussions",
+        "bodyMapping": {
+          "comment": {
+            "text": "$text"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "smartsheet_add_comment",
+      "description": "Reply to an existing discussion (comment thread) on a sheet or row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "discussion_id": {
+            "type": "string",
+            "description": "Discussion id, from smartsheet_list_discussions or smartsheet_list_row_discussions."
+          },
+          "text": {
+            "type": "string",
+            "description": "The comment text."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "discussion_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sheets/{sheet_id}/discussions/{discussion_id}/comments",
+        "bodyMapping": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "smartsheet_create_sheet_in_workspace",
+      "description": "Create a sheet at the top level of a workspace, either with your own columns (exactly one with \"primary\": true, usually TEXT_NUMBER) or as a copy of a template or sheet (from_id). Returns the new sheet id and permalink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id, from smartsheet_list_workspaces."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the new sheet."
+          },
+          "columns": {
+            "type": "array",
+            "description": "Columns of a blank sheet, e.g. [{\"title\": \"Task\", \"type\": \"TEXT_NUMBER\", \"primary\": true}, {\"title\": \"Due\", \"type\": \"DATE\"}, {\"title\": \"Status\", \"type\": \"PICKLIST\", \"options\": [\"Open\", \"Done\"]}]. Leave out when from_id is given.",
+            "items": {
+              "type": "object",
+              "description": "One column: title, type, primary, options, symbol, width."
+            }
+          },
+          "from_id": {
+            "type": "string",
+            "description": "Id of a template or sheet to copy instead of giving columns."
+          },
+          "include": {
+            "type": "string",
+            "description": "With from_id: comma-separated parts to copy as well: attachments, cellLinks, data, discussions, filters, forms, ruleRecipients, rules."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workspaces/{workspace_id}/sheets",
+        "queryParams": {
+          "include": "$include"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "columns": "$columns",
+          "fromId": "$from_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "smartsheet_create_sheet_in_folder",
+      "description": "Create a sheet inside a folder, with your own columns (exactly one primary) or as a copy of a template or sheet (from_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id, from smartsheet_list_workspace_children or smartsheet_list_folder_children."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the new sheet."
+          },
+          "columns": {
+            "type": "array",
+            "description": "Columns of a blank sheet; exactly one with \"primary\": true. Leave out when from_id is given.",
+            "items": {
+              "type": "object",
+              "description": "One column: title, type, primary, options, symbol, width."
+            }
+          },
+          "from_id": {
+            "type": "string",
+            "description": "Id of a template or sheet to copy instead of giving columns."
+          },
+          "include": {
+            "type": "string",
+            "description": "With from_id: comma-separated parts to copy as well: attachments, cellLinks, data, discussions, filters, forms, ruleRecipients, rules."
+          }
+        },
+        "required": [
+          "folder_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/folders/{folder_id}/sheets",
+        "queryParams": {
+          "include": "$include"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "columns": "$columns",
+          "fromId": "$from_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "smartsheet_share_asset",
+      "description": "Share a sheet, report, dashboard or workspace with people (by email) or a group, at a given access level. send_email notifies them. Confirm the recipients and the access level with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_type": {
+            "type": "string",
+            "description": "Kind of asset.",
+            "enum": [
+              "sheet",
+              "report",
+              "sight",
+              "workspace"
+            ]
+          },
+          "asset_id": {
+            "type": "string",
+            "description": "Id of the sheet, report, dashboard (sight) or workspace."
+          },
+          "shares": {
+            "type": "array",
+            "description": "Shares to create, each with exactly one of email or groupId, and accessLevel: VIEWER, COMMENTER, EDITOR, EDITOR_SHARE, ADMIN; optional subject, message and ccMe for the email. Example: [{\"email\": \"anna@example.com\", \"accessLevel\": \"EDITOR\"}].",
+            "items": {
+              "type": "object",
+              "description": "One share."
+            },
+            "minItems": 1
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "true sends the recipients an email (default false)."
+          }
+        },
+        "required": [
+          "asset_type",
+          "asset_id",
+          "shares"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shares",
+        "queryParams": {
+          "assetType": "$asset_type",
+          "assetId": "$asset_id",
+          "sendEmail": "$send_email"
+        },
+        "bodyMapping": {
+          "__raw": "$shares"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "smartsheet_create_update_request",
+      "description": "Email people an update request: a form where they can edit the given rows (and columns) without opening the sheet. Sent once right away unless a schedule is given. Recipients must be email addresses. Confirm before sending.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sheet_id": {
+            "type": "string",
+            "description": "Sheet id, from smartsheet_list_sheets or smartsheet_search (a long number; pass it as text to keep every digit)."
+          },
+          "send_to": {
+            "type": "array",
+            "description": "Recipients, e.g. [{\"email\": \"anna@example.com\"}].",
+            "items": {
+              "type": "object",
+              "description": "One recipient: {\"email\": \"...\"}."
+            },
+            "minItems": 1
+          },
+          "row_ids": {
+            "type": "array",
+            "description": "Ids of the rows to include.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1
+          },
+          "column_ids": {
+            "type": "array",
+            "description": "Ids of the columns to include (default: all).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject."
+          },
+          "message": {
+            "type": "string",
+            "description": "Email message."
+          },
+          "cc_me": {
+            "type": "boolean",
+            "description": "true sends the sender a copy."
+          },
+          "include_attachments": {
+            "type": "boolean",
+            "description": "true lets the recipients see the row attachments."
+          },
+          "include_discussions": {
+            "type": "boolean",
+            "description": "true lets the recipients see the row comments."
+          },
+          "layout": {
+            "type": "string",
+            "description": "Form layout when several rows are included.",
+            "enum": [
+              "HORIZONTAL",
+              "VERTICAL"
+            ]
+          },
+          "schedule": {
+            "type": "object",
+            "description": "Optional schedule, e.g. {\"type\": \"WEEKLY\", \"dayDescriptors\": [\"MONDAY\"], \"startAt\": \"2026-11-02T09:00:00Z\"}. Without it the request is sent once now."
+          }
+        },
+        "required": [
+          "sheet_id",
+          "send_to",
+          "row_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sheets/{sheet_id}/updaterequests",
+        "bodyMapping": {
+          "sendTo": "$send_to",
+          "rowIds": "$row_ids",
+          "columnIds": "$column_ids",
+          "subject": "$subject",
+          "message": "$message",
+          "ccMe": "$cc_me",
+          "includeAttachments": "$include_attachments",
+          "includeDiscussions": "$include_discussions",
+          "layout": "$layout",
+          "schedule": "$schedule"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    }
+  ]
+}

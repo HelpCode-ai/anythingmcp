@@ -1,0 +1,2365 @@
+{
+  "slug": "better-stack",
+  "name": "Better Stack",
+  "aliases": [
+    "Better Uptime",
+    "Better Stack Uptime",
+    "Better Stack Incidents"
+  ],
+  "description": "Better Stack uptime monitoring and incident management: monitors and heartbeats with availability and response times, incidents with acknowledge, escalate and resolve, on-call calendars, escalation policies, status pages and status reports, and the configured integrations.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "better-stack",
+  "docsUrl": "https://betterstack.com/docs/uptime/api/getting-started-with-uptime-api/",
+  "instructions": "## Better Stack\nThis connector works with the **Better Stack Incidents API** (formerly Better Uptime, `https://incidents.betterstack.com/api`): uptime monitors and heartbeats, incidents and their timeline, on-call calendars, escalation policies and severities, status pages with status reports, and the configured integrations. Telemetry (logs, metrics, dashboards) is not part of this connector.\n\n**Setup (2 minutes)**\n1. Open https://betterstack.com/settings/api-tokens/0, pick your team and copy (or create) a token in **Incidents API tokens**. This team-scoped token is the simplest choice.\n2. A **global API token** (https://betterstack.com/settings/global-api-tokens) also works and reaches every team; then pass `team_name` to filter lists, and it is required when creating monitors, heartbeats or incidents.\n3. Paste the token into `BETTER_STACK_API_TOKEN` and run `better_stack_list_monitors` to check it. Writes need a token with write access.\n\n**Workflow**\n- Is something down? `better_stack_list_monitors` (status `up`, `down`, `paused`, `validating`, `maintenance`), then `better_stack_get_monitor`. Uptime numbers: `better_stack_get_monitor_availability` for a date range, `better_stack_get_monitor_response_times` for the last 24 hours.\n- Manage monitors: `better_stack_create_monitor`, `better_stack_update_monitor`, `better_stack_pause_monitor` and `better_stack_resume_monitor` around planned work. Groups: `better_stack_list_monitor_groups`, `better_stack_get_monitor_group`, `better_stack_list_monitor_group_monitors`.\n- Cron jobs: `better_stack_list_heartbeats`, `better_stack_get_heartbeat`, `better_stack_create_heartbeat` (returns the ping URL the job must call), `better_stack_update_heartbeat`, `better_stack_get_heartbeat_availability`, `better_stack_list_heartbeat_groups`.\n- Incident response: `better_stack_list_incidents` with `resolved: false` for open incidents, `better_stack_get_incident`, `better_stack_get_incident_timeline`, then `better_stack_acknowledge_incident`, `better_stack_escalate_incident`, `better_stack_resolve_incident` or `better_stack_reopen_incident`. Notes: `better_stack_list_incident_comments`, `better_stack_add_incident_comment`. Raise one by hand with `better_stack_create_incident` (alerts people).\n- Who is on call: `better_stack_list_on_call_calendars`, `better_stack_get_on_call_calendar` (use `default` for the team's default calendar, `date` for another moment), `better_stack_list_on_call_events` for the shifts in a window. Escalation: `better_stack_list_escalation_policies`, `better_stack_get_escalation_policy`, `better_stack_list_severities`.\n- Status pages: `better_stack_list_status_pages`, `better_stack_get_status_page`, `better_stack_list_status_page_resources` (resource ids for `affected_resources`), `better_stack_list_status_reports`, `better_stack_get_status_report`, `better_stack_list_status_updates`. Communicate: `better_stack_create_status_report`, then `better_stack_add_status_update` as things change, and `better_stack_update_status_report` to change the title or reschedule.\n- Configuration: `better_stack_list_incoming_webhooks`, `better_stack_list_outgoing_webhooks`, `better_stack_list_slack_integrations`, `better_stack_list_metadata`.\n\n**Before writing**: creating an incident, escalating it and publishing a status report alert real people or public subscribers. Confirm with the user first; set `notify_subscribers: false` for a quiet status report.\n\n**Reading the answers**: JSON:API style: `data` (one object or a list) with `id`, `type`, `attributes` and `relationships`; related users and status updates come in `included`. Ids are numeric strings. Times are ISO 8601 in UTC; date filters (`from`, `to`) take YYYY-MM-DD. Availability is a percentage (99.98), downtime and incident lengths are seconds, response times are seconds. Incident `status` is `Started`, `Acknowledged` or `Resolved`. Monitor passwords, Playwright environment variables and policy incident tokens are left out of the answers.\n\n**Paging**: lists return `pagination.next` (a URL, `null` on the last page); call again with `page` set to the page number in that URL. `per_page` is 50 by default, up to 250; incidents default to 10 and allow 50.\n\n**Errors**: 401 means a wrong or revoked token (or a Telemetry token instead of an Incidents one), 403 a token without write access, 404 an unknown id or an id of another team, 422 a validation error whose `errors` names the field, 429 the rate limit.",
+  "prerequisites": "A Better Stack account and an Incidents API token (team-scoped) or a global API token.",
+  "requiredEnvVars": [
+    "BETTER_STACK_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "BETTER_STACK_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Better Stack, API tokens, Team-based tokens: pick the team and copy a token from Incidents API tokens. A global API token works too.",
+      "link": "https://betterstack.com/settings/api-tokens/0",
+      "pattern": "^[A-Za-z0-9_-]{16,}$",
+      "patternMessage": "Paste only the token, without spaces, quotes or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Better Stack refused the token. Use an Incidents API token (Team-based tokens) or a global API token; a Telemetry token does not work here.",
+    "403": "The token has no access to this resource or is read-only. Create a token with write access for the write tools.",
+    "429": "Better Stack rate-limited the requests. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "better_stack_list_monitors"
+  },
+  "connector": {
+    "name": "Better Stack Incidents API",
+    "type": "REST",
+    "baseUrl": "https://incidents.betterstack.com/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{BETTER_STACK_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/v2/monitors?per_page=1"
+  },
+  "tools": [
+    {
+      "name": "better_stack_list_monitors",
+      "description": "List the team's uptime monitors with their status (up, down, paused, validating, maintenance), URL, type, check frequency, regions and last check time. Filter by exact URL or name; paged with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "url": {
+            "type": "string",
+            "description": "Only monitors with exactly this URL."
+          },
+          "pronounceable_name": {
+            "type": "string",
+            "description": "Only monitors with exactly this name."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/monitors",
+        "queryParams": {
+          "team_name": "$team_name",
+          "url": "$url",
+          "pronounceable_name": "$pronounceable_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].attributes.auth_password",
+            "data[*].attributes.environment_variables"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_get_monitor",
+      "description": "Get one monitor with its full configuration: type, URL, status, check frequency, regions, alert channels, escalation policy, maintenance window and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitor_id": {
+            "type": "string",
+            "description": "Monitor id, from `better_stack_list_monitors` (`data[].id`)."
+          }
+        },
+        "required": [
+          "monitor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/monitors/{monitor_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.auth_password",
+            "data.attributes.environment_variables"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_create_monitor",
+      "description": "Create an uptime monitor: an HTTP check (status, expected status code, keyword present or absent), a server or port check (ping, TCP, UDP, SMTP, POP, IMAP, DNS) or a Playwright scenario, with frequency, regions and alert channels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "monitor_type": {
+            "type": "string",
+            "description": "What to check: `status` (any 2xx, the default), `expected_status_code` (one of `expected_status_codes`), `keyword` / `keyword_absence` (text present or absent in the page), `ping`, `tcp`, `udp`, `smtp`, `pop`, `imap`, `dns`, `playwright` (a browser scenario).",
+            "enum": [
+              "status",
+              "expected_status_code",
+              "keyword",
+              "keyword_absence",
+              "ping",
+              "tcp",
+              "udp",
+              "smtp",
+              "pop",
+              "imap",
+              "dns",
+              "playwright"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "The URL to check, or for server and port monitors the host without protocol. Required for every type except `playwright`."
+          },
+          "pronounceable_name": {
+            "type": "string",
+            "description": "Monitor name, read out in phone calls, so keep it easy to pronounce."
+          },
+          "check_frequency": {
+            "type": "integer",
+            "description": "Seconds between checks: 30, 45, 60, 120, 180, 300, 600, 900 or 1800 (Playwright: 60 up to 86400)."
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "us",
+                "eu",
+                "as",
+                "au"
+              ]
+            },
+            "description": "Regions to check from (us, eu, as, au). Empty means all."
+          },
+          "required_keyword": {
+            "type": "string",
+            "description": "Keyword to look for; required for `keyword`, `keyword_absence` and `udp` monitors."
+          },
+          "expected_status_codes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "HTTP status codes (100-599) counted as up; required for `expected_status_code` monitors."
+          },
+          "http_method": {
+            "type": "string",
+            "description": "HTTP method of the check (default GET).",
+            "enum": [
+              "GET",
+              "HEAD",
+              "POST",
+              "PUT",
+              "PATCH",
+              "OPTIONS"
+            ]
+          },
+          "request_timeout": {
+            "type": "integer",
+            "description": "Request timeout: seconds for HTTP monitors (2-60), milliseconds for server and port monitors."
+          },
+          "request_body": {
+            "type": "string",
+            "description": "Body for POST, PUT and PATCH checks; for `dns` monitors the domain to resolve."
+          },
+          "request_headers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Custom headers as [{name, value}]. Sending the list replaces all existing headers."
+          },
+          "port": {
+            "type": "string",
+            "description": "Port; required for `tcp`, `udp`, `smtp`, `pop` and `imap` monitors."
+          },
+          "follow_redirects": {
+            "type": "boolean",
+            "description": "Follow HTTP redirects (default true)."
+          },
+          "verify_ssl": {
+            "type": "boolean",
+            "description": "Fail on an invalid SSL certificate (default true)."
+          },
+          "ssl_expiration": {
+            "type": "integer",
+            "description": "Alert this many days before the SSL certificate expires: 1, 2, 3, 7, 14, 30 or 60."
+          },
+          "domain_expiration": {
+            "type": "integer",
+            "description": "Alert this many days before the domain expires: 1, 2, 3, 7, 14, 30 or 60."
+          },
+          "confirmation_period": {
+            "type": "integer",
+            "description": "Seconds to wait after a failure before opening an incident (max 86400)."
+          },
+          "recovery_period": {
+            "type": "integer",
+            "description": "Seconds the monitor must be up again before the incident resolves itself: 0, 60, 180, 300, 900, 1800, 3600 or 7200."
+          },
+          "policy_id": {
+            "type": "string",
+            "description": "Escalation policy id from `better_stack_list_escalation_policies`."
+          },
+          "monitor_group_id": {
+            "type": "string",
+            "description": "Monitor group id from `better_stack_list_monitor_groups`."
+          },
+          "team_wait": {
+            "type": "integer",
+            "description": "Seconds before the incident is escalated to the whole team; empty disables it."
+          },
+          "call": {
+            "type": "boolean",
+            "description": "Phone call the on-call person."
+          },
+          "sms": {
+            "type": "boolean",
+            "description": "Send an SMS the on-call person."
+          },
+          "email": {
+            "type": "boolean",
+            "description": "Send an e-mail the on-call person."
+          },
+          "push": {
+            "type": "boolean",
+            "description": "Send a push notification the on-call person."
+          },
+          "critical_alert": {
+            "type": "boolean",
+            "description": "Send a critical push notification that ignores mute and Do Not Disturb."
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "true pauses the monitor (no checks, no alerts), false resumes it."
+          },
+          "maintenance_days": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "mon",
+                "tue",
+                "wed",
+                "thu",
+                "fri",
+                "sat",
+                "sun"
+              ]
+            },
+            "description": "Days the daily maintenance window applies."
+          },
+          "maintenance_from": {
+            "type": "string",
+            "description": "Start of the daily maintenance window, e.g. 01:00."
+          },
+          "maintenance_to": {
+            "type": "string",
+            "description": "End of the daily maintenance window, e.g. 03:00."
+          },
+          "maintenance_timezone": {
+            "type": "string",
+            "description": "Time zone of the maintenance window, a Rails time zone name such as `Amsterdam` or `UTC` (default UTC)."
+          },
+          "scenario_name": {
+            "type": "string",
+            "description": "Playwright monitors: the scenario name shown in the dashboard (required for `playwright` on create)."
+          },
+          "playwright_script": {
+            "type": "string",
+            "description": "Playwright monitors: the JavaScript source of the scenario."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/monitors",
+        "bodyMapping": {
+          "team_name": "$team_name",
+          "monitor_type": "$monitor_type",
+          "url": "$url",
+          "pronounceable_name": "$pronounceable_name",
+          "check_frequency": "$check_frequency",
+          "regions": "$regions",
+          "required_keyword": "$required_keyword",
+          "expected_status_codes": "$expected_status_codes",
+          "http_method": "$http_method",
+          "request_timeout": "$request_timeout",
+          "request_body": "$request_body",
+          "request_headers": "$request_headers",
+          "port": "$port",
+          "follow_redirects": "$follow_redirects",
+          "verify_ssl": "$verify_ssl",
+          "ssl_expiration": "$ssl_expiration",
+          "domain_expiration": "$domain_expiration",
+          "confirmation_period": "$confirmation_period",
+          "recovery_period": "$recovery_period",
+          "policy_id": "$policy_id",
+          "monitor_group_id": "$monitor_group_id",
+          "team_wait": "$team_wait",
+          "call": "$call",
+          "sms": "$sms",
+          "email": "$email",
+          "push": "$push",
+          "critical_alert": "$critical_alert",
+          "paused": "$paused",
+          "maintenance_days": "$maintenance_days",
+          "maintenance_from": "$maintenance_from",
+          "maintenance_to": "$maintenance_to",
+          "maintenance_timezone": "$maintenance_timezone",
+          "scenario_name": "$scenario_name",
+          "playwright_script": "$playwright_script"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.auth_password",
+            "data.attributes.environment_variables"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_update_monitor",
+      "description": "Change a monitor: only the fields you pass are updated (URL, name, frequency, regions, alert channels, escalation policy, group, maintenance window, paused flag, ...).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitor_id": {
+            "type": "string",
+            "description": "Monitor id, from `better_stack_list_monitors` (`data[].id`)."
+          },
+          "monitor_type": {
+            "type": "string",
+            "description": "What to check: `status` (any 2xx, the default), `expected_status_code` (one of `expected_status_codes`), `keyword` / `keyword_absence` (text present or absent in the page), `ping`, `tcp`, `udp`, `smtp`, `pop`, `imap`, `dns`, `playwright` (a browser scenario).",
+            "enum": [
+              "status",
+              "expected_status_code",
+              "keyword",
+              "keyword_absence",
+              "ping",
+              "tcp",
+              "udp",
+              "smtp",
+              "pop",
+              "imap",
+              "dns",
+              "playwright"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "New URL, or host for server and port monitors."
+          },
+          "pronounceable_name": {
+            "type": "string",
+            "description": "Monitor name, read out in phone calls, so keep it easy to pronounce."
+          },
+          "check_frequency": {
+            "type": "integer",
+            "description": "Seconds between checks: 30, 45, 60, 120, 180, 300, 600, 900 or 1800 (Playwright: 60 up to 86400)."
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "us",
+                "eu",
+                "as",
+                "au"
+              ]
+            },
+            "description": "Regions to check from (us, eu, as, au). Empty means all."
+          },
+          "required_keyword": {
+            "type": "string",
+            "description": "Keyword to look for; required for `keyword`, `keyword_absence` and `udp` monitors."
+          },
+          "expected_status_codes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "HTTP status codes (100-599) counted as up; required for `expected_status_code` monitors."
+          },
+          "http_method": {
+            "type": "string",
+            "description": "HTTP method of the check (default GET).",
+            "enum": [
+              "GET",
+              "HEAD",
+              "POST",
+              "PUT",
+              "PATCH",
+              "OPTIONS"
+            ]
+          },
+          "request_timeout": {
+            "type": "integer",
+            "description": "Request timeout: seconds for HTTP monitors (2-60), milliseconds for server and port monitors."
+          },
+          "request_body": {
+            "type": "string",
+            "description": "Body for POST, PUT and PATCH checks; for `dns` monitors the domain to resolve."
+          },
+          "request_headers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Custom headers as [{name, value}]. Sending the list replaces all existing headers."
+          },
+          "port": {
+            "type": "string",
+            "description": "Port; required for `tcp`, `udp`, `smtp`, `pop` and `imap` monitors."
+          },
+          "follow_redirects": {
+            "type": "boolean",
+            "description": "Follow HTTP redirects (default true)."
+          },
+          "verify_ssl": {
+            "type": "boolean",
+            "description": "Fail on an invalid SSL certificate (default true)."
+          },
+          "ssl_expiration": {
+            "type": "integer",
+            "description": "Alert this many days before the SSL certificate expires: 1, 2, 3, 7, 14, 30 or 60."
+          },
+          "domain_expiration": {
+            "type": "integer",
+            "description": "Alert this many days before the domain expires: 1, 2, 3, 7, 14, 30 or 60."
+          },
+          "confirmation_period": {
+            "type": "integer",
+            "description": "Seconds to wait after a failure before opening an incident (max 86400)."
+          },
+          "recovery_period": {
+            "type": "integer",
+            "description": "Seconds the monitor must be up again before the incident resolves itself: 0, 60, 180, 300, 900, 1800, 3600 or 7200."
+          },
+          "policy_id": {
+            "type": "string",
+            "description": "Escalation policy id from `better_stack_list_escalation_policies`."
+          },
+          "monitor_group_id": {
+            "type": "string",
+            "description": "Monitor group id from `better_stack_list_monitor_groups`."
+          },
+          "team_wait": {
+            "type": "integer",
+            "description": "Seconds before the incident is escalated to the whole team; empty disables it."
+          },
+          "call": {
+            "type": "boolean",
+            "description": "Phone call the on-call person."
+          },
+          "sms": {
+            "type": "boolean",
+            "description": "Send an SMS the on-call person."
+          },
+          "email": {
+            "type": "boolean",
+            "description": "Send an e-mail the on-call person."
+          },
+          "push": {
+            "type": "boolean",
+            "description": "Send a push notification the on-call person."
+          },
+          "critical_alert": {
+            "type": "boolean",
+            "description": "Send a critical push notification that ignores mute and Do Not Disturb."
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "true pauses the monitor (no checks, no alerts), false resumes it."
+          },
+          "maintenance_days": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "mon",
+                "tue",
+                "wed",
+                "thu",
+                "fri",
+                "sat",
+                "sun"
+              ]
+            },
+            "description": "Days the daily maintenance window applies."
+          },
+          "maintenance_from": {
+            "type": "string",
+            "description": "Start of the daily maintenance window, e.g. 01:00."
+          },
+          "maintenance_to": {
+            "type": "string",
+            "description": "End of the daily maintenance window, e.g. 03:00."
+          },
+          "maintenance_timezone": {
+            "type": "string",
+            "description": "Time zone of the maintenance window, a Rails time zone name such as `Amsterdam` or `UTC` (default UTC)."
+          },
+          "scenario_name": {
+            "type": "string",
+            "description": "Playwright monitors: the scenario name shown in the dashboard (required for `playwright` on create)."
+          },
+          "playwright_script": {
+            "type": "string",
+            "description": "Playwright monitors: the JavaScript source of the scenario."
+          }
+        },
+        "required": [
+          "monitor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v2/monitors/{monitor_id}",
+        "bodyMapping": {
+          "monitor_type": "$monitor_type",
+          "url": "$url",
+          "pronounceable_name": "$pronounceable_name",
+          "check_frequency": "$check_frequency",
+          "regions": "$regions",
+          "required_keyword": "$required_keyword",
+          "expected_status_codes": "$expected_status_codes",
+          "http_method": "$http_method",
+          "request_timeout": "$request_timeout",
+          "request_body": "$request_body",
+          "request_headers": "$request_headers",
+          "port": "$port",
+          "follow_redirects": "$follow_redirects",
+          "verify_ssl": "$verify_ssl",
+          "ssl_expiration": "$ssl_expiration",
+          "domain_expiration": "$domain_expiration",
+          "confirmation_period": "$confirmation_period",
+          "recovery_period": "$recovery_period",
+          "policy_id": "$policy_id",
+          "monitor_group_id": "$monitor_group_id",
+          "team_wait": "$team_wait",
+          "call": "$call",
+          "sms": "$sms",
+          "email": "$email",
+          "push": "$push",
+          "critical_alert": "$critical_alert",
+          "paused": "$paused",
+          "maintenance_days": "$maintenance_days",
+          "maintenance_from": "$maintenance_from",
+          "maintenance_to": "$maintenance_to",
+          "maintenance_timezone": "$maintenance_timezone",
+          "scenario_name": "$scenario_name",
+          "playwright_script": "$playwright_script"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.auth_password",
+            "data.attributes.environment_variables"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_pause_monitor",
+      "description": "Pause a monitor: Better Stack stops checking it and sends no alerts until it is resumed. Use for planned work on the checked service.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitor_id": {
+            "type": "string",
+            "description": "Monitor id, from `better_stack_list_monitors` (`data[].id`)."
+          }
+        },
+        "required": [
+          "monitor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v2/monitors/{monitor_id}",
+        "bodyMapping": {
+          "paused": true
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.auth_password",
+            "data.attributes.environment_variables"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_resume_monitor",
+      "description": "Resume a paused monitor: checks and alerts start again with the monitor's existing settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitor_id": {
+            "type": "string",
+            "description": "Monitor id, from `better_stack_list_monitors` (`data[].id`)."
+          }
+        },
+        "required": [
+          "monitor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v2/monitors/{monitor_id}",
+        "bodyMapping": {
+          "paused": false
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.auth_password",
+            "data.attributes.environment_variables"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_get_monitor_availability",
+      "description": "Availability summary (SLA) of a monitor for a date range: availability percentage, total downtime in seconds, number of incidents, longest and average incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitor_id": {
+            "type": "string",
+            "description": "Monitor id, from `better_stack_list_monitors` (`data[].id`)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "End date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "monitor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/monitors/{monitor_id}/sla",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "better_stack_get_monitor_response_times",
+      "description": "Response times of a monitor's checks over the last 24 hours, per region, oldest first: the total response time in seconds for each check.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitor_id": {
+            "type": "string",
+            "description": "Monitor id, from `better_stack_list_monitors` (`data[].id`)."
+          }
+        },
+        "required": [
+          "monitor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/monitors/{monitor_id}/response-times"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "monitor_id": "$.data.id",
+            "regions": {
+              "$from": "$.data.attributes.regions[*]",
+              "$select": {
+                "region": "$.region",
+                "response_times": {
+                  "$from": "$.response_times[*]",
+                  "$select": {
+                    "at": "$.at",
+                    "response_time": "$.response_time"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_monitor_groups",
+      "description": "List the monitor groups (the folders monitors are sorted into on the dashboard), with their name, paused flag and team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/monitor-groups",
+        "queryParams": {
+          "team_name": "$team_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_get_monitor_group",
+      "description": "Get one monitor group by id: its name, sort index, paused flag, team and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitor_group_id": {
+            "type": "string",
+            "description": "Monitor group id from `better_stack_list_monitor_groups`."
+          }
+        },
+        "required": [
+          "monitor_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/monitor-groups/{monitor_group_id}"
+      }
+    },
+    {
+      "name": "better_stack_list_monitor_group_monitors",
+      "description": "List the monitors inside one monitor group, with the same fields as better_stack_list_monitors; paged with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitor_group_id": {
+            "type": "string",
+            "description": "Monitor group id from `better_stack_list_monitor_groups`."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        },
+        "required": [
+          "monitor_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/monitor-groups/{monitor_group_id}/monitors",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].attributes.auth_password",
+            "data[*].attributes.environment_variables"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_heartbeats",
+      "description": "List heartbeat (cron job) monitors: name, status, expected period and grace in seconds, the ping URL the job must call, paused flag and group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/heartbeats",
+        "queryParams": {
+          "team_name": "$team_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_get_heartbeat",
+      "description": "Get one heartbeat monitor with its ping URL, period, grace, status, alert channels, escalation policy and maintenance window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "heartbeat_id": {
+            "type": "string",
+            "description": "Heartbeat id, from `better_stack_list_heartbeats`."
+          }
+        },
+        "required": [
+          "heartbeat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/heartbeats/{heartbeat_id}"
+      }
+    },
+    {
+      "name": "better_stack_create_heartbeat",
+      "description": "Create a heartbeat monitor for a cron job or background task. The answer holds the ping URL the job must request after each run; a missed beat opens an incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the service sending the heartbeat."
+          },
+          "period": {
+            "type": "integer",
+            "description": "Expected interval between beats, in seconds (min 30).",
+            "minimum": 30
+          },
+          "grace": {
+            "type": "integer",
+            "description": "Seconds a beat may be late before it counts as missed (about 20% of period is a good value).",
+            "minimum": 0
+          },
+          "call": {
+            "type": "boolean",
+            "description": "Phone call the on-call person."
+          },
+          "sms": {
+            "type": "boolean",
+            "description": "Send an SMS the on-call person."
+          },
+          "email": {
+            "type": "boolean",
+            "description": "Send an e-mail the on-call person."
+          },
+          "push": {
+            "type": "boolean",
+            "description": "Send a push notification the on-call person."
+          },
+          "critical_alert": {
+            "type": "boolean",
+            "description": "Send a critical push notification that ignores mute and Do Not Disturb."
+          },
+          "team_wait": {
+            "type": "integer",
+            "description": "Seconds before the incident is escalated to the whole team; empty disables it."
+          },
+          "heartbeat_group_id": {
+            "type": "string",
+            "description": "Heartbeat group id from `better_stack_list_heartbeat_groups`."
+          },
+          "policy_id": {
+            "type": "string",
+            "description": "Escalation policy id from `better_stack_list_escalation_policies`."
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "true pauses the heartbeat (no alerts), false resumes it."
+          },
+          "server_timezone": {
+            "type": "string",
+            "description": "IANA time zone (e.g. Europe/Berlin) for DST-aware missed-beat detection; needs a period of at least 3600."
+          }
+        },
+        "required": [
+          "name",
+          "period",
+          "grace"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/heartbeats",
+        "bodyMapping": {
+          "team_name": "$team_name",
+          "name": "$name",
+          "period": "$period",
+          "grace": "$grace",
+          "call": "$call",
+          "sms": "$sms",
+          "email": "$email",
+          "push": "$push",
+          "critical_alert": "$critical_alert",
+          "team_wait": "$team_wait",
+          "heartbeat_group_id": "$heartbeat_group_id",
+          "policy_id": "$policy_id",
+          "paused": "$paused",
+          "server_timezone": "$server_timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "better_stack_update_heartbeat",
+      "description": "Change a heartbeat monitor: name, period, grace, alert channels, group, escalation policy, or pause and resume it with paused. Only the fields you pass change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "heartbeat_id": {
+            "type": "string",
+            "description": "Heartbeat id, from `better_stack_list_heartbeats`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the service sending the heartbeat."
+          },
+          "period": {
+            "type": "integer",
+            "description": "Expected interval between beats, in seconds (min 30).",
+            "minimum": 30
+          },
+          "grace": {
+            "type": "integer",
+            "description": "Seconds a beat may be late before it counts as missed (about 20% of period is a good value).",
+            "minimum": 0
+          },
+          "call": {
+            "type": "boolean",
+            "description": "Phone call the on-call person."
+          },
+          "sms": {
+            "type": "boolean",
+            "description": "Send an SMS the on-call person."
+          },
+          "email": {
+            "type": "boolean",
+            "description": "Send an e-mail the on-call person."
+          },
+          "push": {
+            "type": "boolean",
+            "description": "Send a push notification the on-call person."
+          },
+          "critical_alert": {
+            "type": "boolean",
+            "description": "Send a critical push notification that ignores mute and Do Not Disturb."
+          },
+          "team_wait": {
+            "type": "integer",
+            "description": "Seconds before the incident is escalated to the whole team; empty disables it."
+          },
+          "heartbeat_group_id": {
+            "type": "string",
+            "description": "Heartbeat group id from `better_stack_list_heartbeat_groups`."
+          },
+          "policy_id": {
+            "type": "string",
+            "description": "Escalation policy id from `better_stack_list_escalation_policies`."
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "true pauses the heartbeat (no alerts), false resumes it."
+          },
+          "server_timezone": {
+            "type": "string",
+            "description": "IANA time zone (e.g. Europe/Berlin) for DST-aware missed-beat detection; needs a period of at least 3600."
+          }
+        },
+        "required": [
+          "heartbeat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v2/heartbeats/{heartbeat_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "period": "$period",
+          "grace": "$grace",
+          "call": "$call",
+          "sms": "$sms",
+          "email": "$email",
+          "push": "$push",
+          "critical_alert": "$critical_alert",
+          "team_wait": "$team_wait",
+          "heartbeat_group_id": "$heartbeat_group_id",
+          "policy_id": "$policy_id",
+          "paused": "$paused",
+          "server_timezone": "$server_timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "better_stack_get_heartbeat_availability",
+      "description": "Availability summary of a heartbeat for a date range: availability percentage, total downtime in seconds, number of incidents, longest and average incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "heartbeat_id": {
+            "type": "string",
+            "description": "Heartbeat id, from `better_stack_list_heartbeats`."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "End date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "heartbeat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/heartbeats/{heartbeat_id}/availability",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_heartbeat_groups",
+      "description": "List the heartbeat groups, with their name, paused flag, sort index and team. Use the id as heartbeat_group_id when creating or moving heartbeats.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/heartbeat-groups",
+        "queryParams": {
+          "team_name": "$team_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_incidents",
+      "description": "List incidents, newest first: name, cause, status (Started, Acknowledged, Resolved), start, acknowledge and resolve times and who did it, the monitor or heartbeat behind it. Filter by date range, monitor, heartbeat, resolved and acknowledged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only incidents from this date, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only incidents until this date, YYYY-MM-DD."
+          },
+          "monitor_id": {
+            "type": "string",
+            "description": "Only incidents of this monitor."
+          },
+          "heartbeat_id": {
+            "type": "string",
+            "description": "Only incidents of this heartbeat."
+          },
+          "resolved": {
+            "type": "boolean",
+            "description": "false lists only open incidents, true only resolved ones; empty lists both."
+          },
+          "acknowledged": {
+            "type": "boolean",
+            "description": "false lists only unacknowledged incidents, true only acknowledged ones; empty lists both."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-50 (default 10).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/incidents",
+        "queryParams": {
+          "team_name": "$team_name",
+          "from": "$from",
+          "to": "$to",
+          "monitor_id": "$monitor_id",
+          "heartbeat_id": "$heartbeat_id",
+          "resolved": "$resolved",
+          "acknowledged": "$acknowledged",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_get_incident",
+      "description": "Get one incident with its cause, status, timestamps, who acknowledged and resolved it, alert channels, escalation policy, metadata and the failing response.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `better_stack_list_incidents`."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/incidents/{incident_id}"
+      }
+    },
+    {
+      "name": "better_stack_get_incident_timeline",
+      "description": "Timeline of an incident, newest first: alerts sent, acknowledgements, escalations, comments, status page updates and the captured responses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `better_stack_list_incidents`."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/incidents/{incident_id}/timeline"
+      }
+    },
+    {
+      "name": "better_stack_create_incident",
+      "description": "Open a manual incident and alert the on-call person through the chosen channels (call, SMS, e-mail, push), optionally escalating with a given policy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "requester_email": {
+            "type": "string",
+            "description": "E-mail of the team member reporting the incident (required with an API token)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Short name of the incident."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Brief summary, sent in the alerts."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full description of the incident."
+          },
+          "call": {
+            "type": "boolean",
+            "description": "Phone call the on-call person."
+          },
+          "sms": {
+            "type": "boolean",
+            "description": "Send an SMS the on-call person."
+          },
+          "email": {
+            "type": "boolean",
+            "description": "Send an e-mail the on-call person."
+          },
+          "push": {
+            "type": "boolean",
+            "description": "Send a push notification the on-call person."
+          },
+          "critical_alert": {
+            "type": "boolean",
+            "description": "Send a critical push notification that ignores mute and Do Not Disturb."
+          },
+          "team_wait": {
+            "type": "integer",
+            "description": "Seconds before the incident is escalated to the whole team; empty disables it."
+          },
+          "policy_id": {
+            "type": "string",
+            "description": "Escalation policy id to escalate with, from `better_stack_list_escalation_policies`."
+          }
+        },
+        "required": [
+          "requester_email",
+          "summary"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/incidents",
+        "bodyMapping": {
+          "team_name": "$team_name",
+          "requester_email": "$requester_email",
+          "name": "$name",
+          "summary": "$summary",
+          "description": "$description",
+          "call": "$call",
+          "sms": "$sms",
+          "email": "$email",
+          "push": "$push",
+          "critical_alert": "$critical_alert",
+          "team_wait": "$team_wait",
+          "policy_id": "$policy_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "better_stack_acknowledge_incident",
+      "description": "Acknowledge an ongoing incident: further escalation stops while the incident stays open until it is resolved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `better_stack_list_incidents`."
+          },
+          "acknowledged_by": {
+            "type": "string",
+            "description": "E-mail or name of who acknowledges it (shown in the timeline)."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/incidents/{incident_id}/acknowledge",
+        "bodyMapping": {
+          "acknowledged_by": "$acknowledged_by"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "better_stack_resolve_incident",
+      "description": "Resolve an ongoing incident. A monitor that is still failing opens a new incident on its next check.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `better_stack_list_incidents`."
+          },
+          "resolved_by": {
+            "type": "string",
+            "description": "E-mail or name of who resolves it (shown in the timeline)."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/incidents/{incident_id}/resolve",
+        "bodyMapping": {
+          "resolved_by": "$resolved_by"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "better_stack_reopen_incident",
+      "description": "Reopen a resolved incident, for example when the problem came back right after it was marked as resolved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `better_stack_list_incidents`."
+          },
+          "reopened_by": {
+            "type": "string",
+            "description": "E-mail or name of who reopens it (shown in the timeline)."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/incidents/{incident_id}/reopen",
+        "bodyMapping": {
+          "reopened_by": "$reopened_by"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "better_stack_escalate_incident",
+      "description": "Escalate an ongoing incident to a team member, a team, an on-call calendar, an escalation policy or the whole organization, choosing the alert channels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `better_stack_list_incidents`."
+          },
+          "escalation_type": {
+            "type": "string",
+            "description": "Whom to escalate to.",
+            "enum": [
+              "User",
+              "Team",
+              "Schedule",
+              "Policy",
+              "Organization"
+            ]
+          },
+          "user_email": {
+            "type": "string",
+            "description": "For User: the team member's e-mail."
+          },
+          "team_name": {
+            "type": "string",
+            "description": "For Team: the team's name."
+          },
+          "schedule_id": {
+            "type": "integer",
+            "description": "For Schedule: on-call calendar id from `better_stack_list_on_call_calendars`."
+          },
+          "policy_id": {
+            "type": "integer",
+            "description": "For Policy: escalation policy id from `better_stack_list_escalation_policies`."
+          },
+          "call": {
+            "type": "boolean",
+            "description": "Phone call (User, Team, Schedule or Organization)."
+          },
+          "sms": {
+            "type": "boolean",
+            "description": "Send an SMS (User, Team, Schedule or Organization)."
+          },
+          "email": {
+            "type": "boolean",
+            "description": "Send an e-mail (User, Team, Schedule or Organization)."
+          },
+          "push": {
+            "type": "boolean",
+            "description": "Send a push notification (User, Team, Schedule or Organization)."
+          },
+          "critical_alert": {
+            "type": "boolean",
+            "description": "Send a critical push notification that ignores mute and Do Not Disturb."
+          },
+          "escalated_by": {
+            "type": "string",
+            "description": "E-mail or name of who escalates it (shown in the timeline)."
+          }
+        },
+        "required": [
+          "incident_id",
+          "escalation_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/incidents/{incident_id}/escalate",
+        "bodyMapping": {
+          "escalation_type": "$escalation_type",
+          "user_email": "$user_email",
+          "team_name": "$team_name",
+          "schedule_id": "$schedule_id",
+          "policy_id": "$policy_id",
+          "call": "$call",
+          "sms": "$sms",
+          "email": "$email",
+          "push": "$push",
+          "critical_alert": "$critical_alert",
+          "escalated_by": "$escalated_by"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "better_stack_list_incident_comments",
+      "description": "List the comments posted on an incident, with their text (Markdown), author and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `better_stack_list_incidents`."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/incidents/{incident_id}/comments"
+      }
+    },
+    {
+      "name": "better_stack_add_incident_comment",
+      "description": "Post a comment on an incident, for example a status note or the root cause; it appears in the incident timeline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `better_stack_list_incidents`."
+          },
+          "content": {
+            "type": "string",
+            "description": "Comment text; Markdown is supported."
+          },
+          "user_email": {
+            "type": "string",
+            "description": "E-mail of a team member to tag in the comment."
+          }
+        },
+        "required": [
+          "incident_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/incidents/{incident_id}/comments",
+        "bodyMapping": {
+          "content": "$content",
+          "user_email": "$user_email"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "better_stack_list_on_call_calendars",
+      "description": "List on-call calendars (schedules) with their name, team and whether each is the team's default, plus who is on call right now.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/on-calls",
+        "queryParams": {
+          "team_name": "$team_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_get_on_call_calendar",
+      "description": "Who is on call on a calendar, now or at a given date and time: names, e-mails, phone numbers and holiday status of the on-call users.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedule_id": {
+            "type": "string",
+            "description": "On-call calendar id from `better_stack_list_on_call_calendars`, or `default` for the team's default calendar."
+          },
+          "date": {
+            "type": "string",
+            "description": "ISO 8601 date or date-time to see who is on call then; empty means now."
+          }
+        },
+        "required": [
+          "schedule_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/on-calls/{schedule_id}",
+        "queryParams": {
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_on_call_events",
+      "description": "List the shifts of an on-call calendar in a time window: who is on call (e-mails), start and end time, and whether the shift is an override.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedule_id": {
+            "type": "string",
+            "description": "On-call calendar id from `better_stack_list_on_call_calendars`, or `default` for the team's default calendar."
+          },
+          "starts_at": {
+            "type": "string",
+            "description": "Only shifts starting at or after this ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "ends_at": {
+            "type": "string",
+            "description": "Only shifts ending at or before this ISO 8601 date-time."
+          }
+        },
+        "required": [
+          "schedule_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/on-calls/{schedule_id}/events",
+        "queryParams": {
+          "starts_at": "$starts_at",
+          "ends_at": "$ends_at"
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_escalation_policies",
+      "description": "List escalation policies with their steps (who is alerted, after how many minutes, with which severity), repeat settings and fallback policy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/policies",
+        "queryParams": {
+          "team_name": "$team_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].attributes.incident_token"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_get_escalation_policy",
+      "description": "Get one escalation policy with its ordered steps, step members (users, on-call, Slack, webhooks), wait times, repeat count and fallback policy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "policy_id": {
+            "type": "string",
+            "description": "Escalation policy id from `better_stack_list_escalation_policies`."
+          }
+        },
+        "required": [
+          "policy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/policies/{policy_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.incident_token"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_severities",
+      "description": "List the severities (urgencies) of the team, with the alert channels each one uses (call, SMS, e-mail, push, critical alert). Escalation policy steps refer to them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/urgencies",
+        "queryParams": {
+          "team_name": "$team_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_status_pages",
+      "description": "List the status pages: company name, subdomain and custom domain, published flag, overall state (operational, degraded, downtime, maintenance), time zone and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/status-pages",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].attributes.custom_css",
+            "data[*].attributes.custom_javascript",
+            "data[*].attributes.announcement_embed_css"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_get_status_page",
+      "description": "Get one status page with its domain, overall state, published and subscribable flags, history length, design and access settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_page_id": {
+            "type": "string",
+            "description": "Status page id, from `better_stack_list_status_pages`."
+          }
+        },
+        "required": [
+          "status_page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/status-pages/{status_page_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.custom_css",
+            "data.attributes.custom_javascript",
+            "data.attributes.announcement_embed_css"
+          ]
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_status_page_resources",
+      "description": "List the resources shown on a status page (monitors, heartbeats, groups) with their public name, current status, availability and daily status history. The ids go into affected_resources of status reports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_page_id": {
+            "type": "string",
+            "description": "Status page id, from `better_stack_list_status_pages`."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        },
+        "required": [
+          "status_page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/status-pages/{status_page_id}/resources",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_status_reports",
+      "description": "List the status reports (incident announcements and maintenance windows) on a status page with title, type, start and end, affected resources and overall state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_page_id": {
+            "type": "string",
+            "description": "Status page id, from `better_stack_list_status_pages`."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        },
+        "required": [
+          "status_page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/status-pages/{status_page_id}/status-reports",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_get_status_report",
+      "description": "Get one status report on a status page with its type, start and end, affected resources, overall state and its status updates (in `included`).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_page_id": {
+            "type": "string",
+            "description": "Status page id, from `better_stack_list_status_pages`."
+          },
+          "status_report_id": {
+            "type": "string",
+            "description": "Status report id, from `better_stack_list_status_reports`."
+          }
+        },
+        "required": [
+          "status_page_id",
+          "status_report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/status-pages/{status_page_id}/status-reports/{status_report_id}"
+      }
+    },
+    {
+      "name": "better_stack_create_status_report",
+      "description": "Publish a status report on a public status page: an incident announcement or a planned maintenance, with the affected resources and a first message. Subscribers are e-mailed unless notify_subscribers is false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_page_id": {
+            "type": "string",
+            "description": "Status page id, from `better_stack_list_status_pages`."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the report shown on the status page."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text of the first status update."
+          },
+          "report_type": {
+            "type": "string",
+            "description": "`manual` (default) for an incident announcement, `maintenance` for planned maintenance.",
+            "enum": [
+              "manual",
+              "maintenance"
+            ]
+          },
+          "affected_resources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status_page_resource_id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "resolved",
+                    "degraded",
+                    "downtime",
+                    "maintenance",
+                    "not_affected"
+                  ]
+                }
+              }
+            },
+            "description": "Resources shown as affected: [{status_page_resource_id, status}], ids from `better_stack_list_status_page_resources`. Status is `degraded`, `downtime` or `resolved` (`maintenance` or `not_affected` for maintenance reports)."
+          },
+          "notify_subscribers": {
+            "type": "boolean",
+            "description": "E-mail the status page subscribers (default true)."
+          },
+          "published_at": {
+            "type": "string",
+            "description": "ISO 8601 time shown for the first update (default now)."
+          },
+          "starts_at": {
+            "type": "string",
+            "description": "Maintenance only: ISO 8601 start of the maintenance (default now)."
+          },
+          "ends_at": {
+            "type": "string",
+            "description": "ISO 8601 end; required for maintenance, not before starts_at."
+          }
+        },
+        "required": [
+          "status_page_id",
+          "title",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/status-pages/{status_page_id}/status-reports",
+        "bodyMapping": {
+          "title": "$title",
+          "message": "$message",
+          "report_type": "$report_type",
+          "affected_resources": "$affected_resources",
+          "notify_subscribers": "$notify_subscribers",
+          "published_at": "$published_at",
+          "starts_at": "$starts_at",
+          "ends_at": "$ends_at"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "better_stack_update_status_report",
+      "description": "Change a status report's title or its start and end time, for example to reschedule a maintenance. To post news, use better_stack_add_status_update.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_page_id": {
+            "type": "string",
+            "description": "Status page id, from `better_stack_list_status_pages`."
+          },
+          "status_report_id": {
+            "type": "string",
+            "description": "Status report id, from `better_stack_list_status_reports`."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title of the report."
+          },
+          "starts_at": {
+            "type": "string",
+            "description": "New ISO 8601 start time."
+          },
+          "ends_at": {
+            "type": "string",
+            "description": "New ISO 8601 end time (reschedules a maintenance end)."
+          }
+        },
+        "required": [
+          "status_page_id",
+          "status_report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v2/status-pages/{status_page_id}/status-reports/{status_report_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "starts_at": "$starts_at",
+          "ends_at": "$ends_at"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "better_stack_list_status_updates",
+      "description": "List the status updates posted on a status report, with message, publish time, affected resources and whether subscribers were notified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_page_id": {
+            "type": "string",
+            "description": "Status page id, from `better_stack_list_status_pages`."
+          },
+          "status_report_id": {
+            "type": "string",
+            "description": "Status report id, from `better_stack_list_status_reports`."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        },
+        "required": [
+          "status_page_id",
+          "status_report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/status-pages/{status_page_id}/status-reports/{status_report_id}/status-updates",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_add_status_update",
+      "description": "Post a new update on a status report, e.g. investigating, identified, monitoring or resolved; set every affected resource to `resolved` to close the report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_page_id": {
+            "type": "string",
+            "description": "Status page id, from `better_stack_list_status_pages`."
+          },
+          "status_report_id": {
+            "type": "string",
+            "description": "Status report id, from `better_stack_list_status_reports`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text of the update."
+          },
+          "affected_resources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status_page_resource_id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "resolved",
+                    "degraded",
+                    "downtime",
+                    "maintenance",
+                    "not_affected"
+                  ]
+                }
+              }
+            },
+            "description": "Resources shown as affected: [{status_page_resource_id, status}], ids from `better_stack_list_status_page_resources`. Status is `degraded`, `downtime` or `resolved` (`maintenance` or `not_affected` for maintenance reports)."
+          },
+          "notify_subscribers": {
+            "type": "boolean",
+            "description": "E-mail the status page subscribers (default true)."
+          },
+          "published_at": {
+            "type": "string",
+            "description": "ISO 8601 time shown for the update (default now)."
+          }
+        },
+        "required": [
+          "status_page_id",
+          "status_report_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/status-pages/{status_page_id}/status-reports/{status_report_id}/status-updates",
+        "bodyMapping": {
+          "message": "$message",
+          "affected_resources": "$affected_resources",
+          "notify_subscribers": "$notify_subscribers",
+          "published_at": "$published_at"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "better_stack_list_incoming_webhooks",
+      "description": "List the incoming webhook integrations that open and resolve incidents from other tools, with their name, URL and the rules for starting and resolving incidents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/incoming-webhooks",
+        "queryParams": {
+          "team_name": "$team_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_outgoing_webhooks",
+      "description": "List the outgoing webhook integrations that Better Stack calls on incident and monitor events, with their name, target URL and triggers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/outgoing-webhooks",
+        "queryParams": {
+          "team_name": "$team_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_slack_integrations",
+      "description": "List the Slack integrations of the team: workspace, channel and the kinds of notifications sent there.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/slack-integrations",
+        "queryParams": {
+          "team_name": "$team_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "better_stack_list_metadata",
+      "description": "List metadata records (key and values) attached to monitors, heartbeats, incidents and integrations, e.g. service owner or environment; filter by owner type and id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Only with a global API token: the team name to filter by (or, on create, the team that owns the new resource). Leave empty with a team-scoped Incidents API token."
+          },
+          "owner_type": {
+            "type": "string",
+            "description": "Only metadata of this resource type.",
+            "enum": [
+              "Monitor",
+              "Heartbeat",
+              "Incident",
+              "WebhookIntegration",
+              "EmailIntegration",
+              "IncomingWebhook",
+              "AmazonSnsIntegration",
+              "CallRouting"
+            ]
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Only metadata of this resource id (use with owner_type)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Take it from the `page` value in `pagination.next`.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-250 (default 50).",
+            "minimum": 1,
+            "maximum": 250
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/metadata",
+        "queryParams": {
+          "team_name": "$team_name",
+          "owner_type": "$owner_type",
+          "owner_id": "$owner_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    }
+  ]
+}
